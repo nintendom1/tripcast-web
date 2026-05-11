@@ -6,6 +6,11 @@
 - Use Vite, React, and TypeScript.
 - Use MapLibre GL JS and do not add paid or token-based map providers.
 - Do not commit secrets, `.env`, or `.env.local`.
+- Treat secret scanning as part of the normal workflow before commits and PRs.
+- Agents are allowed to install Gitleaks when needed to run local scans.
+- Run `gitleaks git --config .gitleaks.toml --redact --verbose` before pushing when Gitleaks is available.
+- Run `git diff --cached | gitleaks stdin --config .gitleaks.toml --redact --verbose` before committing staged changes when Gitleaks is available.
+- If Gitleaks is unavailable and cannot be installed, say so in the final response and rely on the GitHub Actions Gitleaks workflow as the remote check.
 - Consume Convex through `src/convex/tripcastApi.ts`.
 - Generate and send `clientId` for write mutations that require rate limiting.
 - Avoid unnecessary map remounts, style resets, or tile request loops.
