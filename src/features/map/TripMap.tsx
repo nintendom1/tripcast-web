@@ -4,8 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 
-import { tripcastApi, type AddCheckpointArgs, type Checkpoint } from "../../convex/tripcastApi";
-import { getClientId } from "../../lib/clientId";
+import { tripcastApi, type AddCheckpointArgs, type Checkpoint, type Role } from "../../convex/tripcastApi";
 import AddCheckpointSheet, { type SelectedCoordinate } from "./AddCheckpointSheet";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
@@ -33,16 +32,18 @@ function createPopupContent(checkpoint: Checkpoint) {
 }
 
 type TripMapProps = {
-  convexReady: boolean;
+  token: string;
+  role: Role;
 };
 
 type CheckpointMarkersProps = {
   map: maplibregl.Map | null;
+  token: string;
 };
 
-function CheckpointMarkers({ map }: CheckpointMarkersProps) {
+function CheckpointMarkers({ map, token }: CheckpointMarkersProps) {
   const markersRef = useRef<Marker[]>([]);
-  const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints) ?? [];
+  const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
 
   useEffect(() => {
     if (!map) {
@@ -72,17 +73,19 @@ function CheckpointMarkers({ map }: CheckpointMarkersProps) {
 
 type ConvexCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
+  token: string;
   onClose: () => void;
 };
 
-function ConvexCheckpointSheet({ selectedCoordinate, onClose }: ConvexCheckpointSheetProps) {
+function ConvexCheckpointSheet({
+  selectedCoordinate,
+  token,
+  onClose,
+}: ConvexCheckpointSheetProps) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
 
-  async function handleSave(args: Omit<AddCheckpointArgs, "clientId">) {
-    await addCheckpoint({
-      ...args,
-      clientId: getClientId(),
-    });
+  async function handleSave(args: Omit<AddCheckpointArgs, "token">) {
+    await addCheckpoint({ ...args, token });
   }
 
   return (
@@ -94,13 +97,15 @@ function ConvexCheckpointSheet({ selectedCoordinate, onClose }: ConvexCheckpoint
   );
 }
 
-export default function TripMap({ convexReady }: TripMapProps) {
+export default function TripMap({ token, role }: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const placementModeRef = useRef(false);
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
+
+  const canWrite = role === "traveler";
 
   useEffect(() => {
     placementModeRef.current = isPlacementMode;
@@ -124,6 +129,7 @@ export default function TripMap({ convexReady }: TripMapProps) {
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
 
     map.on("contextmenu", (event) => {
+      if (!canWrite) return;
       event.preventDefault();
       setSelectedCoordinate({
         lat: event.lngLat.lat,
@@ -152,6 +158,8 @@ export default function TripMap({ convexReady }: TripMapProps) {
       map.remove();
       mapRef.current = null;
     };
+  // canWrite is stable after mount; suppressing exhaustive-deps is correct here
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const mapClassName = useMemo(
@@ -162,13 +170,7 @@ export default function TripMap({ convexReady }: TripMapProps) {
   return (
     <section className="map-shell" aria-label="Checkpoint map">
       <div ref={mapContainerRef} className={mapClassName} />
-      {convexReady ? <CheckpointMarkers map={mapInstance} /> : null}
-
-      {!convexReady ? (
-        <div className="map-error-banner">
-          VITE_CONVEX_URL is not set. The map works, but saved pins are unavailable.
-        </div>
-      ) : null}
+      <CheckpointMarkers map={mapInstance} token={token} />
 
       {isPlacementMode ? (
         <div className="placement-banner">
@@ -179,30 +181,26 @@ export default function TripMap({ convexReady }: TripMapProps) {
         </div>
       ) : null}
 
-      <button
-        className="floating-add-button"
-        type="button"
-        onClick={() => {
-          setSelectedCoordinate(null);
-          setIsPlacementMode(true);
-        }}
-      >
-        Add Pin
-      </button>
+      {canWrite ? (
+        <button
+          className="floating-add-button"
+          type="button"
+          onClick={() => {
+            setSelectedCoordinate(null);
+            setIsPlacementMode(true);
+          }}
+        >
+          Add Pin
+        </button>
+      ) : null}
 
-      {convexReady ? (
+      {canWrite ? (
         <ConvexCheckpointSheet
           selectedCoordinate={selectedCoordinate}
+          token={token}
           onClose={() => setSelectedCoordinate(null)}
         />
-      ) : (
-        <AddCheckpointSheet
-          selectedCoordinate={selectedCoordinate}
-          onClose={() => setSelectedCoordinate(null)}
-          onSave={async () => undefined}
-          saveUnavailableMessage="VITE_CONVEX_URL is not set. Configure Convex before saving pins."
-        />
-      )}
+      ) : null}
     </section>
   );
 }

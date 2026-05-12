@@ -10,7 +10,7 @@ export type SelectedCoordinate = {
 
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
-  onSave: (args: Omit<AddCheckpointArgs, "clientId">) => Promise<void>;
+  onSave: (args: Omit<AddCheckpointArgs, "token">) => Promise<void>;
   onClose: () => void;
   saveUnavailableMessage?: string;
 };
