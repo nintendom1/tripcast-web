@@ -218,3 +218,143 @@ button:disabled {
     align-items: center;
   }
 }
+
+/* Auth screen */
+
+.auth-shell {
+  align-items: center;
+  background: #f0f4f8;
+  display: flex;
+  justify-content: center;
+  min-height: 100%;
+  padding: 24px 16px;
+}
+
+.auth-card {
+  background: #ffffff;
+  border: 1px solid #bcccdc;
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(16, 42, 67, 0.12);
+  max-width: 380px;
+  padding: 32px 28px;
+  width: 100%;
+}
+
+.auth-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 4px;
+  text-align: center;
+}
+
+.auth-subtitle {
+  color: #627d98;
+  margin: 0 0 24px;
+  text-align: center;
+}
+
+.auth-role-buttons {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-role-button {
+  align-items: flex-start;
+  background: #f0f4f8;
+  border: 1px solid #bcccdc;
+  border-radius: 8px;
+  display: grid;
+  gap: 2px;
+  padding: 14px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.auth-role-button:hover {
+  background: #e9f0f7;
+  border-color: #9fb3c8;
+}
+
+.auth-role-label {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.auth-role-desc {
+  color: #627d98;
+  font-size: 13px;
+}
+
+.auth-form {
+  display: grid;
+  gap: 16px;
+}
+
+.auth-form h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.auth-form label {
+  display: grid;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.auth-form input {
+  border: 1px solid #9fb3c8;
+  border-radius: 4px;
+  font-weight: 400;
+  padding: 8px;
+  width: 100%;
+}
+
+.auth-form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.auth-form-actions button {
+  border: 1px solid #9fb3c8;
+  border-radius: 4px;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.auth-form-actions button[type="submit"] {
+  background: #102a43;
+  border-color: #102a43;
+  color: #ffffff;
+}
+
+/* App header additions */
+
+.header-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.header-role {
+  color: #627d98;
+  font-size: 14px;
+}
+
+.sign-out-button {
+  background: transparent;
+  border: 1px solid #9fb3c8;
+  border-radius: 4px;
+  font-size: 14px;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
+.map-loading {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  min-height: 200px;
+}
