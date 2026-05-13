@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   tripcastApi,
+  type RouteVoteMapOverlay,
   type RouteVoteListItem,
   type ChallengeStatus,
 } from "../../convex/tripcastApi";
@@ -21,6 +22,12 @@ type RouteVoteProgressProps = {
     callback: (coord: { lat: number; lon: number }) => void,
   ) => void;
   referenceLocation: { lat: number; lon: number } | null;
+  onVoteOverlayChange: (
+    overlay: RouteVoteMapOverlay | null,
+    optionNumberById?: Record<string, number> | null,
+  ) => void;
+  onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
+  fallbackOrigin: { lat: number; lon: number } | null;
 };
 
 type View = "list" | "create" | "detail";
@@ -84,12 +91,25 @@ function VoteDetailView({
   token,
   vote,
   onBack,
+  onVoteOverlayChange,
+  onRequestFitMap,
+  fallbackOrigin,
 }: {
   token: string;
   vote: RouteVoteListItem;
   onBack: () => void;
+  onVoteOverlayChange: (
+    overlay: RouteVoteMapOverlay | null,
+    optionNumberById?: Record<string, number> | null,
+  ) => void;
+  onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
+  fallbackOrigin: { lat: number; lon: number } | null;
 }) {
   const detail = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
+    token,
+    routeVoteId: vote._id,
+  });
+  const overlay = useQuery(tripcastApi.routeVotes.getRouteVoteMapOverlay, {
     token,
     routeVoteId: vote._id,
   });
@@ -101,6 +121,45 @@ function VoteDetailView({
   const [confirmingOptionId, setConfirmingOptionId] = useState<string | null>(null);
   const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus | null>(null);
   const [isActing, setIsActing] = useState(false);
+
+  useEffect(() => {
+    if (overlay === undefined) return;
+    const optionNumberById = Object.fromEntries(
+      vote.options.map((option, index) => [option._id, index + 1]),
+    );
+    onVoteOverlayChange(overlay, optionNumberById);
+
+    if (!overlay || overlay.coordinateOptions.length === 0) {
+      onRequestFitMap(null);
+      return;
+    }
+
+    const allLons = [
+      ...(overlay.travelerLocation ? [overlay.travelerLocation.lon] : []),
+      ...(!overlay.travelerLocation && fallbackOrigin ? [fallbackOrigin.lon] : []),
+      ...overlay.coordinateOptions.map((o) => o.lon),
+    ];
+    const allLats = [
+      ...(overlay.travelerLocation ? [overlay.travelerLocation.lat] : []),
+      ...(!overlay.travelerLocation && fallbackOrigin ? [fallbackOrigin.lat] : []),
+      ...overlay.coordinateOptions.map((o) => o.lat),
+    ];
+    const sw: [number, number] = [Math.min(...allLons), Math.min(...allLats)];
+    const ne: [number, number] = [Math.max(...allLons), Math.max(...allLats)];
+    onRequestFitMap([sw, ne], 120);
+
+    return () => {
+      onVoteOverlayChange(null);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overlay, fallbackOrigin, vote.options]);
+
+  useEffect(() => {
+    if (detail === null) {
+      onVoteOverlayChange(null);
+      onRequestFitMap(null);
+    }
+  }, [detail, onRequestFitMap, onVoteOverlayChange]);
 
   if (detail === undefined) {
     return <div className="text-sm text-muted-foreground py-4 text-center">Loading…</div>;
@@ -304,6 +363,9 @@ export default function RouteVoteProgress({
   onClose,
   onRequestCoordinatePick,
   referenceLocation,
+  onVoteOverlayChange,
+  onRequestFitMap,
+  fallbackOrigin,
 }: RouteVoteProgressProps) {
   const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token }) ?? [];
 
@@ -421,7 +483,12 @@ export default function RouteVoteProgress({
                 onBack={() => {
                   setView("list");
                   setSelectedVoteId(null);
+                  onVoteOverlayChange(null);
+                  onRequestFitMap(null);
                 }}
+                onVoteOverlayChange={onVoteOverlayChange}
+                onRequestFitMap={onRequestFitMap}
+                fallbackOrigin={fallbackOrigin}
               />
             </motion.div>
           ) : (

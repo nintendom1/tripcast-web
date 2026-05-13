@@ -5,42 +5,62 @@ import type { RouteVoteMapOverlay as RouteVoteMapOverlayType } from "../../conve
 const SOURCE_ID = "route-vote-overlay";
 const LINES_LAYER_ID = "route-vote-lines";
 const POINTS_LAYER_ID = "route-vote-points";
+const LABELS_LAYER_ID = "route-vote-labels";
 
 type RouteVoteMapOverlayProps = {
   map: maplibregl.Map | null;
   overlay: RouteVoteMapOverlayType | null;
+  fallbackOrigin?: { lat: number; lon: number } | null;
+  optionNumberById?: Record<string, number> | null;
 };
 
 function removeOverlayLayers(map: maplibregl.Map) {
+  if (map.getLayer(LABELS_LAYER_ID)) map.removeLayer(LABELS_LAYER_ID);
   if (map.getLayer(POINTS_LAYER_ID)) map.removeLayer(POINTS_LAYER_ID);
   if (map.getLayer(LINES_LAYER_ID)) map.removeLayer(LINES_LAYER_ID);
   if (map.getSource(SOURCE_ID)) map.removeSource(SOURCE_ID);
 }
 
-function addOverlayLayers(map: maplibregl.Map, overlay: RouteVoteMapOverlayType) {
+function addOverlayLayers(
+  map: maplibregl.Map,
+  overlay: RouteVoteMapOverlayType,
+  fallbackOrigin?: { lat: number; lon: number } | null,
+  optionNumberById?: Record<string, number> | null,
+) {
   const { travelerLocation, coordinateOptions } = overlay;
+  const origin = travelerLocation ?? fallbackOrigin ?? null;
 
-  if (!travelerLocation || coordinateOptions.length === 0) return;
+  if (coordinateOptions.length === 0) return;
 
-  const lines = coordinateOptions.map((opt) => ({
-    type: "Feature" as const,
-    geometry: {
-      type: "LineString" as const,
-      coordinates: [
-        [travelerLocation.lon, travelerLocation.lat],
-        [opt.lon, opt.lat],
-      ],
-    },
-    properties: { optionId: opt.optionId, title: opt.title },
-  }));
+  const lines = origin
+    ? coordinateOptions.map((opt, index) => ({
+        type: "Feature" as const,
+        geometry: {
+          type: "LineString" as const,
+          coordinates: [
+            [origin.lon, origin.lat],
+            [opt.lon, opt.lat],
+          ],
+        },
+        properties: {
+          optionId: opt.optionId,
+          title: opt.title,
+          optionNumber: optionNumberById?.[opt.optionId] ?? index + 1,
+        },
+      }))
+    : [];
 
-  const points = coordinateOptions.map((opt) => ({
+  const points = coordinateOptions.map((opt, index) => ({
     type: "Feature" as const,
     geometry: {
       type: "Point" as const,
       coordinates: [opt.lon, opt.lat],
     },
-    properties: { title: opt.title },
+    properties: {
+      title: opt.title,
+      optionId: opt.optionId,
+      optionNumber: optionNumberById?.[opt.optionId] ?? index + 1,
+    },
   }));
 
   map.addSource(SOURCE_ID, {
@@ -70,21 +90,43 @@ function addOverlayLayers(map: maplibregl.Map, overlay: RouteVoteMapOverlayType)
     source: SOURCE_ID,
     filter: ["==", "$type", "Point"],
     paint: {
-      "circle-radius": 6,
+      "circle-radius": 10,
       "circle-color": "#c9a84c",
       "circle-stroke-width": 2,
       "circle-stroke-color": "#ffffff",
     },
   });
+
+  map.addLayer({
+    id: LABELS_LAYER_ID,
+    type: "symbol",
+    source: SOURCE_ID,
+    filter: ["==", "$type", "Point"],
+    layout: {
+      "text-field": ["to-string", ["get", "optionNumber"]],
+      "text-size": 12,
+      "text-font": ["Noto Sans Regular"],
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: {
+      "text-color": "#ffffff",
+    },
+  });
 }
 
-export default function RouteVoteMapOverlay({ map, overlay }: RouteVoteMapOverlayProps) {
+export default function RouteVoteMapOverlay({
+  map,
+  overlay,
+  fallbackOrigin,
+  optionNumberById,
+}: RouteVoteMapOverlayProps) {
   useEffect(() => {
     if (!map) return;
 
     const doAdd = () => {
       removeOverlayLayers(map);
-      if (overlay) addOverlayLayers(map, overlay);
+      if (overlay) addOverlayLayers(map, overlay, fallbackOrigin, optionNumberById);
     };
 
     if (map.isStyleLoaded()) {
@@ -96,7 +138,7 @@ export default function RouteVoteMapOverlay({ map, overlay }: RouteVoteMapOverla
     return () => {
       if (map.isStyleLoaded()) removeOverlayLayers(map);
     };
-  }, [map, overlay]);
+  }, [map, overlay, fallbackOrigin, optionNumberById]);
 
   return null;
 }

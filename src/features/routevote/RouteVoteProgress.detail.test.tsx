@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
-import type { RouteVoteListItem } from "../../convex/tripcastApi";
+import { tripcastApi, type RouteVoteListItem } from "../../convex/tripcastApi";
 import RouteVoteProgress from "./RouteVoteProgress";
 
 vi.mock("convex/react", () => ({
@@ -40,19 +40,30 @@ const mockVote: RouteVoteListItem = {
 function setupMocks({ detailResult }: { detailResult: unknown }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (vi.mocked(convexReact.useQuery) as any).mockImplementation(
-    (_ref: unknown, args: unknown) => {
-      if (
-        args !== null &&
-        typeof args === "object" &&
-        "routeVoteId" in (args as Record<string, unknown>)
-      ) {
+    (ref: unknown) => {
+      if (ref === tripcastApi.routeVotes.travelerGetRouteVoteDetail) {
         return detailResult;
       }
+      if (ref === tripcastApi.routeVotes.getRouteVoteMapOverlay) return null;
       return [mockVote];
     },
   );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
+}
+
+function renderProgress() {
+  return render(
+    <RouteVoteProgress
+      token="test-token"
+      onClose={vi.fn()}
+      onRequestCoordinatePick={vi.fn()}
+      referenceLocation={null}
+      onVoteOverlayChange={vi.fn()}
+      onRequestFitMap={vi.fn()}
+      fallbackOrigin={null}
+    />,
+  );
 }
 
 beforeEach(() => {
@@ -63,14 +74,7 @@ describe("RouteVoteProgress: VoteDetailView null state", () => {
   it("shows the deleted-vote recovery state when detail query returns null", async () => {
     setupMocks({ detailResult: null });
 
-    render(
-      <RouteVoteProgress
-        token="test-token"
-        onClose={vi.fn()}
-        onRequestCoordinatePick={vi.fn()}
-        referenceLocation={null}
-      />,
-    );
+    renderProgress();
 
     // The list renders the mock vote with a "Details" button.
     await userEvent.click(screen.getByRole("button", { name: "Details" }));
@@ -84,14 +88,7 @@ describe("RouteVoteProgress: VoteDetailView null state", () => {
   it("navigates back to the vote list when Back to votes is clicked", async () => {
     setupMocks({ detailResult: null });
 
-    render(
-      <RouteVoteProgress
-        token="test-token"
-        onClose={vi.fn()}
-        onRequestCoordinatePick={vi.fn()}
-        referenceLocation={null}
-      />,
-    );
+    renderProgress();
 
     await userEvent.click(screen.getByRole("button", { name: "Details" }));
     await waitFor(() => screen.getByRole("button", { name: "Back to votes" }));
