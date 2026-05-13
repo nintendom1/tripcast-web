@@ -1,0 +1,450 @@
+import { useState } from "react";
+import { useMutation, useQuery } from "convex/react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  tripcastApi,
+  type RouteVoteListItem,
+  type ChallengeStatus,
+} from "../../convex/tripcastApi";
+import { Button } from "../../components/ui/button";
+import { DialogueBox } from "../../components/rpg/DialogueBox";
+import { StatBar } from "../../components/rpg/StatBar";
+import { StatusBadge } from "../../components/rpg/StatusBadge";
+import { formatTimeRemaining } from "../../lib/routeVoteUtils";
+import CreateRouteVoteForm from "./CreateRouteVoteForm";
+
+type RouteVoteProgressProps = {
+  token: string;
+  onClose: () => void;
+  onRequestCoordinatePick: (
+    optionIndex: number,
+    callback: (coord: { lat: number; lon: number }) => void,
+  ) => void;
+  referenceLocation: { lat: number; lon: number } | null;
+};
+
+type View = "list" | "create" | "detail";
+
+const CHALLENGE_STATUSES: ChallengeStatus[] = ["planned", "in_progress", "completed", "dropped"];
+
+function VoteListCard({
+  vote,
+  onViewDetail,
+  onCloseVote,
+  onCancel,
+  onArchive,
+  isActing,
+}: {
+  vote: RouteVoteListItem;
+  onViewDetail: () => void;
+  onCloseVote: () => void;
+  onCancel: () => void;
+  onArchive: () => void;
+  isActing: boolean;
+}) {
+  const status = vote.effectiveStatus;
+  const total = vote.totalSubmissions;
+
+  return (
+    <div className="rounded-md border bg-card p-3 flex flex-col gap-2">
+      <div className="flex items-start justify-between gap-2">
+        <button type="button" onClick={onViewDetail} className="font-medium text-sm text-left hover:underline">
+          {vote.title}
+        </button>
+        <StatusBadge status={status} />
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {formatTimeRemaining(vote.expiresAt)} · {total} {total === 1 ? "vote" : "votes"} · {vote.options.length} options
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        <Button size="sm" variant="outline" onClick={onViewDetail} disabled={isActing}>
+          Details
+        </Button>
+        {status === "active" && (
+          <Button size="sm" variant="outline" onClick={onCloseVote} disabled={isActing}>
+            Close voting
+          </Button>
+        )}
+        {(status === "active" || status === "closed") && (
+          <Button size="sm" variant="outline" onClick={onCancel} disabled={isActing}>
+            Cancel
+          </Button>
+        )}
+        {(status === "resolved" || status === "cancelled") && (
+          <Button size="sm" variant="outline" onClick={onArchive} disabled={isActing}>
+            Archive
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VoteDetailView({
+  token,
+  vote,
+  onBack,
+}: {
+  token: string;
+  vote: RouteVoteListItem;
+  onBack: () => void;
+}) {
+  const detail = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
+    token,
+    routeVoteId: vote._id,
+  });
+
+  const confirmWinner = useMutation(tripcastApi.routeVotes.travelerConfirmRouteVoteWinner);
+  const hideComment = useMutation(tripcastApi.routeVotes.travelerHideRouteVoteComment);
+  const updateChallengeStatus = useMutation(tripcastApi.routeVotes.travelerUpdateChallengeStatus);
+
+  const [confirmingOptionId, setConfirmingOptionId] = useState<string | null>(null);
+  const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus | null>(null);
+  const [isActing, setIsActing] = useState(false);
+
+  if (!detail) {
+    return <div className="text-sm text-muted-foreground py-4 text-center">Loading…</div>;
+  }
+
+  const total = detail.totalSubmissions;
+  const canConfirmWinner =
+    detail.effectiveStatus === "closed" && !detail.confirmedWinningOptionId;
+
+  async function handleConfirmWinner(optionId: string) {
+    setIsActing(true);
+    try {
+      await confirmWinner({ token, routeVoteId: vote._id, winningOptionId: optionId });
+      setConfirmingOptionId(null);
+    } finally {
+      setIsActing(false);
+    }
+  }
+
+  async function handleHideComment(submissionId: string) {
+    await hideComment({ token, submissionId }).catch(() => {});
+  }
+
+  async function handleChallengeStatusUpdate() {
+    const d = detail;
+    if (!d || !d.challenge || !challengeStatus) return;
+    setIsActing(true);
+    try {
+      await updateChallengeStatus({
+        token,
+        challengeId: d.challenge._id,
+        newStatus: challengeStatus,
+      });
+    } finally {
+      setIsActing(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">
+          ← Back
+        </button>
+        <StatusBadge status={detail.effectiveStatus} />
+      </div>
+
+      <DialogueBox title={detail.title}>
+        {detail.description && (
+          <p className="text-sm text-muted-foreground mb-3">{detail.description}</p>
+        )}
+        <div className="flex flex-col gap-3">
+          {detail.options.map((option) => {
+            const count = detail.optionVoteCounts[option._id] ?? 0;
+            const pct = total > 0 ? (count / total) * 100 : 0;
+            const isWinner = option._id === detail.confirmedWinningOptionId;
+            const isSuggested =
+              option._id === detail.suggestedWinnerId && !detail.confirmedWinningOptionId;
+
+            return (
+              <div
+                key={option._id}
+                className={`rounded-md border p-2 ${isWinner ? "border-primary bg-accent" : ""}`}
+              >
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div>
+                    <span className="font-medium text-sm">{option.title}</span>
+                    {option.locationLabel && (
+                      <span className="block text-xs text-muted-foreground">{option.locationLabel}</span>
+                    )}
+                    {isSuggested && !detail.isTied && (
+                      <span className="text-xs text-muted-foreground">(suggested winner)</span>
+                    )}
+                    {isWinner && <span className="text-xs font-medium">Winner</span>}
+                  </div>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {count} / {total}
+                  </span>
+                </div>
+                <StatBar value={pct} />
+                {canConfirmWinner &&
+                  (confirmingOptionId === option._id ? (
+                    <div className="flex gap-2 mt-2">
+                      <Button size="sm" onClick={() => handleConfirmWinner(option._id)} disabled={isActing}>
+                        Confirm
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => setConfirmingOptionId(null)}>
+                        Cancel
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      onClick={() => setConfirmingOptionId(option._id)}
+                    >
+                      Set as winner
+                    </Button>
+                  ))}
+              </div>
+            );
+          })}
+          {detail.isTied && !detail.confirmedWinningOptionId && (
+            <p className="text-xs text-muted-foreground">Tied — choose a winner manually.</p>
+          )}
+        </div>
+      </DialogueBox>
+
+      {detail.challenge && (
+        <DialogueBox title="Challenge">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">{detail.challenge.title}</span>
+              <StatusBadge status={detail.challenge.status} />
+            </div>
+            {detail.challenge.locationLabel && (
+              <span className="text-xs text-muted-foreground">{detail.challenge.locationLabel}</span>
+            )}
+            <div className="flex items-center gap-2">
+              <select
+                className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
+                value={challengeStatus ?? detail.challenge.status}
+                onChange={(e) => setChallengeStatus(e.target.value as ChallengeStatus)}
+              >
+                {CHALLENGE_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s.replace("_", " ")}
+                  </option>
+                ))}
+              </select>
+              <Button
+                size="sm"
+                onClick={handleChallengeStatusUpdate}
+                disabled={
+                  isActing ||
+                  challengeStatus === null ||
+                  challengeStatus === detail.challenge.status
+                }
+              >
+                Update
+              </Button>
+            </div>
+          </div>
+        </DialogueBox>
+      )}
+
+      {detail.submissions.some((s) => s.comment) && (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            All Comments
+          </span>
+          {detail.submissions
+            .filter((s) => s.comment)
+            .map((sub) => (
+              <div
+                key={sub._id}
+                className="border rounded-md px-3 py-2 text-sm flex items-start justify-between gap-2"
+              >
+                <div>
+                  <span>{sub.comment}</span>
+                  {sub.commentVisibility === "traveler_only" && (
+                    <span className="ml-2 text-xs text-muted-foreground">(private)</span>
+                  )}
+                  {sub.publicCommentHidden && (
+                    <span className="ml-2 text-xs text-muted-foreground">(hidden)</span>
+                  )}
+                </div>
+                {!sub.publicCommentHidden && sub.commentVisibility === "public" && (
+                  <button
+                    type="button"
+                    onClick={() => handleHideComment(sub._id)}
+                    className="text-xs text-muted-foreground hover:text-destructive shrink-0"
+                  >
+                    Hide
+                  </button>
+                )}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function RouteVoteProgress({
+  token,
+  onClose,
+  onRequestCoordinatePick,
+  referenceLocation,
+}: RouteVoteProgressProps) {
+  const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token }) ?? [];
+
+  const closeVote = useMutation(tripcastApi.routeVotes.travelerCloseRouteVote);
+  const cancelVote = useMutation(tripcastApi.routeVotes.travelerCancelRouteVote);
+  const archiveVote = useMutation(tripcastApi.routeVotes.travelerArchiveRouteVote);
+
+  const [view, setView] = useState<View>("list");
+  const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
+  const [actingVoteId, setActingVoteId] = useState<string | null>(null);
+
+  const selectedVote = votes.find((v) => v._id === selectedVoteId) ?? null;
+
+  const isCreateView = view === "create";
+
+  async function handleCloseVote(voteId: string) {
+    setActingVoteId(voteId);
+    try {
+      await closeVote({ token, routeVoteId: voteId });
+    } finally {
+      setActingVoteId(null);
+    }
+  }
+
+  async function handleCancelVote(voteId: string) {
+    setActingVoteId(voteId);
+    try {
+      await cancelVote({ token, routeVoteId: voteId });
+    } finally {
+      setActingVoteId(null);
+    }
+  }
+
+  async function handleArchiveVote(voteId: string) {
+    setActingVoteId(voteId);
+    try {
+      await archiveVote({ token, routeVoteId: voteId });
+    } finally {
+      setActingVoteId(null);
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ y: 40, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 40, opacity: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut" as const }}
+      // Full-screen during create (gives the form room); small panel for list/detail
+      className={
+        isCreateView
+          ? "absolute inset-0 z-[4] bg-background flex flex-col"
+          : "absolute bottom-5 left-5 z-[4] w-80 max-w-[calc(100%-40px)] max-h-[calc(100%-40px)] overflow-y-auto bg-background border rounded-md shadow-lg flex flex-col"
+      }
+    >
+      <div className="sticky top-0 bg-background border-b flex items-center justify-between px-4 py-3 z-[1] shrink-0">
+        <div className="flex items-center gap-2">
+          {(view === "create" || view === "detail") && (
+            <button
+              type="button"
+              onClick={() => {
+                setView("list");
+                setSelectedVoteId(null);
+              }}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              ←
+            </button>
+          )}
+          <span className="font-semibold text-sm">
+            {view === "create" ? "New Vote" : view === "detail" ? "Vote Details" : "Manage Votes"}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-muted-foreground hover:text-foreground text-sm"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <AnimatePresence mode="wait">
+          {view === "create" ? (
+            <motion.div
+              key="create"
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -20, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <CreateRouteVoteForm
+                token={token}
+                onCreated={(id) => {
+                  setSelectedVoteId(id);
+                  setView("detail");
+                }}
+                onCancel={() => setView("list")}
+                onRequestCoordinatePick={onRequestCoordinatePick}
+                referenceLocation={referenceLocation}
+              />
+            </motion.div>
+          ) : view === "detail" && selectedVote ? (
+            <motion.div
+              key="detail"
+              initial={{ x: 20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -20, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <VoteDetailView
+                token={token}
+                vote={selectedVote}
+                onBack={() => {
+                  setView("list");
+                  setSelectedVoteId(null);
+                }}
+              />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="list"
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 20, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex flex-col gap-3"
+            >
+              <Button size="sm" onClick={() => setView("create")} className="w-full">
+                + Propose new route
+              </Button>
+              {votes.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No active votes.</p>
+              ) : (
+                votes.map((vote) => (
+                  <VoteListCard
+                    key={vote._id}
+                    vote={vote}
+                    onViewDetail={() => {
+                      setSelectedVoteId(vote._id);
+                      setView("detail");
+                    }}
+                    onCloseVote={() => handleCloseVote(vote._id)}
+                    onCancel={() => handleCancelVote(vote._id)}
+                    onArchive={() => handleArchiveVote(vote._id)}
+                    isActing={actingVoteId === vote._id}
+                  />
+                ))
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
+}

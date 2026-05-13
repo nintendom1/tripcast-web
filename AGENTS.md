@@ -11,8 +11,9 @@
 - Run `gitleaks git --config .gitleaks.toml --redact --verbose` before pushing when Gitleaks is available.
 - Run `git diff --cached | gitleaks stdin --config .gitleaks.toml --redact --verbose` before committing staged changes when Gitleaks is available.
 - If Gitleaks is unavailable and cannot be installed, say so in the final response and rely on the GitHub Actions Gitleaks workflow as the remote check.
-- Consume Convex through `src/convex/tripcastApi.ts`.
-- Generate and send `clientId` for write mutations that require rate limiting.
+- Consume Convex through `src/convex/tripcastApi.ts`. Do not hand-write function references — regenerate this file via `npm run export:web-api` in `tripcast-backend` then copy the output.
+- All mutations take an explicit `token` arg for auth. Do not use `clientId`; that field was removed.
+- Route Vote (`src/features/routevote/`) lets the Traveler propose destinations and Support Crew vote. Key env var: `VITE_CONVEX_URL`.
 - Avoid unnecessary map remounts, style resets, or tile request loops.
 - Backend API changes belong in `tripcast-backend`.
 - If stuck after two failed attempts, stop, summarize what failed, and propose a better next attempt.
