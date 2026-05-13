@@ -167,6 +167,116 @@ export type Challenge = {
 };
 
 // ---------------------------------------------------------------------------
+// Traveler State types
+// ---------------------------------------------------------------------------
+
+export type TravelerMoodValue =
+  | "hopeful"
+  | "good"
+  | "surprised"
+  | "okay"
+  | "melancholy"
+  | "anxious"
+  | "rough"
+  | "disappointed"
+  | "why_did_i_bother";
+
+export type TravelerEnergyLevel = "very_low" | "low" | "medium" | "high" | "very_high";
+
+export type TravelerStomachLevel =
+  | "starving"
+  | "famished"
+  | "hungry"
+  | "satisfied"
+  | "full"
+  | "stuffed"
+  | "overate";
+
+export type TravelerStressLevel = "calm" | "mild" | "stressed" | "overwhelmed";
+
+export type TravelerSchedulePressureLevel = "ahead" | "comfortable" | "tight" | "rushed" | "behind";
+
+export type TravelerStateUpdateSource = "manual_state_update" | "checkpoint_update";
+
+export type TravelerStateFields = {
+  stateAt: number;
+  moodValue?: TravelerMoodValue;
+  moodScore?: number;
+  energyLevel?: TravelerEnergyLevel;
+  energyScore?: number;
+  stomachLevel?: TravelerStomachLevel;
+  stomachScore?: number;
+  stressLevel?: TravelerStressLevel;
+  stressScore?: number;
+  schedulePressureLevel?: TravelerSchedulePressureLevel;
+  schedulePressureScore?: number;
+  statusNote?: string;
+  statusEmoji?: string;
+  biometricSteps?: number;
+  biometricAverageHeartRate?: number;
+  biometricRestingHeartRate?: number;
+  biometricSleepHours?: number;
+  biometricActiveMinutes?: number;
+  biometricNote?: string;
+  biometricSource?: "manual";
+  biometricsUpdatedAt?: number;
+};
+
+export type TravelerState = TravelerStateFields & {
+  updatedAt: number;
+  associatedCheckpointId?: string;
+};
+
+export type TravelerStateVisibility = {
+  showTravelerState: boolean;
+  showMood: boolean;
+  showEnergy: boolean;
+  showStomach: boolean;
+  showStress: boolean;
+  showSchedulePressure: boolean;
+  showStatusNote: boolean;
+  showBiometrics: boolean;
+  updatedAt: number | null;
+};
+
+export type TravelerStateHistoryEntry = TravelerStateFields & {
+  _id: string;
+  changedAt: number;
+  source: TravelerStateUpdateSource;
+  associatedCheckpointId?: string;
+};
+
+export type TravelerStateForCrew =
+  | { visible: false; updatedAt: null }
+  | ({ visible: true } & Partial<TravelerStateFields> & { updatedAt: number | null });
+
+export type UpdateTravelerStateArgs = {
+  token: string;
+  stateAt?: number;
+  source?: TravelerStateUpdateSource;
+  associatedCheckpointId?: string;
+  moodValue?: TravelerMoodValue;
+  moodScore?: number;
+  energyLevel?: TravelerEnergyLevel;
+  energyScore?: number;
+  stomachLevel?: TravelerStomachLevel;
+  stomachScore?: number;
+  stressLevel?: TravelerStressLevel;
+  stressScore?: number;
+  schedulePressureLevel?: TravelerSchedulePressureLevel;
+  schedulePressureScore?: number;
+  statusNote?: string;
+  statusEmoji?: string;
+  biometricSteps?: number;
+  biometricAverageHeartRate?: number;
+  biometricRestingHeartRate?: number;
+  biometricSleepHours?: number;
+  biometricActiveMinutes?: number;
+  biometricNote?: string;
+  biometricSource?: "manual";
+};
+
+// ---------------------------------------------------------------------------
 // API namespace
 // ---------------------------------------------------------------------------
 
@@ -225,6 +335,12 @@ export const tripcastApi = {
       null
     >,
     logEveryoneOff: (anyApi as any).privacy.logEveryoneOff as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+    deleteTravelerState: (anyApi as any).privacy.deleteTravelerState as FunctionReference<
       "mutation",
       "public",
       { token: string },
@@ -348,6 +464,48 @@ export const tripcastApi = {
       "public",
       { token: string; routeVoteId: string },
       RouteVoteMapOverlay
+    >,
+  },
+  travelerState: {
+    travelerGetState: (anyApi as any).travelerState.travelerGetState as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { state: TravelerState | null; visibility: TravelerStateVisibility }
+    >,
+    supportCrewGetTravelerState: (anyApi as any).travelerState.supportCrewGetTravelerState as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TravelerStateForCrew
+    >,
+    travelerListStateHistory: (anyApi as any).travelerState.travelerListStateHistory as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TravelerStateHistoryEntry[]
+    >,
+    travelerUpdateState: (anyApi as any).travelerState.travelerUpdateState as FunctionReference<
+      "mutation",
+      "public",
+      UpdateTravelerStateArgs,
+      null
+    >,
+    travelerUpdateStateVisibility: (anyApi as any).travelerState.travelerUpdateStateVisibility as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        showTravelerState?: boolean;
+        showMood?: boolean;
+        showEnergy?: boolean;
+        showStomach?: boolean;
+        showStress?: boolean;
+        showSchedulePressure?: boolean;
+        showStatusNote?: boolean;
+        showBiometrics?: boolean;
+      },
+      null
     >,
   },
 } as const;

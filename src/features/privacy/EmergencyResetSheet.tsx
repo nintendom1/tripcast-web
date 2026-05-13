@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "convex/react";
-import { LogOut, MapPinOff, ShieldAlert, Trash2 } from "lucide-react";
+import { Activity, LogOut, MapPinOff, ShieldAlert, Trash2 } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -21,7 +21,7 @@ type EmergencyResetSheetProps = {
   onTripDataDeleted: () => void;
 };
 
-type ResetAction = "checkpoints" | "location" | "tripData" | "sessions";
+type ResetAction = "checkpoints" | "location" | "tripData" | "sessions" | "travelerState";
 
 type ActionConfig = {
   id: ResetAction;
@@ -60,6 +60,13 @@ const ACTIONS: ActionConfig[] = [
     confirmLabel: "Log everyone off",
     icon: LogOut,
   },
+  {
+    id: "travelerState",
+    title: "Delete Traveler State",
+    description: "Remove current state, visibility settings, and state history so Support Crew can no longer see traveler condition data.",
+    confirmLabel: "Delete traveler state",
+    icon: Activity,
+  },
 ];
 
 function friendlyError(error: unknown) {
@@ -83,6 +90,8 @@ function successMessage(action: ResetAction) {
       return "Trip data deletion started. Shared trip data will disappear as the reset completes.";
     case "sessions":
       return "Everyone has been logged off.";
+    case "travelerState":
+      return "Traveler State deletion started. State data will disappear as the reset completes.";
   }
 }
 
@@ -98,6 +107,7 @@ export default function EmergencyResetSheet({
   const clearTravelerLocation = useMutation(tripcastApi.privacy.clearTravelerLocation);
   const deleteAllTripData = useMutation(tripcastApi.privacy.deleteAllTripData);
   const logEveryoneOff = useMutation(tripcastApi.privacy.logEveryoneOff);
+  const deleteTravelerState = useMutation(tripcastApi.privacy.deleteTravelerState);
 
   const [confirmAction, setConfirmAction] = useState<ActionConfig | null>(null);
   const [pendingAction, setPendingAction] = useState<ResetAction | null>(null);
@@ -128,6 +138,8 @@ export default function EmergencyResetSheet({
         await clearTravelerLocation({ token });
       } else if (action.id === "tripData") {
         await deleteAllTripData({ token });
+      } else if (action.id === "travelerState") {
+        await deleteTravelerState({ token });
       } else {
         await logEveryoneOff({ token });
       }
@@ -159,7 +171,7 @@ export default function EmergencyResetSheet({
         <SheetHeader>
           <SheetTitle>Emergency Reset</SheetTitle>
           <SheetDescription>
-            Traveler-only privacy controls for removing shared TripCast data.
+            Traveler-only privacy controls.
           </SheetDescription>
         </SheetHeader>
 
