@@ -316,15 +316,6 @@ function TravelerCard({ token }: { token: string }) {
       {state.statusNote && (
         <p className="text-xs italic text-muted-foreground">&ldquo;{state.statusNote}&rdquo;</p>
       )}
-
-      <button
-        type="button"
-        disabled={clearing}
-        onClick={handleClear}
-        className="mt-1 w-full rounded-md border border-destructive/30 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
-      >
-        {clearing ? "Clearing…" : "Clear All"}
-      </button>
     </CardShell>
   );
 }

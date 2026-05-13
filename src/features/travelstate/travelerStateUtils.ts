@@ -144,14 +144,14 @@ export const ENERGY_SCORE_FOR_LEVEL: Record<TravelerEnergyLevel, number> = {
   low: 30,
   medium: 50,
   high: 70,
-  very_high: 90,
+  very_high: 100,
 };
 
 export function getEnergyLevelFromScore(score: number): TravelerEnergyLevel {
   if (score <= 20) return "very_low";
   if (score <= 40) return "low";
   if (score <= 60) return "medium";
-  if (score <= 80) return "high";
+  if (score <= 90) return "high";
   return "very_high";
 }
 
@@ -172,13 +172,13 @@ export function getStressLevelFromScore(score: number): TravelerStressLevel {
 
 // Stomach: 7 levels across 0-150
 export const STOMACH_SCORE_FOR_LEVEL: Record<TravelerStomachLevel, number> = {
-  starving: 6,
+  starving: 5,
   famished: 25,
-  hungry: 51,
-  satisfied: 78,
-  full: 101,
+  hungry: 50,
+  satisfied: 80,
+  full: 100,
   stuffed: 125,
-  overate: 144,
+  overate: 150,
 };
 
 // ---------------------------------------------------------------------------
@@ -200,8 +200,8 @@ export function getStomachLevelFromScore(score: number): TravelerStomachLevel {
   if (score <= 37) return "famished";
   if (score <= 65) return "hungry";
   if (score <= 90) return "satisfied";
-  if (score <= 112) return "full";
-  if (score <= 137) return "stuffed";
+  if (score <= 100) return "full";
+  if (score <= 135) return "stuffed";
   return "overate";
 }
 
