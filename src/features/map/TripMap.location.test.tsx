@@ -11,6 +11,9 @@ const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
 const updateTravelerLocation = vi.fn();
 const stopTravelerLocationSharing = vi.fn();
+const routeVotePanelProps: Array<{
+  fallbackOrigin: { lat: number; lon: number } | null;
+}> = [];
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -85,7 +88,10 @@ vi.mock("../routevote/RouteVoteButton", () => ({
 }));
 
 vi.mock("../routevote/RouteVotePanel", () => ({
-  default: () => null,
+  default: (props: { fallbackOrigin: { lat: number; lon: number } | null }) => {
+    routeVotePanelProps.push({ fallbackOrigin: props.fallbackOrigin });
+    return <div data-testid="route-vote-panel" />;
+  },
 }));
 
 vi.mock("../routevote/RouteVoteProgress", () => ({
@@ -127,6 +133,7 @@ function getTravelerMarker() {
 beforeEach(() => {
   vi.clearAllMocks();
   markerElements.length = 0;
+  routeVotePanelProps.length = 0;
   updateTravelerLocation.mockResolvedValue(null);
   stopTravelerLocationSharing.mockResolvedValue(null);
 
@@ -150,6 +157,38 @@ beforeEach(() => {
 });
 
 describe("TripMap location marker", () => {
+  it("keeps the route vote fallback origin stable across follower rerenders", async () => {
+    setupQueries({
+      checkpoints: [
+        {
+          _id: "checkpoint-1",
+          _creationTime: 1,
+          title: "Last stop",
+          lat: 47.61,
+          lon: -122.33,
+          source: "right_click",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    const { rerender } = render(<TripMap token="test-token" role="support_crew" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Votes" }));
+
+    await waitFor(() => {
+      expect(routeVotePanelProps.length).toBeGreaterThan(0);
+    });
+    const firstFallbackOrigin = routeVotePanelProps.at(-1)?.fallbackOrigin;
+
+    rerender(<TripMap token="test-token" role="support_crew" />);
+
+    await waitFor(() => {
+      expect(routeVotePanelProps.at(-1)?.fallbackOrigin).toBe(firstFallbackOrigin);
+    });
+  });
+
   it("pulses the follower marker when traveler location is actively shared", async () => {
     setupQueries({
       travelerLocation: { lat: 47.61, lon: -122.33, isSharing: true },

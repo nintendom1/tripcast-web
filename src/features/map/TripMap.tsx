@@ -496,12 +496,22 @@ export default function TripMap({
 
   const isPickingCoordinate = coordinatePickMode !== null;
   const latestCheckpoint = checkpoints.at(-1) ?? null;
-  const routeVoteFallbackOrigin =
-    role === "traveler" && isFiniteRouteCoordinate(livePosition)
-      ? livePosition
-      : isFiniteRouteCoordinate(latestCheckpoint)
-        ? { lat: latestCheckpoint.lat, lon: latestCheckpoint.lon }
-        : null;
+  const latestCheckpointLat = latestCheckpoint?.lat;
+  const latestCheckpointLon = latestCheckpoint?.lon;
+  const routeVoteFallbackOrigin = useMemo(() => {
+    if (role === "traveler" && isFiniteRouteCoordinate(livePosition)) {
+      return livePosition;
+    }
+    if (
+      typeof latestCheckpointLat === "number" &&
+      Number.isFinite(latestCheckpointLat) &&
+      typeof latestCheckpointLon === "number" &&
+      Number.isFinite(latestCheckpointLon)
+    ) {
+      return { lat: latestCheckpointLat, lon: latestCheckpointLon };
+    }
+    return null;
+  }, [latestCheckpointLat, latestCheckpointLon, livePosition, role]);
 
   return (
     <section className="relative min-h-0 flex-1" aria-label="Checkpoint map">
