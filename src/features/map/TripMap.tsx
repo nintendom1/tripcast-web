@@ -337,6 +337,18 @@ export default function TripMap({
   }, [locationResetNonce]);
 
   useEffect(() => {
+    if (role !== "traveler") return;
+
+    function handlePageHide() {
+      if (!isLocationSharingRef.current) return;
+      stopTravelerLocationSharing({ token }).catch(() => {});
+    }
+
+    window.addEventListener("pagehide", handlePageHide);
+    return () => window.removeEventListener("pagehide", handlePageHide);
+  }, [role, stopTravelerLocationSharing, token]);
+
+  useEffect(() => {
     if (tripDataResetNonce === 0) return;
     setIsVotePanelOpen(false);
     setVoteMapOverlay(null);
