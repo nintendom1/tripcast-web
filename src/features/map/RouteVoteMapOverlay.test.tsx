@@ -18,6 +18,7 @@ function makeMap() {
     addLayer: vi.fn(),
     isStyleLoaded: vi.fn(() => true),
     once: vi.fn(),
+    off: vi.fn(),
   };
 }
 
@@ -71,5 +72,44 @@ describe("RouteVoteMapOverlay", () => {
         .filter((feature: MockFeature) => feature.geometry.type === "Point")
         .map((feature: MockFeature) => feature.properties?.optionNumber),
     ).toEqual([2, 4]);
+  });
+
+  it("filters invalid overlay coordinates before adding the map source", () => {
+    const map = makeMap();
+    const dirtyOverlay = {
+      travelerLocation: { lat: null, lon: null },
+      coordinateOptions: [
+        { optionId: "bad-option", title: "Bad", lat: null, lon: null },
+        { optionId: "option-2", title: "Cafe", lat: 47.62, lon: -122.34 },
+      ],
+    } as unknown as RouteVoteMapOverlayType;
+
+    render(
+      <RouteVoteMapOverlay
+        map={map as never}
+        overlay={dirtyOverlay}
+        fallbackOrigin={{ lat: 47.61, lon: -122.33 }}
+      />,
+    );
+
+    const source = map.addSource.mock.calls[0][1];
+    expect(source.data.features.map((feature: MockFeature) => feature.geometry.type)).toEqual([
+      "LineString",
+      "Point",
+    ]);
+  });
+
+  it("cancels pending styledata overlay work on cleanup", () => {
+    const map = makeMap();
+    map.isStyleLoaded.mockReturnValue(false);
+
+    const { unmount } = render(<RouteVoteMapOverlay map={map as never} overlay={overlay} />);
+    const pendingStyleHandler = map.once.mock.calls[0][1];
+
+    unmount();
+    pendingStyleHandler();
+
+    expect(map.off).toHaveBeenCalledWith("styledata", pendingStyleHandler);
+    expect(map.addSource).not.toHaveBeenCalled();
   });
 });

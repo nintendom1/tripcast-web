@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import maplibregl from "maplibre-gl";
 import type { RouteVoteMapOverlay as RouteVoteMapOverlayType } from "../../convex/tripcastApi";
+import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 
 const SOURCE_ID = "route-vote-overlay";
 const LINES_LAYER_ID = "route-vote-lines";
@@ -28,12 +29,17 @@ function addOverlayLayers(
   optionNumberById?: Record<string, number> | null,
 ) {
   const { travelerLocation, coordinateOptions } = overlay;
-  const origin = travelerLocation ?? fallbackOrigin ?? null;
+  const origin = isFiniteRouteCoordinate(travelerLocation)
+    ? travelerLocation
+    : isFiniteRouteCoordinate(fallbackOrigin)
+      ? fallbackOrigin
+      : null;
+  const validOptions = coordinateOptions.filter(isFiniteRouteCoordinate);
 
-  if (coordinateOptions.length === 0) return;
+  if (validOptions.length === 0) return;
 
   const lines = origin
-    ? coordinateOptions.map((opt, index) => ({
+    ? validOptions.map((opt, index) => ({
         type: "Feature" as const,
         geometry: {
           type: "LineString" as const,
@@ -50,7 +56,7 @@ function addOverlayLayers(
       }))
     : [];
 
-  const points = coordinateOptions.map((opt, index) => ({
+  const points = validOptions.map((opt, index) => ({
     type: "Feature" as const,
     geometry: {
       type: "Point" as const,
@@ -123,8 +129,10 @@ export default function RouteVoteMapOverlay({
 }: RouteVoteMapOverlayProps) {
   useEffect(() => {
     if (!map) return;
+    let cancelled = false;
 
     const doAdd = () => {
+      if (cancelled) return;
       removeOverlayLayers(map);
       if (overlay) addOverlayLayers(map, overlay, fallbackOrigin, optionNumberById);
     };
@@ -136,6 +144,8 @@ export default function RouteVoteMapOverlay({
     }
 
     return () => {
+      cancelled = true;
+      map.off("styledata", doAdd);
       if (map.isStyleLoaded()) removeOverlayLayers(map);
     };
   }, [map, overlay, fallbackOrigin, optionNumberById]);

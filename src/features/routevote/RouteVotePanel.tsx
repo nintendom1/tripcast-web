@@ -13,7 +13,7 @@ import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { ChoiceList, ChoiceItem } from "../../components/rpg/ChoiceList";
 import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
-import { formatTimeRemaining } from "../../lib/routeVoteUtils";
+import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
 
 type RouteVotePanelProps = {
   token: string;
@@ -111,21 +111,16 @@ function VoteDetail({
       return;
     }
 
-    const allLons = [
-      ...(overlay.travelerLocation ? [overlay.travelerLocation.lon] : []),
-      ...(!overlay.travelerLocation && fallbackOrigin ? [fallbackOrigin.lon] : []),
-      ...overlay.coordinateOptions.map((o) => o.lon),
-    ];
-    const allLats = [
-      ...(overlay.travelerLocation ? [overlay.travelerLocation.lat] : []),
-      ...(!overlay.travelerLocation && fallbackOrigin ? [fallbackOrigin.lat] : []),
-      ...overlay.coordinateOptions.map((o) => o.lat),
-    ];
-    const sw: [number, number] = [Math.min(...allLons), Math.min(...allLats)];
-    const ne: [number, number] = [Math.max(...allLons), Math.max(...allLats)];
+    const origin = overlay.travelerLocation ?? fallbackOrigin;
+    const bounds = getRouteVoteMapBounds(overlay.coordinateOptions, origin);
+    if (!bounds) {
+      onRequestFitMap(null);
+      return;
+    }
+
     // Panel covers ~60 dvh; add proportional bottom padding so bounds stay visible above it
     const panelPadding = Math.round(window.innerHeight * 0.62) + 20;
-    onRequestFitMap([sw, ne], panelPadding);
+    onRequestFitMap(bounds, panelPadding);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay, fallbackOrigin, vote.options]);
 

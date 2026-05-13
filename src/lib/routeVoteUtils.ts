@@ -29,6 +29,36 @@ export function formatVotePct(count: number, total: number): string {
   return `${Math.round((count / total) * 100)}%`;
 }
 
+export function isFiniteRouteCoordinate<T extends { lat?: number; lon?: number }>(
+  coordinate: T | null | undefined,
+): coordinate is T & { lat: number; lon: number } {
+  return (
+    coordinate !== null &&
+    coordinate !== undefined &&
+    Number.isFinite(coordinate.lat) &&
+    Number.isFinite(coordinate.lon)
+  );
+}
+
+export function getRouteVoteMapBounds(
+  options: Array<{ lat: number; lon: number }>,
+  origin?: { lat: number; lon: number } | null,
+): [[number, number], [number, number]] | null {
+  const coordinates = [
+    ...(isFiniteRouteCoordinate(origin) ? [origin] : []),
+    ...options.filter(isFiniteRouteCoordinate),
+  ];
+
+  if (coordinates.length === 0) return null;
+
+  const lons = coordinates.map((coordinate) => coordinate.lon);
+  const lats = coordinates.map((coordinate) => coordinate.lat);
+  return [
+    [Math.min(...lons), Math.min(...lats)],
+    [Math.max(...lons), Math.max(...lats)],
+  ];
+}
+
 export function haversineDistanceMiles(
   lat1: number,
   lon1: number,

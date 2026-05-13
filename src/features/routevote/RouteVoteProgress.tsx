@@ -11,7 +11,7 @@ import { Button } from "../../components/ui/button";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
-import { formatTimeRemaining } from "../../lib/routeVoteUtils";
+import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
 
 type RouteVoteProgressProps = {
@@ -134,19 +134,9 @@ function VoteDetailView({
       return;
     }
 
-    const allLons = [
-      ...(overlay.travelerLocation ? [overlay.travelerLocation.lon] : []),
-      ...(!overlay.travelerLocation && fallbackOrigin ? [fallbackOrigin.lon] : []),
-      ...overlay.coordinateOptions.map((o) => o.lon),
-    ];
-    const allLats = [
-      ...(overlay.travelerLocation ? [overlay.travelerLocation.lat] : []),
-      ...(!overlay.travelerLocation && fallbackOrigin ? [fallbackOrigin.lat] : []),
-      ...overlay.coordinateOptions.map((o) => o.lat),
-    ];
-    const sw: [number, number] = [Math.min(...allLons), Math.min(...allLats)];
-    const ne: [number, number] = [Math.max(...allLons), Math.max(...allLats)];
-    onRequestFitMap([sw, ne], 120);
+    const origin = overlay.travelerLocation ?? fallbackOrigin;
+    const bounds = getRouteVoteMapBounds(overlay.coordinateOptions, origin);
+    onRequestFitMap(bounds, 120);
 
     return () => {
       onVoteOverlayChange(null);

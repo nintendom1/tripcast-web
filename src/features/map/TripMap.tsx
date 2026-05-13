@@ -19,6 +19,7 @@ import ChallengeMarkers from "./ChallengeMarkers";
 import RouteVoteButton from "../routevote/RouteVoteButton";
 import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
+import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const OPEN_FREE_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
@@ -27,6 +28,12 @@ type CoordinatePickMode = {
   optionIndex: number;
   callback: (coord: { lat: number; lon: number }) => void;
 };
+
+function isFiniteLngLatBounds(
+  bounds: [[number, number], [number, number]],
+) {
+  return bounds.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -471,6 +478,7 @@ export default function TripMap({
     paddingBottom?: number,
   ) {
     if (!mapRef.current || !bounds) return;
+    if (!isFiniteLngLatBounds(bounds)) return;
     const bottom = paddingBottom ?? 80;
     mapRef.current.fitBounds(bounds, {
       padding: { top: 80, right: 80, bottom, left: 80 },
@@ -489,9 +497,9 @@ export default function TripMap({
   const isPickingCoordinate = coordinatePickMode !== null;
   const latestCheckpoint = checkpoints.at(-1) ?? null;
   const routeVoteFallbackOrigin =
-    role === "traveler" && livePosition
+    role === "traveler" && isFiniteRouteCoordinate(livePosition)
       ? livePosition
-      : latestCheckpoint
+      : isFiniteRouteCoordinate(latestCheckpoint)
         ? { lat: latestCheckpoint.lat, lon: latestCheckpoint.lon }
         : null;
 
@@ -513,6 +521,7 @@ export default function TripMap({
         }
       />
       <RouteVoteMapOverlay
+        key={tripDataResetNonce}
         map={mapInstance}
         overlay={isVotePanelOpen ? voteMapOverlay : null}
         fallbackOrigin={routeVoteFallbackOrigin}
