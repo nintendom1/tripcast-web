@@ -9,6 +9,7 @@ type ChoiceListProps = {
 type ChoiceItemProps = {
   index: number;
   selected?: boolean;
+  disabled?: boolean;
   onClick?: () => void;
   children: React.ReactNode;
 };
@@ -17,14 +18,15 @@ export function ChoiceList({ children, className }: ChoiceListProps) {
   return <div className={cn("flex flex-col", className)}>{children}</div>;
 }
 
-export function ChoiceItem({ index, selected, onClick, children }: ChoiceItemProps) {
+export function ChoiceItem({ index, selected, disabled, onClick, children }: ChoiceItemProps) {
   return (
     <button
       type="button"
       onClick={onClick}
       onKeyDown={(e) => e.key === "Enter" && onClick?.()}
+      disabled={disabled}
       className={cn(
-        "flex items-start gap-3 border-l-2 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "flex items-start gap-3 border-l-2 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 disabled:cursor-not-allowed",
         selected
           ? "border-l-primary bg-accent text-accent-foreground"
           : "border-l-transparent hover:border-l-muted-foreground hover:bg-accent/50",
