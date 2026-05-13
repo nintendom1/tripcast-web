@@ -3,6 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { tripcastApi, type AddCheckpointArgs, type Checkpoint, type Role } from "../../convex/tripcastApi";
 import AddCheckpointSheet, { type SelectedCoordinate } from "./AddCheckpointSheet";
@@ -163,27 +164,40 @@ export default function TripMap({ token, role }: TripMapProps) {
   }, []);
 
   const mapClassName = useMemo(
-    () => (isPlacementMode ? "trip-map trip-map--placing" : "trip-map"),
+    () => (isPlacementMode ? "h-full min-h-[420px] w-full cursor-crosshair" : "h-full min-h-[420px] w-full"),
     [isPlacementMode],
   );
 
   return (
-    <section className="map-shell" aria-label="Checkpoint map">
+    <section className="relative min-h-0 flex-1" aria-label="Checkpoint map">
       <div ref={mapContainerRef} className={mapClassName} />
       <CheckpointMarkers map={mapInstance} token={token} />
 
-      {isPlacementMode ? (
-        <div className="placement-banner">
-          <span>Tap the map to place a pin.</span>
-          <button type="button" onClick={() => setIsPlacementMode(false)}>
-            Cancel
-          </button>
-        </div>
-      ) : null}
+      <AnimatePresence>
+        {isPlacementMode && (
+          <motion.div
+            key="placement-banner"
+            initial={{ y: -20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -20, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" }}
+            className="absolute left-1/2 top-4 z-[2] flex -translate-x-1/2 items-center gap-3 bg-navy text-white px-3 py-2.5 rounded-md shadow-lg max-w-[calc(100%-24px)]"
+          >
+            <span className="text-sm">Tap the map to place a pin.</span>
+            <button
+              type="button"
+              className="rounded bg-white text-navy px-2.5 py-1 text-sm font-medium"
+              onClick={() => setIsPlacementMode(false)}
+            >
+              Cancel
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {canWrite ? (
         <button
-          className="floating-add-button"
+          className="absolute bottom-5 right-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
           type="button"
           onClick={() => {
             setSelectedCoordinate(null);
