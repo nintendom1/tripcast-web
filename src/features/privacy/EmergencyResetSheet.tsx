@@ -171,7 +171,7 @@ export default function EmergencyResetSheet({
         <SheetHeader>
           <SheetTitle>Emergency Reset</SheetTitle>
           <SheetDescription>
-            Traveler-only privacy controls for removing shared TripCast data.
+            Traveler-only privacy controls.
           </SheetDescription>
         </SheetHeader>
 

@@ -110,7 +110,7 @@ export const SCHEDULE_VALUES: TravelerSchedulePressureLevel[] = [
 export const MOOD_EMOJI: Record<TravelerMoodValue, string> = {
   hopeful: "🙂",
   good: "😊",
-  surprised: "😮",
+  surprised: "😲",
   okay: "😐",
   melancholy: "😔",
   anxious: "😰",
