@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
+import { LocateFixed } from "lucide-react";
 
 import {
   tripcastApi,
@@ -52,9 +53,14 @@ function createPopupContent(checkpoint: Checkpoint) {
   return wrapper;
 }
 
-function CheckpointMarkers({ map, token }: { map: maplibregl.Map | null; token: string }) {
+function CheckpointMarkers({
+  map,
+  checkpoints,
+}: {
+  map: maplibregl.Map | null;
+  checkpoints: Checkpoint[];
+}) {
   const markersRef = useRef<Marker[]>([]);
-  const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
 
   useEffect(() => {
     if (!map) return;
@@ -82,9 +88,11 @@ function CheckpointMarkers({ map, token }: { map: maplibregl.Map | null; token: 
 function TravelerLocationMarker({
   map,
   position,
+  isPulsing,
 }: {
   map: maplibregl.Map | null;
   position: { lat: number; lon: number } | null;
+  isPulsing?: boolean;
 }) {
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
@@ -97,11 +105,16 @@ function TravelerLocationMarker({
       return;
     }
 
+    const markerClassName = isPulsing
+      ? "traveler-location-marker traveler-location-marker--pulsing"
+      : "traveler-location-marker";
+
     if (markerRef.current) {
       markerRef.current.setLngLat([position.lon, position.lat]);
+      markerRef.current.getElement().className = markerClassName;
     } else {
       const el = document.createElement("div");
-      el.className = "traveler-location-marker";
+      el.className = markerClassName;
 
       const ring = document.createElement("div");
       ring.className = "traveler-location-ring";
@@ -121,7 +134,7 @@ function TravelerLocationMarker({
       markerRef.current?.remove();
       markerRef.current = null;
     };
-  }, [map, position]);
+  }, [map, position, isPulsing]);
 
   return null;
 }
@@ -172,9 +185,11 @@ export default function TripMap({
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const placementModeRef = useRef(false);
-  const locationWatchRef = useRef<number | null>(null);
+  const browserLocationWatchRef = useRef<number | null>(null);
+  const isLocationSharingRef = useRef(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
@@ -184,10 +199,18 @@ export default function TripMap({
   const [isLocationSharing, setIsLocationSharing] = useState(false);
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const canWrite = role === "traveler";
 
   const updateTravelerLocation = useMutation(tripcastApi.travelerLocations.updateTravelerLocation);
+  const stopTravelerLocationSharing = useMutation(
+    tripcastApi.travelerLocations.stopTravelerLocationSharing,
+  );
+  const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
+  const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
+    token,
+  });
 
   const travelerVotes = useQuery(
     tripcastApi.routeVotes.travelerListRouteVotes,
@@ -267,11 +290,43 @@ export default function TripMap({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cleanup geolocation watch on unmount
+  useEffect(() => {
+    isLocationSharingRef.current = isLocationSharing;
+  }, [isLocationSharing]);
+
+  // Track the traveler's own browser location locally. Sharing only controls publishing.
+  useEffect(() => {
+    if (role !== "traveler" || !navigator.geolocation) return;
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lon, accuracy } = pos.coords;
+        setLivePosition({ lat, lon });
+
+        if (!isLocationSharingRef.current) return;
+        publishTravelerLocation({ lat, lon }, accuracy ?? undefined);
+      },
+      () => {},
+      { enableHighAccuracy: true },
+    );
+
+    browserLocationWatchRef.current = watchId;
+
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      if (browserLocationWatchRef.current === watchId) {
+        browserLocationWatchRef.current = null;
+      }
+    };
+  // publishTravelerLocation only uses refs plus stable mutation inputs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, token]);
+
+  // Cleanup toast timeout on unmount
   useEffect(() => {
     return () => {
-      if (locationWatchRef.current !== null) {
-        navigator.geolocation.clearWatch(locationWatchRef.current);
+      if (toastTimeoutRef.current !== null) {
+        clearTimeout(toastTimeoutRef.current);
       }
     };
   }, []);
@@ -289,42 +344,48 @@ export default function TripMap({
     coordinatePickModeRef.current = null;
   }, [tripDataResetNonce]);
 
+  function publishTravelerLocation(
+    position: { lat: number; lon: number },
+    accuracy?: number,
+  ) {
+    const last = lastSentLocationRef.current;
+    const now = Date.now();
+    const moved =
+      !last ||
+      Math.abs(position.lat - last.lat) > 0.0001 ||
+      Math.abs(position.lon - last.lon) > 0.0001 ||
+      now - last.sentAt > 30_000;
+    if (!moved) return;
+
+    lastSentLocationRef.current = {
+      lat: position.lat,
+      lon: position.lon,
+      sentAt: now,
+    };
+    updateTravelerLocation({
+      token,
+      lat: position.lat,
+      lon: position.lon,
+      accuracy,
+    }).catch(() => {});
+  }
+
   function stopLocationSharing() {
-    if (locationWatchRef.current !== null) {
-      navigator.geolocation.clearWatch(locationWatchRef.current);
-      locationWatchRef.current = null;
-    }
+    isLocationSharingRef.current = false;
     lastSentLocationRef.current = null;
-    setLivePosition(null);
     setIsLocationSharing(false);
+    stopTravelerLocationSharing({ token }).catch(() => {});
   }
 
   function handleToggleLocationSharing() {
     if (isLocationSharing) {
       stopLocationSharing();
     } else {
-      const watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-          setLivePosition({ lat, lon });
-
-          const last = lastSentLocationRef.current;
-          const now = Date.now();
-          const moved =
-            !last ||
-            Math.abs(lat - last.lat) > 0.0001 ||
-            Math.abs(lon - last.lon) > 0.0001 ||
-            now - last.sentAt > 30_000;
-          if (!moved) return;
-
-          lastSentLocationRef.current = { lat, lon, sentAt: now };
-          updateTravelerLocation({ token, lat, lon, accuracy: accuracy ?? undefined }).catch(() => {});
-        },
-        () => {},
-        { enableHighAccuracy: true },
-      );
-      locationWatchRef.current = watchId;
+      isLocationSharingRef.current = true;
       setIsLocationSharing(true);
+      if (livePosition) {
+        publishTravelerLocation(livePosition);
+      }
     }
   }
 
@@ -343,6 +404,48 @@ export default function TripMap({
 
   function handleVoteOverlayChange(overlay: RouteVoteMapOverlayType | null) {
     setVoteMapOverlay(overlay);
+  }
+
+  function showToast(message: string) {
+    if (toastTimeoutRef.current !== null) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToastMessage(message);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimeoutRef.current = null;
+    }, 3200);
+  }
+
+  function centerMapOnCoordinate(coordinate: { lat: number; lon: number }) {
+    const map = mapRef.current;
+    if (!map) return;
+
+    map.easeTo({
+      center: [coordinate.lon, coordinate.lat],
+      zoom: Math.max(map.getZoom(), 14),
+      duration: 700,
+    });
+  }
+
+  function handleCenterLocation() {
+    const currentLocation =
+      role === "traveler"
+        ? (livePosition ?? storedTravelerLocation ?? null)
+        : (storedTravelerLocation ?? null);
+
+    if (currentLocation) {
+      centerMapOnCoordinate(currentLocation);
+      return;
+    }
+
+    const lastCheckpoint = checkpoints[checkpoints.length - 1];
+    if (lastCheckpoint) {
+      centerMapOnCoordinate(lastCheckpoint);
+      return;
+    }
+
+    showToast("Traveler location is unknown.");
   }
 
   function handleRequestFitMap(
@@ -372,13 +475,16 @@ export default function TripMap({
       <div ref={mapContainerRef} className={mapClassName} />
 
       {/* Side-effect marker components */}
-      <CheckpointMarkers map={mapInstance} token={token} />
+      <CheckpointMarkers map={mapInstance} checkpoints={checkpoints} />
       <TravelerLocationMarker
         map={mapInstance}
+        isPulsing={
+          role === "traveler" ? isLocationSharing : storedTravelerLocation !== null
+        }
         position={
           role === "traveler"
             ? livePosition
-            : (isVotePanelOpen ? (voteMapOverlay?.travelerLocation ?? null) : null)
+            : (storedTravelerLocation ?? null)
         }
       />
       <RouteVoteMapOverlay
@@ -433,6 +539,35 @@ export default function TripMap({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            key="map-toast"
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 16, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" as const }}
+            role="status"
+            className={`absolute left-1/2 z-[6] -translate-x-1/2 rounded-md bg-navy px-4 py-2 text-sm font-medium text-white shadow-lg max-w-[calc(100%-24px)] ${
+              role === "traveler" ? "bottom-[176px]" : "bottom-[128px]"
+            }`}
+          >
+            {toastMessage}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <button
+        type="button"
+        className={`absolute right-5 z-[2] flex items-center justify-center gap-2 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors ${
+          role === "traveler" ? "bottom-[120px]" : "bottom-5"
+        }`}
+        onClick={handleCenterLocation}
+        aria-label="Center map on traveler location"
+      >
+        <LocateFixed className="h-4 w-4" aria-hidden="true" />
+      </button>
 
       {/* Traveler action buttons */}
       {canWrite && (
