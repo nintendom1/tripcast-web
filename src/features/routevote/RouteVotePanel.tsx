@@ -13,13 +13,17 @@ import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { ChoiceList, ChoiceItem } from "../../components/rpg/ChoiceList";
 import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
-import { formatTimeRemaining } from "../../lib/routeVoteUtils";
+import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
 
 type RouteVotePanelProps = {
   token: string;
   onClose: () => void;
-  onVoteOverlayChange: (overlay: RouteVoteMapOverlay | null) => void;
+  onVoteOverlayChange: (
+    overlay: RouteVoteMapOverlay | null,
+    optionNumberById?: Record<string, number> | null,
+  ) => void;
   onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
+  fallbackOrigin: { lat: number; lon: number } | null;
 };
 
 type VoteCardProps = {
@@ -56,8 +60,12 @@ type VoteDetailProps = {
   vote: VisibleRouteVote;
   onBack: () => void;
   onOptionFocus: (lat: number, lon: number) => void;
-  onVoteOverlayChange: (overlay: RouteVoteMapOverlay | null) => void;
+  onVoteOverlayChange: (
+    overlay: RouteVoteMapOverlay | null,
+    optionNumberById?: Record<string, number> | null,
+  ) => void;
   onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
+  fallbackOrigin: { lat: number; lon: number } | null;
 };
 
 function VoteDetail({
@@ -67,6 +75,7 @@ function VoteDetail({
   onOptionFocus,
   onVoteOverlayChange,
   onRequestFitMap,
+  fallbackOrigin,
 }: VoteDetailProps) {
   const submitVote = useMutation(tripcastApi.routeVotes.submitRouteVote);
   const markSeen = useMutation(tripcastApi.routeVotes.markRouteVoteSeen);
@@ -92,22 +101,28 @@ function VoteDetail({
 
   useEffect(() => {
     if (overlay === undefined) return;
-    onVoteOverlayChange(overlay);
+    const optionNumberById = Object.fromEntries(
+      vote.options.map((option, index) => [option._id, index + 1]),
+    );
+    onVoteOverlayChange(overlay, optionNumberById);
 
-    if (!overlay || !overlay.travelerLocation || overlay.coordinateOptions.length === 0) {
+    if (!overlay || overlay.coordinateOptions.length === 0) {
       onRequestFitMap(null);
       return;
     }
 
-    const allLons = [overlay.travelerLocation.lon, ...overlay.coordinateOptions.map((o) => o.lon)];
-    const allLats = [overlay.travelerLocation.lat, ...overlay.coordinateOptions.map((o) => o.lat)];
-    const sw: [number, number] = [Math.min(...allLons), Math.min(...allLats)];
-    const ne: [number, number] = [Math.max(...allLons), Math.max(...allLats)];
+    const origin = overlay.travelerLocation ?? fallbackOrigin;
+    const bounds = getRouteVoteMapBounds(overlay.coordinateOptions, origin);
+    if (!bounds) {
+      onRequestFitMap(null);
+      return;
+    }
+
     // Panel covers ~60 dvh; add proportional bottom padding so bounds stay visible above it
     const panelPadding = Math.round(window.innerHeight * 0.62) + 20;
-    onRequestFitMap([sw, ne], panelPadding);
+    onRequestFitMap(bounds, panelPadding);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlay]);
+  }, [overlay, fallbackOrigin, vote.options]);
 
   function toggleOption(id: string) {
     setSelectedOptionIds((prev) => {
@@ -246,6 +261,7 @@ export default function RouteVotePanel({
   onClose,
   onVoteOverlayChange,
   onRequestFitMap,
+  fallbackOrigin,
 }: RouteVotePanelProps) {
   const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token }) ?? [];
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
@@ -302,6 +318,7 @@ export default function RouteVotePanel({
                 onOptionFocus={handleOptionFocus}
                 onVoteOverlayChange={onVoteOverlayChange}
                 onRequestFitMap={onRequestFitMap}
+                fallbackOrigin={fallbackOrigin}
               />
             </motion.div>
           ) : (

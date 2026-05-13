@@ -19,6 +19,7 @@ import ChallengeMarkers from "./ChallengeMarkers";
 import RouteVoteButton from "../routevote/RouteVoteButton";
 import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
+import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const OPEN_FREE_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
@@ -27,6 +28,12 @@ type CoordinatePickMode = {
   optionIndex: number;
   callback: (coord: { lat: number; lon: number }) => void;
 };
+
+function isFiniteLngLatBounds(
+  bounds: [[number, number], [number, number]],
+) {
+  return bounds.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+}
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -196,6 +203,7 @@ export default function TripMap({
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [isVotePanelOpen, setIsVotePanelOpen] = useState(false);
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
+  const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(false);
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
@@ -352,6 +360,7 @@ export default function TripMap({
     if (tripDataResetNonce === 0) return;
     setIsVotePanelOpen(false);
     setVoteMapOverlay(null);
+    setVoteOptionNumberById(null);
     setCoordinatePickMode(null);
     coordinatePickModeRef.current = null;
   }, [tripDataResetNonce]);
@@ -414,8 +423,12 @@ export default function TripMap({
     setCoordinatePickMode(null);
   }
 
-  function handleVoteOverlayChange(overlay: RouteVoteMapOverlayType | null) {
+  function handleVoteOverlayChange(
+    overlay: RouteVoteMapOverlayType | null,
+    optionNumberById?: Record<string, number> | null,
+  ) {
     setVoteMapOverlay(overlay);
+    setVoteOptionNumberById(optionNumberById ?? null);
   }
 
   function showToast(message: string) {
@@ -465,6 +478,7 @@ export default function TripMap({
     paddingBottom?: number,
   ) {
     if (!mapRef.current || !bounds) return;
+    if (!isFiniteLngLatBounds(bounds)) return;
     const bottom = paddingBottom ?? 80;
     mapRef.current.fitBounds(bounds, {
       padding: { top: 80, right: 80, bottom, left: 80 },
@@ -481,6 +495,23 @@ export default function TripMap({
   );
 
   const isPickingCoordinate = coordinatePickMode !== null;
+  const latestCheckpoint = checkpoints.at(-1) ?? null;
+  const latestCheckpointLat = latestCheckpoint?.lat;
+  const latestCheckpointLon = latestCheckpoint?.lon;
+  const routeVoteFallbackOrigin = useMemo(() => {
+    if (role === "traveler" && isFiniteRouteCoordinate(livePosition)) {
+      return livePosition;
+    }
+    if (
+      typeof latestCheckpointLat === "number" &&
+      Number.isFinite(latestCheckpointLat) &&
+      typeof latestCheckpointLon === "number" &&
+      Number.isFinite(latestCheckpointLon)
+    ) {
+      return { lat: latestCheckpointLat, lon: latestCheckpointLon };
+    }
+    return null;
+  }, [latestCheckpointLat, latestCheckpointLon, livePosition, role]);
 
   return (
     <section className="relative min-h-0 flex-1" aria-label="Checkpoint map">
@@ -500,8 +531,11 @@ export default function TripMap({
         }
       />
       <RouteVoteMapOverlay
+        key={tripDataResetNonce}
         map={mapInstance}
         overlay={isVotePanelOpen ? voteMapOverlay : null}
+        fallbackOrigin={routeVoteFallbackOrigin}
+        optionNumberById={voteOptionNumberById}
       />
       {role === "traveler" && (
         <ChallengeMarkers map={mapInstance} votes={travelerVotes} />
@@ -641,9 +675,11 @@ export default function TripMap({
             onClose={() => {
               setIsVotePanelOpen(false);
               setVoteMapOverlay(null);
+              setVoteOptionNumberById(null);
             }}
             onVoteOverlayChange={handleVoteOverlayChange}
             onRequestFitMap={handleRequestFitMap}
+            fallbackOrigin={routeVoteFallbackOrigin}
           />
         )}
       </AnimatePresence>
@@ -652,9 +688,16 @@ export default function TripMap({
         <div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>
           <RouteVoteProgress
             token={token}
-            onClose={() => setIsVotePanelOpen(false)}
+            onClose={() => {
+              setIsVotePanelOpen(false);
+              setVoteMapOverlay(null);
+              setVoteOptionNumberById(null);
+            }}
             onRequestCoordinatePick={handleRequestCoordinatePick}
             referenceLocation={livePosition}
+            onVoteOverlayChange={handleVoteOverlayChange}
+            onRequestFitMap={handleRequestFitMap}
+            fallbackOrigin={routeVoteFallbackOrigin}
           />
         </div>
       )}

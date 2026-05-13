@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import maplibregl, { Marker } from "maplibre-gl";
 import type { RouteVoteListItem } from "../../convex/tripcastApi";
+import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 
 type ChallengeMarkersProps = {
   map: maplibregl.Map | null;
@@ -17,7 +18,7 @@ type ChallengePin = {
 function extractChallengePin(vote: RouteVoteListItem): ChallengePin | null {
   if (!vote.confirmedWinningOptionId || vote.effectiveStatus !== "resolved") return null;
   const option = vote.options.find((o) => o._id === vote.confirmedWinningOptionId);
-  if (!option || option.lat === undefined || option.lon === undefined) return null;
+  if (!isFiniteRouteCoordinate(option)) return null;
   return { id: vote._id, title: option.title, lat: option.lat, lon: option.lon };
 }
 

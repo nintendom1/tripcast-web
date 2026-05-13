@@ -3,7 +3,9 @@ import {
   computeEffectiveStatusClient,
   formatTimeRemaining,
   formatVotePct,
+  getRouteVoteMapBounds,
   haversineDistanceMiles,
+  isFiniteRouteCoordinate,
 } from "./routeVoteUtils";
 
 // ---------------------------------------------------------------------------
@@ -96,5 +98,32 @@ describe("haversineDistanceMiles", () => {
     const d = haversineDistanceMiles(47.6062, -122.3321, 40.7128, -74.006);
     expect(d).toBeGreaterThan(2300);
     expect(d).toBeLessThan(2500);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// map coordinate helpers
+// ---------------------------------------------------------------------------
+
+describe("route vote map coordinate helpers", () => {
+  it("rejects null and non-finite coordinates", () => {
+    expect(isFiniteRouteCoordinate({ lat: 47.61, lon: -122.33 })).toBe(true);
+    expect(isFiniteRouteCoordinate({ lat: Number.NaN, lon: -122.33 })).toBe(false);
+    expect(isFiniteRouteCoordinate({ lat: null, lon: -122.33 } as never)).toBe(false);
+  });
+
+  it("builds bounds from only finite origin and option coordinates", () => {
+    expect(
+      getRouteVoteMapBounds(
+        [
+          { lat: null, lon: null } as never,
+          { lat: 47.62, lon: -122.34 },
+        ],
+        { lat: 47.61, lon: -122.33 },
+      ),
+    ).toEqual([
+      [-122.34, 47.61],
+      [-122.33, 47.62],
+    ]);
   });
 });

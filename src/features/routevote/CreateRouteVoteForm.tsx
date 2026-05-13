@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { useMutation } from "convex/react";
 import { tripcastApi, type EnergyImpact, type ResultsVisibility } from "../../convex/tripcastApi";
@@ -21,7 +22,7 @@ type OptionFormValue = {
 type FormValues = {
   title: string;
   description: string;
-  expiresInDays: number;
+  expiresAtLocal: string;
   resultsVisibility: ResultsVisibility;
   options: OptionFormValue[];
 };
@@ -36,6 +37,14 @@ const EMPTY_OPTION: OptionFormValue = {
   estimatedDurationMinutes: "",
   estimatedEnergyImpact: "",
 };
+
+const DEFAULT_TITLE = "Where should I go next?";
+const DEFAULT_CLOSE_HOURS = 1;
+const CLOSE_PRESETS = [
+  { label: "1 hour", hours: 1 },
+  { label: "12 hours", hours: 12 },
+  { label: "72 hours", hours: 72 },
+] as const;
 
 type CreateRouteVoteFormProps = {
   token: string;
@@ -56,6 +65,16 @@ function parseOptionalFloat(value: string): number | undefined {
 function parseOptionalInt(value: string): number | undefined {
   const n = parseInt(value, 10);
   return isNaN(n) ? undefined : n;
+}
+
+function toLocalDateTimeInputValue(timestamp: number) {
+  const date = new Date(timestamp);
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(timestamp - offsetMs).toISOString().slice(0, 16);
+}
+
+function closeTimeFromNow(hours: number) {
+  return toLocalDateTimeInputValue(Date.now() + hours * 60 * 60 * 1000);
 }
 
 function DistanceWarning({
@@ -106,6 +125,7 @@ function OptionEditor({
 }) {
   const lat = useWatch({ control, name: `options.${index}.lat` });
   const lon = useWatch({ control, name: `options.${index}.lon` });
+  const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <div className="rounded-md border bg-muted/30 p-3 flex flex-col gap-2">
@@ -134,12 +154,6 @@ function OptionEditor({
       {errors.options?.[index]?.title && (
         <span className="text-destructive text-xs">{errors.options[index]?.title?.message}</span>
       )}
-
-      <Textarea
-        {...register(`options.${index}.description`)}
-        rows={2}
-        placeholder="Description (optional)"
-      />
 
       <Input
         {...register(`options.${index}.locationLabel`)}
@@ -171,31 +185,50 @@ function OptionEditor({
 
       <DistanceWarning lat={lat} lon={lon} referenceLocation={referenceLocation} />
 
-      <div className="grid grid-cols-2 gap-2">
-        <Input
-          {...register(`options.${index}.estimatedCostUsd`)}
-          placeholder="Est. cost USD"
-          type="number"
-          step="0.01"
-          min="0"
-        />
-        <Input
-          {...register(`options.${index}.estimatedDurationMinutes`)}
-          placeholder="Duration (min)"
-          type="number"
-          min="0"
-        />
-      </div>
-
-      <select
-        className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
-        {...register(`options.${index}.estimatedEnergyImpact`)}
+      <button
+        type="button"
+        onClick={() => setIsExpanded((v) => !v)}
+        className="text-xs text-muted-foreground hover:text-foreground underline text-left"
+        aria-expanded={isExpanded}
       >
-        <option value="">Energy impact (optional)</option>
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-      </select>
+        {isExpanded ? "Hide details" : "More details"}
+      </button>
+
+      {isExpanded && (
+        <div className="flex flex-col gap-2 border-t pt-2">
+          <Textarea
+            {...register(`options.${index}.description`)}
+            rows={2}
+            placeholder="Description (optional)"
+          />
+
+          <div className="grid grid-cols-2 gap-2">
+            <Input
+              {...register(`options.${index}.estimatedCostUsd`)}
+              placeholder="Est. cost USD"
+              type="number"
+              step="0.01"
+              min="0"
+            />
+            <Input
+              {...register(`options.${index}.estimatedDurationMinutes`)}
+              placeholder="Duration (min)"
+              type="number"
+              min="0"
+            />
+          </div>
+
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+            {...register(`options.${index}.estimatedEnergyImpact`)}
+          >
+            <option value="">Energy impact (optional)</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </div>
+      )}
     </div>
   );
 }
@@ -208,6 +241,7 @@ export default function CreateRouteVoteForm({
   referenceLocation,
 }: CreateRouteVoteFormProps) {
   const createVote = useMutation(tripcastApi.routeVotes.travelerCreateRouteVote);
+  const [selectedClosePreset, setSelectedClosePreset] = useState<number | null>(DEFAULT_CLOSE_HOURS);
 
   const {
     register,
@@ -217,9 +251,9 @@ export default function CreateRouteVoteForm({
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     defaultValues: {
-      title: "",
+      title: DEFAULT_TITLE,
       description: "",
-      expiresInDays: 5,
+      expiresAtLocal: closeTimeFromNow(DEFAULT_CLOSE_HOURS),
       resultsVisibility: "before_voting",
       options: [{ ...EMPTY_OPTION }, { ...EMPTY_OPTION }],
     },
@@ -228,7 +262,7 @@ export default function CreateRouteVoteForm({
   const { fields, append, remove } = useFieldArray({ control, name: "options" });
 
   async function onSubmit(values: FormValues) {
-    const expiresAt = Date.now() + values.expiresInDays * 24 * 60 * 60 * 1000;
+    const expiresAt = new Date(values.expiresAtLocal).getTime();
     const options = values.options.map((o) => ({
       title: o.title.trim(),
       description: o.description.trim() || undefined,
@@ -242,7 +276,7 @@ export default function CreateRouteVoteForm({
 
     const id = await createVote({
       token,
-      title: values.title.trim(),
+      title: values.title.trim() || DEFAULT_TITLE,
       description: values.description.trim() || undefined,
       expiresAt,
       resultsVisibility: values.resultsVisibility,
@@ -258,6 +292,11 @@ export default function CreateRouteVoteForm({
     });
   }
 
+  function handleClosePreset(hours: number) {
+    setSelectedClosePreset(hours);
+    setValue("expiresAtLocal", closeTimeFromNow(hours), { shouldValidate: true });
+  }
+
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
       <DialogueBox title="Propose a Route">
@@ -266,10 +305,9 @@ export default function CreateRouteVoteForm({
             Title
             <Input
               {...register("title", {
-                required: "Title is required",
                 maxLength: { value: 200, message: "Max 200 characters" },
               })}
-              placeholder="Where should we go next?"
+              placeholder={DEFAULT_TITLE}
             />
             {errors.title && (
               <span className="text-destructive text-xs">{errors.title.message}</span>
@@ -289,14 +327,39 @@ export default function CreateRouteVoteForm({
           </label>
 
           <div className="grid grid-cols-2 gap-3">
-            <label className="flex flex-col gap-1 text-sm font-medium">
-              Expires in (days)
+            <label className="flex flex-col gap-2 text-sm font-medium">
+              Voting Closes In
+              <div className="grid grid-cols-3 gap-1">
+                {CLOSE_PRESETS.map((preset) => (
+                  <button
+                    key={preset.hours}
+                    type="button"
+                    onClick={() => handleClosePreset(preset.hours)}
+                    className={`h-8 rounded-md border px-2 text-xs ${
+                      selectedClosePreset === preset.hours
+                        ? "border-primary bg-accent text-accent-foreground"
+                        : "border-input bg-background hover:bg-accent/50"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
               <Input
-                type="number"
-                min={1}
-                max={30}
-                {...register("expiresInDays", { valueAsNumber: true, min: 1, max: 30 })}
+                type="datetime-local"
+                {...register("expiresAtLocal", {
+                  required: "Close time is required",
+                  validate: (value) =>
+                    new Date(value).getTime() > Date.now() ||
+                    "Close time must be in the future",
+                  onChange: () => setSelectedClosePreset(null),
+                })}
               />
+              {errors.expiresAtLocal && (
+                <span className="text-destructive text-xs">
+                  {errors.expiresAtLocal.message}
+                </span>
+              )}
             </label>
             <label className="flex flex-col gap-1 text-sm font-medium">
               Results visible
