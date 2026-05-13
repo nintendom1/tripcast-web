@@ -65,11 +65,13 @@ function ChipRow<T extends string>({
   labels,
   selected,
   onSelect,
+  onDeselect,
 }: {
   values: T[];
   labels: Record<T, string>;
   selected: T | undefined;
   onSelect: (v: T) => void;
+  onDeselect?: () => void;
 }) {
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -77,7 +79,7 @@ function ChipRow<T extends string>({
         <button
           key={v}
           type="button"
-          onClick={() => onSelect(v)}
+          onClick={() => (selected === v ? onDeselect?.() : onSelect(v))}
           className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
             selected === v
               ? "bg-navy text-white"
@@ -277,6 +279,22 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
     return Date.now();
   }
 
+  function handleClearAll() {
+    setMoodValue(undefined);
+    setEnergyLevel(undefined);
+    setEnergyScore(undefined);
+    setStomachLevel(undefined);
+    setStomachScore(undefined);
+    setStressLevel(undefined);
+    setStressScore(undefined);
+    setScheduleLevel(undefined);
+    setStatusNote("");
+    setStatusEmoji("");
+    setStateAt("");
+    setError(null);
+    setSavedAt(null);
+  }
+
   async function handleSaveState() {
     if (saving) return;
     setSaving(true);
@@ -424,6 +442,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                 labels={MOOD_LABELS}
                 selected={moodValue}
                 onSelect={setMoodValue}
+                onDeselect={() => setMoodValue(undefined)}
               />
             </div>
 
@@ -440,6 +459,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                   setEnergyLevel(v);
                   setEnergyScore(ENERGY_SCORE_FOR_LEVEL[v]);
                 }}
+                onDeselect={() => { setEnergyLevel(undefined); setEnergyScore(undefined); }}
               />
               <ScoreSlider
                 value={energyScore}
@@ -466,6 +486,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                   setStomachLevel(v);
                   setStomachScore(STOMACH_SCORE_FOR_LEVEL[v]);
                 }}
+                onDeselect={() => { setStomachLevel(undefined); setStomachScore(undefined); }}
               />
               <ScoreSlider
                 value={stomachScore}
@@ -492,6 +513,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                   setStressLevel(v);
                   setStressScore(STRESS_SCORE_FOR_LEVEL[v]);
                 }}
+                onDeselect={() => { setStressLevel(undefined); setStressScore(undefined); }}
               />
               <ScoreSlider
                 value={stressScore}
@@ -515,6 +537,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                 labels={SCHEDULE_LABELS}
                 selected={scheduleLevel}
                 onSelect={setScheduleLevel}
+                onDeselect={() => setScheduleLevel(undefined)}
               />
             </div>
 
@@ -631,13 +654,26 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
             Saved {formatRelativeTime(savedAt)}
           </p>
         )}
-        <Button
-          onClick={tab === "state" ? handleSaveState : handleSaveVisibility}
-          disabled={saving}
-          className="w-full"
-        >
-          {saving ? "Saving…" : tab === "state" ? "Save State" : "Save Visibility"}
-        </Button>
+        {tab === "state" ? (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={handleClearAll}
+              className="flex-none"
+            >
+              Clear All
+            </Button>
+            <Button onClick={handleSaveState} disabled={saving} className="flex-1">
+              {saving ? "Saving…" : "Save State"}
+            </Button>
+          </div>
+        ) : (
+          <Button onClick={handleSaveVisibility} disabled={saving} className="w-full">
+            {saving ? "Saving…" : "Save Visibility"}
+          </Button>
+        )}
       </div>
     </motion.div>
   );

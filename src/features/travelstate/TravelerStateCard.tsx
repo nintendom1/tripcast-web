@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
@@ -22,6 +22,33 @@ type TravelerStateCardProps = {
   role: "traveler" | "support_crew";
 };
 
+// Two-segment bar: orange fills 0-100, amber-dark extends 100-150 beyond the marker
+function StomachBar({ score }: { score: number }) {
+  const markerPct = (100 / 150) * 100; // ~66.7%
+  const totalFillPct = (score / 150) * 100;
+  const normalFillPct = Math.min(totalFillPct, markerPct);
+  const overflowFillPct = Math.max(0, totalFillPct - markerPct);
+  return (
+    <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        className="absolute inset-y-0 left-0 bg-orange-500"
+        style={{ width: `${normalFillPct}%` }}
+      />
+      {overflowFillPct > 0 && (
+        <div
+          className="absolute inset-y-0 bg-amber-700"
+          style={{ left: `${markerPct}%`, width: `${overflowFillPct}%` }}
+        />
+      )}
+      {/* Divider at score=100 */}
+      <div
+        className="absolute inset-y-0 w-px bg-background/60"
+        style={{ left: `${markerPct}%` }}
+      />
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Shared layout helpers
 // ---------------------------------------------------------------------------
@@ -33,6 +60,7 @@ function StatRow({
   maxScore = 100,
   colorClass,
   chipOnly,
+  customBar,
 }: {
   label: string;
   value: string | undefined;
@@ -40,6 +68,7 @@ function StatRow({
   maxScore?: number;
   colorClass?: string;
   chipOnly?: boolean;
+  customBar?: React.ReactNode;
 }) {
   if (!value && score === undefined) return null;
   const pct = score !== undefined ? Math.round((score / maxScore) * 100) : undefined;
@@ -57,9 +86,9 @@ function StatRow({
         <span className="font-medium text-muted-foreground">{label}</span>
         <span className="font-semibold">{value ?? "—"}</span>
       </div>
-      {pct !== undefined && (
+      {customBar ?? (pct !== undefined && (
         <StatBar value={pct} label="" colorClass={colorClass ?? "bg-navy"} />
-      )}
+      ))}
     </div>
   );
 }
@@ -142,7 +171,7 @@ function SupportCrewCard({ token }: { token: string }) {
           }
           score={effectiveStomach}
           maxScore={150}
-          colorClass="bg-orange-500"
+          customBar={effectiveStomach !== undefined ? <StomachBar score={effectiveStomach} /> : undefined}
         />
       )}
 
@@ -291,7 +320,7 @@ function TravelerCard({ token }: { token: string }) {
           }
           score={effectiveStomach}
           maxScore={150}
-          colorClass="bg-orange-500"
+          customBar={effectiveStomach !== undefined ? <StomachBar score={effectiveStomach} /> : undefined}
         />
       )}
 
