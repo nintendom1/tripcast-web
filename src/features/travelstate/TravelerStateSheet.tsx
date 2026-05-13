@@ -190,6 +190,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
 
   const hasPopulatedRef = useRef(false);
   const [tab, setTab] = useState<TabView>("state");
+  const [reviewing, setReviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -295,7 +296,12 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
     setSavedAt(null);
   }
 
-  async function handleSaveState() {
+  function handleReviewState() {
+    setError(null);
+    setReviewing(true);
+  }
+
+  async function handleConfirmSave() {
     if (saving) return;
     setSaving(true);
     setError(null);
@@ -321,9 +327,11 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
         biometricNote: biometricNote || undefined,
         biometricSource: steps !== undefined || avgHr !== undefined ? "manual" : undefined,
       });
+      setReviewing(false);
       setSavedAt(Date.now());
     } catch (e) {
       setError(formatSaveError(e));
+      setReviewing(false);
     } finally {
       setSaving(false);
     }
@@ -408,7 +416,88 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
 
       {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto">
-        {tab === "state" && (
+        {reviewing && tab === "state" && (() => {
+          const prev = result?.state ?? null;
+          const prevAt = prev?.updatedAt ?? null;
+
+          function fmtLevel(label: string, score: number | undefined) {
+            return score !== undefined ? `${label} (${Math.round(score)})` : label;
+          }
+          function fmtNum(n: number | undefined) {
+            return n !== undefined ? String(n) : undefined;
+          }
+          function fmtText(s: string) {
+            if (!s) return undefined;
+            return s.length > 50 ? `"${s.slice(0, 50)}…"` : `"${s}"`;
+          }
+
+          type DiffEntry = { label: string; from: string | undefined; to: string | undefined };
+          const rows: DiffEntry[] = [];
+          function add(label: string, from: string | undefined, to: string | undefined) {
+            if ((from ?? "") !== (to ?? "")) rows.push({ label, from, to });
+          }
+
+          add("Mood",
+            prev?.moodValue ? MOOD_LABELS[prev.moodValue] : undefined,
+            moodValue ? MOOD_LABELS[moodValue] : undefined,
+          );
+          add("Energy",
+            prev?.energyLevel ? fmtLevel(ENERGY_LABELS[prev.energyLevel], prev.energyScore) : undefined,
+            energyLevel ? fmtLevel(ENERGY_LABELS[energyLevel], energyScore) : undefined,
+          );
+          add("Stomach",
+            prev?.stomachLevel ? fmtLevel(STOMACH_LABELS[prev.stomachLevel], prev.stomachScore) : undefined,
+            stomachLevel ? fmtLevel(STOMACH_LABELS[stomachLevel], stomachScore) : undefined,
+          );
+          add("Stress",
+            prev?.stressLevel ? fmtLevel(STRESS_LABELS[prev.stressLevel], prev.stressScore) : undefined,
+            stressLevel ? fmtLevel(STRESS_LABELS[stressLevel], stressScore) : undefined,
+          );
+          add("Schedule",
+            prev?.schedulePressureLevel ? SCHEDULE_LABELS[prev.schedulePressureLevel] : undefined,
+            scheduleLevel ? SCHEDULE_LABELS[scheduleLevel] : undefined,
+          );
+          add("Note", fmtText(prev?.statusNote ?? ""), fmtText(statusNote));
+          add("Emoji", prev?.statusEmoji || undefined, statusEmoji || undefined);
+          add("Steps", fmtNum(prev?.biometricSteps), fmtNum(steps));
+          add("Avg HR", fmtNum(prev?.biometricAverageHeartRate), fmtNum(avgHr));
+          add("Resting HR", fmtNum(prev?.biometricRestingHeartRate), fmtNum(restHr));
+          add("Sleep", fmtNum(prev?.biometricSleepHours), fmtNum(sleepHours));
+          add("Active min", fmtNum(prev?.biometricActiveMinutes), fmtNum(activeMin));
+          add("Bio note", fmtText(prev?.biometricNote ?? ""), fmtText(biometricNote));
+
+          return (
+            <div className="grid gap-4 p-4">
+              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+                {prevAt ? `Last entry: ${formatRelativeTime(prevAt)}` : "No previous entry"}
+              </p>
+              {rows.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No changes from last entry.</p>
+              ) : (
+                <div className="grid gap-3">
+                  {rows.map(({ label, from, to }) => (
+                    <div key={label} className="grid gap-0.5">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        {label}
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5 text-sm">
+                        <span className={from ? "text-muted-foreground line-through" : "text-muted-foreground"}>
+                          {from ?? "—"}
+                        </span>
+                        <span className="text-muted-foreground">→</span>
+                        <span className={to ? "font-medium" : "text-muted-foreground"}>
+                          {to ?? "—"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+        {!reviewing && tab === "state" && (
           <div className="grid gap-5 p-4">
             {/* When */}
             <div className="grid gap-1.5">
@@ -654,7 +743,22 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
             Saved {formatRelativeTime(savedAt)}
           </p>
         )}
-        {tab === "state" ? (
+        {reviewing && tab === "state" ? (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => setReviewing(false)}
+              className="flex-none"
+            >
+              Back
+            </Button>
+            <Button onClick={handleConfirmSave} disabled={saving} className="flex-1">
+              {saving ? "Saving…" : "Confirm"}
+            </Button>
+          </div>
+        ) : tab === "state" ? (
           <div className="flex gap-2">
             <Button
               type="button"
@@ -665,8 +769,8 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
             >
               Clear All
             </Button>
-            <Button onClick={handleSaveState} disabled={saving} className="flex-1">
-              {saving ? "Saving…" : "Save State"}
+            <Button onClick={handleReviewState} className="flex-1">
+              Save State
             </Button>
           </div>
         ) : (
