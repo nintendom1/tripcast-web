@@ -327,8 +327,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
         biometricNote: biometricNote || undefined,
         biometricSource: steps !== undefined || avgHr !== undefined ? "manual" : undefined,
       });
-      setReviewing(false);
-      setSavedAt(Date.now());
+      onClose();
     } catch (e) {
       setError(formatSaveError(e));
       setReviewing(false);
