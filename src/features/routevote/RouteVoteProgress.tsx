@@ -102,8 +102,21 @@ function VoteDetailView({
   const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus | null>(null);
   const [isActing, setIsActing] = useState(false);
 
-  if (!detail) {
+  if (detail === undefined) {
     return <div className="text-sm text-muted-foreground py-4 text-center">Loading…</div>;
+  }
+
+  if (detail === null) {
+    return (
+      <div className="flex flex-col gap-3 py-4 text-center">
+        <p className="text-sm text-muted-foreground">
+          This route vote was deleted.
+        </p>
+        <Button size="sm" variant="outline" onClick={onBack}>
+          Back to votes
+        </Button>
+      </div>
+    );
   }
 
   const total = detail.totalSubmissions;

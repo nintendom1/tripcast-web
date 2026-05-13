@@ -200,6 +200,32 @@ export const tripcastApi = {
       string
     >,
   },
+  privacy: {
+    deleteAllCheckpoints: (anyApi as any).privacy.deleteAllCheckpoints as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+    clearTravelerLocation: (anyApi as any).privacy.clearTravelerLocation as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+    deleteAllTripData: (anyApi as any).privacy.deleteAllTripData as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+    logEveryoneOff: (anyApi as any).privacy.logEveryoneOff as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+  },
   travelerLocations: {
     updateTravelerLocation: (anyApi as any).routeVotes.updateTravelerLocation as FunctionReference<
       "mutation",
@@ -292,7 +318,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string; routeVoteId: string },
-      RouteVoteDetail
+      RouteVoteDetail | null
     >,
     getActiveRouteVoteAlert: (anyApi as any).routeVotes.getActiveRouteVoteAlert as FunctionReference<
       "query",

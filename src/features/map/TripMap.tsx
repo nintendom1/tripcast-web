@@ -159,9 +159,16 @@ type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
 type TripMapProps = {
   token: string;
   role: Role;
+  locationResetNonce?: number;
+  tripDataResetNonce?: number;
 };
 
-export default function TripMap({ token, role }: TripMapProps) {
+export default function TripMap({
+  token,
+  role,
+  locationResetNonce = 0,
+  tripDataResetNonce = 0,
+}: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const placementModeRef = useRef(false);
@@ -269,15 +276,32 @@ export default function TripMap({ token, role }: TripMapProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (locationResetNonce === 0) return;
+    stopLocationSharing();
+  }, [locationResetNonce]);
+
+  useEffect(() => {
+    if (tripDataResetNonce === 0) return;
+    setIsVotePanelOpen(false);
+    setVoteMapOverlay(null);
+    setCoordinatePickMode(null);
+    coordinatePickModeRef.current = null;
+  }, [tripDataResetNonce]);
+
+  function stopLocationSharing() {
+    if (locationWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(locationWatchRef.current);
+      locationWatchRef.current = null;
+    }
+    lastSentLocationRef.current = null;
+    setLivePosition(null);
+    setIsLocationSharing(false);
+  }
+
   function handleToggleLocationSharing() {
     if (isLocationSharing) {
-      if (locationWatchRef.current !== null) {
-        navigator.geolocation.clearWatch(locationWatchRef.current);
-        locationWatchRef.current = null;
-      }
-      lastSentLocationRef.current = null;
-      setLivePosition(null);
-      setIsLocationSharing(false);
+      stopLocationSharing();
     } else {
       const watchId = navigator.geolocation.watchPosition(
         (pos) => {
