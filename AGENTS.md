@@ -14,9 +14,26 @@
 - Consume Convex through `src/convex/tripcastApi.ts`. Do not hand-write function references — regenerate this file via `npm run export:web-api` in `tripcast-backend` then copy the output.
 - All mutations take an explicit `token` arg for auth. Do not use `clientId`; that field was removed.
 - Route Vote (`src/features/routevote/`) lets the Traveler propose destinations and Support Crew vote. Key env var: `VITE_CONVEX_URL`.
+- When the backend returns `null` for a route vote detail query, the frontend shows a deleted-vote recovery state ("This route vote was deleted.") with a "Back to votes" button — do not treat this as a loading state.
+- Emergency Reset sheet (`src/features/privacy/EmergencyResetSheet.tsx`) is gated to the `"traveler"` role. Each action requires a confirmation tap. Rate-limit errors from the backend are shown in a `role="alert"` paragraph.
 - Avoid unnecessary map remounts, style resets, or tile request loops.
 - Backend API changes belong in `tripcast-backend`.
 - If stuck after two failed attempts, stop, summarize what failed, and propose a better next attempt.
+
+## Testing
+
+Run tests:
+
+```bash
+npm run test
+```
+
+Test runner: `vitest` with `jsdom` environment. React components use `@testing-library/react` and `@testing-library/user-event`. `convex/react` (`useMutation`, `useQuery`) is always mocked — no Convex deployment needed.
+
+When adding new component tests:
+- Mock `convex/react` at the top of the file.
+- For components that use `framer-motion`, mock it with an explicit `motion: { div: ... }` object — do NOT use a Proxy (causes JSX type errors).
+- When a component calls `useMutation` multiple times in fixed hook order, use a modulo-safe call-counter mock: `mockValues[callCount++ % N]`.
 
 ## Commits And PRs
 

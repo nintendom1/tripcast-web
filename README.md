@@ -24,6 +24,27 @@ Do not commit `.env` or `.env.local`. Keep real Convex URLs in `.env.local`; com
 npm run dev
 ```
 
+## Auth Flow
+
+Sessions are role-gated. A token is stored in `localStorage` after login. Every mutation and query passes `token` explicitly — there is no cookie-based auth. Roles are `"traveler"` (full write access, emergency reset) or `"support_crew"` (read + vote access only).
+
+## Features
+
+### Route Vote
+
+`src/features/routevote/` — the traveler proposes destination options and support crew votes. The traveler sees live results; support crew results visibility depends on the vote's `resultsVisibility` setting. When the backend returns `null` for a detail query (vote was deleted), the UI shows a deleted-vote recovery screen with a "Back to votes" button.
+
+### Emergency Reset
+
+`src/features/privacy/EmergencyResetSheet.tsx` — traveler-only sheet with four destructive actions:
+
+- **Delete Checkpoints** — removes all shared checkpoint data
+- **Clear Live Location** — removes the stored traveler GPS position
+- **Delete All Trip Data** — wipes all trip-related tables at once
+- **Log Everyone Off** — invalidates all active sessions including support crew
+
+Each action requires an in-UI confirmation tap. Rate-limit errors surface as an alert.
+
 ## Manual Test
 
 - Open the app and verify the map is centered on Seattle.
@@ -34,6 +55,23 @@ npm run dev
 - Try rapid repeated saves and verify errors are shown.
 - Test placement mode with browser mobile emulation.
 - Confirm `.env` and `.env.local` are not staged.
+
+## Testing
+
+Run the unit and component test suite:
+
+```bash
+npm run test
+```
+
+Test runner: `vitest` with `jsdom` environment. React components use `@testing-library/react` and `@testing-library/user-event`. `convex/react` hooks are mocked via `vi.mock` — no Convex deployment required.
+
+| File | Coverage |
+|---|---|
+| `src/lib/routeVoteUtils.test.ts` | `formatTimeRemaining`, `computeEffectiveStatusClient`, `formatVotePct`, `haversineDistanceMiles` |
+| `src/features/privacy/EmergencyResetSheet.test.tsx` | All four actions, confirmation dialog, error alert |
+| `src/App.privacy.test.tsx` | Emergency Reset button visibility by role |
+| `src/features/routevote/RouteVoteProgress.detail.test.tsx` | Deleted-vote recovery state, back-navigation |
 
 ## Secret Scanning
 
