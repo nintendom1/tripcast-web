@@ -1,6 +1,15 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import type { AddCheckpointArgs, CheckpointSource } from "../../convex/tripcastApi";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "../../components/ui/sheet";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -47,10 +56,6 @@ export default function AddCheckpointSheet({
     }
   }, [selectedCoordinate]);
 
-  if (!selectedCoordinate) {
-    return null;
-  }
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedCoordinate || isSaving) {
@@ -82,42 +87,50 @@ export default function AddCheckpointSheet({
   }
 
   return (
-    <div className="sheet-backdrop" role="presentation">
-      <form className="checkpoint-sheet" onSubmit={handleSubmit}>
-        <h2>Add Pin</h2>
-        <label>
-          Title optional
-          <input
-            autoFocus
-            maxLength={120}
-            onChange={(event) => setTitle(event.target.value)}
-            type="text"
-            value={title}
-          />
-        </label>
-        <label>
-          Note
-          <textarea
-            maxLength={1000}
-            onChange={(event) => setNote(event.target.value)}
-            rows={3}
-            value={note}
-          />
-        </label>
-        <div className="coordinate-readout">
-          <span>Lat {formatCoordinate(selectedCoordinate.lat)}</span>
-          <span>Lon {formatCoordinate(selectedCoordinate.lon)}</span>
-        </div>
-        {error ? <p className="form-error">{error}</p> : null}
-        <div className="sheet-actions">
-          <button disabled={isSaving} type="button" onClick={onClose}>
-            Cancel
-          </button>
-          <button disabled={isSaving} type="submit">
-            {isSaving ? "Saving..." : "Save Pin"}
-          </button>
-        </div>
-      </form>
-    </div>
+    <Sheet open={selectedCoordinate !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <SheetContent side="bottom">
+        <SheetHeader>
+          <SheetTitle>Add Pin</SheetTitle>
+        </SheetHeader>
+        <form className="flex flex-col gap-4 p-4 pt-0 overflow-y-auto" onSubmit={handleSubmit}>
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
+            Title <span className="font-normal text-muted-foreground">(optional)</span>
+            <Input
+              autoFocus
+              maxLength={120}
+              onChange={(e) => setTitle(e.target.value)}
+              type="text"
+              value={title}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
+            Note
+            <Textarea
+              maxLength={1000}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              value={note}
+            />
+          </label>
+          <div className="rounded-md bg-muted px-3 py-2 text-sm grid gap-1">
+            <span>Lat {formatCoordinate(selectedCoordinate?.lat ?? 0)}</span>
+            <span>Lon {formatCoordinate(selectedCoordinate?.lon ?? 0)}</span>
+          </div>
+          {error ? (
+            <p role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2">
+              {error}
+            </p>
+          ) : null}
+          <div className="flex gap-2 justify-end" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+            <Button disabled={isSaving} type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button disabled={isSaving} type="submit">
+              {isSaving ? "Saving…" : "Save Pin"}
+            </Button>
+          </div>
+        </form>
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -4,6 +4,9 @@ import { useMutation } from "convex/react";
 import { tripcastApi, type Role } from "../../convex/tripcastApi";
 import { getClientId } from "../../lib/clientId";
 import type { StoredSession } from "../../lib/auth";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 
 type AuthScreenProps = {
   onSignIn: (session: StoredSession) => void;
@@ -58,11 +61,13 @@ function CodeForm({ role, onSignIn, onBack }: CodeFormProps) {
   }
 
   return (
-    <form className="auth-form" onSubmit={handleSubmit}>
-      <h2>{role === "traveler" ? "Traveler" : "Support Crew"}</h2>
-      <label>
+    <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+      <h2 className="text-lg font-semibold">
+        {role === "traveler" ? "Traveler" : "Support Crew"}
+      </h2>
+      <label className="flex flex-col gap-1.5 font-medium text-sm">
         {label}
-        <input
+        <Input
           autoFocus
           autoComplete="off"
           disabled={isPending}
@@ -73,14 +78,18 @@ function CodeForm({ role, onSignIn, onBack }: CodeFormProps) {
           value={code}
         />
       </label>
-      {error ? <p className="form-error">{error}</p> : null}
-      <div className="auth-form-actions">
-        <button disabled={isPending} type="button" onClick={onBack}>
+      {error ? (
+        <p role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex gap-2 justify-end">
+        <Button disabled={isPending} type="button" variant="outline" onClick={onBack}>
           Back
-        </button>
-        <button disabled={isPending || code.trim().length === 0} type="submit">
+        </Button>
+        <Button disabled={isPending || code.trim().length === 0} type="submit">
           {isPending ? "Signing in…" : "Sign in"}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -89,41 +98,40 @@ function CodeForm({ role, onSignIn, onBack }: CodeFormProps) {
 export default function AuthScreen({ onSignIn }: AuthScreenProps) {
   const [roleView, setRoleView] = useState<RoleView>(null);
 
-  if (roleView) {
-    return (
-      <div className="auth-shell">
-        <div className="auth-card">
-          <h1 className="auth-title">TripCast</h1>
-          <CodeForm role={roleView} onSignIn={onSignIn} onBack={() => setRoleView(null)} />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="auth-shell">
-      <div className="auth-card">
-        <h1 className="auth-title">TripCast</h1>
-        <p className="auth-subtitle">Who are you?</p>
-        <div className="auth-role-buttons">
-          <button
-            className="auth-role-button"
-            type="button"
-            onClick={() => setRoleView("traveler")}
-          >
-            <span className="auth-role-label">Traveler</span>
-            <span className="auth-role-desc">Add and view checkpoints</span>
-          </button>
-          <button
-            className="auth-role-button"
-            type="button"
-            onClick={() => setRoleView("support_crew")}
-          >
-            <span className="auth-role-label">Support Crew</span>
-            <span className="auth-role-desc">View checkpoints only</span>
-          </button>
-        </div>
-      </div>
+    <div className="flex min-h-dvh items-center justify-center bg-muted/30 px-4 py-6">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-2xl text-center">TripCast</CardTitle>
+          {!roleView && (
+            <p className="text-sm text-muted-foreground text-center">Who are you?</p>
+          )}
+        </CardHeader>
+        <CardContent>
+          {roleView ? (
+            <CodeForm role={roleView} onSignIn={onSignIn} onBack={() => setRoleView(null)} />
+          ) : (
+            <div className="flex flex-col gap-3">
+              <button
+                className="flex flex-col items-start gap-0.5 rounded-lg border bg-muted/50 px-4 py-3.5 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                type="button"
+                onClick={() => setRoleView("traveler")}
+              >
+                <span className="text-sm font-semibold">Traveler</span>
+                <span className="text-xs text-muted-foreground">Add and view checkpoints</span>
+              </button>
+              <button
+                className="flex flex-col items-start gap-0.5 rounded-lg border bg-muted/50 px-4 py-3.5 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                type="button"
+                onClick={() => setRoleView("support_crew")}
+              >
+                <span className="text-sm font-semibold">Support Crew</span>
+                <span className="text-xs text-muted-foreground">View checkpoints only</span>
+              </button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
