@@ -19,9 +19,11 @@ export type SelectedCoordinate = {
 
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
-  onSave: (args: Omit<AddCheckpointArgs, "token">) => Promise<void>;
+  onSave: (args: Omit<AddCheckpointArgs, "token">) => Promise<string>;
+  onAfterSave?: (checkpointId: string) => Promise<void>;
   onClose: () => void;
   saveUnavailableMessage?: string;
+  stateSection?: React.ReactNode;
 };
 
 function formatCoordinate(value: number) {
@@ -39,8 +41,10 @@ function friendlyError(error: unknown) {
 export default function AddCheckpointSheet({
   selectedCoordinate,
   onSave,
+  onAfterSave,
   onClose,
   saveUnavailableMessage,
+  stateSection,
 }: AddCheckpointSheetProps) {
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -71,13 +75,14 @@ export default function AddCheckpointSheet({
     setIsSaving(true);
 
     try {
-      await onSave({
+      const checkpointId = await onSave({
         title: title.trim() ? title : undefined,
         note: note.trim() ? note : undefined,
         lat: selectedCoordinate.lat,
         lon: selectedCoordinate.lon,
         source: selectedCoordinate.source,
       });
+      if (onAfterSave) await onAfterSave(checkpointId);
       onClose();
     } catch (saveError) {
       setError(friendlyError(saveError));
@@ -116,6 +121,7 @@ export default function AddCheckpointSheet({
             <span>Lat {formatCoordinate(selectedCoordinate?.lat ?? 0)}</span>
             <span>Lon {formatCoordinate(selectedCoordinate?.lon ?? 0)}</span>
           </div>
+          {stateSection}
           {error ? (
             <p role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2">
               {error}

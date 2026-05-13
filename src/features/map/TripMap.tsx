@@ -19,6 +19,20 @@ import ChallengeMarkers from "./ChallengeMarkers";
 import RouteVoteButton from "../routevote/RouteVoteButton";
 import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
+import TravelerStateSheet from "../travelstate/TravelerStateSheet";
+import TravelerStateCard from "../travelstate/TravelerStateCard";
+import {
+  MOOD_LABELS,
+  MOOD_VALUES,
+  ENERGY_LABELS,
+  ENERGY_VALUES,
+  STOMACH_LABELS,
+  STOMACH_VALUES,
+  STRESS_LABELS,
+  STRESS_VALUES,
+  SCHEDULE_LABELS,
+  SCHEDULE_VALUES,
+} from "../travelstate/travelerStateUtils";
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
@@ -156,16 +170,127 @@ function ConvexCheckpointSheet({
   onClose: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
+  const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
 
-  async function handleSave(args: Omit<AddCheckpointArgs, "token">) {
-    await addCheckpoint({ ...args, token });
+  const [stateOpen, setStateOpen] = useState(false);
+  const [moodValue, setMoodValue] = useState<import("../../convex/tripcastApi").TravelerMoodValue | undefined>();
+  const [energyLevel, setEnergyLevel] = useState<import("../../convex/tripcastApi").TravelerEnergyLevel | undefined>();
+  const [stomachLevel, setStomachLevel] = useState<import("../../convex/tripcastApi").TravelerStomachLevel | undefined>();
+  const [stressLevel, setStressLevel] = useState<import("../../convex/tripcastApi").TravelerStressLevel | undefined>();
+  const [scheduleLevel, setScheduleLevel] = useState<import("../../convex/tripcastApi").TravelerSchedulePressureLevel | undefined>();
+  const [quickNote, setQuickNote] = useState("");
+
+  // Reset state fields when the sheet closes
+  useEffect(() => {
+    if (!selectedCoordinate) {
+      setStateOpen(false);
+      setMoodValue(undefined);
+      setEnergyLevel(undefined);
+      setStomachLevel(undefined);
+      setStressLevel(undefined);
+      setScheduleLevel(undefined);
+      setQuickNote("");
+    }
+  }, [selectedCoordinate]);
+
+  async function handleSave(args: Omit<AddCheckpointArgs, "token">): Promise<string> {
+    return addCheckpoint({ ...args, token });
   }
+
+  async function handleAfterSave(checkpointId: string) {
+    const hasStateFields =
+      moodValue !== undefined ||
+      energyLevel !== undefined ||
+      stomachLevel !== undefined ||
+      stressLevel !== undefined ||
+      scheduleLevel !== undefined ||
+      quickNote.trim() !== "";
+
+    if (!hasStateFields) return;
+
+    await updateState({
+      token,
+      source: "checkpoint_update",
+      associatedCheckpointId: checkpointId,
+      moodValue,
+      energyLevel,
+      stomachLevel,
+      stressLevel,
+      schedulePressureLevel: scheduleLevel,
+      statusNote: quickNote.trim() || undefined,
+    });
+  }
+
+  function Chips<T extends string>({ values, labels, selected, onSelect }: { values: T[]; labels: Record<T, string>; selected: T | undefined; onSelect: (v: T) => void }) {
+    return (
+      <div className="flex flex-wrap gap-1">
+        {values.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onSelect(v)}
+            className={`rounded-full px-2 py-0.5 text-xs font-medium transition-colors ${selected === v ? "bg-navy text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+          >
+            {labels[v]}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  const stateSection = (
+    <div className="grid gap-2">
+      <button
+        type="button"
+        onClick={() => setStateOpen((p) => !p)}
+        className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+      >
+        <span>{stateOpen ? "▾" : "▸"}</span> Also update Traveler State
+      </button>
+      {stateOpen && (
+        <div className="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm">
+          <div className="grid gap-1">
+            <span className="text-xs text-muted-foreground">Mood</span>
+            <Chips values={MOOD_VALUES} labels={MOOD_LABELS} selected={moodValue} onSelect={setMoodValue} />
+          </div>
+          <div className="grid gap-1">
+            <span className="text-xs text-muted-foreground">Energy</span>
+            <Chips values={ENERGY_VALUES} labels={ENERGY_LABELS} selected={energyLevel} onSelect={setEnergyLevel} />
+          </div>
+          <div className="grid gap-1">
+            <span className="text-xs text-muted-foreground">Stomach</span>
+            <Chips values={STOMACH_VALUES} labels={STOMACH_LABELS} selected={stomachLevel} onSelect={setStomachLevel} />
+          </div>
+          <div className="grid gap-1">
+            <span className="text-xs text-muted-foreground">Stress</span>
+            <Chips values={STRESS_VALUES} labels={STRESS_LABELS} selected={stressLevel} onSelect={setStressLevel} />
+          </div>
+          <div className="grid gap-1">
+            <span className="text-xs text-muted-foreground">Schedule</span>
+            <Chips values={SCHEDULE_VALUES} labels={SCHEDULE_LABELS} selected={scheduleLevel} onSelect={setScheduleLevel} />
+          </div>
+          <div className="grid gap-1">
+            <span className="text-xs text-muted-foreground">Note</span>
+            <textarea
+              value={quickNote}
+              onChange={(e) => setQuickNote(e.target.value.slice(0, 240))}
+              rows={2}
+              placeholder="How are you doing?"
+              className="rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <AddCheckpointSheet
       selectedCoordinate={selectedCoordinate}
       onClose={onClose}
       onSave={handleSave}
+      onAfterSave={handleAfterSave}
+      stateSection={stateSection}
     />
   );
 }
@@ -202,6 +327,7 @@ export default function TripMap({
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [isVotePanelOpen, setIsVotePanelOpen] = useState(false);
+  const [isTravelerStateOpen, setIsTravelerStateOpen] = useState(false);
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(false);
@@ -646,6 +772,16 @@ export default function TripMap({
       {role === "traveler" && (
         <button
           type="button"
+          className="absolute bottom-[130px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+          onClick={() => setIsTravelerStateOpen((p) => !p)}
+        >
+          {isTravelerStateOpen ? "Close State" : "State"}
+        </button>
+      )}
+
+      {role === "traveler" && (
+        <button
+          type="button"
           className="absolute bottom-[70px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
           onClick={() => setIsVotePanelOpen((p) => !p)}
         >
@@ -701,6 +837,19 @@ export default function TripMap({
           />
         </div>
       )}
+
+      <AnimatePresence>
+        {role === "traveler" && isTravelerStateOpen && (
+          <div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>
+            <TravelerStateSheet
+              token={token}
+              onClose={() => setIsTravelerStateOpen(false)}
+            />
+          </div>
+        )}
+      </AnimatePresence>
+
+      {role === "support_crew" && <TravelerStateCard token={token} />}
     </section>
   );
 }

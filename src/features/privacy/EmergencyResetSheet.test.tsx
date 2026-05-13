@@ -29,6 +29,7 @@ function makeProps(overrides?: Partial<Parameters<typeof EmergencyResetSheet>[0]
 //   2nd useMutation call → clearTravelerLocation
 //   3rd useMutation call → deleteAllTripData
 //   4th useMutation call → logEveryoneOff
+//   5th useMutation call → deleteTravelerState
 
 function setupMutationMocks() {
   const mocks = {
@@ -36,16 +37,18 @@ function setupMutationMocks() {
     clearTravelerLocation: vi.fn().mockResolvedValue(null),
     deleteAllTripData: vi.fn().mockResolvedValue(null),
     logEveryoneOff: vi.fn().mockResolvedValue(null),
+    deleteTravelerState: vi.fn().mockResolvedValue(null),
   };
   const mockValues = [
     mocks.deleteAllCheckpoints,
     mocks.clearTravelerLocation,
     mocks.deleteAllTripData,
     mocks.logEveryoneOff,
+    mocks.deleteTravelerState,
   ];
   let callCount = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.mocked(convexReact.useMutation).mockImplementation(() => mockValues[callCount++ % 4] as any);
+  vi.mocked(convexReact.useMutation).mockImplementation(() => mockValues[callCount++ % 5] as any);
   return mocks;
 }
 
@@ -54,7 +57,7 @@ beforeEach(() => {
 });
 
 describe("EmergencyResetSheet", () => {
-  it("shows all four action buttons when open", () => {
+  it("shows all five action buttons when open", () => {
     setupMutationMocks();
     render(<EmergencyResetSheet {...makeProps()} />);
 
@@ -62,6 +65,7 @@ describe("EmergencyResetSheet", () => {
     expect(screen.getByText("Clear Live Location")).toBeInTheDocument();
     expect(screen.getByText("Delete All Trip Data")).toBeInTheDocument();
     expect(screen.getByText("Log Everyone Off")).toBeInTheDocument();
+    expect(screen.getByText("Delete Traveler State")).toBeInTheDocument();
   });
 
   it("shows the confirmation dialog after clicking an action", async () => {
