@@ -54,7 +54,12 @@ export type CommentVisibility = "public" | "traveler_only";
 
 export type ChallengeStatus = "planned" | "in_progress" | "completed" | "dropped";
 
-export type TravelerLocation = { lat: number; lon: number; accuracy?: number } | null;
+export type TravelerLocation = {
+  lat: number;
+  lon: number;
+  accuracy?: number;
+  isSharing: true;
+} | null;
 
 export type RouteVoteOptionInput = {
   title: string;
@@ -231,6 +236,12 @@ export const tripcastApi = {
       "mutation",
       "public",
       { token: string; lat: number; lon: number; accuracy?: number },
+      null
+    >,
+    stopTravelerLocationSharing: (anyApi as any).routeVotes.stopTravelerLocationSharing as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
       null
     >,
     getTravelerLocation: (anyApi as any).routeVotes.getTravelerLocation as FunctionReference<
