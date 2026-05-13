@@ -194,4 +194,29 @@ describe("TripMap location marker", () => {
       accuracy: undefined,
     });
   });
+
+  it("stops location sharing on page hide when the traveler is sharing", async () => {
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({
+        coords: {
+          latitude: 47.62,
+          longitude: -122.34,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /share location/i }));
+    window.dispatchEvent(new Event("pagehide"));
+
+    await waitFor(() => {
+      expect(stopTravelerLocationSharing).toHaveBeenCalledWith({
+        token: "test-token",
+      });
+    });
+  });
 });
