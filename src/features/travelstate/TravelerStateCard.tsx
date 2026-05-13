@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -19,7 +19,12 @@ import {
 
 type TravelerStateCardProps = {
   token: string;
+  role: "traveler" | "support_crew";
 };
+
+// ---------------------------------------------------------------------------
+// Shared layout helpers
+// ---------------------------------------------------------------------------
 
 function StatRow({
   label,
@@ -27,25 +32,30 @@ function StatRow({
   score,
   maxScore = 100,
   colorClass,
+  chipOnly,
 }: {
   label: string;
   value: string | undefined;
   score: number | undefined;
   maxScore?: number;
   colorClass?: string;
+  chipOnly?: boolean;
 }) {
   if (!value && score === undefined) return null;
   const pct = score !== undefined ? Math.round((score / maxScore) * 100) : undefined;
+  if (chipOnly) {
+    return (
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="rounded-full bg-muted px-2 py-0.5 font-medium">{value ?? "—"}</span>
+      </div>
+    );
+  }
   return (
     <div className="grid gap-0.5">
       <div className="flex items-center justify-between text-xs">
         <span className="font-medium text-muted-foreground">{label}</span>
-        <span className="font-semibold">
-          {value ?? "—"}
-          {score !== undefined && (
-            <span className="text-muted-foreground font-normal"> · {Math.round(score)}</span>
-          )}
-        </span>
+        <span className="font-semibold">{value ?? "—"}</span>
       </div>
       {pct !== undefined && (
         <StatBar value={pct} label="" colorClass={colorClass ?? "bg-navy"} />
@@ -54,13 +64,16 @@ function StatRow({
   );
 }
 
-export default function TravelerStateCard({ token }: TravelerStateCardProps) {
+// ---------------------------------------------------------------------------
+// Support Crew card — queries supportCrewGetTravelerState
+// ---------------------------------------------------------------------------
+
+function SupportCrewCard({ token }: { token: string }) {
   const data = useQuery(tripcastApi.travelerState.supportCrewGetTravelerState, { token });
   const [expanded, setExpanded] = useState(true);
   const [now, setNow] = useState(Date.now());
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Tick every 60s to refresh relative time and stomach decay
   useEffect(() => {
     timerRef.current = setInterval(() => setNow(Date.now()), 60_000);
     return () => {
@@ -68,25 +81,12 @@ export default function TravelerStateCard({ token }: TravelerStateCardProps) {
     };
   }, []);
 
-  if (!data) return null;
-
-  if (!data.visible) {
-    return (
-      <div className="absolute top-5 left-5 z-[2] rounded-lg border bg-background/90 px-3 py-2 text-xs text-muted-foreground shadow-md backdrop-blur-sm">
-        Traveler State hidden
-      </div>
-    );
-  }
+  // Feedback #1: return null when hidden
+  if (!data || !data.visible) return null;
 
   const crew = data as Extract<TravelerStateForCrew, { visible: true }>;
 
-  if (crew.updatedAt === null) {
-    return (
-      <div className="absolute top-5 left-5 z-[2] rounded-lg border bg-background/90 px-3 py-2 text-xs text-muted-foreground shadow-md backdrop-blur-sm">
-        Traveler State — no update yet
-      </div>
-    );
-  }
+  if (crew.updatedAt === null) return null;
 
   const emoji = getStateEmoji({
     moodValue: crew.moodValue,
@@ -102,137 +102,291 @@ export default function TravelerStateCard({ token }: TravelerStateCardProps) {
     effectiveStomach !== undefined ? getStomachLevelFromScore(effectiveStomach) : undefined;
 
   const relTime = formatRelativeTime(crew.updatedAt);
+  // suppress unused warning
+  void now;
 
   return (
+    <CardShell
+      emoji={emoji}
+      relTime={relTime}
+      expanded={expanded}
+      onToggle={() => setExpanded((p) => !p)}
+    >
+      {crew.moodValue !== undefined && (
+        <StatRow
+          label="Mood"
+          value={MOOD_LABELS[crew.moodValue]}
+          score={undefined}
+          chipOnly
+        />
+      )}
+
+      {crew.energyLevel !== undefined && (
+        <StatRow
+          label="Energy"
+          value={ENERGY_LABELS[crew.energyLevel]}
+          score={crew.energyScore}
+          colorClass="bg-amber-500"
+        />
+      )}
+
+      {(effectiveStomachLevel !== undefined || crew.stomachLevel !== undefined) && (
+        <StatRow
+          label="Stomach"
+          value={
+            effectiveStomachLevel
+              ? STOMACH_LABELS[effectiveStomachLevel]
+              : crew.stomachLevel
+                ? STOMACH_LABELS[crew.stomachLevel]
+                : undefined
+          }
+          score={effectiveStomach}
+          maxScore={150}
+          colorClass="bg-orange-500"
+        />
+      )}
+
+      {crew.stressLevel !== undefined && (
+        <StatRow
+          label="Stress"
+          value={STRESS_LABELS[crew.stressLevel]}
+          score={crew.stressScore}
+          colorClass="bg-red-500"
+        />
+      )}
+
+      {crew.schedulePressureLevel !== undefined && (
+        <StatRow
+          label="Schedule"
+          value={SCHEDULE_LABELS[crew.schedulePressureLevel]}
+          score={undefined}
+          chipOnly
+        />
+      )}
+
+      {crew.statusNote && (
+        <p className="text-xs italic text-muted-foreground">&ldquo;{crew.statusNote}&rdquo;</p>
+      )}
+
+      {(crew.biometricSteps !== undefined ||
+        crew.biometricAverageHeartRate !== undefined ||
+        crew.biometricSleepHours !== undefined ||
+        crew.biometricActiveMinutes !== undefined) && (
+        <div className="grid gap-1 rounded-md border bg-muted/30 px-2 py-1.5 text-xs">
+          {crew.biometricSteps !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Steps</span>
+              <span className="font-medium">{crew.biometricSteps.toLocaleString()}</span>
+            </div>
+          )}
+          {crew.biometricAverageHeartRate !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Avg HR</span>
+              <span className="font-medium">{crew.biometricAverageHeartRate} bpm</span>
+            </div>
+          )}
+          {crew.biometricSleepHours !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Sleep</span>
+              <span className="font-medium">{crew.biometricSleepHours}h</span>
+            </div>
+          )}
+          {crew.biometricActiveMinutes !== undefined && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Active</span>
+              <span className="font-medium">{crew.biometricActiveMinutes} min</span>
+            </div>
+          )}
+        </div>
+      )}
+    </CardShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Traveler card — queries travelerGetState, shows own data + Clear button (#10)
+// ---------------------------------------------------------------------------
+
+function TravelerCard({ token }: { token: string }) {
+  const data = useQuery(tripcastApi.travelerState.travelerGetState, { token });
+  const deleteTravelerState = useMutation(tripcastApi.privacy.deleteTravelerState);
+  const [expanded, setExpanded] = useState(true);
+  const [now, setNow] = useState(Date.now());
+  const [clearing, setClearing] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    timerRef.current = setInterval(() => setNow(Date.now()), 60_000);
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  void now;
+
+  if (!data || !data.state) return null;
+
+  const { state } = data;
+  const updatedAt = state.updatedAt;
+
+  const emoji = getStateEmoji({
+    moodValue: state.moodValue,
+    energyLevel: state.energyLevel,
+    stomachLevel: state.stomachLevel,
+  });
+
+  const effectiveStomach =
+    state.stomachScore !== undefined
+      ? computeEffectiveStomachScore(state.stomachScore, updatedAt)
+      : undefined;
+  const effectiveStomachLevel =
+    effectiveStomach !== undefined ? getStomachLevelFromScore(effectiveStomach) : undefined;
+
+  const relTime = formatRelativeTime(updatedAt);
+
+  async function handleClear() {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      await deleteTravelerState({ token });
+    } finally {
+      setClearing(false);
+    }
+  }
+
+  return (
+    <CardShell
+      emoji={emoji}
+      relTime={relTime}
+      expanded={expanded}
+      onToggle={() => setExpanded((p) => !p)}
+    >
+      {state.moodValue !== undefined && (
+        <StatRow
+          label="Mood"
+          value={MOOD_LABELS[state.moodValue]}
+          score={undefined}
+          chipOnly
+        />
+      )}
+
+      {state.energyLevel !== undefined && (
+        <StatRow
+          label="Energy"
+          value={ENERGY_LABELS[state.energyLevel]}
+          score={state.energyScore}
+          colorClass="bg-amber-500"
+        />
+      )}
+
+      {(effectiveStomachLevel !== undefined || state.stomachLevel !== undefined) && (
+        <StatRow
+          label="Stomach"
+          value={
+            effectiveStomachLevel
+              ? STOMACH_LABELS[effectiveStomachLevel]
+              : state.stomachLevel
+                ? STOMACH_LABELS[state.stomachLevel]
+                : undefined
+          }
+          score={effectiveStomach}
+          maxScore={150}
+          colorClass="bg-orange-500"
+        />
+      )}
+
+      {state.stressLevel !== undefined && (
+        <StatRow
+          label="Stress"
+          value={STRESS_LABELS[state.stressLevel]}
+          score={state.stressScore}
+          colorClass="bg-red-500"
+        />
+      )}
+
+      {state.schedulePressureLevel !== undefined && (
+        <StatRow
+          label="Schedule"
+          value={SCHEDULE_LABELS[state.schedulePressureLevel]}
+          score={undefined}
+          chipOnly
+        />
+      )}
+
+      {state.statusNote && (
+        <p className="text-xs italic text-muted-foreground">&ldquo;{state.statusNote}&rdquo;</p>
+      )}
+
+      <button
+        type="button"
+        disabled={clearing}
+        onClick={handleClear}
+        className="mt-1 w-full rounded-md border border-destructive/30 py-1 text-xs font-medium text-destructive hover:bg-destructive/10 disabled:opacity-50"
+      >
+        {clearing ? "Clearing…" : "Clear All"}
+      </button>
+    </CardShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared shell — compact header (#2) with emoji + "State" + time + collapse
+// ---------------------------------------------------------------------------
+
+function CardShell({
+  emoji,
+  relTime,
+  expanded,
+  onToggle,
+  children,
+}: {
+  emoji: string;
+  relTime: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
     <div
-      className="absolute top-5 left-5 z-[2] w-64 rounded-lg border bg-background/95 shadow-md backdrop-blur-sm"
+      className="absolute top-5 left-5 z-[2] w-56 rounded-lg border bg-background/95 shadow-md backdrop-blur-sm"
       aria-label="Traveler State"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="text-xl" aria-hidden="true">
+      <div className="flex items-center justify-between px-2.5 py-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="text-base" aria-hidden="true">
             {emoji}
           </span>
-          <span className="text-xs font-bold">Traveler State</span>
+          <span className="text-xs font-bold">State</span>
+          <span className="text-xs text-muted-foreground" suppressHydrationWarning>
+            · {relTime}
+          </span>
         </div>
         <button
           type="button"
-          onClick={() => setExpanded((p) => !p)}
+          onClick={onToggle}
           aria-label={expanded ? "Collapse" : "Expand"}
           className="rounded p-0.5 hover:bg-muted"
         >
           {expanded ? (
-            <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronUp className="h-3 w-3 text-muted-foreground" />
           ) : (
-            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronDown className="h-3 w-3 text-muted-foreground" />
           )}
         </button>
       </div>
 
       {expanded && (
-        <div className="grid gap-2.5 border-t px-3 py-3">
-          {crew.moodValue !== undefined && (
-            <StatRow
-              label="Mood"
-              value={MOOD_LABELS[crew.moodValue]}
-              score={crew.moodScore}
-              colorClass="bg-indigo-500"
-            />
-          )}
-
-          {crew.energyLevel !== undefined && (
-            <StatRow
-              label="Energy"
-              value={ENERGY_LABELS[crew.energyLevel]}
-              score={crew.energyScore}
-              colorClass="bg-amber-500"
-            />
-          )}
-
-          {(effectiveStomachLevel !== undefined || crew.stomachLevel !== undefined) && (
-            <StatRow
-              label="Stomach"
-              value={
-                effectiveStomachLevel
-                  ? STOMACH_LABELS[effectiveStomachLevel]
-                  : crew.stomachLevel
-                    ? STOMACH_LABELS[crew.stomachLevel]
-                    : undefined
-              }
-              score={effectiveStomach}
-              maxScore={150}
-              colorClass="bg-orange-500"
-            />
-          )}
-
-          {crew.stressLevel !== undefined && (
-            <StatRow
-              label="Stress"
-              value={STRESS_LABELS[crew.stressLevel]}
-              score={crew.stressScore}
-              colorClass="bg-red-500"
-            />
-          )}
-
-          {crew.schedulePressureLevel !== undefined && (
-            <StatRow
-              label="Schedule"
-              value={SCHEDULE_LABELS[crew.schedulePressureLevel]}
-              score={crew.schedulePressureScore}
-              colorClass="bg-sky-500"
-            />
-          )}
-
-          {crew.statusNote && (
-            <p className="text-xs italic text-muted-foreground">
-              &ldquo;{crew.statusNote}&rdquo;
-            </p>
-          )}
-
-          {(crew.biometricSteps !== undefined ||
-            crew.biometricAverageHeartRate !== undefined ||
-            crew.biometricSleepHours !== undefined ||
-            crew.biometricActiveMinutes !== undefined) && (
-            <div className="grid gap-1 rounded-md border bg-muted/30 px-2 py-1.5 text-xs">
-              {crew.biometricSteps !== undefined && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Steps</span>
-                  <span className="font-medium">{crew.biometricSteps.toLocaleString()}</span>
-                </div>
-              )}
-              {crew.biometricAverageHeartRate !== undefined && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Avg HR</span>
-                  <span className="font-medium">{crew.biometricAverageHeartRate} bpm</span>
-                </div>
-              )}
-              {crew.biometricSleepHours !== undefined && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Sleep</span>
-                  <span className="font-medium">{crew.biometricSleepHours}h</span>
-                </div>
-              )}
-              {crew.biometricActiveMinutes !== undefined && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Active</span>
-                  <span className="font-medium">{crew.biometricActiveMinutes} min</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          <p className="text-right text-xs text-muted-foreground" suppressHydrationWarning>
-            Updated {relTime}
-          </p>
-        </div>
-      )}
-
-      {!expanded && (
-        <p className="border-t px-3 py-1.5 text-right text-xs text-muted-foreground">
-          {relTime}
-        </p>
+        <div className="grid gap-2 border-t px-2.5 py-2">{children}</div>
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Public component — dispatches by role
+// ---------------------------------------------------------------------------
+
+export default function TravelerStateCard({ token, role }: TravelerStateCardProps) {
+  if (role === "traveler") return <TravelerCard token={token} />;
+  return <SupportCrewCard token={token} />;
 }

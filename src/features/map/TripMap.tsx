@@ -844,12 +844,13 @@ export default function TripMap({
             <TravelerStateSheet
               token={token}
               onClose={() => setIsTravelerStateOpen(false)}
+              onToast={showToast}
             />
           </div>
         )}
       </AnimatePresence>
 
-      {role === "support_crew" && <TravelerStateCard token={token} />}
+      <TravelerStateCard token={token} role={role} />
     </section>
   );
 }

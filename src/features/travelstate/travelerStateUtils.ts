@@ -23,16 +23,17 @@ export const MOOD_LABELS: Record<TravelerMoodValue, string> = {
   why_did_i_bother: "Why did I bother",
 };
 
+// Worst on the left, best on the right (#12)
 export const MOOD_VALUES: TravelerMoodValue[] = [
-  "hopeful",
-  "good",
-  "surprised",
-  "okay",
-  "melancholy",
-  "anxious",
-  "rough",
-  "disappointed",
   "why_did_i_bother",
+  "disappointed",
+  "rough",
+  "anxious",
+  "melancholy",
+  "okay",
+  "surprised",
+  "good",
+  "hopeful",
 ];
 
 export const ENERGY_LABELS: Record<TravelerEnergyLevel, string> = {
@@ -93,12 +94,13 @@ export const SCHEDULE_LABELS: Record<TravelerSchedulePressureLevel, string> = {
   behind: "Behind",
 };
 
+// Worst on the left, best on the right (#12)
 export const SCHEDULE_VALUES: TravelerSchedulePressureLevel[] = [
-  "ahead",
-  "comfortable",
-  "tight",
-  "rushed",
   "behind",
+  "rushed",
+  "tight",
+  "comfortable",
+  "ahead",
 ];
 
 // ---------------------------------------------------------------------------
@@ -133,6 +135,53 @@ export function getStateEmoji(state: Partial<TravelerStateFields> | null): strin
 }
 
 // ---------------------------------------------------------------------------
+// Score ↔ level bidirectional mapping (#5)
+// ---------------------------------------------------------------------------
+
+// Energy: 5 equal bands across 0-100
+export const ENERGY_SCORE_FOR_LEVEL: Record<TravelerEnergyLevel, number> = {
+  very_low: 10,
+  low: 30,
+  medium: 50,
+  high: 70,
+  very_high: 90,
+};
+
+export function getEnergyLevelFromScore(score: number): TravelerEnergyLevel {
+  if (score <= 20) return "very_low";
+  if (score <= 40) return "low";
+  if (score <= 60) return "medium";
+  if (score <= 80) return "high";
+  return "very_high";
+}
+
+// Stress: 4 equal bands across 0-100
+export const STRESS_SCORE_FOR_LEVEL: Record<TravelerStressLevel, number> = {
+  calm: 12,
+  mild: 37,
+  stressed: 62,
+  overwhelmed: 87,
+};
+
+export function getStressLevelFromScore(score: number): TravelerStressLevel {
+  if (score <= 25) return "calm";
+  if (score <= 50) return "mild";
+  if (score <= 75) return "stressed";
+  return "overwhelmed";
+}
+
+// Stomach: 7 levels across 0-150
+export const STOMACH_SCORE_FOR_LEVEL: Record<TravelerStomachLevel, number> = {
+  starving: 6,
+  famished: 25,
+  hungry: 51,
+  satisfied: 78,
+  full: 101,
+  stuffed: 125,
+  overate: 144,
+};
+
+// ---------------------------------------------------------------------------
 // Stomach decay
 // ---------------------------------------------------------------------------
 
@@ -165,7 +214,7 @@ export function formatRelativeTime(ts: number): string {
   const diffSec = Math.floor(diffMs / 1000);
   if (diffSec < 60) return "just now";
   const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin} min ago`;
+  if (diffMin < 60) return `${diffMin}m ago`;
   const diffHr = Math.floor(diffMin / 60);
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDays = Math.floor(diffHr / 24);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
@@ -26,11 +26,18 @@ import {
   getStateEmoji,
   formatRelativeTime,
   DEFAULT_VISIBILITY,
+  ENERGY_SCORE_FOR_LEVEL,
+  getEnergyLevelFromScore,
+  STRESS_SCORE_FOR_LEVEL,
+  getStressLevelFromScore,
+  STOMACH_SCORE_FOR_LEVEL,
+  getStomachLevelFromScore,
 } from "./travelerStateUtils";
 
 type TravelerStateSheetProps = {
   token: string;
   onClose: () => void;
+  onToast?: (msg: string) => void;
 };
 
 type TabView = "state" | "visibility";
@@ -41,6 +48,17 @@ const PANEL_MOTION = {
   exit: { y: "100%" },
   transition: { duration: 0.22, ease: "easeOut" as const },
 };
+
+function formatSaveError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (msg.toLowerCase().includes("too many") || msg.toLowerCase().includes("rate")) {
+    return "Too many updates. Try again in a minute.";
+  }
+  if (msg.toLowerCase().includes("traveler")) {
+    return "Traveler access is required.";
+  }
+  return "Failed to save. Please try again.";
+}
 
 function ChipRow<T extends string>({
   values,
@@ -73,16 +91,48 @@ function ChipRow<T extends string>({
   );
 }
 
-function ScoreInput({
+function ScoreSlider({
   value,
   onChange,
   min,
   max,
+  label,
+}: {
+  value: number | undefined;
+  onChange: (v: number) => void;
+  min: number;
+  max: number;
+  label: string;
+}) {
+  const display = value ?? Math.round((min + max) / 2);
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={display}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="flex-1 accent-navy"
+      />
+      <span className="w-7 text-right text-xs text-muted-foreground">{display}</span>
+      <span className="text-xs text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+function NumberInput({
+  value,
+  onChange,
+  min,
+  max,
+  placeholder,
 }: {
   value: number | undefined;
   onChange: (v: number | undefined) => void;
   min: number;
   max: number;
+  placeholder?: string;
 }) {
   return (
     <input
@@ -95,7 +145,7 @@ function ScoreInput({
         onChange(raw === "" ? undefined : Number(raw));
       }}
       className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
-      placeholder="—"
+      placeholder={placeholder ?? "—"}
     />
   );
 }
@@ -131,30 +181,27 @@ function ToggleRow({
   );
 }
 
-export default function TravelerStateSheet({ token, onClose }: TravelerStateSheetProps) {
+export default function TravelerStateSheet({ token, onClose, onToast }: TravelerStateSheetProps) {
   const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
 
+  const hasPopulatedRef = useRef(false);
   const [tab, setTab] = useState<TabView>("state");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
-  // State form
+  // State form (no moodScore or scheduleScore — chip-only for those)
   const [stateAt, setStateAt] = useState<string>("");
   const [moodValue, setMoodValue] = useState<TravelerMoodValue | undefined>();
-  const [moodScore, setMoodScore] = useState<number | undefined>();
   const [energyLevel, setEnergyLevel] = useState<TravelerEnergyLevel | undefined>();
   const [energyScore, setEnergyScore] = useState<number | undefined>();
   const [stomachLevel, setStomachLevel] = useState<TravelerStomachLevel | undefined>();
   const [stomachScore, setStomachScore] = useState<number | undefined>();
   const [stressLevel, setStressLevel] = useState<TravelerStressLevel | undefined>();
   const [stressScore, setStressScore] = useState<number | undefined>();
-  const [scheduleLevel, setScheduleLevel] = useState<
-    TravelerSchedulePressureLevel | undefined
-  >();
-  const [scheduleScore, setScheduleScore] = useState<number | undefined>();
+  const [scheduleLevel, setScheduleLevel] = useState<TravelerSchedulePressureLevel | undefined>();
   const [statusNote, setStatusNote] = useState("");
   const [statusEmoji, setStatusEmoji] = useState("");
   const [biometricsOpen, setBiometricsOpen] = useState(false);
@@ -166,34 +213,35 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
   const [biometricNote, setBiometricNote] = useState("");
 
   // Visibility form
-  const [showTravelerState, setShowTravelerState] = useState(
-    DEFAULT_VISIBILITY.showTravelerState,
-  );
+  const [showTravelerState, setShowTravelerState] = useState(DEFAULT_VISIBILITY.showTravelerState);
   const [showMood, setShowMood] = useState(DEFAULT_VISIBILITY.showMood);
   const [showEnergy, setShowEnergy] = useState(DEFAULT_VISIBILITY.showEnergy);
   const [showStomach, setShowStomach] = useState(DEFAULT_VISIBILITY.showStomach);
   const [showStress, setShowStress] = useState(DEFAULT_VISIBILITY.showStress);
-  const [showSchedulePressure, setShowSchedulePressure] = useState(
-    DEFAULT_VISIBILITY.showSchedulePressure,
-  );
+  const [showSchedulePressure, setShowSchedulePressure] = useState(DEFAULT_VISIBILITY.showSchedulePressure);
   const [showStatusNote, setShowStatusNote] = useState(DEFAULT_VISIBILITY.showStatusNote);
   const [showBiometrics, setShowBiometrics] = useState(DEFAULT_VISIBILITY.showBiometrics);
 
-  // Populate form from loaded data
+  // Populate form once from loaded data
   useEffect(() => {
-    if (!result) return;
+    if (!result || hasPopulatedRef.current) return;
+    hasPopulatedRef.current = true;
     const { state, visibility } = result;
     if (state) {
       setMoodValue(state.moodValue);
-      setMoodScore(state.moodScore);
       setEnergyLevel(state.energyLevel);
-      setEnergyScore(state.energyScore);
+      setEnergyScore(
+        state.energyScore ?? (state.energyLevel ? ENERGY_SCORE_FOR_LEVEL[state.energyLevel] : undefined),
+      );
       setStomachLevel(state.stomachLevel);
-      setStomachScore(state.stomachScore);
+      setStomachScore(
+        state.stomachScore ?? (state.stomachLevel ? STOMACH_SCORE_FOR_LEVEL[state.stomachLevel] : undefined),
+      );
       setStressLevel(state.stressLevel);
-      setStressScore(state.stressScore);
+      setStressScore(
+        state.stressScore ?? (state.stressLevel ? STRESS_SCORE_FOR_LEVEL[state.stressLevel] : undefined),
+      );
       setScheduleLevel(state.schedulePressureLevel);
-      setScheduleScore(state.schedulePressureScore);
       setStatusNote(state.statusNote ?? "");
       setStatusEmoji(state.statusEmoji ?? "");
       setSteps(state.biometricSteps);
@@ -238,7 +286,6 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
         token,
         stateAt: getStateAtMs(),
         moodValue,
-        moodScore,
         energyLevel,
         energyScore,
         stomachLevel,
@@ -246,7 +293,6 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
         stressLevel,
         stressScore,
         schedulePressureLevel: scheduleLevel,
-        schedulePressureScore: scheduleScore,
         statusNote: statusNote || undefined,
         statusEmoji: statusEmoji || undefined,
         biometricSteps: steps,
@@ -259,7 +305,7 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
       });
       setSavedAt(Date.now());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save state.");
+      setError(formatSaveError(e));
     } finally {
       setSaving(false);
     }
@@ -281,9 +327,10 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
         showStatusNote,
         showBiometrics,
       });
-      setSavedAt(Date.now());
+      onToast?.("Visibility saved.");
+      onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to save visibility.");
+      setError(formatSaveError(e));
     } finally {
       setSaving(false);
     }
@@ -298,12 +345,17 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
       className="absolute inset-x-0 bottom-0 z-[10] flex max-h-[90dvh] flex-col rounded-t-xl border bg-background shadow-xl"
     >
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-4 py-3">
+      <div className="flex flex-none items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
-          <span className="text-2xl" aria-hidden="true">
+          <span className="text-xl" aria-hidden="true">
             {stateEmoji}
           </span>
-          <h2 className="text-base font-bold">Traveler State</h2>
+          <h2 className="text-sm font-bold">Traveler State</h2>
+          {lastUpdated && (
+            <span className="text-xs text-muted-foreground" suppressHydrationWarning>
+              · {formatRelativeTime(lastUpdated)}
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -316,12 +368,15 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
       </div>
 
       {/* Tab bar */}
-      <div className="flex border-b">
+      <div className="flex flex-none border-b">
         {(["state", "visibility"] as TabView[]).map((t) => (
           <button
             key={t}
             type="button"
-            onClick={() => setTab(t)}
+            onClick={() => {
+              setTab(t);
+              setError(null);
+            }}
             className={`flex-1 py-2 text-sm font-medium transition-colors ${
               tab === t
                 ? "border-b-2 border-navy text-navy"
@@ -333,27 +388,33 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
         ))}
       </div>
 
-      {/* Body */}
+      {/* Scrollable body */}
       <div className="flex-1 overflow-y-auto">
         {tab === "state" && (
           <div className="grid gap-5 p-4">
             {/* When */}
             <div className="grid gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                When
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  When
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setStateAt("")}
+                  className="text-xs text-navy hover:underline"
+                >
+                  Now
+                </button>
+              </div>
               <input
                 type="datetime-local"
                 value={stateAt || toIsoLocal(Date.now())}
                 onChange={(e) => setStateAt(e.target.value)}
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm"
               />
-              <p className="text-xs text-muted-foreground">
-                Defaults to now. Set earlier to log retroactively.
-              </p>
             </div>
 
-            {/* Mood */}
+            {/* Mood — chip only (#4) */}
             <div className="grid gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Mood
@@ -364,13 +425,9 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
                 selected={moodValue}
                 onSelect={setMoodValue}
               />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Score (0–100)</span>
-                <ScoreInput value={moodScore} onChange={setMoodScore} min={0} max={100} />
-              </div>
             </div>
 
-            {/* Energy */}
+            {/* Energy — chips + slider (#5, #6) */}
             <div className="grid gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Energy
@@ -379,15 +436,24 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
                 values={ENERGY_VALUES}
                 labels={ENERGY_LABELS}
                 selected={energyLevel}
-                onSelect={setEnergyLevel}
+                onSelect={(v) => {
+                  setEnergyLevel(v);
+                  setEnergyScore(ENERGY_SCORE_FOR_LEVEL[v]);
+                }}
               />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Score (0–100)</span>
-                <ScoreInput value={energyScore} onChange={setEnergyScore} min={0} max={100} />
-              </div>
+              <ScoreSlider
+                value={energyScore}
+                min={0}
+                max={100}
+                label="/ 100"
+                onChange={(n) => {
+                  setEnergyScore(n);
+                  setEnergyLevel(getEnergyLevelFromScore(n));
+                }}
+              />
             </div>
 
-            {/* Stomach */}
+            {/* Stomach — chips + slider (#5, #6) */}
             <div className="grid gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Stomach
@@ -396,15 +462,24 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
                 values={STOMACH_VALUES}
                 labels={STOMACH_LABELS}
                 selected={stomachLevel}
-                onSelect={setStomachLevel}
+                onSelect={(v) => {
+                  setStomachLevel(v);
+                  setStomachScore(STOMACH_SCORE_FOR_LEVEL[v]);
+                }}
               />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Score (0–150)</span>
-                <ScoreInput value={stomachScore} onChange={setStomachScore} min={0} max={150} />
-              </div>
+              <ScoreSlider
+                value={stomachScore}
+                min={0}
+                max={150}
+                label="/ 150"
+                onChange={(n) => {
+                  setStomachScore(n);
+                  setStomachLevel(getStomachLevelFromScore(n));
+                }}
+              />
             </div>
 
-            {/* Stress */}
+            {/* Stress — chips + slider (#5, #6) */}
             <div className="grid gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Stress
@@ -413,15 +488,24 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
                 values={STRESS_VALUES}
                 labels={STRESS_LABELS}
                 selected={stressLevel}
-                onSelect={setStressLevel}
+                onSelect={(v) => {
+                  setStressLevel(v);
+                  setStressScore(STRESS_SCORE_FOR_LEVEL[v]);
+                }}
               />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Score (0–100)</span>
-                <ScoreInput value={stressScore} onChange={setStressScore} min={0} max={100} />
-              </div>
+              <ScoreSlider
+                value={stressScore}
+                min={0}
+                max={100}
+                label="/ 100"
+                onChange={(n) => {
+                  setStressScore(n);
+                  setStressLevel(getStressLevelFromScore(n));
+                }}
+              />
             </div>
 
-            {/* Schedule */}
+            {/* Schedule — chip only (#4) */}
             <div className="grid gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Schedule
@@ -432,10 +516,6 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
                 selected={scheduleLevel}
                 onSelect={setScheduleLevel}
               />
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Score (0–100)</span>
-                <ScoreInput value={scheduleScore} onChange={setScheduleScore} min={0} max={100} />
-              </div>
             </div>
 
             {/* Status note */}
@@ -451,14 +531,14 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
                 onChange={(e) => setStatusNote(e.target.value.slice(0, 240))}
                 rows={2}
                 placeholder="How are you doing? (optional)"
-                className="rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+                className="resize-none rounded-md border border-input bg-background px-3 py-2 text-sm"
               />
             </div>
 
             {/* Status emoji */}
             <div className="grid gap-1.5">
               <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Status Emoji (optional override)
+                Status Emoji
               </label>
               <input
                 type="text"
@@ -485,90 +565,39 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
                   {[
                     { label: "Steps", value: steps, setter: setSteps, min: 0, max: 999999 },
                     { label: "Avg HR (bpm)", value: avgHr, setter: setAvgHr, min: 20, max: 240 },
-                    {
-                      label: "Resting HR (bpm)",
-                      value: restHr,
-                      setter: setRestHr,
-                      min: 20,
-                      max: 200,
-                    },
-                    {
-                      label: "Sleep (hrs)",
-                      value: sleepHours,
-                      setter: setSleepHours,
-                      min: 0,
-                      max: 24,
-                    },
-                    {
-                      label: "Active min",
-                      value: activeMin,
-                      setter: setActiveMin,
-                      min: 0,
-                      max: 1440,
-                    },
+                    { label: "Resting HR (bpm)", value: restHr, setter: setRestHr, min: 20, max: 200 },
+                    { label: "Sleep (hrs)", value: sleepHours, setter: setSleepHours, min: 0, max: 24 },
+                    { label: "Active min", value: activeMin, setter: setActiveMin, min: 0, max: 1440 },
                   ].map(({ label, value, setter, min, max }) => (
                     <div key={label} className="flex items-center justify-between gap-2">
                       <span className="text-sm">{label}</span>
-                      <ScoreInput value={value} onChange={setter} min={min} max={max} />
+                      <NumberInput value={value} onChange={setter} min={min} max={max} />
                     </div>
                   ))}
                   <div className="grid gap-1">
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Note</span>
-                      <span className="text-xs text-muted-foreground">
-                        {biometricNote.length}/240
-                      </span>
+                      <span className="text-xs text-muted-foreground">{biometricNote.length}/240</span>
                     </div>
                     <textarea
                       value={biometricNote}
                       onChange={(e) => setBiometricNote(e.target.value.slice(0, 240))}
                       rows={2}
                       placeholder="e.g. Worn Fitbit all day"
-                      className="rounded-md border border-input bg-background px-3 py-2 text-sm resize-none"
+                      className="resize-none rounded-md border border-input bg-background px-3 py-2 text-sm"
                     />
                   </div>
                 </div>
               )}
             </div>
-
-            {error && (
-              <p
-                role="alert"
-                className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                {error}
-              </p>
-            )}
-
-            {savedAt && !error && (
-              <p className="text-sm text-emerald-700">
-                Saved {formatRelativeTime(savedAt)}
-              </p>
-            )}
-
-            {lastUpdated && (
-              <p className="text-xs text-muted-foreground">
-                Last updated {formatRelativeTime(lastUpdated)}
-              </p>
-            )}
-
-            <Button onClick={handleSaveState} disabled={saving} className="w-full">
-              {saving ? "Saving…" : "Save State"}
-            </Button>
           </div>
         )}
 
         {tab === "visibility" && (
           <div className="grid gap-3 p-4">
-            <p className="text-sm text-muted-foreground">
-              Control what Support Crew can see.
-            </p>
+            <p className="text-sm text-muted-foreground">Control what Support Crew can see.</p>
 
-            <ToggleRow
-              label="Show Traveler State"
-              checked={showTravelerState}
-              onChange={setShowTravelerState}
-            />
+            <ToggleRow label="Show Traveler State" checked={showTravelerState} onChange={setShowTravelerState} />
 
             <div className="grid gap-2 pl-2">
               {[
@@ -576,43 +605,39 @@ export default function TravelerStateSheet({ token, onClose }: TravelerStateShee
                 { label: "Energy", checked: showEnergy, setter: setShowEnergy },
                 { label: "Stomach", checked: showStomach, setter: setShowStomach },
                 { label: "Stress", checked: showStress, setter: setShowStress },
-                {
-                  label: "Schedule",
-                  checked: showSchedulePressure,
-                  setter: setShowSchedulePressure,
-                },
+                { label: "Schedule", checked: showSchedulePressure, setter: setShowSchedulePressure },
                 { label: "Status Note", checked: showStatusNote, setter: setShowStatusNote },
                 { label: "Biometrics", checked: showBiometrics, setter: setShowBiometrics },
               ].map(({ label, checked, setter }) => (
-                <ToggleRow
-                  key={label}
-                  label={label}
-                  checked={checked}
-                  onChange={setter}
-                />
+                <ToggleRow key={label} label={label} checked={checked} onChange={setter} />
               ))}
             </div>
-
-            {error && (
-              <p
-                role="alert"
-                className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-              >
-                {error}
-              </p>
-            )}
-
-            {savedAt && !error && (
-              <p className="text-sm text-emerald-700">
-                Saved {formatRelativeTime(savedAt)}
-              </p>
-            )}
-
-            <Button onClick={handleSaveVisibility} disabled={saving} className="w-full">
-              {saving ? "Saving…" : "Save Visibility"}
-            </Button>
           </div>
         )}
+      </div>
+
+      {/* Pinned footer (#7) */}
+      <div className="flex-none border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {error && (
+          <p
+            role="alert"
+            className="mb-3 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {error}
+          </p>
+        )}
+        {savedAt && !error && tab === "state" && (
+          <p className="mb-3 text-sm text-emerald-700" suppressHydrationWarning>
+            Saved {formatRelativeTime(savedAt)}
+          </p>
+        )}
+        <Button
+          onClick={tab === "state" ? handleSaveState : handleSaveVisibility}
+          disabled={saving}
+          className="w-full"
+        >
+          {saving ? "Saving…" : tab === "state" ? "Save State" : "Save Visibility"}
+        </Button>
       </div>
     </motion.div>
   );
