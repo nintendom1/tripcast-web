@@ -20,7 +20,6 @@ export type SelectedCoordinate = {
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
   onSave: (args: Omit<AddCheckpointArgs, "token">) => Promise<string>;
-  onAfterSave?: (checkpointId: string) => Promise<void>;
   onClose: () => void;
   saveUnavailableMessage?: string;
   stateSection?: React.ReactNode;
@@ -41,7 +40,6 @@ function friendlyError(error: unknown) {
 export default function AddCheckpointSheet({
   selectedCoordinate,
   onSave,
-  onAfterSave,
   onClose,
   saveUnavailableMessage,
   stateSection,
@@ -79,7 +77,7 @@ export default function AddCheckpointSheet({
     setIsSaving(true);
 
     try {
-      const checkpointId = await onSave({
+      await onSave({
         title: title.trim() ? title : undefined,
         note: note.trim() ? note : undefined,
         locationLabel: locationLabel.trim() ? locationLabel : undefined,
@@ -88,7 +86,6 @@ export default function AddCheckpointSheet({
         lon: selectedCoordinate.lon,
         source: selectedCoordinate.source,
       });
-      if (onAfterSave) await onAfterSave(checkpointId);
       onClose();
     } catch (saveError) {
       setError(friendlyError(saveError));

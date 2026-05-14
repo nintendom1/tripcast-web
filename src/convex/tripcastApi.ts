@@ -30,6 +30,16 @@ export type AddCheckpointArgs = {
   lat: number;
   lon: number;
   source: CheckpointSource;
+  // Optional inline state snapshot (atomic with checkpoint save)
+  moodValue?: TravelerMoodValue;
+  energyLevel?: TravelerEnergyLevel;
+  energyScore?: number;
+  stomachLevel?: TravelerStomachLevel;
+  stomachScore?: number;
+  stressLevel?: TravelerStressLevel;
+  stressScore?: number;
+  schedulePressureLevel?: TravelerSchedulePressureLevel;
+  statusNote?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -257,7 +267,6 @@ export type UpdateTravelerStateArgs = {
   stateAt?: number;
   source?: TravelerStateUpdateSource;
   associatedCheckpointId?: string;
-  showInStory?: boolean;
   moodValue?: TravelerMoodValue;
   moodScore?: number;
   energyLevel?: TravelerEnergyLevel;
@@ -292,7 +301,6 @@ export type HistoryEventType =
   | "route_vote_opened"
   | "route_vote_closed"
   | "route_vote_resolved"
-  | "traveler_state_updated"
   | "emergency_reset";
 
 export type HistoryStoryLevel = "story" | "activity";
@@ -312,6 +320,13 @@ export type HistoryEvent = {
   checkpointId?: string;
   routeVoteId?: string;
   challengeId?: string;
+  // State snapshot (check_in events only)
+  moodValue?: TravelerMoodValue;
+  energyLevel?: TravelerEnergyLevel;
+  stomachLevel?: TravelerStomachLevel;
+  stressLevel?: TravelerStressLevel;
+  schedulePressureLevel?: TravelerSchedulePressureLevel;
+  statusNote?: string;
 };
 
 // ---------------------------------------------------------------------------

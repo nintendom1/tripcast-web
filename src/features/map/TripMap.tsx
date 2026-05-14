@@ -10,6 +10,7 @@ import {
   tripcastApi,
   type AddCheckpointArgs,
   type Checkpoint,
+  type HistoryEvent,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
 } from "../../convex/tripcastApi";
@@ -22,6 +23,7 @@ import RouteVoteProgress from "../routevote/RouteVoteProgress";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
 import TravelerStateCard from "../travelstate/TravelerStateCard";
 import HistoryPanel from "../history/HistoryPanel";
+import CheckInDetailSheet from "../history/CheckInDetailSheet";
 import { useHistoryUnread } from "../history/useHistoryUnread";
 import {
   MOOD_LABELS,
@@ -34,6 +36,9 @@ import {
   STRESS_VALUES,
   SCHEDULE_LABELS,
   SCHEDULE_VALUES,
+  ENERGY_SCORE_FOR_LEVEL,
+  STRESS_SCORE_FOR_LEVEL,
+  STOMACH_SCORE_FOR_LEVEL,
 } from "../travelstate/travelerStateUtils";
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 
@@ -172,7 +177,6 @@ function ConvexCheckpointSheet({
   onClose: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
 
   const [stateOpen, setStateOpen] = useState(false);
   const [moodValue, setMoodValue] = useState<import("../../convex/tripcastApi").TravelerMoodValue | undefined>();
@@ -196,28 +200,16 @@ function ConvexCheckpointSheet({
   }, [selectedCoordinate]);
 
   async function handleSave(args: Omit<AddCheckpointArgs, "token">): Promise<string> {
-    return addCheckpoint({ ...args, token });
-  }
-
-  async function handleAfterSave(checkpointId: string) {
-    const hasStateFields =
-      moodValue !== undefined ||
-      energyLevel !== undefined ||
-      stomachLevel !== undefined ||
-      stressLevel !== undefined ||
-      scheduleLevel !== undefined ||
-      quickNote.trim() !== "";
-
-    if (!hasStateFields) return;
-
-    await updateState({
+    return addCheckpoint({
+      ...args,
       token,
-      source: "checkpoint_update",
-      associatedCheckpointId: checkpointId,
       moodValue,
       energyLevel,
+      energyScore: energyLevel ? ENERGY_SCORE_FOR_LEVEL[energyLevel] : undefined,
       stomachLevel,
+      stomachScore: stomachLevel ? STOMACH_SCORE_FOR_LEVEL[stomachLevel] : undefined,
       stressLevel,
+      stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
       schedulePressureLevel: scheduleLevel,
       statusNote: quickNote.trim() || undefined,
     });
@@ -291,7 +283,6 @@ function ConvexCheckpointSheet({
       selectedCoordinate={selectedCoordinate}
       onClose={onClose}
       onSave={handleSave}
-      onAfterSave={handleAfterSave}
       stateSection={stateSection}
     />
   );
@@ -337,6 +328,7 @@ export default function TripMap({
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
 
   const canWrite = role === "traveler";
 
@@ -496,6 +488,7 @@ export default function TripMap({
     setCoordinatePickMode(null);
     coordinatePickModeRef.current = null;
     setIsHistoryOpen(false);
+    setSelectedCheckInEvent(null);
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -894,11 +887,21 @@ export default function TripMap({
           <HistoryPanel
             events={historyEvents}
             onClose={() => setIsHistoryOpen(false)}
+            onCheckInSelect={(event) => {
+              setIsHistoryOpen(false);
+              setSelectedCheckInEvent(event);
+            }}
             onLocationFocus={centerMapOnCoordinate}
             onMarkAllRead={markAllRead}
           />
         )}
       </AnimatePresence>
+
+      <CheckInDetailSheet
+        event={selectedCheckInEvent}
+        onClose={() => setSelectedCheckInEvent(null)}
+        onLocationFocus={centerMapOnCoordinate}
+      />
     </section>
   );
 }

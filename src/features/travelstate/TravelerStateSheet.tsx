@@ -194,8 +194,6 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
-  const [showInStory, setShowInStory] = useState(false);
-
   // State form (no moodScore or scheduleScore — chip-only for those)
   const [stateAt, setStateAt] = useState<string>("");
   const [moodValue, setMoodValue] = useState<TravelerMoodValue | undefined>();
@@ -293,7 +291,6 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
     setStatusNote("");
     setStatusEmoji("");
     setStateAt("");
-    setShowInStory(false);
     setError(null);
     setSavedAt(null);
   }
@@ -328,7 +325,6 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
         biometricActiveMinutes: activeMin,
         biometricNote: biometricNote || undefined,
         biometricSource: steps !== undefined || avgHr !== undefined ? "manual" : undefined,
-        showInStory,
       });
       onClose();
     } catch (e) {
@@ -732,17 +728,6 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
 
       {/* Pinned footer (#7) */}
       <div className="flex-none border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {tab === "state" && !reviewing && (
-          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer mb-3">
-            <input
-              type="checkbox"
-              checked={showInStory}
-              onChange={(e) => setShowInStory(e.target.checked)}
-              className="h-4 w-4 accent-navy"
-            />
-            Add this update to Story
-          </label>
-        )}
         {error && (
           <p
             role="alert"

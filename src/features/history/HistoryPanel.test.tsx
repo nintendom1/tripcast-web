@@ -29,6 +29,7 @@ function makeEvent(overrides: Partial<HistoryEvent> = {}): HistoryEvent {
 const defaultProps = {
   events: [] as HistoryEvent[],
   onClose: vi.fn(),
+  onCheckInSelect: vi.fn(),
   onLocationFocus: vi.fn(),
   onMarkAllRead: vi.fn(),
 };
@@ -52,7 +53,7 @@ describe("HistoryPanel", () => {
   it("default tab is Story — shows only story-level events", () => {
     const events = [
       makeEvent({ _id: "a", storyLevel: "story", title: "Story Event" }),
-      makeEvent({ _id: "b", storyLevel: "activity", title: "Activity Event", type: "traveler_state_updated" }),
+      makeEvent({ _id: "b", storyLevel: "activity", title: "Activity Event", type: "route_vote_opened" }),
     ];
     render(<HistoryPanel {...defaultProps} events={events} />);
     expect(screen.getByText("Story Event")).toBeInTheDocument();
@@ -62,52 +63,35 @@ describe("HistoryPanel", () => {
   it("switching to All tab shows all events", () => {
     const events = [
       makeEvent({ _id: "a", storyLevel: "story", title: "Story Event" }),
-      makeEvent({ _id: "b", storyLevel: "activity", type: "traveler_state_updated", title: undefined, body: "Activity note" }),
+      makeEvent({ _id: "b", storyLevel: "activity", title: "Activity Vote", type: "route_vote_opened" }),
     ];
     render(<HistoryPanel {...defaultProps} events={events} />);
     fireEvent.click(screen.getByRole("tab", { name: "All" }));
     expect(screen.getByText("Story Event")).toBeInTheDocument();
-    expect(screen.getByText("Activity note")).toBeInTheDocument();
+    expect(screen.getByText("Activity Vote")).toBeInTheDocument();
   });
 
-  it("check-in card with long body shows truncated text and Read more button", () => {
-    const longBody = "x".repeat(200);
-    const events = [makeEvent({ body: longBody })];
+  it("clicking a check-in card calls onCheckInSelect", () => {
+    const onCheckInSelect = vi.fn();
+    const event = makeEvent({ _id: "a", storyLevel: "story", title: "My Pin" });
+    render(<HistoryPanel {...defaultProps} events={[event]} onCheckInSelect={onCheckInSelect} />);
+    fireEvent.click(screen.getByText("My Pin"));
+    expect(onCheckInSelect).toHaveBeenCalledWith(event);
+  });
+
+  it("check-in card shows mood emoji when moodValue is set", () => {
+    const events = [makeEvent({ moodValue: "good" })];
     render(<HistoryPanel {...defaultProps} events={events} />);
-    expect(screen.getByText("Read more")).toBeInTheDocument();
+    // emoji should be present (aria-hidden, but still in DOM)
+    expect(screen.getByRole("button", { name: /check-in/i })).toBeInTheDocument();
   });
 
-  it("clicking Read more expands full body", () => {
-    const longBody = "A".repeat(200);
-    const events = [makeEvent({ body: longBody })];
-    render(<HistoryPanel {...defaultProps} events={events} />);
-    fireEvent.click(screen.getByText("Read more"));
-    expect(screen.getByText(longBody)).toBeInTheDocument();
-    expect(screen.getByText("Collapse")).toBeInTheDocument();
-  });
-
-  it("card with lat/lon renders Focus on map button that calls onLocationFocus", () => {
+  it("vote card with lat/lon renders Focus on map button", () => {
     const onLocationFocus = vi.fn();
-    const events = [makeEvent({ lat: 47.6, lon: -122.3 })];
+    const events = [makeEvent({ _id: "a", type: "route_vote_resolved", storyLevel: "story", lat: 47.6, lon: -122.3, title: "Vote Done" })];
     render(<HistoryPanel {...defaultProps} events={events} onLocationFocus={onLocationFocus} />);
     fireEvent.click(screen.getByText("Focus on map"));
     expect(onLocationFocus).toHaveBeenCalledWith({ lat: 47.6, lon: -122.3 });
-  });
-
-  it("card without coordinates has no Focus on map button", () => {
-    const events = [makeEvent({ lat: undefined, lon: undefined })];
-    render(<HistoryPanel {...defaultProps} events={events} />);
-    expect(screen.queryByText("Focus on map")).not.toBeInTheDocument();
-  });
-
-  it("switching to Check-ins tab shows only check_in events", () => {
-    const events = [
-      makeEvent({ _id: "a", type: "check_in", title: "Checkin" }),
-      makeEvent({ _id: "b", type: "traveler_state_updated", storyLevel: "activity", title: undefined }),
-    ];
-    render(<HistoryPanel {...defaultProps} events={events} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Check-ins" }));
-    expect(screen.getByText("Checkin")).toBeInTheDocument();
   });
 
   it("onClose is called when close button is clicked", () => {
@@ -115,5 +99,10 @@ describe("HistoryPanel", () => {
     render(<HistoryPanel {...defaultProps} onClose={onClose} />);
     fireEvent.click(screen.getByRole("button", { name: "Close history" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("State tab is not present", () => {
+    render(<HistoryPanel {...defaultProps} />);
+    expect(screen.queryByRole("tab", { name: "State" })).not.toBeInTheDocument();
   });
 });

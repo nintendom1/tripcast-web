@@ -12,7 +12,7 @@ const PANEL_MOTION = {
   transition: { duration: 0.22, ease: "easeOut" as const },
 };
 
-type FilterTab = "story" | "all" | "checkins" | "challenges" | "votes" | "state";
+type FilterTab = "story" | "all" | "checkins" | "challenges" | "votes";
 
 const FILTER_TABS: { id: FilterTab; label: string }[] = [
   { id: "story", label: "Story" },
@@ -20,7 +20,6 @@ const FILTER_TABS: { id: FilterTab; label: string }[] = [
   { id: "checkins", label: "Check-ins" },
   { id: "challenges", label: "Challenges" },
   { id: "votes", label: "Votes" },
-  { id: "state", label: "State" },
 ];
 
 function filterEvents(events: HistoryEvent[], tab: FilterTab): HistoryEvent[] {
@@ -35,14 +34,13 @@ function filterEvents(events: HistoryEvent[], tab: FilterTab): HistoryEvent[] {
       return events.filter((e) => e.type.startsWith("challenge_"));
     case "votes":
       return events.filter((e) => e.type.startsWith("route_vote_"));
-    case "state":
-      return events.filter((e) => e.type === "traveler_state_updated");
   }
 }
 
 type HistoryPanelProps = {
   events: HistoryEvent[];
   onClose: () => void;
+  onCheckInSelect: (event: HistoryEvent) => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   onMarkAllRead: () => void;
 };
@@ -50,6 +48,7 @@ type HistoryPanelProps = {
 export default function HistoryPanel({
   events,
   onClose,
+  onCheckInSelect,
   onLocationFocus,
   onMarkAllRead,
 }: HistoryPanelProps) {
@@ -107,7 +106,7 @@ export default function HistoryPanel({
       </div>
 
       {/* Event list */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4" style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
         {filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground py-6 text-center">
             {activeTab === "story" ? "No story entries yet." : "No entries."}
@@ -118,6 +117,7 @@ export default function HistoryPanel({
               <HistoryEventCard
                 key={event._id}
                 event={event}
+                onCheckInSelect={onCheckInSelect}
                 onLocationFocus={onLocationFocus}
               />
             ))}
