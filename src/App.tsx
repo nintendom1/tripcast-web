@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ShieldAlert } from "lucide-react";
@@ -51,6 +51,8 @@ function ConnectedApp() {
   const [isEmergencyResetOpen, setIsEmergencyResetOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
+  const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
+  const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const sessionCheck = useQuery(
     tripcastApi.auth.currentSession,
@@ -65,6 +67,14 @@ function ConnectedApp() {
       setSession(null);
     }
   }, [session, sessionCheck]);
+
+  useEffect(() => {
+    return () => {
+      if (resetToastTimeoutRef.current !== null) {
+        clearTimeout(resetToastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function handleSignIn(newSession: StoredSession) {
     setStoredSession(newSession);
@@ -87,6 +97,17 @@ function ConnectedApp() {
     clearStoredSession();
     setSession(null);
     setIsEmergencyResetOpen(false);
+  }
+
+  function showResetToast(message: string) {
+    if (resetToastTimeoutRef.current !== null) {
+      clearTimeout(resetToastTimeoutRef.current);
+    }
+    setResetToastMessage(message);
+    resetToastTimeoutRef.current = setTimeout(() => {
+      setResetToastMessage(null);
+      resetToastTimeoutRef.current = null;
+    }, 3600);
   }
 
   if (!session) {
@@ -120,18 +141,19 @@ function ConnectedApp() {
   const roleLabel = sessionCheck.role === "traveler" ? "Traveler" : "Support Crew";
 
   return (
-    <div className="flex flex-col h-dvh">
+    <div className="relative flex flex-col h-dvh">
       <header className="flex min-h-14 flex-wrap items-center gap-2 border-b bg-background px-4 py-2 z-[2]">
         <h1 className="text-lg font-bold">TripCast</h1>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
           {sessionCheck.role === "traveler" ? (
             <Button
-              variant="destructive"
+              variant="outline"
               size="sm"
               type="button"
+              className="border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100 dark:hover:bg-rose-950/60"
               onClick={() => setIsEmergencyResetOpen(true)}
             >
-              <ShieldAlert className="h-4 w-4" aria-hidden="true" />
+              <ShieldAlert className="h-4 w-4 text-rose-700 dark:text-rose-300" aria-hidden="true" />
               Emergency Reset
             </Button>
           ) : null}
@@ -149,6 +171,7 @@ function ConnectedApp() {
           onLoggedOut={handleLoggedOut}
           onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
           onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
+          onResetStarted={showResetToast}
         />
       ) : null}
       <Suspense
@@ -165,6 +188,21 @@ function ConnectedApp() {
           tripDataResetNonce={tripDataResetNonce}
         />
       </Suspense>
+      <AnimatePresence>
+        {resetToastMessage ? (
+          <motion.div
+            key="reset-toast"
+            initial={{ y: -12, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -12, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" as const }}
+            role="status"
+            className="fixed left-1/2 top-16 z-[60] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-950 shadow-lg dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
+          >
+            {resetToastMessage}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

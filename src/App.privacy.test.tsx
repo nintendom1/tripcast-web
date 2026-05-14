@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import * as authLib from "./lib/auth";
@@ -47,5 +48,20 @@ describe("App: Emergency Reset button visibility", () => {
     setupSessionMocks("support_crew");
     render(<App convexReady={true} />);
     expect(screen.queryByRole("button", { name: /emergency reset/i })).not.toBeInTheDocument();
+  });
+
+  it("returns to the map and shows a toast after confirming shared data deletion", async () => {
+    setupSessionMocks("traveler");
+    render(<App convexReady={true} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /emergency reset/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm shared data deletion" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("trip-map")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Shared trip data deletion started.");
   });
 });

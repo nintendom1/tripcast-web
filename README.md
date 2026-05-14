@@ -68,14 +68,12 @@ Sessions are role-gated. A token is stored in `localStorage` after login. Every 
 
 ### Emergency Reset
 
-`src/features/privacy/EmergencyResetSheet.tsx` — traveler-only sheet with four destructive actions:
+`src/features/privacy/EmergencyResetSheet.tsx` — traveler-only sheet with one grouped destructive action:
 
-- **Delete Checkpoints** — removes all shared checkpoint data
-- **Clear Live Location** — removes the stored traveler GPS position
-- **Delete All Trip Data** — wipes all trip-related tables at once
-- **Log Everyone Off** — invalidates all active sessions including support crew
+- **Delete Shared Trip Data** — removes checkpoints, live location, route votes, traveler state, current activity, and history in one backend request
+- **Log Everyone Off Too** — optional checkbox that invalidates all active sessions in the same reset request
 
-Each action requires an in-UI confirmation tap. Rate-limit errors surface as an alert.
+The reset requires an in-UI confirmation tap. On success, the sheet closes and the app shows a status toast over the map. Rate-limit errors surface as an alert.
 
 ## Manual Test
 
@@ -101,8 +99,8 @@ Test runner: `vitest` with `jsdom` environment. React components use `@testing-l
 | File | Coverage |
 |---|---|
 | `src/lib/routeVoteUtils.test.ts` | `formatTimeRemaining`, `computeEffectiveStatusClient`, `formatVotePct`, `haversineDistanceMiles` |
-| `src/features/privacy/EmergencyResetSheet.test.tsx` | All four actions, confirmation dialog, error alert |
-| `src/App.privacy.test.tsx` | Emergency Reset button visibility by role |
+| `src/features/privacy/EmergencyResetSheet.test.tsx` | Grouped reset mutation, confirmation dialog, error alert |
+| `src/App.privacy.test.tsx` | Emergency Reset visibility by role, post-confirm close and toast |
 | `src/features/routevote/RouteVoteProgress.detail.test.tsx` | Deleted-vote recovery state, back-navigation |
 
 ## Secret Scanning

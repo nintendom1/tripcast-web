@@ -410,6 +410,12 @@ export const tripcastApi = {
       { token: string },
       null
     >,
+    emergencyReset: (anyApi as any).privacy.emergencyReset as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; includeAuthSessions: boolean },
+      null
+    >,
     logEveryoneOff: (anyApi as any).privacy.logEveryoneOff as FunctionReference<
       "mutation",
       "public",

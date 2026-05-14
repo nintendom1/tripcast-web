@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "convex/react";
-import { Activity, LogOut, MapPinOff, ShieldAlert, Trash2 } from "lucide-react";
+import { LogOut, ShieldAlert } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -19,62 +19,8 @@ type EmergencyResetSheetProps = {
   onLoggedOut: () => void;
   onLocationDataCleared: () => void;
   onTripDataDeleted: () => void;
+  onResetStarted: (message: string) => void;
 };
-
-type ResetAction = "checkpoints" | "location" | "tripData" | "sessions" | "travelerState" | "currentActivity";
-
-type ActionConfig = {
-  id: ResetAction;
-  title: string;
-  description: string;
-  confirmLabel: string;
-  icon: typeof Trash2;
-};
-
-const ACTIONS: ActionConfig[] = [
-  {
-    id: "checkpoints",
-    title: "Delete Checkpoints",
-    description: "Remove every saved map pin for traveler and support crew views.",
-    confirmLabel: "Delete checkpoints",
-    icon: Trash2,
-  },
-  {
-    id: "location",
-    title: "Clear Live Location",
-    description: "Remove the last shared traveler location stored on the server.",
-    confirmLabel: "Clear live location",
-    icon: MapPinOff,
-  },
-  {
-    id: "tripData",
-    title: "Delete All Trip Data",
-    description: "Remove checkpoints, live location, route votes, submissions, and challenges.",
-    confirmLabel: "Delete all trip data",
-    icon: ShieldAlert,
-  },
-  {
-    id: "sessions",
-    title: "Log Everyone Off",
-    description: "Revoke every active TripCast session, including this traveler session.",
-    confirmLabel: "Log everyone off",
-    icon: LogOut,
-  },
-  {
-    id: "travelerState",
-    title: "Delete Traveler State",
-    description: "Remove current state, visibility settings, and state history so Support Crew can no longer see traveler condition data.",
-    confirmLabel: "Delete traveler state",
-    icon: Activity,
-  },
-  {
-    id: "currentActivity",
-    title: "Clear Current Activity",
-    description: "Remove the active current activity so Support Crew can no longer see what you are doing.",
-    confirmLabel: "Clear current activity",
-    icon: MapPinOff,
-  },
-];
 
 function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -87,21 +33,11 @@ function friendlyError(error: unknown) {
   return message || "Emergency reset failed.";
 }
 
-function successMessage(action: ResetAction) {
-  switch (action) {
-    case "checkpoints":
-      return "Checkpoint deletion started. Pins will disappear as the reset completes.";
-    case "location":
-      return "Live location has been cleared.";
-    case "tripData":
-      return "Trip data deletion started. Shared trip data will disappear as the reset completes.";
-    case "sessions":
-      return "Everyone has been logged off.";
-    case "travelerState":
-      return "Traveler State deletion started. State data will disappear as the reset completes.";
-    case "currentActivity":
-      return "Current activity cleared.";
+function successMessage(includeAuthSessions: boolean) {
+  if (includeAuthSessions) {
+    return "Shared trip data deletion started. Everyone will also be logged off.";
   }
+  return "Shared trip data deletion started.";
 }
 
 export default function EmergencyResetSheet({
@@ -111,69 +47,45 @@ export default function EmergencyResetSheet({
   onLoggedOut,
   onLocationDataCleared,
   onTripDataDeleted,
+  onResetStarted,
 }: EmergencyResetSheetProps) {
-  const deleteAllCheckpoints = useMutation(tripcastApi.privacy.deleteAllCheckpoints);
-  const clearTravelerLocation = useMutation(tripcastApi.privacy.clearTravelerLocation);
-  const deleteAllTripData = useMutation(tripcastApi.privacy.deleteAllTripData);
-  const logEveryoneOff = useMutation(tripcastApi.privacy.logEveryoneOff);
-  const deleteTravelerState = useMutation(tripcastApi.privacy.deleteTravelerState);
-  const deleteCurrentActivity = useMutation(tripcastApi.privacy.deleteCurrentActivity);
+  const emergencyReset = useMutation(tripcastApi.privacy.emergencyReset);
 
-  const [confirmAction, setConfirmAction] = useState<ActionConfig | null>(null);
-  const [pendingAction, setPendingAction] = useState<ResetAction | null>(null);
+  const [includeAuthSessions, setIncludeAuthSessions] = useState(false);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
 
   function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && pendingAction) return;
+    if (!nextOpen && isPending) return;
     onOpenChange(nextOpen);
     if (!nextOpen) {
-      setConfirmAction(null);
+      setIsConfirming(false);
       setError(null);
-      setStatus(null);
     }
   }
 
-  async function runAction(action: ActionConfig) {
-    if (pendingAction) return;
+  async function runEmergencyReset() {
+    if (isPending) return;
 
-    setPendingAction(action.id);
+    setIsPending(true);
     setError(null);
-    setStatus(null);
 
     try {
-      if (action.id === "checkpoints") {
-        await deleteAllCheckpoints({ token });
-      } else if (action.id === "location") {
-        await clearTravelerLocation({ token });
-      } else if (action.id === "tripData") {
-        await deleteAllTripData({ token });
-      } else if (action.id === "travelerState") {
-        await deleteTravelerState({ token });
-      } else if (action.id === "currentActivity") {
-        await deleteCurrentActivity({ token });
-      } else {
-        await logEveryoneOff({ token });
-      }
+      await emergencyReset({ token, includeAuthSessions });
+      setIsConfirming(false);
+      onLocationDataCleared();
+      onTripDataDeleted();
+      onResetStarted(successMessage(includeAuthSessions));
+      onOpenChange(false);
 
-      setStatus(successMessage(action.id));
-      setConfirmAction(null);
-
-      if (action.id === "location" || action.id === "tripData") {
-        onLocationDataCleared();
-      }
-
-      if (action.id === "tripData") {
-        onTripDataDeleted();
-      }
-
-      if (action.id === "sessions") {
+      if (includeAuthSessions) {
         onLoggedOut();
       }
     } catch (actionError) {
       setError(friendlyError(actionError));
     } finally {
-      setPendingAction(null);
+      setIsPending(false);
     }
   }
 
@@ -188,11 +100,6 @@ export default function EmergencyResetSheet({
         </SheetHeader>
 
         <div className="grid gap-4 overflow-y-auto p-4 pt-0">
-          {status ? (
-            <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-              {status}
-            </p>
-          ) : null}
           {error ? (
             <p
               role="alert"
@@ -202,16 +109,26 @@ export default function EmergencyResetSheet({
             </p>
           ) : null}
 
-          {confirmAction ? (
+          {isConfirming ? (
             <div className="grid gap-4">
               <div className="rounded-md border bg-muted/40 p-3">
-                <h3 className="text-sm font-semibold">{confirmAction.title}</h3>
+                <h3 className="text-sm font-semibold">Emergency Reset</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {confirmAction.description}
+                  This will delete shared trip data, including checkpoints, live location,
+                  route votes, traveler state, current activity, and history.
                 </p>
+                {includeAuthSessions ? (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Every active TripCast session will also be revoked.
+                  </p>
+                ) : (
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Active TripCast sessions will stay signed in.
+                  </p>
+                )}
               </div>
 
-              {confirmAction.id === "sessions" ? (
+              {includeAuthSessions ? (
                 <div className="grid gap-2 rounded-md border p-3 text-sm">
                   <p className="font-medium">Before sharing new passcodes:</p>
                   <p className="text-muted-foreground">
@@ -228,47 +145,71 @@ export default function EmergencyResetSheet({
 
               <div className="flex justify-end gap-2">
                 <Button
-                  disabled={pendingAction !== null}
+                  disabled={isPending}
                   type="button"
                   variant="outline"
-                  onClick={() => setConfirmAction(null)}
+                  onClick={() => setIsConfirming(false)}
                 >
                   Cancel
                 </Button>
                 <Button
-                  disabled={pendingAction !== null}
+                  disabled={isPending}
                   type="button"
-                  variant="destructive"
-                  onClick={() => runAction(confirmAction)}
+                  variant="outline"
+                  className="border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100 dark:hover:bg-rose-950/60"
+                  onClick={runEmergencyReset}
                 >
-                  {pendingAction === confirmAction.id ? "Working..." : confirmAction.confirmLabel}
+                  {isPending ? "Working..." : "Confirm shared data deletion"}
                 </Button>
               </div>
             </div>
           ) : (
-            <div className="grid gap-3">
-              {ACTIONS.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <button
-                    key={action.id}
-                    className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-md border bg-background p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-                    disabled={pendingAction !== null}
-                    type="button"
-                    onClick={() => {
-                      setConfirmAction(action);
-                      setError(null);
-                      setStatus(null);
-                    }}
-                  >
-                    <Icon className="mt-0.5 h-4 w-4 text-destructive" aria-hidden="true" />
-                    <span className="grid gap-1">
-                      <span className="text-sm font-semibold">{action.title}</span>
-                      <span className="text-sm text-muted-foreground">{action.description}</span>
-                    </span>
-                  </button>
-                );
-              })}
+            <div className="grid gap-4">
+              <div className="grid grid-cols-[auto_1fr] items-start gap-3 px-1">
+                <ShieldAlert className="mt-0.5 h-4 w-4 text-rose-700 dark:text-rose-300" aria-hidden="true" />
+                <div className="grid gap-1">
+                  <h3 className="text-sm font-semibold">Delete Shared Trip Data</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Remove checkpoints, live location, route votes, traveler state,
+                    current activity, and history in one reset request. Sessions are
+                    only revoked when selected below.
+                  </p>
+                </div>
+              </div>
+
+              <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-md border p-3 text-sm">
+                <input
+                  checked={includeAuthSessions}
+                  className="mt-1 h-4 w-4 accent-rose-700 dark:accent-rose-400"
+                  disabled={isPending}
+                  type="checkbox"
+                  onChange={(event) => setIncludeAuthSessions(event.currentTarget.checked)}
+                />
+                <span className="grid gap-1">
+                  <span className="inline-flex items-center gap-2 font-medium">
+                    <LogOut className="h-4 w-4" aria-hidden="true" />
+                    Log everyone off too
+                  </span>
+                  <span className="text-muted-foreground">
+                    Revoke every active TripCast session, including this traveler session.
+                  </span>
+                </span>
+              </label>
+
+              <div className="flex justify-end">
+                <Button
+                  disabled={isPending}
+                  type="button"
+                  variant="outline"
+                  className="border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100 dark:hover:bg-rose-950/60"
+                  onClick={() => {
+                    setIsConfirming(true);
+                    setError(null);
+                  }}
+                >
+                  Delete Shared Trip Data
+                </Button>
+              </div>
             </div>
           )}
         </div>

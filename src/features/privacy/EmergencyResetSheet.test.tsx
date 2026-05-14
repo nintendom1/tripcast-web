@@ -20,38 +20,17 @@ function makeProps(overrides?: Partial<Parameters<typeof EmergencyResetSheet>[0]
     onLoggedOut: vi.fn(),
     onLocationDataCleared: vi.fn(),
     onTripDataDeleted: vi.fn(),
+    onResetStarted: vi.fn(),
     ...overrides,
   };
 }
 
-// Mutation call order inside EmergencyResetSheet:
-//   1st useMutation call → deleteAllCheckpoints
-//   2nd useMutation call → clearTravelerLocation
-//   3rd useMutation call → deleteAllTripData
-//   4th useMutation call → logEveryoneOff
-//   5th useMutation call → deleteTravelerState
-//   6th useMutation call → deleteCurrentActivity
-
 function setupMutationMocks() {
   const mocks = {
-    deleteAllCheckpoints: vi.fn().mockResolvedValue(null),
-    clearTravelerLocation: vi.fn().mockResolvedValue(null),
-    deleteAllTripData: vi.fn().mockResolvedValue(null),
-    logEveryoneOff: vi.fn().mockResolvedValue(null),
-    deleteTravelerState: vi.fn().mockResolvedValue(null),
-    deleteCurrentActivity: vi.fn().mockResolvedValue(null),
+    emergencyReset: vi.fn().mockResolvedValue(null),
   };
-  const mockValues = [
-    mocks.deleteAllCheckpoints,
-    mocks.clearTravelerLocation,
-    mocks.deleteAllTripData,
-    mocks.logEveryoneOff,
-    mocks.deleteTravelerState,
-    mocks.deleteCurrentActivity,
-  ];
-  let callCount = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.mocked(convexReact.useMutation).mockImplementation(() => mockValues[callCount++ % 6] as any);
+  vi.mocked(convexReact.useMutation).mockReturnValue(mocks.emergencyReset as any);
   return mocks;
 }
 
@@ -60,74 +39,86 @@ beforeEach(() => {
 });
 
 describe("EmergencyResetSheet", () => {
-  it("shows all six action buttons when open", () => {
+  it("shows one grouped reset action and the log everyone off checkbox when open", () => {
     setupMutationMocks();
     render(<EmergencyResetSheet {...makeProps()} />);
 
-    expect(screen.getByText("Delete Checkpoints")).toBeInTheDocument();
-    expect(screen.getByText("Clear Live Location")).toBeInTheDocument();
-    expect(screen.getByText("Delete All Trip Data")).toBeInTheDocument();
-    expect(screen.getByText("Log Everyone Off")).toBeInTheDocument();
-    expect(screen.getByText("Delete Traveler State")).toBeInTheDocument();
-    expect(screen.getByText("Clear Current Activity")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Delete Shared Trip Data" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /log everyone off too/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete Shared Trip Data" })).toBeInTheDocument();
   });
 
-  it("shows the confirmation dialog after clicking an action", async () => {
+  it("shows the confirmation dialog after clicking emergency reset", async () => {
     setupMutationMocks();
     render(<EmergencyResetSheet {...makeProps()} />);
 
-    await userEvent.click(screen.getByText("Delete All Trip Data"));
+    await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
 
-    // Confirm button with the action label should now appear.
-    expect(screen.getByRole("button", { name: "Delete all trip data" })).toBeInTheDocument();
-    // Cancel button is also visible.
+    expect(screen.getByRole("button", { name: "Confirm shared data deletion" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
-  it("calls deleteAllTripData and triggers both reset callbacks on confirm", async () => {
+  it("calls emergencyReset once and triggers trip reset callbacks on confirm", async () => {
     const mocks = setupMutationMocks();
     const onTripDataDeleted = vi.fn();
     const onLocationDataCleared = vi.fn();
+    const onResetStarted = vi.fn();
+    const onOpenChange = vi.fn();
 
     render(
       <EmergencyResetSheet
-        {...makeProps({ onTripDataDeleted, onLocationDataCleared })}
+        {...makeProps({
+          onTripDataDeleted,
+          onLocationDataCleared,
+          onResetStarted,
+          onOpenChange,
+        })}
       />,
     );
 
-    await userEvent.click(screen.getByText("Delete All Trip Data"));
-    await userEvent.click(screen.getByRole("button", { name: "Delete all trip data" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm shared data deletion" }));
 
     await waitFor(() => {
-      expect(mocks.deleteAllTripData).toHaveBeenCalledWith({ token: "test-token" });
+      expect(mocks.emergencyReset).toHaveBeenCalledWith({
+        token: "test-token",
+        includeAuthSessions: false,
+      });
     });
+    expect(mocks.emergencyReset).toHaveBeenCalledTimes(1);
     expect(onTripDataDeleted).toHaveBeenCalled();
     expect(onLocationDataCleared).toHaveBeenCalled();
+    expect(onResetStarted).toHaveBeenCalledWith("Shared trip data deletion started.");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it("calls logEveryoneOff and triggers onLoggedOut on confirm", async () => {
+  it("includes auth session deletion and triggers onLoggedOut when the checkbox is selected", async () => {
     const mocks = setupMutationMocks();
     const onLoggedOut = vi.fn();
 
     render(<EmergencyResetSheet {...makeProps({ onLoggedOut })} />);
 
-    await userEvent.click(screen.getByText("Log Everyone Off"));
-    await userEvent.click(screen.getByRole("button", { name: "Log everyone off" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /log everyone off too/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm shared data deletion" }));
 
     await waitFor(() => {
-      expect(mocks.logEveryoneOff).toHaveBeenCalledWith({ token: "test-token" });
+      expect(mocks.emergencyReset).toHaveBeenCalledWith({
+        token: "test-token",
+        includeAuthSessions: true,
+      });
     });
     expect(onLoggedOut).toHaveBeenCalled();
   });
 
   it("shows a friendly rate-limit error message when the mutation rejects", async () => {
     const mocks = setupMutationMocks();
-    mocks.logEveryoneOff.mockRejectedValue(new Error("rate limit exceeded — too many requests"));
+    mocks.emergencyReset.mockRejectedValue(new Error("rate limit exceeded -- too many requests"));
 
     render(<EmergencyResetSheet {...makeProps()} />);
 
-    await userEvent.click(screen.getByText("Log Everyone Off"));
-    await userEvent.click(screen.getByRole("button", { name: "Log everyone off" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm shared data deletion" }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent(
@@ -136,37 +127,19 @@ describe("EmergencyResetSheet", () => {
     });
   });
 
-  it("shows Clear Current Activity action in the list for traveler role", () => {
+  it("sends the auth-session success message to the toast callback", async () => {
     setupMutationMocks();
-    render(<EmergencyResetSheet {...makeProps()} />);
+    const onResetStarted = vi.fn();
+    render(<EmergencyResetSheet {...makeProps({ onResetStarted })} />);
 
-    expect(screen.getByText("Clear Current Activity")).toBeInTheDocument();
-    expect(
-      screen.getByText("Remove the active current activity so Support Crew can no longer see what you are doing."),
-    ).toBeInTheDocument();
-  });
-
-  it("calls deleteCurrentActivity with correct args after confirming Clear Current Activity", async () => {
-    const mocks = setupMutationMocks();
-    render(<EmergencyResetSheet {...makeProps()} />);
-
-    await userEvent.click(screen.getByText("Clear Current Activity"));
-    await userEvent.click(screen.getByRole("button", { name: "Clear current activity" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /log everyone off too/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm shared data deletion" }));
 
     await waitFor(() => {
-      expect(mocks.deleteCurrentActivity).toHaveBeenCalledWith({ token: "test-token" });
-    });
-  });
-
-  it("shows success message 'Current activity cleared.' after confirming Clear Current Activity", async () => {
-    setupMutationMocks();
-    render(<EmergencyResetSheet {...makeProps()} />);
-
-    await userEvent.click(screen.getByText("Clear Current Activity"));
-    await userEvent.click(screen.getByRole("button", { name: "Clear current activity" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Current activity cleared.")).toBeInTheDocument();
+      expect(onResetStarted).toHaveBeenCalledWith(
+        "Shared trip data deletion started. Everyone will also be logged off.",
+      );
     });
   });
 });
