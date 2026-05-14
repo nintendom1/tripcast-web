@@ -20,7 +20,6 @@ export type SelectedCoordinate = {
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
   onSave: (args: Omit<AddCheckpointArgs, "token">) => Promise<string>;
-  onAfterSave?: (checkpointId: string) => Promise<void>;
   onClose: () => void;
   saveUnavailableMessage?: string;
   stateSection?: React.ReactNode;
@@ -41,13 +40,14 @@ function friendlyError(error: unknown) {
 export default function AddCheckpointSheet({
   selectedCoordinate,
   onSave,
-  onAfterSave,
   onClose,
   saveUnavailableMessage,
   stateSection,
 }: AddCheckpointSheetProps) {
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
+  const [locationLabel, setLocationLabel] = useState("");
+  const [showInStory, setShowInStory] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -55,6 +55,8 @@ export default function AddCheckpointSheet({
     if (selectedCoordinate) {
       setTitle("");
       setNote("");
+      setLocationLabel("");
+      setShowInStory(true);
       setError(null);
       setIsSaving(false);
     }
@@ -75,14 +77,15 @@ export default function AddCheckpointSheet({
     setIsSaving(true);
 
     try {
-      const checkpointId = await onSave({
+      await onSave({
         title: title.trim() ? title : undefined,
         note: note.trim() ? note : undefined,
+        locationLabel: locationLabel.trim() ? locationLabel : undefined,
+        showInStory,
         lat: selectedCoordinate.lat,
         lon: selectedCoordinate.lon,
         source: selectedCoordinate.source,
       });
-      if (onAfterSave) await onAfterSave(checkpointId);
       onClose();
     } catch (saveError) {
       setError(friendlyError(saveError));
@@ -109,13 +112,32 @@ export default function AddCheckpointSheet({
             />
           </label>
           <label className="flex flex-col gap-1.5 text-sm font-medium">
-            Note
+            Place name <span className="font-normal text-muted-foreground">(optional)</span>
+            <Input
+              maxLength={120}
+              onChange={(e) => setLocationLabel(e.target.value)}
+              placeholder="e.g. Capitol Hill"
+              type="text"
+              value={locationLabel}
+            />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-medium">
+            Story / Notes
             <Textarea
               maxLength={1000}
               onChange={(e) => setNote(e.target.value)}
               rows={3}
               value={note}
             />
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showInStory}
+              onChange={(e) => setShowInStory(e.target.checked)}
+              className="h-4 w-4 accent-navy"
+            />
+            Add to Story
           </label>
           <div className="rounded-md bg-muted px-3 py-2 text-sm grid gap-1">
             <span>Lat {formatCoordinate(selectedCoordinate?.lat ?? 0)}</span>

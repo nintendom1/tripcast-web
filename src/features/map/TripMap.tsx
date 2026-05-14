@@ -10,6 +10,7 @@ import {
   tripcastApi,
   type AddCheckpointArgs,
   type Checkpoint,
+  type HistoryEvent,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
 } from "../../convex/tripcastApi";
@@ -21,6 +22,9 @@ import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
 import TravelerStateCard from "../travelstate/TravelerStateCard";
+import HistoryPanel from "../history/HistoryPanel";
+import CheckInDetailSheet from "../history/CheckInDetailSheet";
+import { useHistoryUnread } from "../history/useHistoryUnread";
 import {
   MOOD_LABELS,
   MOOD_VALUES,
@@ -32,6 +36,9 @@ import {
   STRESS_VALUES,
   SCHEDULE_LABELS,
   SCHEDULE_VALUES,
+  ENERGY_SCORE_FOR_LEVEL,
+  STRESS_SCORE_FOR_LEVEL,
+  STOMACH_SCORE_FOR_LEVEL,
 } from "../travelstate/travelerStateUtils";
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 
@@ -170,7 +177,6 @@ function ConvexCheckpointSheet({
   onClose: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
 
   const [stateOpen, setStateOpen] = useState(false);
   const [moodValue, setMoodValue] = useState<import("../../convex/tripcastApi").TravelerMoodValue | undefined>();
@@ -194,28 +200,16 @@ function ConvexCheckpointSheet({
   }, [selectedCoordinate]);
 
   async function handleSave(args: Omit<AddCheckpointArgs, "token">): Promise<string> {
-    return addCheckpoint({ ...args, token });
-  }
-
-  async function handleAfterSave(checkpointId: string) {
-    const hasStateFields =
-      moodValue !== undefined ||
-      energyLevel !== undefined ||
-      stomachLevel !== undefined ||
-      stressLevel !== undefined ||
-      scheduleLevel !== undefined ||
-      quickNote.trim() !== "";
-
-    if (!hasStateFields) return;
-
-    await updateState({
+    return addCheckpoint({
+      ...args,
       token,
-      source: "checkpoint_update",
-      associatedCheckpointId: checkpointId,
       moodValue,
       energyLevel,
+      energyScore: energyLevel ? ENERGY_SCORE_FOR_LEVEL[energyLevel] : undefined,
       stomachLevel,
+      stomachScore: stomachLevel ? STOMACH_SCORE_FOR_LEVEL[stomachLevel] : undefined,
       stressLevel,
+      stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
       schedulePressureLevel: scheduleLevel,
       statusNote: quickNote.trim() || undefined,
     });
@@ -289,7 +283,6 @@ function ConvexCheckpointSheet({
       selectedCoordinate={selectedCoordinate}
       onClose={onClose}
       onSave={handleSave}
-      onAfterSave={handleAfterSave}
       stateSection={stateSection}
     />
   );
@@ -334,6 +327,8 @@ export default function TripMap({
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
 
   const canWrite = role === "traveler";
 
@@ -350,6 +345,9 @@ export default function TripMap({
     tripcastApi.routeVotes.travelerListRouteVotes,
     role === "traveler" ? { token } : "skip",
   ) ?? [];
+
+  const historyEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
+  const { unreadCount, markAllRead } = useHistoryUnread(historyEvents);
 
   // Keep placement mode ref in sync
   useEffect(() => {
@@ -489,6 +487,8 @@ export default function TripMap({
     setVoteOptionNumberById(null);
     setCoordinatePickMode(null);
     coordinatePickModeRef.current = null;
+    setIsHistoryOpen(false);
+    setSelectedCheckInEvent(null);
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -722,7 +722,7 @@ export default function TripMap({
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="status"
             className={`absolute left-1/2 z-[6] -translate-x-1/2 rounded-md bg-navy px-4 py-2 text-sm font-medium text-white shadow-lg max-w-[calc(100%-24px)] ${
-              role === "traveler" ? "bottom-[176px]" : "bottom-[128px]"
+              role === "traveler" ? "bottom-[236px]" : "bottom-[128px]"
             }`}
           >
             {toastMessage}
@@ -782,6 +782,21 @@ export default function TripMap({
       {role === "traveler" && (
         <button
           type="button"
+          className="absolute bottom-[190px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+          onClick={() => setIsHistoryOpen((p) => !p)}
+        >
+          {isHistoryOpen ? "Close History" : "History"}
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+        </button>
+      )}
+
+      {role === "traveler" && (
+        <button
+          type="button"
           className="absolute bottom-[70px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
           onClick={() => setIsVotePanelOpen((p) => !p)}
         >
@@ -791,6 +806,21 @@ export default function TripMap({
 
       {role === "support_crew" && (
         <RouteVoteButton token={token} onClick={() => setIsVotePanelOpen(true)} />
+      )}
+
+      {role === "support_crew" && (
+        <button
+          type="button"
+          className="absolute bottom-[70px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+          onClick={() => setIsHistoryOpen((p) => !p)}
+        >
+          {isHistoryOpen ? "Close History" : "History"}
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+        </button>
       )}
 
       {/* Checkpoint add sheet */}
@@ -851,6 +881,30 @@ export default function TripMap({
       </AnimatePresence>
 
       <TravelerStateCard token={token} role={role} />
+
+      <AnimatePresence>
+        {isHistoryOpen && (
+          <HistoryPanel
+            events={historyEvents}
+            onClose={() => setIsHistoryOpen(false)}
+            onCheckInSelect={(event) => {
+              setIsHistoryOpen(false);
+              setSelectedCheckInEvent(event);
+            }}
+            onLocationFocus={centerMapOnCoordinate}
+            onMarkAllRead={markAllRead}
+          />
+        )}
+      </AnimatePresence>
+
+      <CheckInDetailSheet
+        event={selectedCheckInEvent}
+        onClose={() => {
+          setSelectedCheckInEvent(null);
+          setIsHistoryOpen(true);
+        }}
+        onLocationFocus={centerMapOnCoordinate}
+      />
     </section>
   );
 }

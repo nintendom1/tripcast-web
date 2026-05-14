@@ -20,6 +20,17 @@
 - Backend API changes belong in `tripcast-backend`.
 - If stuck after two failed attempts, stop, summarize what failed, and propose a better next attempt.
 
+## Journey History Feature
+
+`src/features/history/` — bottom-sheet history feed showing check-ins, route vote outcomes, and challenge events.
+
+- **`HistoryPanel.tsx`** — tabbed panel (Story / All / Check-ins / Challenges / Votes). Calls `onMarkAllRead()` on mount. Filtering is client-side; changing tabs does not move the map.
+- **`HistoryEventCard.tsx`** — check-in cards are `<button>` elements that call `onCheckInSelect`; vote/challenge cards have a "Focus on map" button when lat/lon are present.
+- **`CheckInDetailSheet.tsx`** — full-screen detail sheet for a single check-in. Auto-focuses the map on mount via `useEffect` when lat/lon are present. Shows embedded state snapshot (mood, energy, stomach, stress, schedule) if state fields are set on the event.
+- **`useHistoryUnread.ts`** — tracks unread story-level events using `localStorage` key `tripcast.historyLastReadAt`. Returns `{ unreadCount, markAllRead }`.
+- History events are fetched in **`TripMap.tsx`** (not inside HistoryPanel) so one Convex subscription drives both the panel and the unread badge.
+- `AddCheckpointSheet` has `locationLabel` (place name, max 120 chars) and `showInStory` (defaults `true`) fields that map to the same args on `addCheckpoint`.
+
 ## Testing
 
 Run tests:

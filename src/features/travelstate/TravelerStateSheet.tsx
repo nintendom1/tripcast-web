@@ -194,7 +194,6 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
-
   // State form (no moodScore or scheduleScore — chip-only for those)
   const [stateAt, setStateAt] = useState<string>("");
   const [moodValue, setMoodValue] = useState<TravelerMoodValue | undefined>();

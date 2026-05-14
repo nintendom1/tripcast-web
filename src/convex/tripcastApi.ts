@@ -25,9 +25,21 @@ export type AddCheckpointArgs = {
   token: string;
   title?: string;
   note?: string;
+  locationLabel?: string;
+  showInStory?: boolean;
   lat: number;
   lon: number;
   source: CheckpointSource;
+  // Optional inline state snapshot (atomic with checkpoint save)
+  moodValue?: TravelerMoodValue;
+  energyLevel?: TravelerEnergyLevel;
+  energyScore?: number;
+  stomachLevel?: TravelerStomachLevel;
+  stomachScore?: number;
+  stressLevel?: TravelerStressLevel;
+  stressScore?: number;
+  schedulePressureLevel?: TravelerSchedulePressureLevel;
+  statusNote?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -277,6 +289,47 @@ export type UpdateTravelerStateArgs = {
 };
 
 // ---------------------------------------------------------------------------
+// History types
+// ---------------------------------------------------------------------------
+
+export type HistoryEventType =
+  | "check_in"
+  | "challenge_planned"
+  | "challenge_in_progress"
+  | "challenge_completed"
+  | "challenge_dropped"
+  | "route_vote_opened"
+  | "route_vote_closed"
+  | "route_vote_resolved"
+  | "emergency_reset";
+
+export type HistoryStoryLevel = "story" | "activity";
+
+export type HistoryEvent = {
+  _id: string;
+  _creationTime: number;
+  type: HistoryEventType;
+  storyLevel: HistoryStoryLevel;
+  occurredAt: number;
+  createdAt: number;
+  title?: string;
+  body?: string;
+  locationLabel?: string;
+  lat?: number;
+  lon?: number;
+  checkpointId?: string;
+  routeVoteId?: string;
+  challengeId?: string;
+  // State snapshot (check_in events only)
+  moodValue?: TravelerMoodValue;
+  energyLevel?: TravelerEnergyLevel;
+  stomachLevel?: TravelerStomachLevel;
+  stressLevel?: TravelerStressLevel;
+  schedulePressureLevel?: TravelerSchedulePressureLevel;
+  statusNote?: string;
+};
+
+// ---------------------------------------------------------------------------
 // API namespace
 // ---------------------------------------------------------------------------
 
@@ -506,6 +559,14 @@ export const tripcastApi = {
         showBiometrics?: boolean;
       },
       null
+    >,
+  },
+  historyEvents: {
+    listHistoryEvents: (anyApi as any).historyEvents.listHistoryEvents as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      HistoryEvent[]
     >,
   },
 } as const;
