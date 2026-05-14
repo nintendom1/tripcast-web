@@ -25,6 +25,8 @@ export type AddCheckpointArgs = {
   token: string;
   title?: string;
   note?: string;
+  locationLabel?: string;
+  showInStory?: boolean;
   lat: number;
   lon: number;
   source: CheckpointSource;
@@ -255,6 +257,7 @@ export type UpdateTravelerStateArgs = {
   stateAt?: number;
   source?: TravelerStateUpdateSource;
   associatedCheckpointId?: string;
+  showInStory?: boolean;
   moodValue?: TravelerMoodValue;
   moodScore?: number;
   energyLevel?: TravelerEnergyLevel;
@@ -274,6 +277,41 @@ export type UpdateTravelerStateArgs = {
   biometricActiveMinutes?: number;
   biometricNote?: string;
   biometricSource?: "manual";
+};
+
+// ---------------------------------------------------------------------------
+// History types
+// ---------------------------------------------------------------------------
+
+export type HistoryEventType =
+  | "check_in"
+  | "challenge_planned"
+  | "challenge_in_progress"
+  | "challenge_completed"
+  | "challenge_dropped"
+  | "route_vote_opened"
+  | "route_vote_closed"
+  | "route_vote_resolved"
+  | "traveler_state_updated"
+  | "emergency_reset";
+
+export type HistoryStoryLevel = "story" | "activity";
+
+export type HistoryEvent = {
+  _id: string;
+  _creationTime: number;
+  type: HistoryEventType;
+  storyLevel: HistoryStoryLevel;
+  occurredAt: number;
+  createdAt: number;
+  title?: string;
+  body?: string;
+  locationLabel?: string;
+  lat?: number;
+  lon?: number;
+  checkpointId?: string;
+  routeVoteId?: string;
+  challengeId?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -506,6 +544,14 @@ export const tripcastApi = {
         showBiometrics?: boolean;
       },
       null
+    >,
+  },
+  historyEvents: {
+    listHistoryEvents: (anyApi as any).historyEvents.listHistoryEvents as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      HistoryEvent[]
     >,
   },
 } as const;
