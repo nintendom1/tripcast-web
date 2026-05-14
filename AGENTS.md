@@ -13,38 +13,11 @@
 - If Gitleaks is unavailable and cannot be installed, say so in the final response and rely on the GitHub Actions Gitleaks workflow as the remote check.
 - Consume Convex through `src/convex/tripcastApi.ts`. Do not hand-write function references — regenerate this file via `npm run export:web-api` in `tripcast-backend` then copy the output.
 - All mutations take an explicit `token` arg for auth. Do not use `clientId`; that field was removed.
-- Route Vote (`src/features/routevote/`) lets the Traveler propose destinations and Support Crew vote. Key env var: `VITE_CONVEX_URL`.
 - When the backend returns `null` for a route vote detail query, the frontend shows a deleted-vote recovery state ("This route vote was deleted.") with a "Back to votes" button — do not treat this as a loading state.
 - Emergency Reset sheet (`src/features/privacy/EmergencyResetSheet.tsx`) is gated to the `"traveler"` role. Each action requires a confirmation tap. Rate-limit errors from the backend are shown in a `role="alert"` paragraph.
 - Avoid unnecessary map remounts, style resets, or tile request loops.
 - Backend API changes belong in `tripcast-backend`.
 - If stuck after two failed attempts, stop, summarize what failed, and propose a better next attempt.
-
-## Journey History Feature
-
-`src/features/history/` — bottom-sheet history feed showing check-ins, route vote outcomes, and challenge events.
-
-- **`HistoryPanel.tsx`** — tabbed panel (Story / All / Check-ins / Challenges / Votes). Calls `onMarkAllRead()` on mount. Filtering is client-side; changing tabs does not move the map.
-- **`HistoryEventCard.tsx`** — check-in cards are `<button>` elements that call `onCheckInSelect`; vote/challenge cards have a "Focus on map" button when lat/lon are present.
-- **`CheckInDetailSheet.tsx`** — full-screen detail sheet for a single check-in. Auto-focuses the map on mount via `useEffect` when lat/lon are present. Shows embedded state snapshot (mood, energy, stomach, stress, schedule) if state fields are set on the event.
-- **`useHistoryUnread.ts`** — tracks unread story-level events using `localStorage` key `tripcast.historyLastReadAt`. Returns `{ unreadCount, markAllRead }`.
-- History events are fetched in **`TripMap.tsx`** (not inside HistoryPanel) so one Convex subscription drives both the panel and the unread badge.
-- `AddCheckpointSheet` has `locationLabel` (place name, max 120 chars) and `showInStory` (defaults `true`) fields that map to the same args on `addCheckpoint`.
-
-## Testing
-
-Run tests:
-
-```bash
-npm run test
-```
-
-Test runner: `vitest` with `jsdom` environment. React components use `@testing-library/react` and `@testing-library/user-event`. `convex/react` (`useMutation`, `useQuery`) is always mocked — no Convex deployment needed.
-
-When adding new component tests:
-- Mock `convex/react` at the top of the file.
-- For components that use `framer-motion`, mock it with an explicit `motion: { div: ... }` object — do NOT use a Proxy (causes JSX type errors).
-- When a component calls `useMutation` multiple times in fixed hook order, use a modulo-safe call-counter mock: `mockValues[callCount++ % N]`.
 
 ## Commits And PRs
 
@@ -65,3 +38,25 @@ Now, <describe the new state or outcome. Focus on the User Experience if applica
 ## Testing
 <Commands run, manual checks performed by you and/or a reviewer, or note why testing was not run.>
 ```
+
+## Testing
+
+Run tests:
+
+```bash
+npm run test
+```
+
+Test runner: `vitest` with `jsdom` environment. React components use `@testing-library/react` and `@testing-library/user-event`. `convex/react` (`useMutation`, `useQuery`) is always mocked — no Convex deployment needed.
+
+When adding new component tests:
+- Mock `convex/react` at the top of the file.
+- For components that use `framer-motion`, mock it with an explicit `motion: { div: ... }` object — do NOT use a Proxy (causes JSX type errors).
+- When a component calls `useMutation` multiple times in fixed hook order, use a modulo-safe call-counter mock: `mockValues[callCount++ % N]`.
+
+## Patterns & Gotchas
+
+- History events are fetched in `TripMap.tsx`, not inside `HistoryPanel` — one Convex subscription drives both the panel and the unread badge. Do not move the query into the panel.
+- `CheckInDetailSheet` auto-focuses the map on mount via `useEffect` when `lat`/`lon` are present.
+- Unread history state is tracked in `localStorage` under the key `tripcast.historyLastReadAt` (`src/features/history/useHistoryUnread.ts`).
+- `TravelerStateCard` and `CurrentActivityCard` share a positioning wrapper in `TripMap.tsx` (`absolute top-5 left-5 z-[2] flex flex-col gap-2`). Neither card carries its own absolute positioning.

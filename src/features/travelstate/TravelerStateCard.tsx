@@ -368,7 +368,7 @@ function CardShell({
 }) {
   return (
     <div
-      className="absolute top-5 left-5 z-[2] w-56 rounded-lg border bg-background/95 shadow-md backdrop-blur-sm"
+      className="w-56 rounded-lg border bg-background/95 shadow-md backdrop-blur-sm"
       aria-label="Traveler State"
     >
       <div className="flex items-center justify-between px-2.5 py-1.5">

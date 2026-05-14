@@ -30,6 +30,7 @@ function makeProps(overrides?: Partial<Parameters<typeof EmergencyResetSheet>[0]
 //   3rd useMutation call → deleteAllTripData
 //   4th useMutation call → logEveryoneOff
 //   5th useMutation call → deleteTravelerState
+//   6th useMutation call → deleteCurrentActivity
 
 function setupMutationMocks() {
   const mocks = {
@@ -38,6 +39,7 @@ function setupMutationMocks() {
     deleteAllTripData: vi.fn().mockResolvedValue(null),
     logEveryoneOff: vi.fn().mockResolvedValue(null),
     deleteTravelerState: vi.fn().mockResolvedValue(null),
+    deleteCurrentActivity: vi.fn().mockResolvedValue(null),
   };
   const mockValues = [
     mocks.deleteAllCheckpoints,
@@ -45,10 +47,11 @@ function setupMutationMocks() {
     mocks.deleteAllTripData,
     mocks.logEveryoneOff,
     mocks.deleteTravelerState,
+    mocks.deleteCurrentActivity,
   ];
   let callCount = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  vi.mocked(convexReact.useMutation).mockImplementation(() => mockValues[callCount++ % 5] as any);
+  vi.mocked(convexReact.useMutation).mockImplementation(() => mockValues[callCount++ % 6] as any);
   return mocks;
 }
 
@@ -57,7 +60,7 @@ beforeEach(() => {
 });
 
 describe("EmergencyResetSheet", () => {
-  it("shows all five action buttons when open", () => {
+  it("shows all six action buttons when open", () => {
     setupMutationMocks();
     render(<EmergencyResetSheet {...makeProps()} />);
 
@@ -66,6 +69,7 @@ describe("EmergencyResetSheet", () => {
     expect(screen.getByText("Delete All Trip Data")).toBeInTheDocument();
     expect(screen.getByText("Log Everyone Off")).toBeInTheDocument();
     expect(screen.getByText("Delete Traveler State")).toBeInTheDocument();
+    expect(screen.getByText("Clear Current Activity")).toBeInTheDocument();
   });
 
   it("shows the confirmation dialog after clicking an action", async () => {
@@ -129,6 +133,40 @@ describe("EmergencyResetSheet", () => {
       expect(screen.getByRole("alert")).toHaveTextContent(
         "Too many emergency reset actions",
       );
+    });
+  });
+
+  it("shows Clear Current Activity action in the list for traveler role", () => {
+    setupMutationMocks();
+    render(<EmergencyResetSheet {...makeProps()} />);
+
+    expect(screen.getByText("Clear Current Activity")).toBeInTheDocument();
+    expect(
+      screen.getByText("Remove the active current activity so Support Crew can no longer see what you are doing."),
+    ).toBeInTheDocument();
+  });
+
+  it("calls deleteCurrentActivity with correct args after confirming Clear Current Activity", async () => {
+    const mocks = setupMutationMocks();
+    render(<EmergencyResetSheet {...makeProps()} />);
+
+    await userEvent.click(screen.getByText("Clear Current Activity"));
+    await userEvent.click(screen.getByRole("button", { name: "Clear current activity" }));
+
+    await waitFor(() => {
+      expect(mocks.deleteCurrentActivity).toHaveBeenCalledWith({ token: "test-token" });
+    });
+  });
+
+  it("shows success message 'Current activity cleared.' after confirming Clear Current Activity", async () => {
+    setupMutationMocks();
+    render(<EmergencyResetSheet {...makeProps()} />);
+
+    await userEvent.click(screen.getByText("Clear Current Activity"));
+    await userEvent.click(screen.getByRole("button", { name: "Clear current activity" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Current activity cleared.")).toBeInTheDocument();
     });
   });
 });

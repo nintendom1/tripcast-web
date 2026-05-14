@@ -178,4 +178,45 @@ describe("AddCheckpointSheet", () => {
     );
     expect(titleInput).toHaveValue("");
   });
+
+  it("populates fields from prefill when coordinate is selected", () => {
+    const prefill = { title: "Prefilled title", note: "Prefilled note", locationLabel: "Prefilled place" };
+    render(<AddCheckpointSheet {...makeProps({ prefill })} />);
+    expect(screen.getByRole("textbox", { name: /Title/i })).toHaveValue("Prefilled title");
+    expect(screen.getByPlaceholderText("e.g. Capitol Hill")).toHaveValue("Prefilled place");
+  });
+
+  it("falls back to empty string for fields not included in prefill", () => {
+    const prefill = { title: "Only title" };
+    render(<AddCheckpointSheet {...makeProps({ prefill })} />);
+    expect(screen.getByRole("textbox", { name: /Title/i })).toHaveValue("Only title");
+    expect(screen.getByPlaceholderText("e.g. Capitol Hill")).toHaveValue("");
+  });
+
+  it("calls onCheckpointCreated with the saved id after a successful save", async () => {
+    const onCheckpointCreated = vi.fn();
+    const onSave = vi.fn().mockResolvedValue("cp-abc123");
+    const user = userEvent.setup();
+    render(<AddCheckpointSheet {...makeProps({ onSave, onCheckpointCreated })} />);
+
+    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+
+    await waitFor(() => {
+      expect(onCheckpointCreated).toHaveBeenCalledWith("cp-abc123");
+    });
+  });
+
+  it("does not call onCheckpointCreated when onSave throws", async () => {
+    const onCheckpointCreated = vi.fn();
+    const onSave = vi.fn().mockRejectedValue(new Error("Save failed"));
+    const user = userEvent.setup();
+    render(<AddCheckpointSheet {...makeProps({ onSave, onCheckpointCreated })} />);
+
+    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+    expect(onCheckpointCreated).not.toHaveBeenCalled();
+  });
 });
