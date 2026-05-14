@@ -29,6 +29,9 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v6
 
+      - name: Check npm supply chain
+        run: npm run security:supply-chain
+
       - name: Install dependencies
         run: npm ci
 

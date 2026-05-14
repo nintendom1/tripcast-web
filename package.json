@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "preview": "vite preview",
+    "security:supply-chain": "node scripts/checkNpmSupplyChain.mjs",
     "test": "vitest run"
   },
   "dependencies": {
