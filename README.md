@@ -24,6 +24,24 @@ Do not commit `.env` or `.env.local`. Keep real Convex URLs in `.env.local`; com
 npm run dev
 ```
 
+## Deployment
+
+GitHub Pages builds the app with Vite, so `VITE_CONVEX_URL` is embedded into the generated JavaScript at build time. Use the Convex production deployment URL, omit any trailing slash, and rerun the Pages workflow after changing the GitHub variable or secret.
+
+For GitHub Pages project hosting at `https://nintendom1.github.io/tripcast-web/`, Vite must use `base: "/tripcast-web/"`. When publishing from a custom domain, switch the Vite base back to `/`.
+
+If `VITE_CONVEX_URL` is stored as a GitHub Environment variable, the workflow job that runs `npm run build` must declare that environment. If only the deploy job declares the environment, the build job will not receive the value.
+
+### Deployment Troubleshooting
+
+| Symptom | Likely cause |
+|---|---|
+| `/assets/index...js` returns 404 on GitHub Pages | Vite `base` does not match the GitHub Pages project path |
+| App shows `VITE_CONVEX_URL is not set` | The build job did not receive the variable, or Pages was not rebuilt after setting it |
+| WebSocket URL contains `cloud//api` | `VITE_CONVEX_URL` has a trailing slash |
+| Convex says it cannot find `auth:signIn` | The frontend points at a Convex deployment that does not have the backend functions deployed |
+| Sign-in fails | Check the selected role, Convex production auth env vars, and sign-in rate limits |
+
 ## Auth Flow
 
 Sessions are role-gated. A token is stored in `localStorage` after login. Every mutation and query passes `token` explicitly — there is no cookie-based auth. Roles are `"traveler"` (full write access, emergency reset) or `"support_crew"` (read + vote access only).
