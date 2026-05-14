@@ -899,7 +899,10 @@ export default function TripMap({
 
       <CheckInDetailSheet
         event={selectedCheckInEvent}
-        onClose={() => setSelectedCheckInEvent(null)}
+        onClose={() => {
+          setSelectedCheckInEvent(null);
+          setIsHistoryOpen(true);
+        }}
         onLocationFocus={centerMapOnCoordinate}
       />
     </section>
