@@ -23,6 +23,8 @@ type AddCheckpointSheetProps = {
   onClose: () => void;
   saveUnavailableMessage?: string;
   stateSection?: React.ReactNode;
+  prefill?: { title?: string; note?: string; locationLabel?: string };
+  onCheckpointCreated?: (id: string) => void;
 };
 
 function formatCoordinate(value: number) {
@@ -43,6 +45,8 @@ export default function AddCheckpointSheet({
   onClose,
   saveUnavailableMessage,
   stateSection,
+  prefill,
+  onCheckpointCreated,
 }: AddCheckpointSheetProps) {
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -53,14 +57,15 @@ export default function AddCheckpointSheet({
 
   useEffect(() => {
     if (selectedCoordinate) {
-      setTitle("");
-      setNote("");
-      setLocationLabel("");
+      setTitle(prefill?.title ?? "");
+      setNote(prefill?.note ?? "");
+      setLocationLabel(prefill?.locationLabel ?? "");
       setShowInStory(true);
       setError(null);
       setIsSaving(false);
     }
-  }, [selectedCoordinate]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCoordinate, prefill]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -77,7 +82,7 @@ export default function AddCheckpointSheet({
     setIsSaving(true);
 
     try {
-      await onSave({
+      const checkpointId = await onSave({
         title: title.trim() ? title : undefined,
         note: note.trim() ? note : undefined,
         locationLabel: locationLabel.trim() ? locationLabel : undefined,
@@ -86,6 +91,7 @@ export default function AddCheckpointSheet({
         lon: selectedCoordinate.lon,
         source: selectedCoordinate.source,
       });
+      onCheckpointCreated?.(checkpointId);
       onClose();
     } catch (saveError) {
       setError(friendlyError(saveError));

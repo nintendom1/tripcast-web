@@ -7,7 +7,7 @@ import type { FunctionReference } from "convex/server";
 
 export type Role = "traveler" | "support_crew";
 
-export type CheckpointSource = "right_click" | "tap_add_mode" | "long_press";
+export type CheckpointSource = "right_click" | "tap_add_mode" | "long_press" | "current_activity";
 
 export type Checkpoint = {
   _id: string;
@@ -174,6 +174,29 @@ export type Challenge = {
   locationLabel?: string;
   lat?: number;
   lon?: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+// ---------------------------------------------------------------------------
+// Current Activity types
+// ---------------------------------------------------------------------------
+
+export type CurrentActivity = {
+  _id: string;
+  _creationTime: number;
+  status: "active" | "completed" | "dropped";
+  title: string;
+  emoji?: string;
+  note?: string;
+  locationLabel?: string;
+  lat?: number;
+  lon?: number;
+  startedAt: number;
+  completedAt?: number;
+  droppedAt?: number;
+  linkedChallengeId?: string;
+  completedCheckpointId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -399,6 +422,12 @@ export const tripcastApi = {
       { token: string },
       null
     >,
+    deleteCurrentActivity: (anyApi as any).privacy.deleteCurrentActivity as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
   },
   travelerLocations: {
     updateTravelerLocation: (anyApi as any).routeVotes.updateTravelerLocation as FunctionReference<
@@ -518,6 +547,20 @@ export const tripcastApi = {
       { token: string; routeVoteId: string },
       RouteVoteMapOverlay
     >,
+    travelerListPlannedChallenges: (anyApi as any).routeVotes.travelerListPlannedChallenges as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Challenge[]
+    >,
+  },
+  currentActivity: {
+    travelerSetCurrentActivity: (anyApi as any).currentActivity.travelerSetCurrentActivity as FunctionReference<"mutation", "public", { token: string; title: string; emoji?: string; note?: string; locationLabel?: string; lat?: number; lon?: number; linkedChallengeId?: string }, string>,
+    travelerDropCurrentActivity: (anyApi as any).currentActivity.travelerDropCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string }, null>,
+    travelerCompleteCurrentActivity: (anyApi as any).currentActivity.travelerCompleteCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string; checkpointId: string }, null>,
+    travelerGetCurrentActivity: (anyApi as any).currentActivity.travelerGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
+    supportCrewGetCurrentActivity: (anyApi as any).currentActivity.supportCrewGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
+    travelerListRecentActivities: (anyApi as any).currentActivity.travelerListRecentActivities as FunctionReference<"query", "public", { token: string }, CurrentActivity[]>,
   },
   travelerState: {
     travelerGetState: (anyApi as any).travelerState.travelerGetState as FunctionReference<

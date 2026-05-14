@@ -22,6 +22,9 @@ import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
 import TravelerStateCard from "../travelstate/TravelerStateCard";
+import CurrentActivityCard from "../currentactivity/CurrentActivityCard";
+import type { CurrentActivity } from "../../convex/tripcastApi";
+import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import HistoryPanel from "../history/HistoryPanel";
 import CheckInDetailSheet from "../history/CheckInDetailSheet";
 import { useHistoryUnread } from "../history/useHistoryUnread";
@@ -171,10 +174,14 @@ function ConvexCheckpointSheet({
   selectedCoordinate,
   token,
   onClose,
+  prefill,
+  onCheckpointCreated,
 }: {
   selectedCoordinate: SelectedCoordinate | null;
   token: string;
   onClose: () => void;
+  prefill?: { title?: string; note?: string; locationLabel?: string };
+  onCheckpointCreated?: (id: string) => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
 
@@ -284,6 +291,8 @@ function ConvexCheckpointSheet({
       onClose={onClose}
       onSave={handleSave}
       stateSection={stateSection}
+      prefill={prefill}
+      onCheckpointCreated={onCheckpointCreated}
     />
   );
 }
@@ -329,6 +338,8 @@ export default function TripMap({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
+  const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
+  const [activityToComplete, setActivityToComplete] = useState<CurrentActivity | null>(null);
 
   const canWrite = role === "traveler";
 
@@ -336,6 +347,7 @@ export default function TripMap({
   const stopTravelerLocationSharing = useMutation(
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
+  const completeCurrentActivity = useMutation(tripcastApi.currentActivity.travelerCompleteCurrentActivity);
   const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
@@ -489,6 +501,7 @@ export default function TripMap({
     coordinatePickModeRef.current = null;
     setIsHistoryOpen(false);
     setSelectedCheckInEvent(null);
+    setActivityToComplete(null);
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -555,6 +568,29 @@ export default function TripMap({
   ) {
     setVoteMapOverlay(overlay);
     setVoteOptionNumberById(optionNumberById ?? null);
+  }
+
+  function handleCompleteAsCheckIn(activity: CurrentActivity) {
+    if (activity.lat !== undefined && activity.lon !== undefined) {
+      setSelectedCoordinate({ lat: activity.lat, lon: activity.lon, source: "current_activity" });
+    } else {
+      setIsPlacementMode(true);
+    }
+    setActivityToComplete(activity);
+  }
+
+  async function handleCheckpointCreated(checkpointId: string) {
+    if (!activityToComplete) return;
+    try {
+      await completeCurrentActivity({
+        token,
+        activityId: activityToComplete._id,
+        checkpointId,
+      });
+    } catch {
+      // Non-fatal: the checkpoint was saved; activity completion is best-effort
+    }
+    setActivityToComplete(null);
   }
 
   function showToast(message: string) {
@@ -828,7 +864,16 @@ export default function TripMap({
         <ConvexCheckpointSheet
           selectedCoordinate={selectedCoordinate}
           token={token}
-          onClose={() => setSelectedCoordinate(null)}
+          onClose={() => {
+            setSelectedCoordinate(null);
+            setActivityToComplete(null);
+          }}
+          prefill={activityToComplete ? {
+            title: activityToComplete.title,
+            note: activityToComplete.note,
+            locationLabel: activityToComplete.locationLabel,
+          } : undefined}
+          onCheckpointCreated={handleCheckpointCreated}
         />
       )}
 
@@ -880,7 +925,15 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      <TravelerStateCard token={token} role={role} />
+      <div className="absolute top-5 left-5 z-[2] flex flex-col gap-2">
+        <TravelerStateCard token={token} role={role} />
+        <CurrentActivityCard
+          token={token}
+          role={role}
+          onCompleteAsCheckIn={handleCompleteAsCheckIn}
+          onRequestSetActivity={() => setIsSetActivityOpen(true)}
+        />
+      </div>
 
       <AnimatePresence>
         {isHistoryOpen && (
@@ -905,6 +958,14 @@ export default function TripMap({
         }}
         onLocationFocus={centerMapOnCoordinate}
       />
+
+      {role === "traveler" && (
+        <SetActivitySheet
+          open={isSetActivityOpen}
+          token={token}
+          onOpenChange={setIsSetActivityOpen}
+        />
+      )}
     </section>
   );
 }

@@ -21,7 +21,7 @@ type EmergencyResetSheetProps = {
   onTripDataDeleted: () => void;
 };
 
-type ResetAction = "checkpoints" | "location" | "tripData" | "sessions" | "travelerState";
+type ResetAction = "checkpoints" | "location" | "tripData" | "sessions" | "travelerState" | "currentActivity";
 
 type ActionConfig = {
   id: ResetAction;
@@ -67,6 +67,13 @@ const ACTIONS: ActionConfig[] = [
     confirmLabel: "Delete traveler state",
     icon: Activity,
   },
+  {
+    id: "currentActivity",
+    title: "Clear Current Activity",
+    description: "Remove the active current activity so Support Crew can no longer see what you are doing.",
+    confirmLabel: "Clear current activity",
+    icon: MapPinOff,
+  },
 ];
 
 function friendlyError(error: unknown) {
@@ -92,6 +99,8 @@ function successMessage(action: ResetAction) {
       return "Everyone has been logged off.";
     case "travelerState":
       return "Traveler State deletion started. State data will disappear as the reset completes.";
+    case "currentActivity":
+      return "Current activity cleared.";
   }
 }
 
@@ -108,6 +117,7 @@ export default function EmergencyResetSheet({
   const deleteAllTripData = useMutation(tripcastApi.privacy.deleteAllTripData);
   const logEveryoneOff = useMutation(tripcastApi.privacy.logEveryoneOff);
   const deleteTravelerState = useMutation(tripcastApi.privacy.deleteTravelerState);
+  const deleteCurrentActivity = useMutation(tripcastApi.privacy.deleteCurrentActivity);
 
   const [confirmAction, setConfirmAction] = useState<ActionConfig | null>(null);
   const [pendingAction, setPendingAction] = useState<ResetAction | null>(null);
@@ -140,6 +150,8 @@ export default function EmergencyResetSheet({
         await deleteAllTripData({ token });
       } else if (action.id === "travelerState") {
         await deleteTravelerState({ token });
+      } else if (action.id === "currentActivity") {
+        await deleteCurrentActivity({ token });
       } else {
         await logEveryoneOff({ token });
       }
