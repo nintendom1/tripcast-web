@@ -18,19 +18,9 @@ The backend functions live in a separate private repo.
 
 Do not commit `.env` or `.env.local`. Keep real Convex URLs in `.env.local`; committed files should only use empty placeholders such as `VITE_CONVEX_URL=`.
 
-## NPM Supply-Chain Hardening
+## Dependency Installs
 
-This repo has local npm defaults and a lockfile scanner to reduce the risk from attacks like the Mini Shai-Hulud npm campaign, where compromised packages used install-time scripts and GitHub-hosted optional dependencies to spread through developer machines and CI.
-
-The committed `.npmrc` disables lifecycle scripts by default, blocks Git dependency specs, saves exact dependency versions, and leaves npm audit enabled. If a dependency genuinely requires install scripts, review the package first and run the install with an explicit one-off override instead of changing the repo default.
-
-Before installing changed dependencies, reviewing a dependency PR, or pushing dependency updates, run:
-
-```bash
-npm run security:supply-chain
-```
-
-The guard rejects known compromised package versions from the Mini Shai-Hulud report, direct Git/GitHub/URL/file dependency specs, the `@tanstack/setup` optional dependency vector, and unexpected install lifecycle scripts. The deploy workflow runs this check before `npm ci`.
+Use npm 11.10.0 or newer. The committed `.npmrc` sets `min-release-age=7`, so npm waits 7 days before resolving newly published package versions during installs and dependency updates.
 
 ## Run
 
