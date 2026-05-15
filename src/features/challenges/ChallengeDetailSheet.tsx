@@ -272,6 +272,9 @@ export default function ChallengeDetailSheet({
             Cancel
           </button>
         </div>
+        <p className="text-xs text-muted-foreground">
+          The follower will see the edits to the challenge.
+        </p>
 
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-muted-foreground">Title</label>
@@ -433,11 +436,18 @@ export default function ChallengeDetailSheet({
         )}
       </div>
 
-      {/* Traveler response note */}
-      {challenge.travelerResponseNote && !challenge.silentDrop && (
-        <div className="rounded-md bg-slate-50 border border-slate-200 p-3">
-          <p className="text-xs font-medium text-muted-foreground mb-1">Traveler's note</p>
-          <p className="text-sm text-foreground">{challenge.travelerResponseNote}</p>
+      {/* Traveler response (preset + note) — visible to both traveler and follower */}
+      {(challenge.travelerResponsePreset || challenge.travelerResponseNote) && !challenge.silentDrop && (
+        <div className="rounded-md bg-slate-50 border border-slate-200 p-3 flex flex-col gap-1.5">
+          <p className="text-xs font-medium text-muted-foreground">Traveler's response</p>
+          {challenge.travelerResponsePreset && (
+            <span className="self-start px-2.5 py-0.5 text-xs rounded-full bg-navy/10 text-navy font-medium">
+              {challenge.travelerResponsePreset}
+            </span>
+          )}
+          {challenge.travelerResponseNote && (
+            <p className="text-sm text-foreground">{challenge.travelerResponseNote}</p>
+          )}
         </div>
       )}
 

@@ -73,3 +73,13 @@ When adding new component tests:
 - `CheckInDetailSheet` auto-focuses the map on mount via `useEffect` when `lat`/`lon` are present.
 - Unread history state is tracked in `localStorage` under the key `tripcast.historyLastReadAt` (`src/features/history/useHistoryUnread.ts`).
 - `TravelerStateCard` and `CurrentActivityCard` share a positioning wrapper in `TripMap.tsx` (`absolute top-5 left-5 z-[2] flex flex-col gap-2`). Neither card carries its own absolute positioning.
+
+## Coordinate-Pick UX Pattern
+
+Forms that let users tap the map to set a coordinate use a panel-hide approach so the map is fully accessible:
+
+1. In `TripMap.tsx`, call `setCoordinatePickMode({ label, callback })` and display the pick banner.
+2. Wrap the triggering panel in a `<div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>` — the panel stays **mounted** (preserving form state) but becomes invisible and non-interactive.
+3. Because `Sheet`/`SheetContent` renders into a portal (body level), it escapes the parent `invisible` class. If the form is inside a `Sheet`, also pass `showBackdrop={!isPickingCoordinate}` and `className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}` directly to `SheetContent`.
+4. `RouteVoteProgress` (line ~927 in `TripMap.tsx`) is the reference implementation. `ChallengePanel` follows the same pattern.
+5. Always wire the coordinate callback so it fires into the form's setter — do NOT close and reopen the panel/sheet; that would lose form state.

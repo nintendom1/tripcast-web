@@ -963,14 +963,17 @@ export default function TripMap({
         />
       </div>
 
-      <ChallengePanel
-        open={isChallengesPanelOpen}
-        token={token}
-        role={role}
-        onClose={() => setIsChallengesPanelOpen(false)}
-        onStartChallenge={() => setIsChallengesPanelOpen(false)}
-        onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
-      />
+      <div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>
+        <ChallengePanel
+          open={isChallengesPanelOpen}
+          token={token}
+          role={role}
+          onClose={() => setIsChallengesPanelOpen(false)}
+          onStartChallenge={() => setIsChallengesPanelOpen(false)}
+          onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
+          isPickingCoordinate={isPickingCoordinate}
+        />
+      </div>
 
       <AnimatePresence>
         {isHistoryOpen && (

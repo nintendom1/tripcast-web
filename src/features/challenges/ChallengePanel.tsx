@@ -24,6 +24,7 @@ type Props = {
   onClose: () => void;
   onStartChallenge?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  isPickingCoordinate?: boolean;
 };
 
 type TravelerFilter = "all" | "proposed" | "visible" | "in_progress" | "completed" | "dropped";
@@ -46,11 +47,13 @@ function TravelerChallengePanel({
   onClose,
   onStartChallenge,
   onRequestCoordinatePick,
+  isPickingCoordinate,
 }: {
   token: string;
   onClose: () => void;
   onStartChallenge?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  isPickingCoordinate?: boolean;
 }) {
   const [filter, setFilter] = useState<TravelerFilter>("all");
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
@@ -127,7 +130,11 @@ function TravelerChallengePanel({
       </div>
 
       <Sheet open={isDetailOpen} onOpenChange={(o) => { if (!o) { setIsDetailOpen(false); setSelectedChallenge(null); } }}>
-        <SheetContent side="bottom">
+        <SheetContent
+          side="bottom"
+          showBackdrop={!isPickingCoordinate}
+          className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}
+        >
           <SheetHeader>
             <SheetTitle className="sr-only">Challenge details</SheetTitle>
           </SheetHeader>
@@ -433,6 +440,7 @@ export default function ChallengePanel({
   onClose,
   onStartChallenge,
   onRequestCoordinatePick,
+  isPickingCoordinate,
 }: Props) {
   return (
     <AnimatePresence>
@@ -464,6 +472,7 @@ export default function ChallengePanel({
                 onClose={onClose}
                 onStartChallenge={onStartChallenge}
                 onRequestCoordinatePick={onRequestCoordinatePick}
+                isPickingCoordinate={isPickingCoordinate}
               />
             ) : (
               <SupportCrewChallengePanel
