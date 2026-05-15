@@ -401,119 +401,123 @@ export default function RouteVoteProgress({
 
   return (
     <Sheet open={true} onOpenChange={(open) => { if (!open) onClose(); }} modal={false}>
-      <SheetContent
-        side={isCreateView ? "bottom" : "left"}
-        showBackdrop={false}
-        className={
-          isCreateView
-            ? "inset-0 z-[4] flex flex-col bg-background"
-            : "bottom-5 left-5 top-auto h-auto w-80 max-w-[calc(100%-40px)] max-h-[calc(100%-40px)] overflow-y-auto rounded-md border bg-background shadow-lg flex flex-col"
-        }
-      >
-        <SheetHeader className="sticky top-0 z-[1] shrink-0 flex flex-row items-center justify-between border-b bg-background px-4 py-3">
-        <div className="flex items-center gap-2">
-          {(view === "create" || view === "detail") && (
+      <SheetContent side={isCreateView ? "bottom" : "left"} showBackdrop={false} className="z-[4] bg-transparent p-0 shadow-none border-none">
+        <motion.div
+          initial={{ y: 40, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: 40, opacity: 0 }}
+          transition={{ duration: 0.18, ease: "easeOut" as const }}
+          className={
+            isCreateView
+              ? "absolute inset-0 max-h-none h-dvh rounded-none border-0 bg-background flex flex-col"
+              : "absolute inset-y-auto right-auto top-auto left-5 bottom-5 h-auto w-80 max-w-[calc(100%-40px)] max-h-[calc(100%-40px)] overflow-y-auto rounded-md border bg-background shadow-lg flex flex-col"
+          }
+        >
+          <SheetHeader className="sticky top-0 z-[1] shrink-0 flex flex-row items-center justify-between border-b bg-background px-4 py-3">
+            <div className="flex items-center gap-2">
+              {(view === "create" || view === "detail") && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setView("list");
+                    setSelectedVoteId(null);
+                  }}
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  ←
+                </button>
+              )}
+              <SheetTitle className="font-semibold text-sm">
+                {view === "create" ? "New Vote" : view === "detail" ? "Vote Details" : "Manage Votes"}
+              </SheetTitle>
+            </div>
             <button
               type="button"
-              onClick={() => {
-                setView("list");
-                setSelectedVoteId(null);
-              }}
-              className="text-sm text-muted-foreground hover:text-foreground"
+              onClick={onClose}
+              className="text-muted-foreground hover:text-foreground text-sm"
             >
-              ←
+              Close
             </button>
-          )}
-          <SheetTitle className="font-semibold text-sm">
-            {view === "create" ? "New Vote" : view === "detail" ? "Vote Details" : "Manage Votes"}
-          </SheetTitle>
+          </SheetHeader>
+ 
+          <div className="flex-1 overflow-y-auto p-4">
+          <AnimatePresence mode="wait">
+            {view === "create" ? (
+              <motion.div
+                key="create"
+                initial={{ x: 20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -20, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <CreateRouteVoteForm
+                  token={token}
+                  onCreated={(id) => {
+                    setSelectedVoteId(id);
+                    setView("detail");
+                  }}
+                  onCancel={() => setView("list")}
+                  onRequestCoordinatePick={onRequestCoordinatePick}
+                  referenceLocation={referenceLocation}
+                />
+              </motion.div>
+            ) : view === "detail" && selectedVote ? (
+              <motion.div
+                key="detail"
+                initial={{ x: 20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -20, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <VoteDetailView
+                  token={token}
+                  vote={selectedVote}
+                  onBack={() => {
+                    setView("list");
+                    setSelectedVoteId(null);
+                    onVoteOverlayChange(null);
+                    onRequestFitMap(null);
+                  }}
+                  onVoteOverlayChange={onVoteOverlayChange}
+                  onRequestFitMap={onRequestFitMap}
+                  fallbackOrigin={fallbackOrigin}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="list"
+                initial={{ x: -20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: 20, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex flex-col gap-3"
+              >
+                <Button size="sm" onClick={() => setView("create")} className="w-full">
+                  + Propose new route
+                </Button>
+                {votes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No active votes.</p>
+                ) : (
+                  votes.map((vote) => (
+                    <VoteListCard
+                      key={vote._id}
+                      vote={vote}
+                      onViewDetail={() => {
+                        setSelectedVoteId(vote._id);
+                        setView("detail");
+                      }}
+                      onCloseVote={() => handleCloseVote(vote._id)}
+                      onCancel={() => handleCancelVote(vote._id)}
+                      onArchive={() => handleArchiveVote(vote._id)}
+                      isActing={actingVoteId === vote._id}
+                    />
+                  ))
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
           </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground text-sm"
-        >
-          Close
-        </button>
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto p-4">
-        <AnimatePresence mode="wait">
-          {view === "create" ? (
-            <motion.div
-              key="create"
-              initial={{ x: 20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -20, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <CreateRouteVoteForm
-                token={token}
-                onCreated={(id) => {
-                  setSelectedVoteId(id);
-                  setView("detail");
-                }}
-                onCancel={() => setView("list")}
-                onRequestCoordinatePick={onRequestCoordinatePick}
-                referenceLocation={referenceLocation}
-              />
-            </motion.div>
-          ) : view === "detail" && selectedVote ? (
-            <motion.div
-              key="detail"
-              initial={{ x: 20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -20, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <VoteDetailView
-                token={token}
-                vote={selectedVote}
-                onBack={() => {
-                  setView("list");
-                  setSelectedVoteId(null);
-                  onVoteOverlayChange(null);
-                  onRequestFitMap(null);
-                }}
-                onVoteOverlayChange={onVoteOverlayChange}
-                onRequestFitMap={onRequestFitMap}
-                fallbackOrigin={fallbackOrigin}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="list"
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 20, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex flex-col gap-3"
-            >
-              <Button size="sm" onClick={() => setView("create")} className="w-full">
-                + Propose new route
-              </Button>
-              {votes.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No active votes.</p>
-              ) : (
-                votes.map((vote) => (
-                  <VoteListCard
-                    key={vote._id}
-                    vote={vote}
-                    onViewDetail={() => {
-                      setSelectedVoteId(vote._id);
-                      setView("detail");
-                    }}
-                    onCloseVote={() => handleCloseVote(vote._id)}
-                    onCancel={() => handleCancelVote(vote._id)}
-                    onArchive={() => handleArchiveVote(vote._id)}
-                    isActing={actingVoteId === vote._id}
-                  />
-                ))
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-        </div>
+        </motion.div>
       </SheetContent>
     </Sheet>
   );

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { motion } from "framer-motion";
 import { X } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 
@@ -41,6 +42,13 @@ type TravelerStateSheetProps = {
 };
 
 type TabView = "state" | "visibility";
+
+const PANEL_MOTION = {
+  initial: { y: "100%" },
+  animate: { y: 0 },
+  exit: { y: "100%" },
+  transition: { duration: 0.22, ease: "easeOut" as const },
+};
 
 
 function formatSaveError(e: unknown): string {
@@ -359,11 +367,11 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
 
   return (
     <Sheet open={true} onOpenChange={(open) => { if (!open) onClose(); }} modal={false}>
-      <SheetContent
-        side="bottom"
-        showBackdrop={false}
-        className="inset-x-0 bottom-0 z-[10] flex max-h-[90dvh] flex-col rounded-t-xl border bg-background shadow-xl"
-      >
+      <SheetContent side="bottom" showBackdrop={false} className="inset-x-0 bottom-0 z-[10] bg-transparent p-0 shadow-none border-none">
+        <motion.div
+          {...PANEL_MOTION}
+          className="flex max-h-[90dvh] flex-col rounded-t-xl border bg-background shadow-xl"
+        >
         <SheetHeader className="flex flex-none flex-row items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-2">
             <span className="text-xl" aria-hidden="true">
@@ -772,6 +780,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
           </Button>
         )}
       </div>
+        </motion.div>
       </SheetContent>
     </Sheet>
   );

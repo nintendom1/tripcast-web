@@ -71,6 +71,18 @@ Use `src/components/ui/sheet.tsx` for sheet, dialog, drawer, and panel overlays 
 
 Map-adjacent bottom panels that should leave the map visually available should use `Sheet`/`SheetContent` with `modal={false}` and `showBackdrop={false}`. Modal flows, such as Options and Emergency Reset, should keep the default backdrop/modal behavior. Reserve custom positioned or animated overlays for transient non-dialog UI such as toasts and map placement banners.
 
+### Overlay Animation Strategy
+
+For map-adjacent panels that need custom slide or fade motion:
+
+1. Keep `Sheet` and `SheetContent` as the accessibility and portal shell.
+2. Use `modal={false}` and `showBackdrop={false}` when the map should remain visible and interactive.
+3. Put `framer-motion` on an inner wrapper (`motion.div`) inside `SheetContent`, not on `SheetContent` itself.
+4. Set `SheetContent` to a transparent shell (`bg-transparent`, no border/shadow/padding) and apply panel visuals on the animated inner wrapper.
+5. Keep panel placement classes (`bottom`, `left`, compact/fullsreen sizing) on the animated inner wrapper so animations and layout do not fight side presets.
+
+This keeps Base UI semantics while preserving prior slide-in/out behavior and avoids remount or double-backdrop regressions.
+
 ## Manual Test
 
 - Open the app and verify the map is centered on Seattle.
@@ -127,4 +139,3 @@ git diff --cached | gitleaks stdin --config .gitleaks.toml --redact --verbose
 Keep real Convex deployment and site URLs out of committed files. `.gitleaks.toml` includes a TripCast rule that flags `convex.cloud` and `convex.site` URLs anywhere in committed content.
 
 Enable GitHub secret scanning and push protection in the repository settings.
-

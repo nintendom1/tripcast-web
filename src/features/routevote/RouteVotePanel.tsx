@@ -297,24 +297,27 @@ export default function RouteVotePanel({
 
   return (
     <Sheet open={true} onOpenChange={(open) => { if (!open) onClose(); }} modal={false}>
-      <SheetContent
-        side="bottom"
-        showBackdrop={false}
-        className="bottom-0 left-0 right-0 z-[4] flex max-h-[60vh] flex-col overflow-y-auto border-t bg-background"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <SheetHeader className="sticky top-0 z-[1] flex flex-row items-center justify-between border-b bg-background px-4 py-3">
-          <SheetTitle className="font-semibold text-sm">
-            {selectedVote ? selectedVote.title : "Votes"}
-          </SheetTitle>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground text-sm"
+      <SheetContent side="bottom" showBackdrop={false} className="bottom-0 left-0 right-0 z-[4] bg-transparent p-0 shadow-none border-none">
+        <motion.div
+          initial={{ y: "100%" }}
+          animate={{ y: 0 }}
+          exit={{ y: "100%" }}
+          transition={{ duration: 0.22, ease: "easeOut" as const }}
+          className="flex max-h-[60vh] flex-col overflow-y-auto border-t bg-background"
+          style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
         >
-          Close
-        </button>
-        </SheetHeader>
+          <SheetHeader className="sticky top-0 z-[1] flex flex-row items-center justify-between border-b bg-background px-4 py-3">
+            <SheetTitle className="font-semibold text-sm">
+              {selectedVote ? selectedVote.title : "Votes"}
+            </SheetTitle>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-muted-foreground hover:text-foreground text-sm"
+            >
+              Close
+            </button>
+          </SheetHeader>
 
         <div className="p-4 flex flex-col gap-3">
         <AnimatePresence mode="wait">
@@ -358,6 +361,7 @@ export default function RouteVotePanel({
           )}
         </AnimatePresence>
         </div>
+        </motion.div>
       </SheetContent>
     </Sheet>
   );
