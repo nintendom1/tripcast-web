@@ -8,6 +8,7 @@ import {
   type VisibleRouteVote,
 } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 import { Textarea } from "../../components/ui/textarea";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { ChoiceList, ChoiceItem } from "../../components/rpg/ChoiceList";
@@ -295,18 +296,17 @@ export default function RouteVotePanel({
   }
 
   return (
-    <motion.div
-      initial={{ y: "100%" }}
-      animate={{ y: 0 }}
-      exit={{ y: "100%" }}
-      transition={{ duration: 0.22, ease: "easeOut" as const }}
-      className="absolute bottom-0 left-0 right-0 z-[4] bg-background border-t max-h-[60vh] overflow-y-auto flex flex-col"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-    >
-      <div className="sticky top-0 bg-background border-b flex items-center justify-between px-4 py-3 z-[1]">
-        <span className="font-semibold text-sm">
-          {selectedVote ? selectedVote.title : "Votes"}
-        </span>
+    <Sheet open={true} onOpenChange={(open) => { if (!open) onClose(); }} modal={false}>
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className="bottom-0 left-0 right-0 z-[4] flex max-h-[60vh] flex-col overflow-y-auto border-t bg-background"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <SheetHeader className="sticky top-0 z-[1] flex flex-row items-center justify-between border-b bg-background px-4 py-3">
+          <SheetTitle className="font-semibold text-sm">
+            {selectedVote ? selectedVote.title : "Votes"}
+          </SheetTitle>
         <button
           type="button"
           onClick={onClose}
@@ -314,9 +314,9 @@ export default function RouteVotePanel({
         >
           Close
         </button>
-      </div>
+        </SheetHeader>
 
-      <div className="p-4 flex flex-col gap-3">
+        <div className="p-4 flex flex-col gap-3">
         <AnimatePresence mode="wait">
           {selectedVote ? (
             <motion.div
@@ -357,7 +357,8 @@ export default function RouteVotePanel({
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-    </motion.div>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { motion } from "framer-motion";
 import { X } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
@@ -42,12 +42,6 @@ type TravelerStateSheetProps = {
 
 type TabView = "state" | "visibility";
 
-const PANEL_MOTION = {
-  initial: { y: "100%" },
-  animate: { y: 0 },
-  exit: { y: "100%" },
-  transition: { duration: 0.22, ease: "easeOut" as const },
-};
 
 function formatSaveError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
@@ -364,32 +358,33 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
   const lastUpdated = result?.state?.updatedAt;
 
   return (
-    <motion.div
-      {...PANEL_MOTION}
-      className="absolute inset-x-0 bottom-0 z-[10] flex max-h-[90dvh] flex-col rounded-t-xl border bg-background shadow-xl"
-    >
-      {/* Header */}
-      <div className="flex flex-none items-center justify-between border-b px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="text-xl" aria-hidden="true">
-            {stateEmoji}
-          </span>
-          <h2 className="text-sm font-bold">Traveler State</h2>
-          {lastUpdated && (
-            <span className="text-xs text-muted-foreground" suppressHydrationWarning>
-              · {formatRelativeTime(lastUpdated)}
+    <Sheet open={true} onOpenChange={(open) => { if (!open) onClose(); }} modal={false}>
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className="inset-x-0 bottom-0 z-[10] flex max-h-[90dvh] flex-col rounded-t-xl border bg-background shadow-xl"
+      >
+        <SheetHeader className="flex flex-none flex-row items-center justify-between border-b px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl" aria-hidden="true">
+              {stateEmoji}
             </span>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close Traveler State"
-          className="rounded-md p-1 hover:bg-muted"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
+            <SheetTitle className="text-sm font-bold">Traveler State</SheetTitle>
+            {lastUpdated && (
+              <span className="text-xs text-muted-foreground" suppressHydrationWarning>
+                · {formatRelativeTime(lastUpdated)}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close Traveler State"
+            className="rounded-md p-1 hover:bg-muted"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </SheetHeader>
 
       {/* Tab bar */}
       <div className="flex flex-none border-b">
@@ -777,6 +772,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
           </Button>
         )}
       </div>
-    </motion.div>
+      </SheetContent>
+    </Sheet>
   );
 }

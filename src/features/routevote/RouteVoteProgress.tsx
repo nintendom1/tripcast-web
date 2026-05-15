@@ -8,6 +8,7 @@ import {
   type ChallengeStatus,
 } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../components/ui/sheet";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
@@ -399,19 +400,17 @@ export default function RouteVoteProgress({
   }
 
   return (
-    <motion.div
-      initial={{ y: 40, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 40, opacity: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut" as const }}
-      // Full-screen during create (gives the form room); small panel for list/detail
-      className={
-        isCreateView
-          ? "absolute inset-0 z-[4] bg-background flex flex-col"
-          : "absolute bottom-5 left-5 z-[4] w-80 max-w-[calc(100%-40px)] max-h-[calc(100%-40px)] overflow-y-auto bg-background border rounded-md shadow-lg flex flex-col"
-      }
-    >
-      <div className="sticky top-0 bg-background border-b flex items-center justify-between px-4 py-3 z-[1] shrink-0">
+    <Sheet open={true} onOpenChange={(open) => { if (!open) onClose(); }} modal={false}>
+      <SheetContent
+        side={isCreateView ? "bottom" : "left"}
+        showBackdrop={false}
+        className={
+          isCreateView
+            ? "inset-0 z-[4] flex flex-col bg-background"
+            : "bottom-5 left-5 top-auto h-auto w-80 max-w-[calc(100%-40px)] max-h-[calc(100%-40px)] overflow-y-auto rounded-md border bg-background shadow-lg flex flex-col"
+        }
+      >
+        <SheetHeader className="sticky top-0 z-[1] shrink-0 flex flex-row items-center justify-between border-b bg-background px-4 py-3">
         <div className="flex items-center gap-2">
           {(view === "create" || view === "detail") && (
             <button
@@ -425,10 +424,10 @@ export default function RouteVoteProgress({
               ←
             </button>
           )}
-          <span className="font-semibold text-sm">
+          <SheetTitle className="font-semibold text-sm">
             {view === "create" ? "New Vote" : view === "detail" ? "Vote Details" : "Manage Votes"}
-          </span>
-        </div>
+          </SheetTitle>
+          </div>
         <button
           type="button"
           onClick={onClose}
@@ -436,9 +435,9 @@ export default function RouteVoteProgress({
         >
           Close
         </button>
-      </div>
+        </SheetHeader>
 
-      <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4">
         <AnimatePresence mode="wait">
           {view === "create" ? (
             <motion.div
@@ -514,7 +513,8 @@ export default function RouteVoteProgress({
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-    </motion.div>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
