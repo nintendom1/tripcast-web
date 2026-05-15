@@ -22,6 +22,14 @@ type EmergencyResetSheetProps = {
   onResetStarted: (message: string) => void;
 };
 
+export type EmergencyResetContentProps = Omit<
+  EmergencyResetSheetProps,
+  "open" | "onOpenChange"
+> & {
+  onClose: () => void;
+  onPendingChange?: (isPending: boolean) => void;
+};
+
 function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.toLowerCase().includes("too many") || message.toLowerCase().includes("rate")) {
@@ -49,6 +57,44 @@ export default function EmergencyResetSheet({
   onTripDataDeleted,
   onResetStarted,
 }: EmergencyResetSheetProps) {
+  const [isPending, setIsPending] = useState(false);
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && isPending) return;
+    onOpenChange(nextOpen);
+  }
+
+  function handleContentClose() {
+    setIsPending(false);
+    onOpenChange(false);
+  }
+
+  return (
+    <Sheet open={open} onOpenChange={handleOpenChange}>
+      <SheetContent side="bottom">
+        <EmergencyResetContent
+          token={token}
+          onClose={handleContentClose}
+          onLoggedOut={onLoggedOut}
+          onLocationDataCleared={onLocationDataCleared}
+          onTripDataDeleted={onTripDataDeleted}
+          onResetStarted={onResetStarted}
+          onPendingChange={setIsPending}
+        />
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export function EmergencyResetContent({
+  token,
+  onClose,
+  onLoggedOut,
+  onLocationDataCleared,
+  onTripDataDeleted,
+  onResetStarted,
+  onPendingChange,
+}: EmergencyResetContentProps) {
   const emergencyReset = useMutation(tripcastApi.privacy.emergencyReset);
 
   const [includeAuthSessions, setIncludeAuthSessions] = useState(false);
@@ -56,19 +102,22 @@ export default function EmergencyResetSheet({
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && isPending) return;
-    onOpenChange(nextOpen);
-    if (!nextOpen) {
-      setIsConfirming(false);
-      setError(null);
-    }
+  function setPending(nextPending: boolean) {
+    setIsPending(nextPending);
+    onPendingChange?.(nextPending);
+  }
+
+  function handleClose() {
+    if (isPending) return;
+    setIsConfirming(false);
+    setError(null);
+    onClose();
   }
 
   async function runEmergencyReset() {
     if (isPending) return;
 
-    setIsPending(true);
+    setPending(true);
     setError(null);
 
     try {
@@ -77,7 +126,9 @@ export default function EmergencyResetSheet({
       onLocationDataCleared();
       onTripDataDeleted();
       onResetStarted(successMessage(includeAuthSessions));
-      onOpenChange(false);
+      setError(null);
+      setPending(false);
+      onClose();
 
       if (includeAuthSessions) {
         onLoggedOut();
@@ -85,13 +136,12 @@ export default function EmergencyResetSheet({
     } catch (actionError) {
       setError(friendlyError(actionError));
     } finally {
-      setIsPending(false);
+      setPending(false);
     }
   }
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="bottom">
+    <>
         <SheetHeader>
           <SheetTitle>Emergency Reset</SheetTitle>
           <SheetDescription>
@@ -213,7 +263,6 @@ export default function EmergencyResetSheet({
             </div>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+    </>
   );
 }

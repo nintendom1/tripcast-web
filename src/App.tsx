@@ -16,7 +16,6 @@ import AuthScreen from "./features/auth/AuthScreen";
 import FollowerLoginScreen from "./features/auth/FollowerLoginScreen";
 import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
 import PasswordResetScreen from "./features/auth/PasswordResetScreen";
-import EmergencyResetSheet from "./features/privacy/EmergencyResetSheet";
 import OptionsSheet from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 
@@ -60,7 +59,6 @@ function ConnectedApp() {
 
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
-  const [isEmergencyResetOpen, setIsEmergencyResetOpen] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
@@ -124,7 +122,7 @@ function ConnectedApp() {
   function handleLoggedOut() {
     clearStoredSession();
     setSession(null);
-    setIsEmergencyResetOpen(false);
+    setIsOptionsOpen(false);
   }
 
   function showResetToast(message: string) {
@@ -258,21 +256,12 @@ function ConnectedApp() {
         session={session}
         role={role}
         onSignOut={handleSignOut}
-        onEmergencyReset={() => setIsEmergencyResetOpen(true)}
         onManageFollowers={() => { setIsOptionsOpen(false); setView("follower-management"); }}
+        onLoggedOut={handleLoggedOut}
+        onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
+        onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
+        onResetStarted={showResetToast}
       />
-
-      {role === "traveler" ? (
-        <EmergencyResetSheet
-          open={isEmergencyResetOpen}
-          token={session.token}
-          onOpenChange={setIsEmergencyResetOpen}
-          onLoggedOut={handleLoggedOut}
-          onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
-          onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
-          onResetStarted={showResetToast}
-        />
-      ) : null}
 
       <Suspense
         fallback={
