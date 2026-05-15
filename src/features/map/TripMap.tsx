@@ -17,6 +17,7 @@ import {
 import AddCheckpointSheet, { type SelectedCoordinate } from "./AddCheckpointSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import ChallengeMarkers from "./ChallengeMarkers";
+import ChallengePanel from "../challenges/ChallengePanel";
 import RouteVoteButton from "../routevote/RouteVoteButton";
 import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
@@ -340,6 +341,7 @@ export default function TripMap({
   const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState<CurrentActivity | null>(null);
+  const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
 
   const canWrite = role === "traveler";
 
@@ -699,9 +701,12 @@ export default function TripMap({
         fallbackOrigin={routeVoteFallbackOrigin}
         optionNumberById={voteOptionNumberById}
       />
-      {role === "traveler" && (
-        <ChallengeMarkers map={mapInstance} votes={travelerVotes} />
-      )}
+      <ChallengeMarkers
+        map={mapInstance}
+        token={token}
+        role={role}
+        onChallengeClick={() => setIsChallengesPanelOpen(true)}
+      />
 
       {/* Placement / coordinate pick banners */}
       <AnimatePresence>
@@ -818,7 +823,7 @@ export default function TripMap({
       {role === "traveler" && (
         <button
           type="button"
-          className="absolute bottom-[190px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+          className="absolute bottom-[250px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
           onClick={() => setIsHistoryOpen((p) => !p)}
         >
           {isHistoryOpen ? "Close History" : "History"}
@@ -827,6 +832,20 @@ export default function TripMap({
               {unreadCount > 9 ? "9+" : unreadCount}
             </span>
           )}
+        </button>
+      )}
+
+      {(role === "traveler" || role === "support_crew") && (
+        <button
+          type="button"
+          className={`absolute bottom-[190px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 border rounded-md shadow-lg font-bold text-sm transition-colors ${
+            isChallengesPanelOpen
+              ? "bg-navy text-white border-navy hover:bg-navy/90"
+              : "bg-white text-navy border-slate-300 hover:bg-slate-50"
+          }`}
+          onClick={() => setIsChallengesPanelOpen((p) => !p)}
+        >
+          {isChallengesPanelOpen ? "Close Challenges" : "Challenges"}
         </button>
       )}
 
@@ -847,7 +866,7 @@ export default function TripMap({
       {role === "support_crew" && (
         <button
           type="button"
-          className="absolute bottom-[70px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+          className="absolute bottom-[130px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
           onClick={() => setIsHistoryOpen((p) => !p)}
         >
           {isHistoryOpen ? "Close History" : "History"}
@@ -934,6 +953,14 @@ export default function TripMap({
           onRequestSetActivity={() => setIsSetActivityOpen(true)}
         />
       </div>
+
+      <ChallengePanel
+        open={isChallengesPanelOpen}
+        token={token}
+        role={role}
+        onClose={() => setIsChallengesPanelOpen(false)}
+        onStartChallenge={() => setIsChallengesPanelOpen(false)}
+      />
 
       <AnimatePresence>
         {isHistoryOpen && (

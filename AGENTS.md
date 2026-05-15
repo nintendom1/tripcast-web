@@ -1,5 +1,15 @@
 # Agent Instructions
 
+## Feature Branch Policy
+
+- **Never work directly on `main`.** Always create a feature branch before making changes.
+- Name feature branches with hyphens only — no slashes. Examples: `feat-challenge-lifecycle`, `fix-map-markers`, `chore-update-deps`.
+- If you find yourself on `main` at the start of a task, create a feature branch first via `git checkout -b <branch-name>`.
+
+## Planning Mode Behavior
+
+- When in planning mode, **ask clarifying questions as needed to explore and refine requirements** before finalizing the plan. Probe for edge cases, prioritization, and constraints the user may not have stated.
+
 - This repo is public.
 - Avoid exposing private roadmap, product strategy, or sensitive implementation details, even in commit messages.
 - Keep UI barebones for this phase.
