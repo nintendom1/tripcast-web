@@ -65,6 +65,12 @@ Sessions are role-gated. A token is stored in `localStorage` after login. Every 
 
 The reset requires an in-UI confirmation tap. On success, the sheet closes and the app shows a status toast over the map. Rate-limit errors surface as an alert.
 
+## UI Overlay Pattern
+
+Use `src/components/ui/sheet.tsx` for sheet, dialog, drawer, and panel overlays so Base UI handles dialog semantics, focus behavior, escape/outside close behavior, and portal structure consistently.
+
+Map-adjacent bottom panels that should leave the map visually available should use `Sheet`/`SheetContent` with `modal={false}` and `showBackdrop={false}`. Modal flows, such as Options and Emergency Reset, should keep the default backdrop/modal behavior. Reserve custom positioned or animated overlays for transient non-dialog UI such as toasts and map placement banners.
+
 ## Manual Test
 
 - Open the app and verify the map is centered on Seattle.

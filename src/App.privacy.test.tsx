@@ -61,7 +61,10 @@ describe("App: Options button and Emergency Reset location", () => {
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     // Click Emergency Reset in Danger Zone
     await userEvent.click(screen.getByRole("button", { name: /emergency reset/i }));
-    // Now in EmergencyResetSheet
+    // Now in Emergency Reset content within the same sheet root.
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    expect(screen.queryByRole("heading", { name: "Options" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Emergency Reset" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
     await userEvent.click(screen.getByRole("button", { name: "Confirm shared data deletion" }));
 

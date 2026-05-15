@@ -56,6 +56,9 @@ When adding new component tests:
 
 ## Patterns & Gotchas
 
+- Use the shared Base UI-backed sheet primitives in `src/components/ui/sheet.tsx` for sheet, dialog, drawer, and panel overlays. Do not introduce ad hoc `motion.div`/absolute-positioned overlays for these flows unless the UI is a transient non-dialog element such as a toast or map placement banner.
+- Let Base UI own dialog semantics, focus handling, escape/outside close behavior, and portal structure. Use `framer-motion` only when extra motion is needed on top of an accessible primitive.
+- Map-adjacent bottom panels that should not dim or block the map should still use `Sheet`/`SheetContent` with `modal={false}` and `showBackdrop={false}`. Modal flows such as Options and Emergency Reset should keep the default backdrop/modal behavior.
 - History events are fetched in `TripMap.tsx`, not inside `HistoryPanel` — one Convex subscription drives both the panel and the unread badge. Do not move the query into the panel.
 - `CheckInDetailSheet` auto-focuses the map on mount via `useEffect` when `lat`/`lon` are present.
 - Unread history state is tracked in `localStorage` under the key `tripcast.historyLastReadAt` (`src/features/history/useHistoryUnread.ts`).

@@ -1,9 +1,14 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
-import { AnimatePresence, motion } from "framer-motion";
 
 import type { HistoryEvent } from "../../convex/tripcastApi";
 import { StatBar } from "../../components/rpg/StatBar";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "../../components/ui/sheet";
 import {
   MOOD_LABELS,
   ENERGY_LABELS,
@@ -14,13 +19,6 @@ import {
   STRESS_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
 } from "../travelstate/travelerStateUtils";
-
-const SHEET_MOTION = {
-  initial: { y: "100%" },
-  animate: { y: 0 },
-  exit: { y: "100%" },
-  transition: { duration: 0.22, ease: "easeOut" as const },
-};
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -116,20 +114,15 @@ function CheckInDetail({
     event.statusNote !== undefined;
 
   return (
-    <motion.div
-      {...SHEET_MOTION}
-      className="absolute inset-x-0 bottom-0 z-[11] flex flex-col bg-background rounded-t-xl shadow-2xl"
-      style={{ maxHeight: "85dvh" }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0 border-b">
+    <>
+      <SheetHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">
         <div className="flex flex-col gap-0.5 min-w-0">
           <p className="text-xs text-muted-foreground">
             {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </p>
-          <h2 className="text-base font-bold text-navy truncate">
+          <SheetTitle className="text-base font-bold text-navy truncate">
             {event.title ?? "Check-in"}
-          </h2>
+          </SheetTitle>
           {event.locationLabel && (
             <p className="text-xs text-muted-foreground">{event.locationLabel}</p>
           )}
@@ -142,9 +135,8 @@ function CheckInDetail({
         >
           <X className="h-4 w-4" />
         </button>
-      </div>
+      </SheetHeader>
 
-      {/* Scrollable body */}
       <div
         className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4"
         style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
@@ -199,7 +191,7 @@ function CheckInDetail({
           </div>
         )}
       </div>
-    </motion.div>
+    </>
   );
 }
 
@@ -217,10 +209,22 @@ export default function CheckInDetailSheet({
   }, [event?._id]);
 
   return (
-    <AnimatePresence>
-      {event && (
-        <CheckInDetail key={event._id} event={event} onClose={onClose} />
-      )}
-    </AnimatePresence>
+    <Sheet
+      open={Boolean(event)}
+      modal={false}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className="z-[11] shadow-2xl"
+      >
+        {event ? (
+          <CheckInDetail key={event._id} event={event} onClose={onClose} />
+        ) : null}
+      </SheetContent>
+    </Sheet>
   );
 }

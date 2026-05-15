@@ -21,24 +21,25 @@ SheetBackdrop.displayName = "SheetBackdrop";
 
 interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof Dialog.Popup> {
   side?: "top" | "right" | "bottom" | "left";
+  showBackdrop?: boolean;
 }
 
 const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
-  ({ side = "right", className, children, ...props }, ref) => (
+  ({ side = "right", showBackdrop = true, className, children, ...props }, ref) => (
     <SheetPortal>
-      <SheetBackdrop />
+      {showBackdrop ? <SheetBackdrop /> : null}
       <Dialog.Popup
         ref={ref}
         className={cn(
           "fixed z-50 flex flex-col bg-background shadow-xl",
           side === "bottom" &&
-            "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t",
+            "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t transition-transform duration-200 ease-out data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full",
           side === "top" &&
-            "inset-x-0 top-0 max-h-[85dvh] rounded-b-xl border-b",
+            "inset-x-0 top-0 max-h-[85dvh] rounded-b-xl border-b transition-transform duration-200 ease-out data-[ending-style]:-translate-y-full data-[starting-style]:-translate-y-full",
           side === "left" &&
-            "inset-y-0 left-0 h-full w-3/4 max-w-sm border-r",
+            "inset-y-0 left-0 h-full w-3/4 max-w-sm border-r transition-transform duration-200 ease-out data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full",
           side === "right" &&
-            "inset-y-0 right-0 h-full w-3/4 max-w-sm border-l",
+            "inset-y-0 right-0 h-full w-3/4 max-w-sm border-l transition-transform duration-200 ease-out data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full",
           className,
         )}
         {...props}
