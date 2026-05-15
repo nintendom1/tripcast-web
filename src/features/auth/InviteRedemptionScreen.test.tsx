@@ -22,19 +22,16 @@ function renderScreen(inviteToken = "test-invite-token") {
 }
 
 async function fillForm({
-  displayName = "Alice",
   username = "alice",
   password = "password123",
   confirmPassword = "password123",
   acceptTerms = true,
 }: {
-  displayName?: string;
   username?: string;
   password?: string;
   confirmPassword?: string;
   acceptTerms?: boolean;
 } = {}) {
-  await userEvent.type(screen.getByLabelText(/display name/i), displayName);
   await userEvent.type(screen.getByLabelText(/^username/i), username);
   await userEvent.type(screen.getByLabelText(/^password/i), password);
   await userEvent.type(screen.getByLabelText(/confirm password/i), confirmPassword);
@@ -52,7 +49,6 @@ beforeEach(() => {
 describe("InviteRedemptionScreen", () => {
   it("renders all required fields", () => {
     renderScreen();
-    expect(screen.getByLabelText(/display name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^username/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^password/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
@@ -77,7 +73,6 @@ describe("InviteRedemptionScreen", () => {
       expect.objectContaining({
         inviteToken: "my-invite-token",
         username: "alice",
-        displayName: "Alice",
       }),
     );
     expect(mockOnSignIn).toHaveBeenCalledWith(

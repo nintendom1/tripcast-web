@@ -18,6 +18,7 @@ import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
 import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import EmergencyResetSheet from "./features/privacy/EmergencyResetSheet";
 import OptionsSheet from "./features/options/OptionsSheet";
+import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -60,6 +61,7 @@ function ConnectedApp() {
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [isEmergencyResetOpen, setIsEmergencyResetOpen] = useState(false);
+  const [view, setView] = useState<"map" | "follower-management">("map");
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
   const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
@@ -176,7 +178,10 @@ function ConnectedApp() {
       return (
         <AnimatePresence mode="wait">
           <motion.div key="traveler-auth" {...PANEL_MOTION}>
-            <AuthScreen onSignIn={(s) => handleSignIn({ ...s, sessionType: "legacy" })} />
+            <AuthScreen
+              onSignIn={(s) => handleSignIn({ ...s, sessionType: "legacy" })}
+              onBack={() => setShowTravelerLogin(false)}
+            />
           </motion.div>
         </AnimatePresence>
       );
@@ -186,9 +191,6 @@ function ConnectedApp() {
         <motion.div key="follower-login" {...PANEL_MOTION}>
           <FollowerLoginScreen
             onSignIn={handleSignIn}
-            onShowInvite={() => {
-              // If no invite token in URL, show a prompt; for now just keep the flow
-            }}
             onShowTravelerLogin={() => setShowTravelerLogin(true)}
           />
         </motion.div>
@@ -212,7 +214,6 @@ function ConnectedApp() {
         <motion.div key="auth-fallback" {...PANEL_MOTION}>
           <FollowerLoginScreen
             onSignIn={handleSignIn}
-            onShowInvite={() => {}}
             onShowTravelerLogin={() => setShowTravelerLogin(true)}
           />
         </motion.div>
@@ -222,6 +223,15 @@ function ConnectedApp() {
 
   const role = activeSessionCheck.role;
   const roleLabel = role === "traveler" ? "Traveler" : "Support Crew";
+
+  if (view === "follower-management" && role === "traveler") {
+    return (
+      <FollowerManagementPage
+        token={session.token}
+        onBack={() => setView("map")}
+      />
+    );
+  }
 
   return (
     <div className="relative flex flex-col h-dvh">
@@ -249,6 +259,7 @@ function ConnectedApp() {
         role={role}
         onSignOut={handleSignOut}
         onEmergencyReset={() => setIsEmergencyResetOpen(true)}
+        onManageFollowers={() => { setIsOptionsOpen(false); setView("follower-management"); }}
       />
 
       {role === "traveler" ? (

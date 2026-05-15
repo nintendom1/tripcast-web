@@ -36,7 +36,6 @@ export default function InviteRedemptionScreen({
 }: InviteRedemptionScreenProps) {
   const redeemInvite = useMutation(tripcastApi.followers.redeemInvite);
   const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
@@ -48,7 +47,6 @@ export default function InviteRedemptionScreen({
     username.trim().length >= 3 &&
     password.length >= 8 &&
     password === confirmPassword &&
-    displayName.trim().length > 0 &&
     termsAccepted &&
     !isPending;
 
@@ -62,7 +60,6 @@ export default function InviteRedemptionScreen({
         inviteToken,
         username: username.trim(),
         password,
-        displayName: displayName.trim(),
         termsVersion: TERMS_VERSION,
         privacyVersion: PRIVACY_VERSION,
       });
@@ -71,7 +68,6 @@ export default function InviteRedemptionScreen({
         role: "support_crew",
         sessionType: "follower",
         username: username.trim(),
-        displayName: displayName.trim(),
       });
     } catch (err) {
       setError(friendlyError(err));
@@ -92,20 +88,9 @@ export default function InviteRedemptionScreen({
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
             <label className="flex flex-col gap-1.5 font-medium text-sm">
-              Display name
-              <Input
-                autoFocus
-                autoComplete="name"
-                disabled={isPending}
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Your name"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 font-medium text-sm">
               Username
               <Input
+                autoFocus
                 autoComplete="username"
                 disabled={isPending}
                 value={username}

@@ -9,14 +9,12 @@ vi.mock("convex/react", () => ({
 }));
 
 const mockOnSignIn = vi.fn();
-const mockOnShowInvite = vi.fn();
 const mockOnShowTravelerLogin = vi.fn();
 
 function renderScreen() {
   render(
     <FollowerLoginScreen
       onSignIn={mockOnSignIn}
-      onShowInvite={mockOnShowInvite}
       onShowTravelerLogin={mockOnShowTravelerLogin}
     />,
   );
@@ -84,12 +82,6 @@ describe("FollowerLoginScreen", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/15 minutes/i);
-  });
-
-  it("calls onShowInvite when invite link is clicked", async () => {
-    renderScreen();
-    await userEvent.click(screen.getByText(/i have an invite link/i));
-    expect(mockOnShowInvite).toHaveBeenCalled();
   });
 
   it("calls onShowTravelerLogin when traveler link is clicked", async () => {

@@ -143,11 +143,13 @@ export type VisibleRouteVote = {
     selectedOptionIds: string[];
     comment?: string;
     commentVisibility: CommentVisibility;
+    anonymous: boolean;
   };
   visibleComments: Array<{
     submissionId: string;
     comment: string;
     commentVisibility: CommentVisibility;
+    author: string;
   }>;
   optionVoteCounts?: Record<string, number>;
   totalSubmissions?: number;
@@ -542,6 +544,7 @@ export const tripcastApi = {
         selectedOptionIds: string[];
         comment?: string;
         commentVisibility?: CommentVisibility;
+        anonymous?: boolean;
       },
       null
     >,
@@ -666,11 +669,10 @@ export const tripcastApi = {
         inviteToken: string;
         username: string;
         password: string;
-        displayName: string;
         termsVersion: string;
         privacyVersion: string;
       },
-      { token: string }
+      { token: string; username: string }
     >,
   },
   followerAdmin: {

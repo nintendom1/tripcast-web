@@ -87,6 +87,7 @@ function VoteDetail({
   const [commentVisibility, setCommentVisibility] = useState<CommentVisibility>(
     vote.mySubmission?.commentVisibility ?? "public",
   );
+  const [anonymous, setAnonymous] = useState(vote.mySubmission?.anonymous ?? false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,6 +146,7 @@ function VoteDetail({
         selectedOptionIds: Array.from(selectedOptionIds),
         comment: comment.trim() || undefined,
         commentVisibility,
+        anonymous: anonymous || undefined,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to submit.");
@@ -221,7 +223,7 @@ function VoteDetail({
             rows={2}
             placeholder="Add a comment… (optional)"
           />
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-1.5">
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
               <input
                 type="checkbox"
@@ -230,6 +232,18 @@ function VoteDetail({
               />
               Private (traveler only)
             </label>
+            {commentVisibility === "public" && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={anonymous}
+                  onChange={(e) => setAnonymous(e.target.checked)}
+                />
+                Post as anonymous
+              </label>
+            )}
+          </div>
+          <div className="flex justify-end">
             <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
               {isSubmitting ? "Submitting…" : vote.mySubmission ? "Update Vote" : "Submit Vote"}
             </Button>
@@ -246,8 +260,9 @@ function VoteDetail({
         <div className="flex flex-col gap-1">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Comments</span>
           {vote.visibleComments.map((c) => (
-            <div key={c.submissionId} className="text-sm border rounded-md px-3 py-2 bg-muted/30">
-              {c.comment}
+            <div key={c.submissionId} className="text-sm border rounded-md px-3 py-2 bg-muted/30 flex flex-col gap-0.5">
+              <span className="text-xs text-muted-foreground">{c.author}</span>
+              <span>{c.comment}</span>
             </div>
           ))}
         </div>

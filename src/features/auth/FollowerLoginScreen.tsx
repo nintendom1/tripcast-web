@@ -9,7 +9,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 
 type FollowerLoginScreenProps = {
   onSignIn: (session: StoredSession) => void;
-  onShowInvite: () => void;
   onShowTravelerLogin: () => void;
 };
 
@@ -33,7 +32,6 @@ function friendlyError(error: unknown) {
 
 export default function FollowerLoginScreen({
   onSignIn,
-  onShowInvite,
   onShowTravelerLogin,
 }: FollowerLoginScreenProps) {
   const signIn = useMutation(tripcastApi.followers.followerSignIn);
@@ -116,22 +114,13 @@ export default function FollowerLoginScreen({
             <Button disabled={isPending || !username.trim() || !password} type="submit">
               {isPending ? "Signing in…" : "Sign in"}
             </Button>
-            <div className="flex flex-col gap-1 items-center">
-              <button
-                type="button"
-                className="text-sm text-muted-foreground underline-offset-4 hover:underline"
-                onClick={onShowInvite}
-              >
-                I have an invite link
-              </button>
-              <button
-                type="button"
-                className="text-xs text-muted-foreground/70 underline-offset-4 hover:underline"
-                onClick={onShowTravelerLogin}
-              >
-                Sign in as Traveler
-              </button>
-            </div>
+            <button
+              type="button"
+              className="text-xs text-muted-foreground/70 text-center underline-offset-4 hover:underline"
+              onClick={onShowTravelerLogin}
+            >
+              Sign in as Traveler
+            </button>
           </form>
         </CardContent>
       </Card>

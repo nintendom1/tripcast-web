@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { LogOut, ShieldAlert, UserPlus, Users } from "lucide-react";
 
 import {
@@ -10,7 +9,6 @@ import {
 import { Button } from "../../components/ui/button";
 import type { StoredSession } from "../../lib/auth";
 import CreateInviteControl from "../followers/CreateInviteControl";
-import FollowerManagementPanel from "../followers/FollowerManagementPanel";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -19,6 +17,7 @@ type OptionsSheetProps = {
   role: "traveler" | "support_crew";
   onSignOut: () => void;
   onEmergencyReset: () => void;
+  onManageFollowers: () => void;
 };
 
 export default function OptionsSheet({
@@ -28,9 +27,8 @@ export default function OptionsSheet({
   role,
   onSignOut,
   onEmergencyReset,
+  onManageFollowers,
 }: OptionsSheetProps) {
-  const [showFollowers, setShowFollowers] = useState(false);
-
   function handleSignOut() {
     onOpenChange(false);
     onSignOut();
@@ -87,22 +85,16 @@ export default function OptionsSheet({
                 </p>
                 <CreateInviteControl token={session.token} />
               </div>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                    <Users className="h-3.5 w-3.5" aria-hidden />
-                    Manage Followers
-                  </p>
-                  <button
-                    type="button"
-                    className="text-xs text-muted-foreground underline-offset-4 hover:underline"
-                    onClick={() => setShowFollowers((v) => !v)}
-                  >
-                    {showFollowers ? "Hide" : "Show"}
-                  </button>
-                </div>
-                {showFollowers ? <FollowerManagementPanel token={session.token} /> : null}
-              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={onManageFollowers}
+                className="w-fit"
+              >
+                <Users className="h-4 w-4 mr-1.5" aria-hidden />
+                Manage Followers
+              </Button>
             </section>
           ) : null}
 
