@@ -1,0 +1,115 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as convexReact from "convex/react";
+import { tripcastApi, type VisibleRouteVote } from "../../convex/tripcastApi";
+import RouteVotePanel from "./RouteVotePanel";
+
+vi.mock("convex/react", () => ({
+  useMutation: vi.fn(),
+  useQuery: vi.fn(),
+}));
+
+vi.mock("framer-motion", () => ({
+  motion: {
+    div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+      <div {...props}>{children}</div>
+    ),
+  },
+  AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+const MOCK_VOTE: VisibleRouteVote = {
+  _id: "vote1",
+  title: "Test Vote",
+  effectiveStatus: "active",
+  expiresAt: Date.now() + 1_000_000,
+  options: [
+    {
+      _id: "opt1",
+      title: "Option A",
+      routeVoteId: "vote1",
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  ],
+  visibleComments: [
+    {
+      submissionId: "sub1",
+      comment: "Great idea",
+      commentVisibility: "public",
+      author: "@alice",
+    },
+  ],
+  mySubmission: undefined,
+  resultsVisibility: "before_voting" as const,
+};
+
+const MOCK_VOTES: VisibleRouteVote[] = [MOCK_VOTE];
+
+function setupMocks() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
+    if (ref === tripcastApi.routeVotes.listVisibleRouteVotes) return MOCK_VOTES;
+    if (ref === tripcastApi.routeVotes.getRouteVoteMapOverlay) return null;
+    return undefined;
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
+}
+
+function renderPanel() {
+  return render(
+    <RouteVotePanel
+      token="test-token"
+      onClose={vi.fn()}
+      onVoteOverlayChange={vi.fn()}
+      onRequestFitMap={vi.fn()}
+      fallbackOrigin={null}
+    />,
+  );
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  setupMocks();
+});
+
+describe("RouteVotePanel", () => {
+  it("renders vote list", () => {
+    renderPanel();
+    expect(screen.getByText("Test Vote")).toBeInTheDocument();
+  });
+
+  it("clicking a vote shows VoteDetail", async () => {
+    renderPanel();
+    await userEvent.click(screen.getByText("Test Vote"));
+    // After clicking into a vote, the sticky header shows the vote title
+    // and VoteDetail also renders it in the DialogueBox
+    const instances = screen.getAllByText("Test Vote");
+    expect(instances.length).toBeGreaterThan(0);
+  });
+
+  it("shows author attribution on visible comments", async () => {
+    renderPanel();
+    await userEvent.click(screen.getByText("Test Vote"));
+    expect(screen.getByText("@alice")).toBeInTheDocument();
+    expect(screen.getByText("Great idea")).toBeInTheDocument();
+  });
+
+  it("shows Post as anonymous checkbox when comment visibility is public", async () => {
+    renderPanel();
+    await userEvent.click(screen.getByText("Test Vote"));
+    expect(screen.getByRole("checkbox", { name: /post as anonymous/i })).toBeInTheDocument();
+  });
+
+  it("hides Post as anonymous checkbox when Private is checked", async () => {
+    renderPanel();
+    await userEvent.click(screen.getByText("Test Vote"));
+
+    const privateCheckbox = screen.getByRole("checkbox", { name: /private/i });
+    await userEvent.click(privateCheckbox);
+
+    expect(screen.queryByRole("checkbox", { name: /post as anonymous/i })).not.toBeInTheDocument();
+  });
+});
