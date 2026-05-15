@@ -2,9 +2,14 @@ import type { Role } from "../convex/tripcastApi";
 
 const SESSION_KEY = "tripcast.session";
 
+export type SessionType = "legacy" | "follower";
+
 export type StoredSession = {
   token: string;
   role: Role;
+  sessionType: SessionType;
+  displayName?: string;
+  username?: string;
 };
 
 export function getStoredSession(): StoredSession | null {
@@ -17,11 +22,18 @@ export function getStoredSession(): StoredSession | null {
       typeof parsed === "object" &&
       "token" in parsed &&
       "role" in parsed &&
-      typeof (parsed as StoredSession).token === "string" &&
-      ((parsed as StoredSession).role === "traveler" ||
-        (parsed as StoredSession).role === "support_crew")
+      typeof (parsed as { token: unknown }).token === "string" &&
+      ((parsed as { role: unknown }).role === "traveler" ||
+        (parsed as { role: unknown }).role === "support_crew")
     ) {
-      return parsed as StoredSession;
+      const stored = parsed as Partial<StoredSession>;
+      return {
+        token: stored.token!,
+        role: stored.role!,
+        sessionType: stored.sessionType ?? "legacy",
+        displayName: stored.displayName,
+        username: stored.username,
+      };
     }
     return null;
   } catch {

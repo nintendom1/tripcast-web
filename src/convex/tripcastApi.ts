@@ -353,6 +353,28 @@ export type HistoryEvent = {
 };
 
 // ---------------------------------------------------------------------------
+// Follower / account types
+// ---------------------------------------------------------------------------
+
+export type MembershipStatus = "active" | "revoked";
+
+export type FollowerSession = {
+  role: Role;
+  displayName: string;
+  username: string;
+  membershipStatus: MembershipStatus;
+};
+
+export type FollowerInfo = {
+  userId: string;
+  username: string;
+  displayName: string;
+  membershipStatus: MembershipStatus;
+  isBanned: boolean;
+  createdAt: number;
+};
+
+// ---------------------------------------------------------------------------
 // API namespace
 // ---------------------------------------------------------------------------
 
@@ -616,6 +638,97 @@ export const tripcastApi = {
       "public",
       { token: string },
       HistoryEvent[]
+    >,
+  },
+  followers: {
+    followerSignIn: (anyApi as any).followers.followerSignIn as FunctionReference<
+      "mutation",
+      "public",
+      { username: string; password: string; rememberMe: boolean },
+      { token: string }
+    >,
+    followerSignOut: (anyApi as any).followers.followerSignOut as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+    followerCurrentSession: (anyApi as any).followers.followerCurrentSession as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      FollowerSession | null
+    >,
+    redeemInvite: (anyApi as any).followers.redeemInvite as FunctionReference<
+      "mutation",
+      "public",
+      {
+        inviteToken: string;
+        username: string;
+        password: string;
+        displayName: string;
+        termsVersion: string;
+        privacyVersion: string;
+      },
+      { token: string }
+    >,
+  },
+  followerAdmin: {
+    createInvite: (anyApi as any).followerAdmin.createInvite as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      { inviteToken: string }
+    >,
+    listFollowers: (anyApi as any).followerAdmin.listFollowers as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      FollowerInfo[]
+    >,
+    revokeAccess: (anyApi as any).followerAdmin.revokeAccess as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; userId: string },
+      null
+    >,
+    unrevokeAccess: (anyApi as any).followerAdmin.unrevokeAccess as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; userId: string },
+      null
+    >,
+    banUser: (anyApi as any).followerAdmin.banUser as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; userId: string },
+      null
+    >,
+    unbanUser: (anyApi as any).followerAdmin.unbanUser as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; userId: string },
+      null
+    >,
+    issuePasswordReset: (anyApi as any).followerAdmin.issuePasswordReset as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; userId: string },
+      { resetToken: string }
+    >,
+    deleteFollowerAccount: (anyApi as any).followerAdmin.deleteFollowerAccount as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; userId: string },
+      null
+    >,
+  },
+  passwordReset: {
+    consumePasswordReset: (anyApi as any).passwordReset.consumePasswordReset as FunctionReference<
+      "mutation",
+      "public",
+      { resetToken: string; newPassword: string },
+      null
     >,
   },
 } as const;

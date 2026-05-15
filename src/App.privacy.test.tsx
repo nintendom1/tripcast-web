@@ -26,8 +26,9 @@ function setupSessionMocks(role: "traveler" | "support_crew") {
   vi.mocked(authLib.getStoredSession).mockReturnValue({
     token: "test-token",
     role,
+    sessionType: "legacy" as const,
   });
-  // currentSession query returns the role; signOut mutation returns a no-op.
+  // currentSession query returns the role; all mutations return no-ops.
   vi.mocked(convexReact.useQuery).mockReturnValue({ role });
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any);
@@ -37,24 +38,30 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("App: Emergency Reset button visibility", () => {
-  it("shows the Emergency Reset button for a traveler session", () => {
+describe("App: Options button and Emergency Reset location", () => {
+  it("shows the Options button in the header for a traveler session", () => {
     setupSessionMocks("traveler");
     render(<App convexReady={true} />);
-    expect(screen.getByRole("button", { name: /emergency reset/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /options/i })).toBeInTheDocument();
   });
 
-  it("does not show the Emergency Reset button for a support crew session", () => {
-    setupSessionMocks("support_crew");
+  it("does not show Emergency Reset in the header for a traveler session", () => {
+    setupSessionMocks("traveler");
     render(<App convexReady={true} />);
-    expect(screen.queryByRole("button", { name: /emergency reset/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /emergency reset/i }),
+    ).not.toBeInTheDocument();
   });
 
-  it("returns to the map and shows a toast after confirming shared data deletion", async () => {
+  it("returns to the map and shows a toast after confirming shared data deletion via Options", async () => {
     setupSessionMocks("traveler");
     render(<App convexReady={true} />);
 
+    // Open Options sheet
+    await userEvent.click(screen.getByRole("button", { name: /options/i }));
+    // Click Emergency Reset in Danger Zone
     await userEvent.click(screen.getByRole("button", { name: /emergency reset/i }));
+    // Now in EmergencyResetSheet
     await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
     await userEvent.click(screen.getByRole("button", { name: "Confirm shared data deletion" }));
 
