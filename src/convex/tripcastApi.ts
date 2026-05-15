@@ -665,6 +665,12 @@ export const tripcastApi = {
       { token: string; challengeId: string; responseNote?: string; responsePreset?: string; silent?: boolean },
       null
     >,
+    travelerDeleteChallenge: (anyApi as any).challenges.travelerDeleteChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string },
+      null
+    >,
     travelerStartChallenge: (anyApi as any).challenges.travelerStartChallenge as FunctionReference<
       "mutation",
       "public",

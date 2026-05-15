@@ -1,15 +1,10 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Challenge, Role } from "../../convex/tripcastApi";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 
 const RESPONSE_PRESETS = [
@@ -30,6 +25,7 @@ type Props = {
   isOwn?: boolean;
   onClose: () => void;
   onStartChallenge?: () => void;
+  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
 };
 
 function statusLabel(status: string): string {
@@ -49,22 +45,107 @@ function friendlyError(e: unknown): string {
   return msg || "Something went wrong.";
 }
 
-export default function ChallengeDetailSheet({ challenge, token, role, isOwn, onClose, onStartChallenge }: Props) {
+export default function ChallengeDetailSheet({
+  challenge,
+  token,
+  role,
+  isOwn,
+  onClose,
+  onStartChallenge,
+  onRequestCoordinatePick,
+}: Props) {
+  // Drop/reject form state
   const [responseNote, setResponseNote] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("");
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Edit mode state
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editLat, setEditLat] = useState<number | undefined>(undefined);
+  const [editLon, setEditLon] = useState<number | undefined>(undefined);
+  const [editCost, setEditCost] = useState("");
+  const [editDuration, setEditDuration] = useState("");
+  const [editEnergy, setEditEnergy] = useState<"" | "low" | "medium" | "high">("");
+
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
-  const [showDropForm, setShowDropForm] = useState(false);
-  const [silentDrop, setSilentDrop] = useState(false);
 
   const accept = useMutation(tripcastApi.challenges.travelerAcceptChallenge);
   const drop = useMutation(tripcastApi.challenges.travelerDropChallenge);
+  const deleteSilently = useMutation(tripcastApi.challenges.travelerDeleteChallenge);
+  const edit = useMutation(tripcastApi.challenges.travelerEditChallenge);
   const start = useMutation(tripcastApi.challenges.travelerStartChallenge);
   const complete = useMutation(tripcastApi.challenges.travelerCompleteChallenge);
   const togglePin = useMutation(tripcastApi.challenges.travelerToggleChallengeMapPin);
   const withdraw = useMutation(tripcastApi.challenges.followerWithdrawChallenge);
 
   if (!challenge) return null;
+
+  const isTraveler = role === "traveler";
+  const canAct = !isWorking;
+  const status = challenge.status;
+  const hasLocation = challenge.lat !== undefined && challenge.lon !== undefined;
+
+  function openEditMode() {
+    setEditTitle(challenge!.title);
+    setEditDesc(challenge!.description ?? "");
+    setEditLocation(challenge!.locationLabel ?? "");
+    setEditLat(challenge!.lat);
+    setEditLon(challenge!.lon);
+    setEditCost(challenge!.estimatedCostUsd !== undefined ? String(challenge!.estimatedCostUsd) : "");
+    setEditDuration(
+      challenge!.estimatedDurationMinutes !== undefined
+        ? String(challenge!.estimatedDurationMinutes)
+        : "",
+    );
+    setEditEnergy((challenge!.estimatedEnergyImpact as "" | "low" | "medium" | "high") ?? "");
+    setIsEditing(true);
+    setActionError(null);
+  }
+
+  function cancelEditMode() {
+    setIsEditing(false);
+    setActionError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!challenge || !editTitle.trim()) {
+      setActionError("Title is required.");
+      return;
+    }
+    setIsWorking(true);
+    setActionError(null);
+    try {
+      await edit({
+        token,
+        challengeId: challenge._id,
+        title: editTitle,
+        description: editDesc.trim() || undefined,
+        locationLabel: editLocation.trim() || undefined,
+        lat: editLat,
+        lon: editLon,
+        estimatedCostUsd: editCost ? parseFloat(editCost) : undefined,
+        estimatedDurationMinutes: editDuration ? parseInt(editDuration, 10) : undefined,
+        estimatedEnergyImpact: editEnergy || undefined,
+      });
+      setIsEditing(false);
+    } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  function handlePickEditCoordinates() {
+    onRequestCoordinatePick?.((coord) => {
+      setEditLat(coord.lat);
+      setEditLon(coord.lon);
+    });
+  }
 
   async function handleAccept() {
     if (!challenge) return;
@@ -85,7 +166,7 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
     }
   }
 
-  async function handleDrop() {
+  async function handleReject() {
     if (!challenge) return;
     setIsWorking(true);
     setActionError(null);
@@ -95,8 +176,21 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
         challengeId: challenge._id,
         responseNote: responseNote || undefined,
         responsePreset: selectedPreset || undefined,
-        silent: silentDrop,
       });
+      onClose();
+    } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function handleDeleteSilently() {
+    if (!challenge) return;
+    setIsWorking(true);
+    setActionError(null);
+    try {
+      await deleteSilently({ token, challengeId: challenge._id });
       onClose();
     } catch (e) {
       setActionError(friendlyError(e));
@@ -161,18 +255,159 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
     }
   }
 
-  const isTraveler = role === "traveler";
-  const canAct = !isWorking;
-  const status = challenge.status;
-  const hasLocation = challenge.lat !== undefined && challenge.lon !== undefined;
+  // ---------------------------------------------------------------------------
+  // Edit mode
+  // ---------------------------------------------------------------------------
+
+  if (isEditing) {
+    return (
+      <div className="flex flex-col gap-4 p-4 pt-0">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-navy">Edit Challenge</span>
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline"
+            onClick={cancelEditMode}
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Title</label>
+          <Input
+            placeholder="Challenge title"
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            maxLength={200}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
+          <Textarea
+            placeholder="Any details…"
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            rows={2}
+            maxLength={500}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Location label (optional)</label>
+          <Input
+            placeholder="Place name"
+            value={editLocation}
+            onChange={(e) => setEditLocation(e.target.value)}
+            maxLength={200}
+          />
+          <div className="flex items-center gap-2 mt-1">
+            {onRequestCoordinatePick && (
+              <button
+                type="button"
+                className="text-xs text-navy underline"
+                onClick={handlePickEditCoordinates}
+              >
+                ↗ Pick on map
+              </button>
+            )}
+            {editLat !== undefined && editLon !== undefined && (
+              <span className="text-xs text-muted-foreground">
+                📍 {editLat.toFixed(5)}, {editLon.toFixed(5)}
+                <button
+                  type="button"
+                  className="ml-1 text-rose-500 underline"
+                  onClick={() => { setEditLat(undefined); setEditLon(undefined); }}
+                >
+                  clear
+                </button>
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <div className="flex flex-col gap-1 flex-1">
+            <label className="text-xs font-medium text-muted-foreground">Est. cost (USD, optional)</label>
+            <Input
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={editCost}
+              onChange={(e) => setEditCost(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1 flex-1">
+            <label className="text-xs font-medium text-muted-foreground">Est. duration (min, optional)</label>
+            <Input
+              type="number"
+              min="1"
+              step="1"
+              placeholder="60"
+              value={editDuration}
+              onChange={(e) => setEditDuration(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Energy impact (optional)</label>
+          <div className="flex gap-2">
+            {(["low", "medium", "high"] as const).map((level) => (
+              <button
+                key={level}
+                type="button"
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  editEnergy === level
+                    ? "bg-navy text-white border-navy"
+                    : "bg-white text-navy border-slate-300 hover:bg-slate-50"
+                }`}
+                onClick={() => setEditEnergy(editEnergy === level ? "" : level)}
+              >
+                {level.charAt(0).toUpperCase() + level.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {actionError && (
+          <p className="text-sm text-rose-600" role="alert">{actionError}</p>
+        )}
+
+        <Button
+          size="sm"
+          type="button"
+          disabled={isWorking || !editTitle.trim()}
+          onClick={handleSaveEdit}
+        >
+          {isWorking ? "Saving…" : "Save Changes"}
+        </Button>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Normal detail view
+  // ---------------------------------------------------------------------------
 
   return (
     <div className="flex flex-col gap-4 p-4 pt-0">
-      {/* Status badge */}
-      <div>
+      {/* Status badge + Edit button */}
+      <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {statusLabel(status)}
         </span>
+        {isTraveler && (
+          <button
+            type="button"
+            className="text-xs text-navy underline"
+            onClick={openEditMode}
+          >
+            Edit
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -198,7 +433,7 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
         )}
       </div>
 
-      {/* Traveler response note (shown if present and not silent) */}
+      {/* Traveler response note */}
       {challenge.travelerResponseNote && !challenge.silentDrop && (
         <div className="rounded-md bg-slate-50 border border-slate-200 p-3">
           <p className="text-xs font-medium text-muted-foreground mb-1">Traveler's note</p>
@@ -206,8 +441,8 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
         </div>
       )}
 
-      {/* Drop form for traveler */}
-      {isTraveler && showDropForm && (
+      {/* Reject with response form */}
+      {isTraveler && showRejectForm && (
         <div className="flex flex-col gap-3 border border-slate-200 rounded-lg p-3">
           <div className="flex flex-wrap gap-2">
             {RESPONSE_PRESETS.map((preset) => (
@@ -232,21 +467,16 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
             rows={2}
             maxLength={500}
           />
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={silentDrop}
-              onChange={(e) => setSilentDrop(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <span className="text-muted-foreground">Silent reject (proposer won't see a rejection notice)</span>
-          </label>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
               type="button"
-              onClick={() => { setShowDropForm(false); setResponseNote(""); setSelectedPreset(""); }}
+              onClick={() => {
+                setShowRejectForm(false);
+                setResponseNote("");
+                setSelectedPreset("");
+              }}
             >
               Cancel
             </Button>
@@ -254,10 +484,38 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
               size="sm"
               type="button"
               disabled={!canAct}
-              onClick={handleDrop}
+              onClick={handleReject}
               className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
             >
-              {isWorking ? "Dropping…" : "Confirm drop"}
+              {isWorking ? "Dropping…" : status === "proposed" ? "Confirm rejection" : "Confirm drop"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete silently confirmation */}
+      {isTraveler && showDeleteConfirm && (
+        <div className="flex flex-col gap-3 border border-rose-200 rounded-lg p-3 bg-rose-50">
+          <p className="text-sm text-rose-800">
+            This permanently deletes the challenge — the proposer will no longer see it. Are you sure?
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => setShowDeleteConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              disabled={!canAct}
+              onClick={handleDeleteSilently}
+              className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
+            >
+              {isWorking ? "Deleting…" : "Yes, delete"}
             </Button>
           </div>
         </div>
@@ -267,25 +525,33 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
         <p className="text-sm text-rose-600" role="alert">{actionError}</p>
       )}
 
-      {/* Actions for traveler */}
-      {isTraveler && (
+      {/* Traveler actions (hidden while reject form or delete confirm is open) */}
+      {isTraveler && !showRejectForm && !showDeleteConfirm && (
         <div className="flex flex-col gap-2">
           {status === "proposed" && (
             <>
               <Button size="sm" type="button" disabled={!canAct} onClick={handleAccept}>
                 Accept and publish
               </Button>
-              {!showDropForm && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  disabled={!canAct}
-                  onClick={() => setShowDropForm(true)}
-                >
-                  Reject / drop
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => setShowRejectForm(true)}
+              >
+                Reject with response
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => setShowDeleteConfirm(true)}
+                className="border-rose-300 text-rose-700 hover:bg-rose-50"
+              >
+                Delete silently
+              </Button>
             </>
           )}
 
@@ -309,17 +575,25 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
               >
                 {challenge.mapHidden ? "Show on map" : "Hide from map"}
               </Button>
-              {!showDropForm && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  disabled={!canAct}
-                  onClick={() => setShowDropForm(true)}
-                >
-                  Drop
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => setShowRejectForm(true)}
+              >
+                Drop with note
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => setShowDeleteConfirm(true)}
+                className="border-rose-300 text-rose-700 hover:bg-rose-50"
+              >
+                Delete silently
+              </Button>
             </>
           )}
 
@@ -337,23 +611,31 @@ export default function ChallengeDetailSheet({ challenge, token, role, isOwn, on
               >
                 Complete Challenge
               </Button>
-              {!showDropForm && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  disabled={!canAct}
-                  onClick={() => setShowDropForm(true)}
-                >
-                  Drop
-                </Button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => setShowRejectForm(true)}
+              >
+                Drop with note
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => setShowDeleteConfirm(true)}
+                className="border-rose-300 text-rose-700 hover:bg-rose-50"
+              >
+                Delete silently
+              </Button>
             </>
           )}
         </div>
       )}
 
-      {/* Support crew actions: withdraw own proposed challenge */}
+      {/* Support crew: withdraw own proposed challenge */}
       {!isTraveler && isOwn && status === "proposed" && (
         <Button
           variant="outline"

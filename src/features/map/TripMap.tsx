@@ -50,7 +50,7 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const OPEN_FREE_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
 
 type CoordinatePickMode = {
-  optionIndex: number;
+  label: string;
   callback: (coord: { lat: number; lon: number }) => void;
 };
 
@@ -555,8 +555,17 @@ export default function TripMap({
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
-    coordinatePickModeRef.current = { optionIndex, callback };
-    setCoordinatePickMode({ optionIndex, callback });
+    const label = `Option ${optionIndex + 1} location`;
+    coordinatePickModeRef.current = { label, callback };
+    setCoordinatePickMode({ label, callback });
+  }
+
+  function handleRequestChallengeCoordinatePick(
+    callback: (coord: { lat: number; lon: number }) => void,
+  ) {
+    const label = "the challenge location";
+    coordinatePickModeRef.current = { label, callback };
+    setCoordinatePickMode({ label, callback });
   }
 
   function cancelCoordinatePick() {
@@ -740,7 +749,7 @@ export default function TripMap({
             className="absolute left-1/2 top-4 z-[5] flex -translate-x-1/2 items-center gap-3 bg-navy text-white px-3 py-2.5 rounded-md shadow-lg max-w-[calc(100%-24px)]"
           >
             <span className="text-sm">
-              Tap the map to set Option {coordinatePickMode.optionIndex + 1} location.
+              Tap the map to set {coordinatePickMode.label}.
             </span>
             <button
               type="button"
@@ -960,6 +969,7 @@ export default function TripMap({
         role={role}
         onClose={() => setIsChallengesPanelOpen(false)}
         onStartChallenge={() => setIsChallengesPanelOpen(false)}
+        onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
       />
 
       <AnimatePresence>

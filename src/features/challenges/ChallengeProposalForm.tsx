@@ -9,6 +9,7 @@ import { Textarea } from "../../components/ui/textarea";
 type Props = {
   token: string;
   onSuccess: (autoPublished: boolean) => void;
+  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
 };
 
 function friendlyError(error: unknown): string {
@@ -18,10 +19,12 @@ function friendlyError(error: unknown): string {
   return msg || "Unable to submit challenge.";
 }
 
-export default function ChallengeProposalForm({ token, onSuccess }: Props) {
+export default function ChallengeProposalForm({ token, onSuccess, onRequestCoordinatePick }: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
+  const [lat, setLat] = useState<number | undefined>(undefined);
+  const [lon, setLon] = useState<number | undefined>(undefined);
   const [costStr, setCostStr] = useState("");
   const [durationStr, setDurationStr] = useState("");
   const [energyImpact, setEnergyImpact] = useState<"low" | "medium" | "high" | "">("");
@@ -36,6 +39,8 @@ export default function ChallengeProposalForm({ token, onSuccess }: Props) {
     setTitle("");
     setDescription("");
     setLocationLabel("");
+    setLat(undefined);
+    setLon(undefined);
     setCostStr("");
     setDurationStr("");
     setEnergyImpact("");
@@ -52,6 +57,8 @@ export default function ChallengeProposalForm({ token, onSuccess }: Props) {
         title: title.trim(),
         description: description.trim() || undefined,
         locationLabel: locationLabel.trim() || undefined,
+        lat,
+        lon,
         estimatedCostUsd: costStr ? parseFloat(costStr) : undefined,
         estimatedDurationMinutes: durationStr ? parseInt(durationStr, 10) : undefined,
         estimatedEnergyImpact: energyImpact || undefined,
@@ -71,12 +78,18 @@ export default function ChallengeProposalForm({ token, onSuccess }: Props) {
       setError("Title is required.");
       return;
     }
-    // Warn if no location
-    if (!locationLabel.trim()) {
+    if (!locationLabel.trim() && lat === undefined) {
       setShowNoLocationConfirm(true);
       return;
     }
     void submit();
+  }
+
+  function handlePickOnMap() {
+    onRequestCoordinatePick?.((coord) => {
+      setLat(coord.lat);
+      setLon(coord.lon);
+    });
   }
 
   if (showNoLocationConfirm) {
@@ -148,6 +161,29 @@ export default function ChallengeProposalForm({ token, onSuccess }: Props) {
           onChange={(e) => setLocationLabel(e.target.value)}
           maxLength={200}
         />
+        <div className="flex items-center gap-2 mt-1">
+          {onRequestCoordinatePick && (
+            <button
+              type="button"
+              className="text-xs text-navy underline"
+              onClick={handlePickOnMap}
+            >
+              ↗ Pick on map
+            </button>
+          )}
+          {lat !== undefined && lon !== undefined && (
+            <span className="text-xs text-muted-foreground">
+              📍 {lat.toFixed(5)}, {lon.toFixed(5)}
+              <button
+                type="button"
+                className="ml-1 text-rose-500 underline"
+                onClick={() => { setLat(undefined); setLon(undefined); }}
+              >
+                clear
+              </button>
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-3">
