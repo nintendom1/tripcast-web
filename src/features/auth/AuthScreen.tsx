@@ -9,7 +9,7 @@ import { Input } from "../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 
 type AuthScreenProps = {
-  onSignIn: (session: StoredSession) => void;
+  onSignIn: (session: Omit<StoredSession, "sessionType" | "displayName" | "username">) => void;
   onBack?: () => void;
 };
 
