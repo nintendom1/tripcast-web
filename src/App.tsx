@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ShieldAlert } from "lucide-react";
+import { Settings } from "lucide-react";
 
 import { tripcastApi } from "./convex/tripcastApi";
 import {
@@ -13,7 +13,12 @@ import {
 import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import AuthScreen from "./features/auth/AuthScreen";
+import FollowerLoginScreen from "./features/auth/FollowerLoginScreen";
+import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
+import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import EmergencyResetSheet from "./features/privacy/EmergencyResetSheet";
+import OptionsSheet from "./features/options/OptionsSheet";
+import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -47,26 +52,42 @@ export default function App({ convexReady }: AppProps) {
 }
 
 function ConnectedApp() {
+  const [inviteToken] = useState(() => new URLSearchParams(window.location.search).get("invite"));
+  const [resetToken] = useState(() => new URLSearchParams(window.location.search).get("reset"));
+  const [showTravelerLogin, setShowTravelerLogin] = useState(false);
+  const [pendingInviteToken, setPendingInviteToken] = useState(inviteToken);
+  const [pendingResetToken, setPendingResetToken] = useState(resetToken);
+
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
+  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [isEmergencyResetOpen, setIsEmergencyResetOpen] = useState(false);
+  const [view, setView] = useState<"map" | "follower-management">("map");
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
   const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const sessionCheck = useQuery(
+  const legacySessionCheck = useQuery(
     tripcastApi.auth.currentSession,
-    session !== null ? { token: session.token } : "skip",
+    session !== null && session.sessionType !== "follower" ? { token: session.token } : "skip",
+  );
+  const followerSessionCheck = useQuery(
+    tripcastApi.followers.followerCurrentSession,
+    session !== null && session.sessionType === "follower" ? { token: session.token } : "skip",
   );
 
+  const activeSessionCheck =
+    session?.sessionType === "follower" ? followerSessionCheck : legacySessionCheck;
+
   const signOutMutation = useMutation(tripcastApi.auth.signOut);
+  const followerSignOutMutation = useMutation(tripcastApi.followers.followerSignOut);
 
   useEffect(() => {
-    if (session !== null && sessionCheck === null) {
+    if (session !== null && activeSessionCheck === null) {
       clearStoredSession();
       setSession(null);
     }
-  }, [session, sessionCheck]);
+  }, [session, activeSessionCheck]);
 
   useEffect(() => {
     return () => {
@@ -79,12 +100,19 @@ function ConnectedApp() {
   function handleSignIn(newSession: StoredSession) {
     setStoredSession(newSession);
     setSession(newSession);
+    setPendingInviteToken(null);
+    setPendingResetToken(null);
+    history.replaceState({}, "", window.location.pathname);
   }
 
   async function handleSignOut() {
     if (session) {
       try {
-        await signOutMutation({ token: session.token });
+        if (session.sessionType === "follower") {
+          await followerSignOutMutation({ token: session.token });
+        } else {
+          await signOutMutation({ token: session.token });
+        }
       } catch {
         // best-effort server-side cleanup
       }
@@ -110,17 +138,68 @@ function ConnectedApp() {
     }, 3600);
   }
 
-  if (!session) {
+  // URL-param screens (no session required)
+  if (pendingResetToken) {
     return (
       <AnimatePresence mode="wait">
-        <motion.div key="auth" {...PANEL_MOTION}>
-          <AuthScreen onSignIn={handleSignIn} />
+        <motion.div key="reset" {...PANEL_MOTION}>
+          <PasswordResetScreen
+            resetToken={pendingResetToken}
+            onDone={() => {
+              setPendingResetToken(null);
+              history.replaceState({}, "", window.location.pathname);
+            }}
+          />
         </motion.div>
       </AnimatePresence>
     );
   }
 
-  if (sessionCheck === undefined) {
+  if (pendingInviteToken) {
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div key="invite" {...PANEL_MOTION}>
+          <InviteRedemptionScreen
+            inviteToken={pendingInviteToken}
+            onSignIn={handleSignIn}
+            onBack={() => {
+              setPendingInviteToken(null);
+              history.replaceState({}, "", window.location.pathname);
+            }}
+          />
+        </motion.div>
+      </AnimatePresence>
+    );
+  }
+
+  // No session: show login screen
+  if (!session) {
+    if (showTravelerLogin) {
+      return (
+        <AnimatePresence mode="wait">
+          <motion.div key="traveler-auth" {...PANEL_MOTION}>
+            <AuthScreen
+              onSignIn={(s) => handleSignIn({ ...s, sessionType: "legacy" })}
+              onBack={() => setShowTravelerLogin(false)}
+            />
+          </motion.div>
+        </AnimatePresence>
+      );
+    }
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div key="follower-login" {...PANEL_MOTION}>
+          <FollowerLoginScreen
+            onSignIn={handleSignIn}
+            onShowTravelerLogin={() => setShowTravelerLogin(true)}
+          />
+        </motion.div>
+      </AnimatePresence>
+    );
+  }
+
+  // Session check still loading
+  if (activeSessionCheck === undefined) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-muted/30">
         <p className="text-sm text-muted-foreground">Verifying session…</p>
@@ -128,42 +207,62 @@ function ConnectedApp() {
     );
   }
 
-  if (sessionCheck === null) {
+  // Session invalidated on server
+  if (activeSessionCheck === null) {
     return (
       <AnimatePresence mode="wait">
         <motion.div key="auth-fallback" {...PANEL_MOTION}>
-          <AuthScreen onSignIn={handleSignIn} />
+          <FollowerLoginScreen
+            onSignIn={handleSignIn}
+            onShowTravelerLogin={() => setShowTravelerLogin(true)}
+          />
         </motion.div>
       </AnimatePresence>
     );
   }
 
-  const roleLabel = sessionCheck.role === "traveler" ? "Traveler" : "Support Crew";
+  const role = activeSessionCheck.role;
+  const roleLabel = role === "traveler" ? "Traveler" : "Support Crew";
+
+  if (view === "follower-management" && role === "traveler") {
+    return (
+      <FollowerManagementPage
+        token={session.token}
+        onBack={() => setView("map")}
+      />
+    );
+  }
 
   return (
     <div className="relative flex flex-col h-dvh">
       <header className="flex min-h-14 flex-wrap items-center gap-2 border-b bg-background px-4 py-2 z-[2]">
         <h1 className="text-lg font-bold">TripCast</h1>
         <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-          {sessionCheck.role === "traveler" ? (
-            <Button
-              variant="outline"
-              size="sm"
-              type="button"
-              className="border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100 dark:hover:bg-rose-950/60"
-              onClick={() => setIsEmergencyResetOpen(true)}
-            >
-              <ShieldAlert className="h-4 w-4 text-rose-700 dark:text-rose-300" aria-hidden="true" />
-              Emergency Reset
-            </Button>
-          ) : null}
           <Badge variant="secondary">{roleLabel}</Badge>
-          <Button variant="ghost" size="sm" type="button" onClick={handleSignOut}>
-            Sign out
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            onClick={() => setIsOptionsOpen(true)}
+            aria-label="Options"
+          >
+            <Settings className="h-4 w-4" aria-hidden="true" />
+            Options
           </Button>
         </div>
       </header>
-      {sessionCheck.role === "traveler" ? (
+
+      <OptionsSheet
+        open={isOptionsOpen}
+        onOpenChange={setIsOptionsOpen}
+        session={session}
+        role={role}
+        onSignOut={handleSignOut}
+        onEmergencyReset={() => setIsEmergencyResetOpen(true)}
+        onManageFollowers={() => { setIsOptionsOpen(false); setView("follower-management"); }}
+      />
+
+      {role === "traveler" ? (
         <EmergencyResetSheet
           open={isEmergencyResetOpen}
           token={session.token}
@@ -174,6 +273,7 @@ function ConnectedApp() {
           onResetStarted={showResetToast}
         />
       ) : null}
+
       <Suspense
         fallback={
           <div className="flex items-center justify-center h-full min-h-[200px]">
@@ -183,11 +283,12 @@ function ConnectedApp() {
       >
         <TripMap
           token={session.token}
-          role={sessionCheck.role}
+          role={role}
           locationResetNonce={locationResetNonce}
           tripDataResetNonce={tripDataResetNonce}
         />
       </Suspense>
+
       <AnimatePresence>
         {resetToastMessage ? (
           <motion.div
