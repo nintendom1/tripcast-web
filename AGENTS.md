@@ -54,11 +54,16 @@ A common failure mode: a new handler is defined but the component prop still ref
 
 - Conventional Commits prefix, lowercase type/scope (i.e. `feat: `, `fix: `, `docs: `, `chore: `, `refactor: `, `dev: `).
 - Subject after colon: imperative Title Case.
-- For the commit body, follow this style:
+- For the commit body and PR Before/After, follow this style:
 ```text
-Before, <describe the previous state or problem. Focus on the User Experience if applicable>.
-Now, <describe the new state or outcome. Focus on the User Experience if applicable>.
+Before, <describe the previous state or problem>.
+Now, <describe the new state or outcome>.
 ```
+  Apply these rules when writing the Before/After:
+  1. **Cover the full scope.** For a PR, the Before/After must mention every major feature or fix on the branch — not just the most recent commits. Omitting a feature is a deficiency.
+  2. **Name affected roles explicitly.** This app has two distinct roles: Traveler and Support Crew. When a change affects either role's experience, name the role and describe what they gain or lose. Do not write in a role-neutral voice if the feature is role-specific.
+  3. **Lead with the most impactful perspective.** Put the primary beneficiary — the role whose experience changes most — first in the Before/After. Secondary roles follow.
+  4. **Write a unified narrative, not a list.** The Before/After paragraph should read as a story about what users could and couldn't do, not as a bullet summary of technical changes. Reserve bullets for the Summary section.
 - PR title uses the same style. PR body template:
 ```text
 <Before/After commit body style.>
