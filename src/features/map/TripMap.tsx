@@ -683,6 +683,19 @@ export default function TripMap({
     });
   }
 
+  // CheckInDetailSheet is max-h-[50dvh]; use 60dvh bottom padding so the pin
+  // appears clearly above the sheet rather than at the midpoint of the full viewport.
+  function handleCheckInDetailLocationFocus(coordinate: { lat: number; lon: number }) {
+    const map = mapRef.current;
+    if (!map) return;
+    map.easeTo({
+      center: [coordinate.lon, coordinate.lat],
+      zoom: Math.max(map.getZoom(), 14),
+      duration: 700,
+      padding: { top: 60, right: 60, bottom: Math.round(window.innerHeight * 0.60), left: 60 },
+    });
+  }
+
   function handleCenterLocation() {
     const currentLocation =
       role === "traveler"
@@ -1060,7 +1073,7 @@ export default function TripMap({
           setCheckInOpenedFromHistory(false);
           if (returnToHistory) setIsHistoryOpen(true);
         }}
-        onLocationFocus={centerMapOnCoordinate}
+        onLocationFocus={handleCheckInDetailLocationFocus}
       />
 
       {role === "traveler" && (
