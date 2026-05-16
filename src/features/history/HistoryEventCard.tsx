@@ -12,6 +12,8 @@ function formatDate(ts: number): string {
 function eventTypeLabel(type: HistoryEvent["type"]): string {
   switch (type) {
     case "check_in": return "Check-in";
+    case "challenge_proposed": return "Challenge Proposed";
+    case "challenge_visible": return "Challenge Accepted";
     case "challenge_planned": return "Challenge Planned";
     case "challenge_in_progress": return "Challenge Started";
     case "challenge_completed": return "Challenge Completed";

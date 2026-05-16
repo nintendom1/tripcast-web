@@ -1,5 +1,15 @@
 # Agent Instructions
 
+## Feature Branch Policy
+
+- **Never work directly on `main`.** Always create a feature branch before making changes.
+- Name feature branches with hyphens only — no slashes. Examples: `feat-challenge-lifecycle`, `fix-map-markers`, `chore-update-deps`.
+- If you find yourself on `main` at the start of a task, create a feature branch first via `git checkout -b <branch-name>`.
+
+## Planning Mode Behavior
+
+- When in planning mode, **ask clarifying questions as needed to explore and refine requirements** before finalizing the plan. Probe for edge cases, prioritization, and constraints the user may not have stated.
+
 - This repo is public.
 - Avoid exposing private roadmap, product strategy, or sensitive implementation details, even in commit messages.
 - Keep UI barebones for this phase.
@@ -19,15 +29,41 @@
 - Backend API changes belong in `tripcast-backend`.
 - If stuck after two failed attempts, stop, summarize what failed, and propose a better next attempt.
 
+## Debugging Strategy
+
+### Stop-and-log rule
+If you have made **two failed attempts** to fix a visual or layout bug — especially one that manifests only on device or in a browser you cannot see — stop writing guesses. Instead:
+1. Propose adding targeted `console.log` statements that dump every relevant runtime value (dimensions, rects, computed values) at the moment the problematic code runs.
+2. Ask the developer to trigger the behavior, copy the log output, and paste it back.
+3. Only then diagnose and implement the fix.
+
+This one logging round almost always costs less time than a third blind attempt.
+
+### Verify wiring before debugging logic
+Before investigating *why* a function produces wrong output, confirm it is actually being called. Put a one-line log at the very **first line** of the function — before any early returns or guards — so a missing call is immediately obvious:
+
+```typescript
+console.log("[MyFn] entry", { relevantArg });
+const map = mapRef.current;
+if (!map) return;       // ← guard comes after the entry log
+```
+
+A common failure mode: a new handler is defined but the component prop still references the old one. The entry log catches this in one round.
+
 ## Commits And PRs
 
 - Conventional Commits prefix, lowercase type/scope (i.e. `feat: `, `fix: `, `docs: `, `chore: `, `refactor: `, `dev: `).
 - Subject after colon: imperative Title Case.
-- For the commit body, follow this style:
+- For the commit body and PR Before/After, follow this style:
 ```text
-Before, <describe the previous state or problem. Focus on the User Experience if applicable>.
-Now, <describe the new state or outcome. Focus on the User Experience if applicable>.
+Before, <describe the previous state or problem>.
+Now, <describe the new state or outcome>.
 ```
+  Apply these rules when writing the Before/After:
+  1. **Cover the full scope.** For a PR, the Before/After must mention every major feature or fix on the branch — not just the most recent commits. Omitting a feature is a deficiency.
+  2. **Name affected roles explicitly.** This app has two distinct roles: Traveler and Support Crew. When a change affects either role's experience, name the role and describe what they gain or lose. Do not write in a role-neutral voice if the feature is role-specific.
+  3. **Lead with the most impactful perspective.** Put the primary beneficiary — the role whose experience changes most — first in the Before/After. Secondary roles follow.
+  4. **Write a unified narrative, not a list.** The Before/After paragraph should read as a story about what users could and couldn't do, not as a bullet summary of technical changes. Reserve bullets for the Summary section.
 - PR title uses the same style. PR body template:
 ```text
 <Before/After commit body style.>
@@ -63,3 +99,99 @@ When adding new component tests:
 - `CheckInDetailSheet` auto-focuses the map on mount via `useEffect` when `lat`/`lon` are present.
 - Unread history state is tracked in `localStorage` under the key `tripcast.historyLastReadAt` (`src/features/history/useHistoryUnread.ts`).
 - `TravelerStateCard` and `CurrentActivityCard` share a positioning wrapper in `TripMap.tsx` (`absolute top-5 left-5 z-[2] flex flex-col gap-2`). Neither card carries its own absolute positioning.
+
+## Coordinate-Pick UX Pattern
+
+Forms that let users tap the map to set a coordinate use a panel-hide approach so the map is fully accessible:
+
+1. In `TripMap.tsx`, call `setCoordinatePickMode({ label, callback })` and display the pick banner.
+2. **If the form is inside a `Sheet`:** pass `className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}` directly to `SheetContent`. Because `SheetContent` renders into a body-level portal, it escapes any `invisible` class on an ancestor element — the class must be on `SheetContent` itself, not on a wrapper div in `TripMap`. For map-adjacent sheets (`showBackdrop={false}`), no changes to the backdrop prop are needed.
+3. **If the form is NOT inside a `Sheet`:** wrap the triggering element in `<div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>`. The panel stays **mounted** (preserving form state) but becomes invisible and non-interactive.
+4. Always wire the coordinate callback into the form's setter — do NOT close and reopen the panel/sheet; that would lose form state.
+
+`ChallengePanel` (Sheet-based) and `RouteVoteProgress` are the two reference implementations.
+
+## Mobile UX Principles
+
+TripMap targets 390px-wide viewports (iPhone 12 Pro class) as the primary form factor. The rules below prevent the most common regressions.
+
+### The map section must be `overflow-hidden`
+
+```tsx
+<section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
+```
+
+This clips all absolutely-positioned children — button clusters, panel overlays, animated banners. Without it, any child that extends past the section boundary creates document-level horizontal scroll. **This is the single most important CSS rule in the map view.** If it's removed, or a new wrapper element is introduced without it, the page scrolls on mobile.
+
+### Use vertical FAB clusters, never horizontal button rows
+
+All map controls live in two `absolute` vertical columns (`flex flex-col gap-2`):
+
+| Cluster | Position | Contents |
+|---------|----------|----------|
+| Panel navigation | `bottom-5 left-5` | History, Challenges, Traveler State, Votes |
+| Map utilities | `bottom-5 right-5` | Locate, Share Location, Add Pin |
+
+**Every button is exactly `w-11 h-11` (44 × 44 px).** This is the Apple HIG / WCAG minimum touch target size. Fixed squares guarantee the cluster never contributes to horizontal overflow regardless of how many items are added.
+
+Buttons are icon-only — `aria-label` carries the text equivalent. No visible text labels in these clusters.
+
+When adding a new map control: pick the correct cluster, use a `lucide-react` icon, write an `aria-label`, keep `w-11 h-11`. Do not add text.
+
+### All secondary panels are bottom sheets
+
+Map-adjacent panels (History, Challenges, Route Votes) use `<Sheet side="bottom" modal={false} showBackdrop={false}>`. Never use a left/right sidebar or a `motion.div` with horizontal `x` animation — these temporarily extend document width during the spring, causing the mobile scroll regression.
+
+`SheetContent side="bottom"` has `max-h-[85dvh] inset-x-0 bottom-0 rounded-t-xl` built in (`src/components/ui/sheet.tsx`).
+
+Modal flows (Options, Emergency Reset) keep the default backdrop/modal behavior.
+
+### Mutual panel exclusion
+
+At most one bottom sheet (History, Challenges, Votes) may be open at a time. Use named helper functions — not raw `setState` on the button `onClick` — to enforce this:
+
+```typescript
+function openHistory() {
+  if (isHistoryOpen) { setIsHistoryOpen(false); return; }
+  setIsHistoryOpen(true);
+  setIsChallengesPanelOpen(false);
+  setIsVotePanelOpen(false);
+}
+```
+
+Each helper closes the other two panels and toggles itself closed if already open (tap-to-dismiss). `TravelerState` is a full-height dialog and does not participate in exclusion.
+
+When adding a new panel: write an `open<Panel>` helper, call `set<ExistingPanel>Open(false)` for each existing panel inside it, and wire the button to the helper.
+
+### Toast positioning must clear the nav cluster
+
+The toast `bottom-[Npx]` must clear the left FAB cluster. With 44 px buttons and 8 px gaps:
+
+| Role | Buttons | `bottom` value |
+|------|---------|----------------|
+| Traveler | 4 | `bottom-[230px]` |
+| Support crew | 3 | `bottom-[180px]` |
+
+Update these when buttons are added to or removed from the nav cluster.
+
+### MapLibre measurement gotchas
+
+**Viewport height** — `window.innerHeight` is the *layout* viewport; it shrinks when the mobile browser chrome appears. For padding calculations against the map canvas, always use `map.getContainer().clientHeight` (stable, matches the canvas).
+
+**Portal/sheet height** — `SheetContent` renders at body level via a portal; it escapes the React tree. To measure its rendered height, add a `data-role` attribute directly on `SheetContent`:
+```tsx
+<SheetContent data-role="my-sheet" ...>
+```
+Then read it from the DOM:
+```typescript
+const el = document.querySelector('[data-role="my-sheet"]') as HTMLElement | null;
+const height = el?.offsetHeight ?? fallback;
+```
+
+**Viewport-relative positions** — use `getBoundingClientRect()` for positions relative to the viewport (top, bottom, right, left). Use `clientHeight`/`offsetHeight` for layout dimensions.
+
+**Two-axis encroachment** — when deciding whether to push a pin/element to avoid overlapping UI (e.g. card stack), check **both** axes:
+- Horizontal: `cardsRight + margin > mapWidth / 2`
+- Vertical: `cardsBottom > pinNaturalY_inViewport`
+
+Only offset when *both* are true. A one-axis check causes unnecessary offsets when cards are collapsed or horizontally narrow.

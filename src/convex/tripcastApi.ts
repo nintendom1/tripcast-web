@@ -64,7 +64,19 @@ export type EnergyImpact = "low" | "medium" | "high";
 
 export type CommentVisibility = "public" | "traveler_only";
 
-export type ChallengeStatus = "planned" | "in_progress" | "completed" | "dropped";
+export type ChallengeStatus =
+  | "proposed"
+  | "visible"
+  | "planned"
+  | "in_progress"
+  | "completed"
+  | "dropped";
+
+export type ChallengeSource = "route_vote" | "follower" | "traveler";
+
+export type ChallengeModerationMode = "manual_review" | "auto_publish";
+
+export type ChallengeRateLimitPreset = "off" | "per_second" | "per_minute" | "per_hour" | "per_day";
 
 export type TravelerLocation = {
   lat: number;
@@ -170,14 +182,43 @@ export type Challenge = {
   title: string;
   description?: string;
   status: ChallengeStatus;
-  source: "route_vote";
+  source: ChallengeSource;
   sourceRouteVoteId?: string;
   sourceRouteVoteOptionId?: string;
+  proposedBySessionId?: string;
+  proposedByUserId?: string;
   locationLabel?: string;
   lat?: number;
   lon?: number;
+  estimatedCostUsd?: number;
+  estimatedDurationMinutes?: number;
+  estimatedEnergyImpact?: EnergyImpact;
+  travelerResponseNote?: string;
+  travelerResponsePreset?: string;
+  silentDrop?: boolean;
+  mapHidden?: boolean;
+  acceptedAt?: number;
+  startedAt?: number;
+  completedAt?: number;
+  droppedAt?: number;
   createdAt: number;
   updatedAt: number;
+};
+
+export type ChallengeSettings = {
+  moderationMode: ChallengeModerationMode;
+  rateLimitPreset: ChallengeRateLimitPreset;
+};
+
+export type ChallengeContentArgs = {
+  title: string;
+  description?: string;
+  locationLabel?: string;
+  lat?: number;
+  lon?: number;
+  estimatedCostUsd?: number;
+  estimatedDurationMinutes?: number;
+  estimatedEnergyImpact?: EnergyImpact;
 };
 
 // ---------------------------------------------------------------------------
@@ -319,6 +360,8 @@ export type UpdateTravelerStateArgs = {
 
 export type HistoryEventType =
   | "check_in"
+  | "challenge_proposed"
+  | "challenge_visible"
   | "challenge_planned"
   | "challenge_in_progress"
   | "challenge_completed"
@@ -583,6 +626,118 @@ export const tripcastApi = {
       "public",
       { token: string },
       Challenge[]
+    >,
+  },
+  challenges: {
+    followerProposeChallenge: (anyApi as any).challenges.followerProposeChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string } & ChallengeContentArgs,
+      { challengeId: string; autoPublished: boolean }
+    >,
+    followerWithdrawChallenge: (anyApi as any).challenges.followerWithdrawChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string },
+      null
+    >,
+    travelerCreateChallenge: (anyApi as any).challenges.travelerCreateChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string } & ChallengeContentArgs,
+      string
+    >,
+    travelerEditChallenge: (anyApi as any).challenges.travelerEditChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string } & ChallengeContentArgs,
+      null
+    >,
+    travelerAcceptChallenge: (anyApi as any).challenges.travelerAcceptChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string; responseNote?: string; responsePreset?: string },
+      null
+    >,
+    travelerDropChallenge: (anyApi as any).challenges.travelerDropChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string; responseNote?: string; responsePreset?: string; silent?: boolean },
+      null
+    >,
+    travelerDeleteChallenge: (anyApi as any).challenges.travelerDeleteChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string },
+      null
+    >,
+    travelerStartChallenge: (anyApi as any).challenges.travelerStartChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string },
+      null
+    >,
+    travelerCompleteChallenge: (anyApi as any).challenges.travelerCompleteChallenge as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string },
+      null
+    >,
+    travelerToggleChallengeMapPin: (anyApi as any).challenges.travelerToggleChallengeMapPin as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; challengeId: string; hidden: boolean },
+      null
+    >,
+    travelerListChallenges: (anyApi as any).challenges.travelerListChallenges as FunctionReference<
+      "query",
+      "public",
+      { token: string; status?: ChallengeStatus },
+      Challenge[]
+    >,
+    supportCrewListChallenges: (anyApi as any).challenges.supportCrewListChallenges as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Challenge[]
+    >,
+    followerListMyChallenges: (anyApi as any).challenges.followerListMyChallenges as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { mine: Challenge[]; public: Challenge[] }
+    >,
+    getChallenge: (anyApi as any).challenges.getChallenge as FunctionReference<
+      "query",
+      "public",
+      { token: string; challengeId: string },
+      Challenge | null
+    >,
+    listChallengeMapPins: (anyApi as any).challenges.listChallengeMapPins as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Challenge[]
+    >,
+  },
+  challengeSettings: {
+    travelerGetChallengeSettings: (anyApi as any).challengeSettings.travelerGetChallengeSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      ChallengeSettings
+    >,
+    supportCrewGetChallengeSettings: (anyApi as any).challengeSettings.supportCrewGetChallengeSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { moderationMode: ChallengeModerationMode }
+    >,
+    travelerUpdateChallengeSettings: (anyApi as any).challengeSettings.travelerUpdateChallengeSettings as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; moderationMode?: ChallengeModerationMode; rateLimitPreset?: ChallengeRateLimitPreset },
+      null
     >,
   },
   currentActivity: {

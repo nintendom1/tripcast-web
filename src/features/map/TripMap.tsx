@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { LocateFixed } from "lucide-react";
+import { Activity, Clock, LocateFixed, MapPin, Navigation, Trophy, Vote } from "lucide-react";
 
 import {
   tripcastApi,
@@ -17,6 +17,7 @@ import {
 import AddCheckpointSheet, { type SelectedCoordinate } from "./AddCheckpointSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import ChallengeMarkers from "./ChallengeMarkers";
+import ChallengePanel from "../challenges/ChallengePanel";
 import RouteVoteButton from "../routevote/RouteVoteButton";
 import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
@@ -49,7 +50,7 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const OPEN_FREE_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
 
 type CoordinatePickMode = {
-  optionIndex: number;
+  label: string;
   callback: (coord: { lat: number; lon: number }) => void;
 };
 
@@ -59,58 +60,57 @@ function isFiniteLngLatBounds(
   return bounds.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
 }
 
+function BadgeSpan({ count }: { count: number }) {
+  return (
+    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white pointer-events-none">
+      {count > 9 ? "9+" : count}
+    </span>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function createPopupContent(checkpoint: Checkpoint) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "checkpoint-popup";
-
-  const title = document.createElement("strong");
-  title.textContent = checkpoint.title;
-  wrapper.appendChild(title);
-
-  if (checkpoint.note) {
-    const note = document.createElement("p");
-    note.textContent = checkpoint.note;
-    wrapper.appendChild(note);
-  }
-
-  const coords = document.createElement("small");
-  coords.textContent = `${checkpoint.lat.toFixed(5)}, ${checkpoint.lon.toFixed(5)}`;
-  wrapper.appendChild(coords);
-
-  return wrapper;
-}
 
 function CheckpointMarkers({
   map,
   checkpoints,
+  onCheckpointClick,
 }: {
   map: maplibregl.Map | null;
   checkpoints: Checkpoint[];
+  onCheckpointClick: (checkpoint: Checkpoint) => void;
 }) {
   const markersRef = useRef<Marker[]>([]);
+  const onClickRef = useRef(onCheckpointClick);
+  onClickRef.current = onCheckpointClick;
 
   useEffect(() => {
     if (!map) return;
 
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = checkpoints.map((checkpoint) => {
-      const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
-        createPopupContent(checkpoint),
-      );
-      return new maplibregl.Marker({ color: "#d92332" })
+      const marker = new maplibregl.Marker({ color: "#d92332" })
         .setLngLat([checkpoint.lon, checkpoint.lat])
-        .setPopup(popup)
         .addTo(map);
+
+      const el = marker.getElement();
+      el.style.cursor = "pointer";
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onClickRef.current(checkpoint);
+      });
+
+      return marker;
     });
 
     return () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
     };
+  // onCheckpointClick intentionally omitted — kept fresh via onClickRef
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, checkpoints]);
 
   return null;
@@ -279,6 +279,7 @@ function ConvexCheckpointSheet({
               placeholder="How are you doing?"
               className="rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none"
             />
+            <span className="text-right text-xs text-muted-foreground">{quickNote.length}/240</span>
           </div>
         </div>
       )}
@@ -324,6 +325,7 @@ export default function TripMap({
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardsWrapperRef = useRef<HTMLDivElement>(null);
 
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
@@ -338,8 +340,11 @@ export default function TripMap({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
+  const [checkInOpenedFromHistory, setCheckInOpenedFromHistory] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState<CurrentActivity | null>(null);
+  const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
+  const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null);
 
   const canWrite = role === "traveler";
 
@@ -360,6 +365,34 @@ export default function TripMap({
 
   const historyEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
   const { unreadCount, markAllRead } = useHistoryUnread(historyEvents);
+
+  const allChallengesForBadge = useQuery(
+    tripcastApi.challenges.travelerListChallenges,
+    role === "traveler" ? { token } : "skip",
+  );
+  const challengeBadgeCount =
+    role === "traveler"
+      ? (allChallengesForBadge ?? []).filter((c) => c.status === "proposed").length
+      : 0;
+
+  function openHistory() {
+    if (isHistoryOpen) { setIsHistoryOpen(false); return; }
+    setIsHistoryOpen(true);
+    setIsChallengesPanelOpen(false);
+    setIsVotePanelOpen(false);
+  }
+  function openChallenges() {
+    if (isChallengesPanelOpen) { setIsChallengesPanelOpen(false); return; }
+    setIsChallengesPanelOpen(true);
+    setIsHistoryOpen(false);
+    setIsVotePanelOpen(false);
+  }
+  function openVotes() {
+    if (isVotePanelOpen) { setIsVotePanelOpen(false); return; }
+    setIsVotePanelOpen(true);
+    setIsHistoryOpen(false);
+    setIsChallengesPanelOpen(false);
+  }
 
   // Keep placement mode ref in sync
   useEffect(() => {
@@ -553,8 +586,28 @@ export default function TripMap({
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
-    coordinatePickModeRef.current = { optionIndex, callback };
-    setCoordinatePickMode({ optionIndex, callback });
+    const label = `Option ${optionIndex + 1} location`;
+    coordinatePickModeRef.current = { label, callback };
+    setCoordinatePickMode({ label, callback });
+  }
+
+  function handleNavigateToChallenge(coord: { lat: number; lon: number }) {
+    if (!mapRef.current) return;
+    // Offset the target so it appears in the visible area to the right of the
+    // 320px panel and above the bottom detail sheet (~300px).
+    mapRef.current.flyTo({
+      center: [coord.lon, coord.lat],
+      zoom: Math.max(mapRef.current.getZoom(), 14),
+      padding: { top: 60, right: 60, bottom: 320, left: 380 },
+    });
+  }
+
+  function handleRequestChallengeCoordinatePick(
+    callback: (coord: { lat: number; lon: number }) => void,
+  ) {
+    const label = "the challenge location";
+    coordinatePickModeRef.current = { label, callback };
+    setCoordinatePickMode({ label, callback });
   }
 
   function cancelCoordinatePick() {
@@ -608,10 +661,72 @@ export default function TripMap({
     const map = mapRef.current;
     if (!map) return;
 
+    // Reset any persistent padding set by handleNavigateToChallenge before easing
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
       zoom: Math.max(map.getZoom(), 14),
       duration: 700,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    });
+  }
+
+  // Panel-aware focus: positions the pin in the visible map above the history sheet.
+  // The history sheet is max-h-[50dvh], so apply matching bottom padding so the pin
+  // lands in the vertical center of the exposed map area rather than behind the panel.
+  function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
+    const map = mapRef.current;
+    if (!map) return;
+    const mapHeight = map.getContainer().clientHeight;
+    map.easeTo({
+      center: [coordinate.lon, coordinate.lat],
+      zoom: Math.max(map.getZoom(), 14),
+      duration: 700,
+      padding: { top: 60, right: 60, bottom: Math.round(mapHeight * 0.55), left: 60 },
+    });
+  }
+
+  function handleCheckInDetailLocationFocus(coordinate: { lat: number; lon: number }) {
+    const map = mapRef.current;
+    if (!map) return;
+    const mapContainer = map.getContainer();
+    const mapHeight = mapContainer.clientHeight;
+    const mapWidth = mapContainer.clientWidth;
+    const mapRect = mapContainer.getBoundingClientRect();
+    const cardsRect = cardsWrapperRef.current?.getBoundingClientRect();
+    const cardsRight = cardsRect ? Math.round(cardsRect.right) : 0;
+    const cardsBottom = cardsRect ? cardsRect.bottom : 0;
+
+    // Measure actual rendered sheet height; fall back to 50% of mapHeight if not mounted yet.
+    const sheetEl = document.querySelector('[data-role="check-in-detail"]') as HTMLElement | null;
+    const rawSheetHeight = sheetEl?.offsetHeight ?? 0;
+    const sheetHeight = rawSheetHeight > 0 ? rawSheetHeight : Math.round(mapHeight * 0.50);
+
+    const topPad = 60;
+    const rightPad = 60;
+    const bottomPadding = sheetHeight + 30;
+    const availableHeight = Math.max(mapHeight - bottomPadding - topPad, 50);
+
+    // Only push the pin right of the cards when they cover the pin's natural
+    // center BOTH horizontally AND vertically. On wide screens or when cards
+    // are scrolled above the pin, no offset is needed.
+    const pinNaturalY_inViewport = mapRect.top + topPad + availableHeight / 2;
+    const cardsHorizontallyEncroach = cardsRight + 16 > mapWidth / 2;
+    const cardsVerticallyOverlap = cardsBottom > pinNaturalY_inViewport;
+    const leftPadding =
+      cardsHorizontallyEncroach && cardsVerticallyOverlap ? cardsRight + 16 : rightPad;
+
+    // Zoom so ~1200m fits in the available vertical space above the sheet.
+    const targetMetersPerPixel = 1200 / availableHeight;
+    const contextZoom = Math.log2(
+      (156543.03392 * Math.cos((coordinate.lat * Math.PI) / 180)) / targetMetersPerPixel,
+    );
+    const zoom = Math.min(Math.max(contextZoom, 12), 16);
+
+    map.easeTo({
+      center: [coordinate.lon, coordinate.lat],
+      zoom,
+      duration: 700,
+      padding: { top: topPad, right: rightPad, bottom: bottomPadding, left: leftPadding },
     });
   }
 
@@ -676,11 +791,22 @@ export default function TripMap({
   }, [latestCheckpointLat, latestCheckpointLon, livePosition, role]);
 
   return (
-    <section className="relative min-h-0 flex-1" aria-label="Checkpoint map">
+    <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
       <div ref={mapContainerRef} className={mapClassName} />
 
       {/* Side-effect marker components */}
-      <CheckpointMarkers map={mapInstance} checkpoints={checkpoints} />
+      <CheckpointMarkers
+        map={mapInstance}
+        checkpoints={checkpoints}
+        onCheckpointClick={(checkpoint) => {
+          if (isPlacementMode || coordinatePickMode) return;
+          const event = historyEvents.find((e) => e.checkpointId === checkpoint._id);
+          if (event) {
+            setCheckInOpenedFromHistory(false);
+            setSelectedCheckInEvent(event);
+          }
+        }}
+      />
       <TravelerLocationMarker
         map={mapInstance}
         isPulsing={
@@ -699,9 +825,15 @@ export default function TripMap({
         fallbackOrigin={routeVoteFallbackOrigin}
         optionNumberById={voteOptionNumberById}
       />
-      {role === "traveler" && (
-        <ChallengeMarkers map={mapInstance} votes={travelerVotes} />
-      )}
+      <ChallengeMarkers
+        map={mapInstance}
+        token={token}
+        role={role}
+        onChallengeClick={(id) => {
+          setIsChallengesPanelOpen(true);
+          setPendingOpenChallengeId(id);
+        }}
+      />
 
       {/* Placement / coordinate pick banners */}
       <AnimatePresence>
@@ -735,7 +867,7 @@ export default function TripMap({
             className="absolute left-1/2 top-4 z-[5] flex -translate-x-1/2 items-center gap-3 bg-navy text-white px-3 py-2.5 rounded-md shadow-lg max-w-[calc(100%-24px)]"
           >
             <span className="text-sm">
-              Tap the map to set Option {coordinatePickMode.optionIndex + 1} location.
+              Tap the map to set {coordinatePickMode.label}.
             </span>
             <button
               type="button"
@@ -758,7 +890,7 @@ export default function TripMap({
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="status"
             className={`absolute left-1/2 z-[6] -translate-x-1/2 rounded-md bg-navy px-4 py-2 text-sm font-medium text-white shadow-lg max-w-[calc(100%-24px)] ${
-              role === "traveler" ? "bottom-[236px]" : "bottom-[128px]"
+              role === "traveler" ? "bottom-[230px]" : "bottom-[180px]"
             }`}
           >
             {toastMessage}
@@ -766,98 +898,101 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      <button
-        type="button"
-        className={`absolute right-5 z-[2] flex items-center justify-center gap-2 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors ${
-          role === "traveler" ? "bottom-[120px]" : "bottom-5"
-        }`}
-        onClick={handleCenterLocation}
-        aria-label="Center map on traveler location"
-      >
-        <LocateFixed className="h-4 w-4" aria-hidden="true" />
-      </button>
-
-      {/* Traveler action buttons */}
-      {canWrite && (
-        <button
-          className="absolute bottom-5 right-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          type="button"
-          onClick={() => {
-            setSelectedCoordinate(null);
-            setIsPlacementMode(true);
-          }}
-        >
-          Add Pin
-        </button>
-      )}
-
-      {role === "traveler" && (
+      {/* Panel-navigation cluster — icon-only vertical column, bottom-left */}
+      <div className="absolute bottom-5 left-5 z-[2] flex flex-col gap-2">
         <button
           type="button"
-          className={`absolute bottom-[70px] right-5 z-[2] flex items-center justify-center min-h-11 px-4 border rounded-md shadow-lg font-bold text-sm transition-colors ${
-            isLocationSharing
-              ? "bg-navy text-white border-navy hover:bg-navy/90"
-              : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-          }`}
-          onClick={handleToggleLocationSharing}
+          aria-label={isHistoryOpen ? "Close history" : "History"}
+          onClick={openHistory}
+          className="relative w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
         >
-          {isLocationSharing ? "Stop Sharing" : "Share Location"}
+          <Clock className="h-5 w-5" aria-hidden="true" />
+          {unreadCount > 0 && <BadgeSpan count={unreadCount} />}
         </button>
-      )}
 
-      {role === "traveler" && (
+        {(role === "traveler" || role === "support_crew") && (
+          <button
+            type="button"
+            aria-label={isChallengesPanelOpen ? "Close challenges" : "Challenges"}
+            onClick={openChallenges}
+            className={`relative w-11 h-11 flex items-center justify-center border rounded-md shadow-lg transition-colors ${
+              isChallengesPanelOpen
+                ? "bg-navy text-white border-navy hover:bg-navy/90"
+                : "bg-white text-navy border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            <Trophy className="h-5 w-5" aria-hidden="true" />
+            {challengeBadgeCount > 0 && <BadgeSpan count={challengeBadgeCount} />}
+          </button>
+        )}
+
+        {role === "traveler" && (
+          <button
+            type="button"
+            aria-label={isTravelerStateOpen ? "Close state" : "Traveler state"}
+            onClick={() => setIsTravelerStateOpen((p) => !p)}
+            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
+          >
+            <Activity className="h-5 w-5" aria-hidden="true" />
+          </button>
+        )}
+
+        {role === "traveler" && (
+          <button
+            type="button"
+            aria-label={isVotePanelOpen ? "Close votes" : "Route votes"}
+            onClick={openVotes}
+            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
+          >
+            <Vote className="h-5 w-5" aria-hidden="true" />
+          </button>
+        )}
+
+        {role === "support_crew" && (
+          <RouteVoteButton token={token} onClick={openVotes} />
+        )}
+      </div>
+
+      {/* Map-utilities cluster — icon-only vertical column, bottom-right */}
+      <div className="absolute bottom-5 right-5 z-[2] flex flex-col-reverse gap-2">
         <button
           type="button"
-          className="absolute bottom-[130px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={() => setIsTravelerStateOpen((p) => !p)}
+          aria-label="Center map on traveler location"
+          onClick={handleCenterLocation}
+          className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
         >
-          {isTravelerStateOpen ? "Close State" : "State"}
+          <LocateFixed className="h-5 w-5" aria-hidden="true" />
         </button>
-      )}
 
-      {role === "traveler" && (
-        <button
-          type="button"
-          className="absolute bottom-[190px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={() => setIsHistoryOpen((p) => !p)}
-        >
-          {isHistoryOpen ? "Close History" : "History"}
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-        </button>
-      )}
+        {role === "traveler" && (
+          <button
+            type="button"
+            aria-label={isLocationSharing ? "Stop sharing location" : "Share location"}
+            onClick={handleToggleLocationSharing}
+            className={`w-11 h-11 flex items-center justify-center border rounded-md shadow-lg transition-colors ${
+              isLocationSharing
+                ? "bg-navy text-white border-navy hover:bg-navy/90"
+                : "bg-white text-navy border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            <Navigation className="h-5 w-5" aria-hidden="true" />
+          </button>
+        )}
 
-      {role === "traveler" && (
-        <button
-          type="button"
-          className="absolute bottom-[70px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={() => setIsVotePanelOpen((p) => !p)}
-        >
-          {isVotePanelOpen ? "Close Votes" : "Manage Votes"}
-        </button>
-      )}
-
-      {role === "support_crew" && (
-        <RouteVoteButton token={token} onClick={() => setIsVotePanelOpen(true)} />
-      )}
-
-      {role === "support_crew" && (
-        <button
-          type="button"
-          className="absolute bottom-[70px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={() => setIsHistoryOpen((p) => !p)}
-        >
-          {isHistoryOpen ? "Close History" : "History"}
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-        </button>
-      )}
+        {canWrite && (
+          <button
+            type="button"
+            aria-label="Add pin"
+            onClick={() => {
+              setSelectedCoordinate(null);
+              setIsPlacementMode(true);
+            }}
+            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
+          >
+            <MapPin className="h-5 w-5" aria-hidden="true" />
+          </button>
+        )}
+      </div>
 
       {/* Checkpoint add sheet */}
       {canWrite && (
@@ -925,7 +1060,7 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      <div className="absolute top-5 left-5 z-[2] flex flex-col gap-2">
+      <div ref={cardsWrapperRef} className="absolute top-5 left-5 z-[2] flex flex-col gap-2">
         <TravelerStateCard token={token} role={role} />
         <CurrentActivityCard
           token={token}
@@ -935,6 +1070,19 @@ export default function TripMap({
         />
       </div>
 
+      <ChallengePanel
+        open={isChallengesPanelOpen}
+        token={token}
+        role={role}
+        onClose={() => setIsChallengesPanelOpen(false)}
+        onStartChallenge={() => setIsChallengesPanelOpen(false)}
+        onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
+        isPickingCoordinate={isPickingCoordinate}
+        pendingOpenChallengeId={pendingOpenChallengeId}
+        onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
+        onRequestNavigateToChallenge={handleNavigateToChallenge}
+      />
+
       <AnimatePresence>
         {isHistoryOpen && (
           <HistoryPanel
@@ -942,9 +1090,10 @@ export default function TripMap({
             onClose={() => setIsHistoryOpen(false)}
             onCheckInSelect={(event) => {
               setIsHistoryOpen(false);
+              setCheckInOpenedFromHistory(true);
               setSelectedCheckInEvent(event);
             }}
-            onLocationFocus={centerMapOnCoordinate}
+            onLocationFocus={handleHistoryLocationFocus}
             onMarkAllRead={markAllRead}
           />
         )}
@@ -953,10 +1102,12 @@ export default function TripMap({
       <CheckInDetailSheet
         event={selectedCheckInEvent}
         onClose={() => {
+          const returnToHistory = checkInOpenedFromHistory;
           setSelectedCheckInEvent(null);
-          setIsHistoryOpen(true);
+          setCheckInOpenedFromHistory(false);
+          if (returnToHistory) setIsHistoryOpen(true);
         }}
-        onLocationFocus={centerMapOnCoordinate}
+        onLocationFocus={handleCheckInDetailLocationFocus}
       />
 
       {role === "traveler" && (

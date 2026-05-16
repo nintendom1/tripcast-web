@@ -278,10 +278,10 @@ export default function RouteVotePanel({
   onRequestFitMap,
   fallbackOrigin,
 }: RouteVotePanelProps) {
-  const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token }) ?? [];
+  const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token });
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
 
-  const selectedVote = votes.find((v) => v._id === selectedVoteId) ?? null;
+  const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
 
   function handleBack() {
     setSelectedVoteId(null);
@@ -300,7 +300,7 @@ export default function RouteVotePanel({
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
       transition={{ duration: 0.22, ease: "easeOut" as const }}
-      className="absolute bottom-0 left-0 right-0 z-[4] bg-background border-t max-h-[60vh] overflow-y-auto flex flex-col"
+      className="absolute bottom-0 left-0 right-0 z-[4] bg-background border-t max-h-[80dvh] overflow-y-auto flex flex-col"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="sticky top-0 bg-background border-b flex items-center justify-between px-4 py-3 z-[1]">
@@ -345,7 +345,11 @@ export default function RouteVotePanel({
               transition={{ duration: 0.15 }}
               className="flex flex-col gap-2"
             >
-              {votes.length === 0 ? (
+              {votes === undefined ? (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  Loading votes…
+                </p>
+              ) : votes.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">
                   No active votes right now.
                 </p>

@@ -39,9 +39,11 @@ describe("HistoryPanel", () => {
     vi.clearAllMocks();
   });
 
-  it("calls onMarkAllRead on mount", () => {
+  it("calls onMarkAllRead on unmount, not on mount", () => {
     const onMarkAllRead = vi.fn();
-    render(<HistoryPanel {...defaultProps} onMarkAllRead={onMarkAllRead} />);
+    const { unmount } = render(<HistoryPanel {...defaultProps} onMarkAllRead={onMarkAllRead} />);
+    expect(onMarkAllRead).not.toHaveBeenCalled();
+    unmount();
     expect(onMarkAllRead).toHaveBeenCalledTimes(1);
   });
 

@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { LogOut, ShieldAlert, UserPlus, Users } from "lucide-react";
+import { tripcastApi } from "../../convex/tripcastApi";
+import type { ChallengeModerationMode, ChallengeRateLimitPreset } from "../../convex/tripcastApi";
 
 import {
   Sheet,
@@ -26,6 +29,96 @@ type OptionsSheetProps = {
 };
 
 type OptionsView = "options" | "emergency-reset";
+
+// ---------------------------------------------------------------------------
+// Challenge settings inline section
+// ---------------------------------------------------------------------------
+
+const MODERATION_OPTIONS: { value: ChallengeModerationMode; label: string; desc: string }[] = [
+  { value: "manual_review", label: "Manual review", desc: "You approve each challenge before it's visible." },
+  { value: "auto_publish", label: "Auto-publish", desc: "Challenges appear immediately (rate limits still apply)." },
+];
+
+const RATE_LIMIT_OPTIONS: { value: ChallengeRateLimitPreset; label: string }[] = [
+  { value: "off", label: "No per-follower limit" },
+  { value: "per_second", label: "1 per second" },
+  { value: "per_minute", label: "1 per minute" },
+  { value: "per_hour", label: "1 per hour" },
+  { value: "per_day", label: "1 per day" },
+];
+
+function ChallengeSettingsSection({ token }: { token: string }) {
+  const settings = useQuery(tripcastApi.challengeSettings.travelerGetChallengeSettings, { token });
+  const updateSettings = useMutation(tripcastApi.challengeSettings.travelerUpdateChallengeSettings);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleModerationChange(mode: ChallengeModerationMode) {
+    setError(null);
+    try {
+      await updateSettings({ token, moderationMode: mode });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function handleRateLimitChange(preset: ChallengeRateLimitPreset) {
+    setError(null);
+    try {
+      await updateSettings({ token, rateLimitPreset: preset });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  const currentMode = settings?.moderationMode ?? "manual_review";
+  const currentPreset = settings?.rateLimitPreset ?? "per_second";
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        Challenges
+      </h3>
+
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs font-medium text-foreground">Proposal moderation</p>
+        <div className="flex flex-col gap-1.5">
+          {MODERATION_OPTIONS.map((opt) => (
+            <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="moderation-mode"
+                value={opt.value}
+                checked={currentMode === opt.value}
+                onChange={() => handleModerationChange(opt.value)}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col">
+                <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                <span className="text-xs text-muted-foreground">{opt.desc}</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <p className="text-xs font-medium text-foreground">Per-follower proposal rate limit</p>
+        <select
+          value={currentPreset}
+          onChange={(e) => handleRateLimitChange(e.target.value as ChallengeRateLimitPreset)}
+          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+        >
+          {RATE_LIMIT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <p className="text-xs text-muted-foreground">Hard cap: 300 proposals per trip per day regardless of setting.</p>
+      </div>
+
+      {error && <p className="text-xs text-rose-600" role="alert">{error}</p>}
+    </section>
+  );
+}
 
 export default function OptionsSheet({
   open,
@@ -135,6 +228,10 @@ export default function OptionsSheet({
                     Manage Followers
                   </Button>
                 </section>
+              ) : null}
+
+              {role === "traveler" ? (
+                <ChallengeSettingsSection token={session.token} />
               ) : null}
 
               {role === "traveler" ? (
