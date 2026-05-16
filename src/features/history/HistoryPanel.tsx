@@ -70,7 +70,7 @@ export default function HistoryPanel({
       <SheetContent
         side="bottom"
         showBackdrop={false}
-        className="z-[10] shadow-2xl"
+        className="z-[10] shadow-2xl max-h-[50dvh]"
       >
         <SheetHeader className="flex-row items-center justify-between space-y-0 pb-2">
           <SheetTitle className="text-base font-bold text-navy">

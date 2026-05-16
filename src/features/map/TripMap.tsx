@@ -72,54 +72,45 @@ function BadgeSpan({ count }: { count: number }) {
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function createPopupContent(checkpoint: Checkpoint) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "checkpoint-popup";
-
-  const title = document.createElement("strong");
-  title.textContent = checkpoint.title;
-  wrapper.appendChild(title);
-
-  if (checkpoint.note) {
-    const note = document.createElement("p");
-    note.textContent = checkpoint.note;
-    wrapper.appendChild(note);
-  }
-
-  const coords = document.createElement("small");
-  coords.textContent = `${checkpoint.lat.toFixed(5)}, ${checkpoint.lon.toFixed(5)}`;
-  wrapper.appendChild(coords);
-
-  return wrapper;
-}
 
 function CheckpointMarkers({
   map,
   checkpoints,
+  onCheckpointClick,
 }: {
   map: maplibregl.Map | null;
   checkpoints: Checkpoint[];
+  onCheckpointClick: (checkpoint: Checkpoint) => void;
 }) {
   const markersRef = useRef<Marker[]>([]);
+  const onClickRef = useRef(onCheckpointClick);
+  onClickRef.current = onCheckpointClick;
 
   useEffect(() => {
     if (!map) return;
 
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = checkpoints.map((checkpoint) => {
-      const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
-        createPopupContent(checkpoint),
-      );
-      return new maplibregl.Marker({ color: "#d92332" })
+      const marker = new maplibregl.Marker({ color: "#d92332" })
         .setLngLat([checkpoint.lon, checkpoint.lat])
-        .setPopup(popup)
         .addTo(map);
+
+      const el = marker.getElement();
+      el.style.cursor = "pointer";
+      el.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onClickRef.current(checkpoint);
+      });
+
+      return marker;
     });
 
     return () => {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current = [];
     };
+  // onCheckpointClick intentionally omitted — kept fresh via onClickRef
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, checkpoints]);
 
   return null;
@@ -348,6 +339,7 @@ export default function TripMap({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
+  const [checkInOpenedFromHistory, setCheckInOpenedFromHistory] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState<CurrentActivity | null>(null);
   const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
@@ -677,6 +669,20 @@ export default function TripMap({
     });
   }
 
+  // Panel-aware focus: positions the pin in the visible map above the history sheet.
+  // The history sheet is max-h-[50dvh], so apply matching bottom padding so the pin
+  // lands in the vertical center of the exposed map area rather than behind the panel.
+  function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
+    const map = mapRef.current;
+    if (!map) return;
+    map.easeTo({
+      center: [coordinate.lon, coordinate.lat],
+      zoom: Math.max(map.getZoom(), 14),
+      duration: 700,
+      padding: { top: 60, right: 60, bottom: Math.round(window.innerHeight * 0.55), left: 60 },
+    });
+  }
+
   function handleCenterLocation() {
     const currentLocation =
       role === "traveler"
@@ -742,7 +748,18 @@ export default function TripMap({
       <div ref={mapContainerRef} className={mapClassName} />
 
       {/* Side-effect marker components */}
-      <CheckpointMarkers map={mapInstance} checkpoints={checkpoints} />
+      <CheckpointMarkers
+        map={mapInstance}
+        checkpoints={checkpoints}
+        onCheckpointClick={(checkpoint) => {
+          if (isPlacementMode || coordinatePickMode) return;
+          const event = historyEvents.find((e) => e.checkpointId === checkpoint._id);
+          if (event) {
+            setCheckInOpenedFromHistory(false);
+            setSelectedCheckInEvent(event);
+          }
+        }}
+      />
       <TravelerLocationMarker
         map={mapInstance}
         isPulsing={
@@ -1026,9 +1043,10 @@ export default function TripMap({
             onClose={() => setIsHistoryOpen(false)}
             onCheckInSelect={(event) => {
               setIsHistoryOpen(false);
+              setCheckInOpenedFromHistory(true);
               setSelectedCheckInEvent(event);
             }}
-            onLocationFocus={centerMapOnCoordinate}
+            onLocationFocus={handleHistoryLocationFocus}
             onMarkAllRead={markAllRead}
           />
         )}
@@ -1037,8 +1055,10 @@ export default function TripMap({
       <CheckInDetailSheet
         event={selectedCheckInEvent}
         onClose={() => {
+          const returnToHistory = checkInOpenedFromHistory;
           setSelectedCheckInEvent(null);
-          setIsHistoryOpen(true);
+          setCheckInOpenedFromHistory(false);
+          if (returnToHistory) setIsHistoryOpen(true);
         }}
         onLocationFocus={centerMapOnCoordinate}
       />
