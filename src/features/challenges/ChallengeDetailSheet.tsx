@@ -26,6 +26,7 @@ type Props = {
   onClose: () => void;
   onStartChallenge?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  onViewOnMap?: () => void;
 };
 
 function statusLabel(status: string): string {
@@ -53,6 +54,7 @@ export default function ChallengeDetailSheet({
   onClose,
   onStartChallenge,
   onRequestCoordinatePick,
+  onViewOnMap,
 }: Props) {
   // Drop/reject form state
   const [responseNote, setResponseNote] = useState("");
@@ -435,6 +437,17 @@ export default function ChallengeDetailSheet({
           <span>⚡ Energy: {challenge.estimatedEnergyImpact}</span>
         )}
       </div>
+
+      {/* View on map */}
+      {hasLocation && onViewOnMap && (
+        <button
+          type="button"
+          onClick={onViewOnMap}
+          className="self-start text-xs text-navy underline"
+        >
+          View on map
+        </button>
+      )}
 
       {/* Traveler response (preset + note) — visible to both traveler and follower */}
       {(challenge.travelerResponsePreset || challenge.travelerResponseNote) && !challenge.silentDrop && (

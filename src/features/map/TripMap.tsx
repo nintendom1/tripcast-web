@@ -631,10 +631,12 @@ export default function TripMap({
     const map = mapRef.current;
     if (!map) return;
 
+    // Reset any persistent padding set by handleNavigateToChallenge before easing
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
       zoom: Math.max(map.getZoom(), 14),
       duration: 700,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
     });
   }
 

@@ -72,12 +72,14 @@ function TravelerChallengePanel({
 
   const allChallenges = useQuery(tripcastApi.challenges.travelerListChallenges, { token });
 
-  // Auto-open detail when a challenge pin is clicked on the map
+  // Pin click: navigate to the challenge location only — don't auto-open the detail sheet
   useEffect(() => {
     if (!pendingOpenChallengeId || !allChallenges) return;
     const challenge = allChallenges.find((c) => c._id === pendingOpenChallengeId);
     if (challenge) {
-      openDetail(challenge);
+      if (challenge.lat !== undefined && challenge.lon !== undefined) {
+        onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
+      }
       onClearPendingChallenge?.();
     }
   }, [pendingOpenChallengeId, allChallenges]);
@@ -91,8 +93,15 @@ function TravelerChallengePanel({
   function openDetail(challenge: Challenge) {
     setSelectedChallenge(challenge);
     setIsDetailOpen(true);
-    if (challenge.lat !== undefined && challenge.lon !== undefined) {
-      onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
+    // Navigation is opt-in via "View on map" in the detail sheet, not automatic
+  }
+
+  function handleViewOnMap() {
+    if (!selectedChallenge) return;
+    setIsDetailOpen(false);
+    setSelectedChallenge(null);
+    if (selectedChallenge.lat !== undefined && selectedChallenge.lon !== undefined) {
+      onRequestNavigateToChallenge?.({ lat: selectedChallenge.lat, lon: selectedChallenge.lon });
     }
   }
 
@@ -157,6 +166,7 @@ function TravelerChallengePanel({
             onClose={() => { setIsDetailOpen(false); setSelectedChallenge(null); }}
             onStartChallenge={onStartChallenge}
             onRequestCoordinatePick={onRequestCoordinatePick}
+            onViewOnMap={selectedChallenge?.lat !== undefined ? handleViewOnMap : undefined}
           />
         </SheetContent>
       </Sheet>
@@ -319,14 +329,16 @@ function SupportCrewChallengePanel({
   const publicChallenges = myChallenges?.public ?? [];
   const mineIds = new Set(mine.map((c) => c._id));
 
-  // Auto-open detail when a challenge pin is clicked on the map
+  // Navigate to challenge pin on the map without auto-opening detail
   useEffect(() => {
     if (!pendingOpenChallengeId || !myChallenges) return;
     const challenge =
       mine.find((c) => c._id === pendingOpenChallengeId) ??
       publicChallenges.find((c) => c._id === pendingOpenChallengeId);
     if (challenge) {
-      openDetail(challenge);
+      if (challenge.lat !== undefined && challenge.lon !== undefined) {
+        onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
+      }
       onClearPendingChallenge?.();
     }
   }, [pendingOpenChallengeId, myChallenges]);
@@ -334,8 +346,14 @@ function SupportCrewChallengePanel({
   function openDetail(challenge: Challenge) {
     setSelectedChallenge(challenge);
     setIsDetailOpen(true);
-    if (challenge.lat !== undefined && challenge.lon !== undefined) {
-      onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
+  }
+
+  function handleViewOnMap() {
+    if (!selectedChallenge) return;
+    setIsDetailOpen(false);
+    setSelectedChallenge(null);
+    if (selectedChallenge.lat !== undefined && selectedChallenge.lon !== undefined) {
+      onRequestNavigateToChallenge?.({ lat: selectedChallenge.lat, lon: selectedChallenge.lon });
     }
   }
 
@@ -440,6 +458,7 @@ function SupportCrewChallengePanel({
             role="support_crew"
             isOwn={selectedChallenge ? mineIds.has(selectedChallenge._id) : false}
             onClose={() => { setIsDetailOpen(false); setSelectedChallenge(null); }}
+            onViewOnMap={selectedChallenge?.lat !== undefined ? handleViewOnMap : undefined}
           />
         </SheetContent>
       </Sheet>
