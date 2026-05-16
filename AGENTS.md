@@ -79,7 +79,71 @@ When adding new component tests:
 Forms that let users tap the map to set a coordinate use a panel-hide approach so the map is fully accessible:
 
 1. In `TripMap.tsx`, call `setCoordinatePickMode({ label, callback })` and display the pick banner.
-2. Wrap the triggering panel in a `<div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>` — the panel stays **mounted** (preserving form state) but becomes invisible and non-interactive.
-3. Because `Sheet`/`SheetContent` renders into a portal (body level), it escapes the parent `invisible` class. If the form is inside a `Sheet`, also pass `showBackdrop={!isPickingCoordinate}` and `className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}` directly to `SheetContent`.
-4. `RouteVoteProgress` (line ~927 in `TripMap.tsx`) is the reference implementation. `ChallengePanel` follows the same pattern.
-5. Always wire the coordinate callback so it fires into the form's setter — do NOT close and reopen the panel/sheet; that would lose form state.
+2. **If the form is inside a `Sheet`:** pass `className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}` directly to `SheetContent`. Because `SheetContent` renders into a body-level portal, it escapes any `invisible` class on an ancestor element — the class must be on `SheetContent` itself, not on a wrapper div in `TripMap`. For map-adjacent sheets (`showBackdrop={false}`), no changes to the backdrop prop are needed.
+3. **If the form is NOT inside a `Sheet`:** wrap the triggering element in `<div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>`. The panel stays **mounted** (preserving form state) but becomes invisible and non-interactive.
+4. Always wire the coordinate callback into the form's setter — do NOT close and reopen the panel/sheet; that would lose form state.
+
+`ChallengePanel` (Sheet-based) and `RouteVoteProgress` are the two reference implementations.
+
+## Mobile UX Principles
+
+TripMap targets 390px-wide viewports (iPhone 12 Pro class) as the primary form factor. The rules below prevent the most common regressions.
+
+### The map section must be `overflow-hidden`
+
+```tsx
+<section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
+```
+
+This clips all absolutely-positioned children — button clusters, panel overlays, animated banners. Without it, any child that extends past the section boundary creates document-level horizontal scroll. **This is the single most important CSS rule in the map view.** If it's removed, or a new wrapper element is introduced without it, the page scrolls on mobile.
+
+### Use vertical FAB clusters, never horizontal button rows
+
+All map controls live in two `absolute` vertical columns (`flex flex-col gap-2`):
+
+| Cluster | Position | Contents |
+|---------|----------|----------|
+| Panel navigation | `bottom-5 left-5` | History, Challenges, Traveler State, Votes |
+| Map utilities | `bottom-5 right-5` | Locate, Share Location, Add Pin |
+
+**Every button is exactly `w-11 h-11` (44 × 44 px).** This is the Apple HIG / WCAG minimum touch target size. Fixed squares guarantee the cluster never contributes to horizontal overflow regardless of how many items are added.
+
+Buttons are icon-only — `aria-label` carries the text equivalent. No visible text labels in these clusters.
+
+When adding a new map control: pick the correct cluster, use a `lucide-react` icon, write an `aria-label`, keep `w-11 h-11`. Do not add text.
+
+### All secondary panels are bottom sheets
+
+Map-adjacent panels (History, Challenges, Route Votes) use `<Sheet side="bottom" modal={false} showBackdrop={false}>`. Never use a left/right sidebar or a `motion.div` with horizontal `x` animation — these temporarily extend document width during the spring, causing the mobile scroll regression.
+
+`SheetContent side="bottom"` has `max-h-[85dvh] inset-x-0 bottom-0 rounded-t-xl` built in (`src/components/ui/sheet.tsx`).
+
+Modal flows (Options, Emergency Reset) keep the default backdrop/modal behavior.
+
+### Mutual panel exclusion
+
+At most one bottom sheet (History, Challenges, Votes) may be open at a time. Use named helper functions — not raw `setState` on the button `onClick` — to enforce this:
+
+```typescript
+function openHistory() {
+  if (isHistoryOpen) { setIsHistoryOpen(false); return; }
+  setIsHistoryOpen(true);
+  setIsChallengesPanelOpen(false);
+  setIsVotePanelOpen(false);
+}
+```
+
+Each helper closes the other two panels and toggles itself closed if already open (tap-to-dismiss). `TravelerState` is a full-height dialog and does not participate in exclusion.
+
+When adding a new panel: write an `open<Panel>` helper, call `set<ExistingPanel>Open(false)` for each existing panel inside it, and wire the button to the helper.
+
+### Toast positioning must clear the nav cluster
+
+The toast `bottom-[Npx]` must clear the left FAB cluster. With 44 px buttons and 8 px gaps:
+
+| Role | Buttons | `bottom` value |
+|------|---------|----------------|
+| Traveler | 4 | `bottom-[230px]` |
+| Support crew | 3 | `bottom-[180px]` |
+
+Update these when buttons are added to or removed from the nav cluster.
