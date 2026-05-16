@@ -676,28 +676,30 @@ export default function TripMap({
   function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
+    const mapHeight = map.getContainer().clientHeight;
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
       zoom: Math.max(map.getZoom(), 14),
       duration: 700,
-      padding: { top: 60, right: 60, bottom: Math.round(window.innerHeight * 0.55), left: 60 },
+      padding: { top: 60, right: 60, bottom: Math.round(mapHeight * 0.55), left: 60 },
     });
   }
 
-  // CheckInDetailSheet is max-h-[50dvh]; use 60dvh bottom padding so the pin
-  // appears clearly above the sheet. Left padding is measured from the cards
-  // wrapper's actual rendered right edge so the pin lands to the right of the
-  // cards on narrow screens (iPhone) and in open map space on wide screens.
+  // CheckInDetailSheet is max-h-[50dvh]; bottom padding uses the map canvas
+  // height (not window.innerHeight) so the calculation is correct even when
+  // browser chrome is visible and shrinks the layout viewport below dvh.
+  // Left padding is measured from the cards wrapper's rendered right edge.
   function handleCheckInDetailLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
+    const mapHeight = map.getContainer().clientHeight;
     const cardsRect = cardsWrapperRef.current?.getBoundingClientRect();
     const leftPadding = cardsRect ? Math.round(cardsRect.right) + 16 : 60;
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
       zoom: Math.max(map.getZoom(), 14),
       duration: 700,
-      padding: { top: 60, right: 60, bottom: Math.round(window.innerHeight * 0.60), left: leftPadding },
+      padding: { top: 60, right: 60, bottom: Math.round(mapHeight * 0.60), left: leftPadding },
     });
   }
 
