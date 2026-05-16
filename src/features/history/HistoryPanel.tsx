@@ -53,8 +53,7 @@ export default function HistoryPanel({
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
 
   useEffect(() => {
-    onMarkAllRead();
-  // onMarkAllRead is stable; calling on mount is intentional
+    return () => { onMarkAllRead(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -97,7 +96,9 @@ export default function HistoryPanel({
               key={tab.id}
               type="button"
               role="tab"
+              id={`history-tab-${tab.id}`}
               aria-selected={activeTab === tab.id}
+              aria-controls="history-tabpanel"
               onClick={() => setActiveTab(tab.id)}
               className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                 activeTab === tab.id
@@ -111,6 +112,9 @@ export default function HistoryPanel({
         </div>
 
         <div
+          id="history-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`history-tab-${activeTab}`}
           className="flex-1 overflow-y-auto px-4 pb-4"
           style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >

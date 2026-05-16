@@ -3,6 +3,7 @@ import type { Challenge } from "../../convex/tripcastApi";
 type Props = {
   challenge: Challenge;
   isOwn?: boolean;
+  isHighlighted?: boolean;
   onClick?: () => void;
 };
 
@@ -24,14 +25,17 @@ const STATUS_COLORS: Record<string, string> = {
   dropped: "bg-slate-100 text-slate-500",
 };
 
-export default function ChallengeCard({ challenge, isOwn, onClick }: Props) {
+export default function ChallengeCard({ challenge, isOwn, isHighlighted, onClick }: Props) {
   const statusLabel = STATUS_LABELS[challenge.status] ?? challenge.status;
   const statusColor = STATUS_COLORS[challenge.status] ?? "bg-slate-100 text-slate-600";
 
   return (
     <button
       type="button"
-      className="w-full text-left p-3 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors flex flex-col gap-1.5"
+      data-challenge-id={challenge._id}
+      className={`w-full text-left p-3 rounded-lg border bg-white hover:bg-slate-50 transition-all flex flex-col gap-1.5 ${
+        isHighlighted ? "border-amber-400 ring-2 ring-amber-300 bg-amber-50" : "border-slate-200"
+      }`}
       onClick={onClick}
     >
       <div className="flex items-start justify-between gap-2">

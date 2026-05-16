@@ -15,8 +15,8 @@ export default function RouteVoteButton({ token, onClick }: RouteVoteButtonProps
     <button
       type="button"
       onClick={onClick}
-      className="absolute bottom-[70px] right-5 z-[2] flex items-center gap-2 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-      aria-label={hasUnseen ? "Vote — party awaits!" : "View votes"}
+      className="relative flex items-center gap-2 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+      aria-label={hasUnseen ? "Vote open — join in!" : "View votes"}
     >
       {hasUnseen ? (
         <>
@@ -26,7 +26,7 @@ export default function RouteVoteButton({ token, onClick }: RouteVoteButtonProps
             className="inline-block w-2 h-2 rounded-full bg-crimson"
             aria-hidden
           />
-          The party awaits!
+          Vote open!
         </>
       ) : (
         "Votes"

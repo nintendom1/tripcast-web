@@ -278,10 +278,10 @@ export default function RouteVotePanel({
   onRequestFitMap,
   fallbackOrigin,
 }: RouteVotePanelProps) {
-  const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token }) ?? [];
+  const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token });
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
 
-  const selectedVote = votes.find((v) => v._id === selectedVoteId) ?? null;
+  const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
 
   function handleBack() {
     setSelectedVoteId(null);
@@ -345,7 +345,11 @@ export default function RouteVotePanel({
               transition={{ duration: 0.15 }}
               className="flex flex-col gap-2"
             >
-              {votes.length === 0 ? (
+              {votes === undefined ? (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  Loading votes…
+                </p>
+              ) : votes.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">
                   No active votes right now.
                 </p>

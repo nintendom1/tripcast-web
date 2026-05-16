@@ -69,6 +69,7 @@ function TravelerChallengePanel({
   const [filter, setFilter] = useState<TravelerFilter>("all");
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
 
   const allChallenges = useQuery(tripcastApi.challenges.travelerListChallenges, { token });
 
@@ -80,15 +81,21 @@ function TravelerChallengePanel({
       if (challenge.lat !== undefined && challenge.lon !== undefined) {
         onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
       }
+      const id = pendingOpenChallengeId;
+      setTimeout(() => {
+        document.querySelector(`[data-challenge-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        setHighlightedChallengeId(id);
+        setTimeout(() => setHighlightedChallengeId(null), 2000);
+      }, 100);
       onClearPendingChallenge?.();
     }
   }, [pendingOpenChallengeId, allChallenges]);
 
-  const filtered = (allChallenges ?? []).filter((c) => {
+  const filtered = allChallenges?.filter((c) => {
     if (filter === "all") return true;
     if (filter === "visible") return c.status === "visible" || c.status === "planned";
     return c.status === filter;
-  });
+  }) ?? [];
 
   function openDetail(challenge: Challenge) {
     setSelectedChallenge(challenge);
@@ -109,11 +116,19 @@ function TravelerChallengePanel({
     <>
       <div className="flex flex-col gap-3 overflow-y-auto h-full">
         {/* Filters */}
-        <div className="px-4 pt-2 flex gap-2 overflow-x-auto pb-1">
+        <div
+          role="tablist"
+          aria-label="Challenge filters"
+          className="px-4 pt-2 flex gap-2 overflow-x-auto pb-1"
+        >
           {TRAVELER_FILTERS.map((f) => (
             <button
               key={f.value}
               type="button"
+              role="tab"
+              id={`challenge-tab-${f.value}`}
+              aria-selected={filter === f.value}
+              aria-controls="challenge-tabpanel"
               className={`shrink-0 px-3 py-1 text-xs rounded-full border whitespace-nowrap transition-colors ${
                 filter === f.value
                   ? "bg-navy text-white border-navy"
@@ -138,15 +153,23 @@ function TravelerChallengePanel({
         )}
 
         {/* List */}
-        <div className="flex flex-col gap-2 px-4 pb-4">
-          {filtered.length === 0 && (
+        <div
+          id="challenge-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`challenge-tab-${filter}`}
+          className="flex flex-col gap-2 px-4 pb-4"
+        >
+          {allChallenges === undefined ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Loading challenges…</p>
+          ) : filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               {filter === "all" ? "No challenges yet." : `No ${filter} challenges.`}
             </p>
+          ) : (
+            filtered.map((c) => (
+              <ChallengeCard key={c._id} challenge={c} isHighlighted={c._id === highlightedChallengeId} onClick={() => openDetail(c)} />
+            ))
           )}
-          {filtered.map((c) => (
-            <ChallengeCard key={c._id} challenge={c} onClick={() => openDetail(c)} />
-          ))}
         </div>
       </div>
 
@@ -322,6 +345,7 @@ function SupportCrewChallengePanel({
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
 
   const myChallenges = useQuery(tripcastApi.challenges.followerListMyChallenges, { token });
 
@@ -339,6 +363,12 @@ function SupportCrewChallengePanel({
       if (challenge.lat !== undefined && challenge.lon !== undefined) {
         onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
       }
+      const id = pendingOpenChallengeId;
+      setTimeout(() => {
+        document.querySelector(`[data-challenge-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        setHighlightedChallengeId(id);
+        setTimeout(() => setHighlightedChallengeId(null), 2000);
+      }, 100);
       onClearPendingChallenge?.();
     }
   }, [pendingOpenChallengeId, myChallenges]);
@@ -385,14 +415,22 @@ function SupportCrewChallengePanel({
         )}
 
         {/* Tabs: Mine | Active */}
-        <div className="flex gap-1 px-4 pt-2 border-b border-slate-100 pb-2">
+        <div
+          role="tablist"
+          aria-label="Challenge tabs"
+          className="flex gap-1 px-4 pt-2 border-b border-slate-100 pb-2"
+        >
           {([
             { value: "mine" as CrewTab, label: `Mine (${mine.length})` },
-            { value: "active" as CrewTab, label: "Active" },
+            { value: "active" as CrewTab, label: "Traveler's Board" },
           ] as const).map(({ value, label }) => (
             <button
               key={value}
               type="button"
+              role="tab"
+              id={`crew-tab-${value}`}
+              aria-selected={tab === value}
+              aria-controls="crew-tabpanel"
               className={`shrink-0 px-3 py-1 text-xs rounded-full border transition-colors ${
                 tab === value
                   ? "bg-navy text-white border-navy"
@@ -405,43 +443,49 @@ function SupportCrewChallengePanel({
           ))}
         </div>
 
-        {/* Mine tab */}
-        {tab === "mine" && (
-          <div className="flex flex-col gap-2 px-4 pb-4">
-            {mine.length === 0 && (
+        {/* Tab content */}
+        <div
+          id="crew-tabpanel"
+          role="tabpanel"
+          aria-labelledby={`crew-tab-${tab}`}
+          className="flex flex-col gap-2 px-4 pb-4"
+        >
+          {myChallenges === undefined ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Loading challenges…</p>
+          ) : tab === "mine" ? (
+            mine.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 You haven't proposed any challenges yet.
               </p>
-            )}
-            {mine.map((c) => (
-              <ChallengeCard
-                key={c._id}
-                challenge={c}
-                isOwn
-                onClick={() => openDetail(c)}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* Active/public tab */}
-        {tab === "active" && (
-          <div className="flex flex-col gap-2 px-4 pb-4">
-            {publicChallenges.length === 0 && (
+            ) : (
+              mine.map((c) => (
+                <ChallengeCard
+                  key={c._id}
+                  challenge={c}
+                  isOwn
+                  isHighlighted={c._id === highlightedChallengeId}
+                  onClick={() => openDetail(c)}
+                />
+              ))
+            )
+          ) : (
+            publicChallenges.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
                 No active challenges right now.
               </p>
-            )}
-            {publicChallenges.map((c) => (
-              <ChallengeCard
-                key={c._id}
-                challenge={c}
-                isOwn={mineIds.has(c._id)}
-                onClick={() => openDetail(c)}
-              />
-            ))}
-          </div>
-        )}
+            ) : (
+              publicChallenges.map((c) => (
+                <ChallengeCard
+                  key={c._id}
+                  challenge={c}
+                  isOwn={mineIds.has(c._id)}
+                  isHighlighted={c._id === highlightedChallengeId}
+                  onClick={() => openDetail(c)}
+                />
+              ))
+            )
+          )}
+        </div>
       </div>
 
       <Sheet

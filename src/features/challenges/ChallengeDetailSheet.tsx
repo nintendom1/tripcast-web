@@ -510,7 +510,7 @@ export default function ChallengeDetailSheet({
               onClick={handleReject}
               className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
             >
-              {isWorking ? "Dropping…" : status === "proposed" ? "Confirm rejection" : "Confirm drop"}
+              {isWorking ? "Dropping…" : "Confirm drop"}
             </Button>
           </div>
         </div>
@@ -563,8 +563,13 @@ export default function ChallengeDetailSheet({
                 disabled={!canAct}
                 onClick={() => setShowRejectForm(true)}
               >
-                Reject with response
+                Drop with response
               </Button>
+              <div className="flex items-center gap-2 pt-1">
+                <div className="flex-1 h-px bg-rose-200" />
+                <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
+                <div className="flex-1 h-px bg-rose-200" />
+              </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -607,6 +612,11 @@ export default function ChallengeDetailSheet({
               >
                 Drop with note
               </Button>
+              <div className="flex items-center gap-2 pt-1">
+                <div className="flex-1 h-px bg-rose-200" />
+                <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
+                <div className="flex-1 h-px bg-rose-200" />
+              </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -643,6 +653,11 @@ export default function ChallengeDetailSheet({
               >
                 Drop with note
               </Button>
+              <div className="flex items-center gap-2 pt-1">
+                <div className="flex-1 h-px bg-rose-200" />
+                <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
+                <div className="flex-1 h-px bg-rose-200" />
+              </div>
               <Button
                 variant="outline"
                 size="sm"

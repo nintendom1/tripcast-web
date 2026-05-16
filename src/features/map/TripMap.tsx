@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { LocateFixed } from "lucide-react";
+import { Activity, Clock, LocateFixed, Trophy } from "lucide-react";
 
 import {
   tripcastApi,
@@ -280,6 +280,7 @@ function ConvexCheckpointSheet({
               placeholder="How are you doing?"
               className="rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none"
             />
+            <span className="text-right text-xs text-muted-foreground">{quickNote.length}/240</span>
           </div>
         </div>
       )}
@@ -363,6 +364,15 @@ export default function TripMap({
 
   const historyEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
   const { unreadCount, markAllRead } = useHistoryUnread(historyEvents);
+
+  const allChallengesForBadge = useQuery(
+    tripcastApi.challenges.travelerListChallenges,
+    role === "traveler" ? { token } : "skip",
+  );
+  const challengeBadgeCount =
+    role === "traveler"
+      ? (allChallengesForBadge ?? []).filter((c) => c.status === "proposed").length
+      : 0;
 
   // Keep placement mode ref in sync
   useEffect(() => {
@@ -797,61 +807,14 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      <button
-        type="button"
-        className={`absolute right-5 z-[2] flex items-center justify-center gap-2 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors ${
-          role === "traveler" ? "bottom-[120px]" : "bottom-5"
-        }`}
-        onClick={handleCenterLocation}
-        aria-label="Center map on traveler location"
-      >
-        <LocateFixed className="h-4 w-4" aria-hidden="true" />
-      </button>
-
-      {/* Traveler action buttons */}
-      {canWrite && (
-        <button
-          className="absolute bottom-5 right-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          type="button"
-          onClick={() => {
-            setSelectedCoordinate(null);
-            setIsPlacementMode(true);
-          }}
-        >
-          Add Pin
-        </button>
-      )}
-
-      {role === "traveler" && (
+      {/* Panel-navigation cluster — horizontal row, bottom-left */}
+      <div className="absolute bottom-5 left-5 z-[2] flex flex-row gap-2">
         <button
           type="button"
-          className={`absolute bottom-[70px] right-5 z-[2] flex items-center justify-center min-h-11 px-4 border rounded-md shadow-lg font-bold text-sm transition-colors ${
-            isLocationSharing
-              ? "bg-navy text-white border-navy hover:bg-navy/90"
-              : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-          }`}
-          onClick={handleToggleLocationSharing}
-        >
-          {isLocationSharing ? "Stop Sharing" : "Share Location"}
-        </button>
-      )}
-
-      {role === "traveler" && (
-        <button
-          type="button"
-          className="absolute bottom-[130px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={() => setIsTravelerStateOpen((p) => !p)}
-        >
-          {isTravelerStateOpen ? "Close State" : "State"}
-        </button>
-      )}
-
-      {role === "traveler" && (
-        <button
-          type="button"
-          className="absolute bottom-[250px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+          className="relative flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
           onClick={() => setIsHistoryOpen((p) => !p)}
         >
+          <Clock className="h-3.5 w-3.5" aria-hidden="true" />
           {isHistoryOpen ? "Close History" : "History"}
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
@@ -859,50 +822,92 @@ export default function TripMap({
             </span>
           )}
         </button>
-      )}
 
-      {(role === "traveler" || role === "support_crew") && (
+        {(role === "traveler" || role === "support_crew") && (
+          <button
+            type="button"
+            className={`relative flex items-center gap-1.5 min-h-11 px-4 border rounded-md shadow-lg font-bold text-sm transition-colors ${
+              isChallengesPanelOpen
+                ? "bg-navy text-white border-navy hover:bg-navy/90"
+                : "bg-white text-navy border-slate-300 hover:bg-slate-50"
+            }`}
+            onClick={() => setIsChallengesPanelOpen((p) => !p)}
+          >
+            <Trophy className="h-3.5 w-3.5" aria-hidden="true" />
+            {isChallengesPanelOpen ? "Close Challenges" : "Challenges"}
+            {challengeBadgeCount > 0 && (
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
+                {challengeBadgeCount > 9 ? "9+" : challengeBadgeCount}
+              </span>
+            )}
+          </button>
+        )}
+
+        {role === "traveler" && (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+            onClick={() => setIsTravelerStateOpen((p) => !p)}
+          >
+            <Activity className="h-3.5 w-3.5" aria-hidden="true" />
+            {isTravelerStateOpen ? "Close State" : "State"}
+          </button>
+        )}
+
+        {role === "traveler" && (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+            onClick={() => setIsVotePanelOpen((p) => !p)}
+          >
+            {isVotePanelOpen ? "Close Votes" : "Votes"}
+          </button>
+        )}
+
+        {role === "support_crew" && (
+          <RouteVoteButton token={token} onClick={() => setIsVotePanelOpen(true)} />
+        )}
+      </div>
+
+      {/* Map-utilities cluster — vertical column, bottom-right */}
+      <div className="absolute bottom-5 right-5 z-[2] flex flex-col-reverse gap-2">
         <button
           type="button"
-          className={`absolute bottom-[190px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 border rounded-md shadow-lg font-bold text-sm transition-colors ${
-            isChallengesPanelOpen
-              ? "bg-navy text-white border-navy hover:bg-navy/90"
-              : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-          }`}
-          onClick={() => setIsChallengesPanelOpen((p) => !p)}
+          className="flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+          onClick={handleCenterLocation}
+          aria-label="Center map on traveler location"
         >
-          {isChallengesPanelOpen ? "Close Challenges" : "Challenges"}
+          <LocateFixed className="h-4 w-4" aria-hidden="true" />
+          Locate
         </button>
-      )}
 
-      {role === "traveler" && (
-        <button
-          type="button"
-          className="absolute bottom-[70px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={() => setIsVotePanelOpen((p) => !p)}
-        >
-          {isVotePanelOpen ? "Close Votes" : "Manage Votes"}
-        </button>
-      )}
+        {role === "traveler" && (
+          <button
+            type="button"
+            className={`flex items-center gap-1.5 min-h-11 px-4 border rounded-md shadow-lg font-bold text-sm transition-colors ${
+              isLocationSharing
+                ? "bg-navy text-white border-navy hover:bg-navy/90"
+                : "bg-white text-navy border-slate-300 hover:bg-slate-50"
+            }`}
+            onClick={handleToggleLocationSharing}
+          >
+            {isLocationSharing ? "Stop Sharing" : "Share Location"}
+          </button>
+        )}
 
-      {role === "support_crew" && (
-        <RouteVoteButton token={token} onClick={() => setIsVotePanelOpen(true)} />
-      )}
-
-      {role === "support_crew" && (
-        <button
-          type="button"
-          className="absolute bottom-[130px] left-5 z-[2] flex items-center justify-center min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={() => setIsHistoryOpen((p) => !p)}
-        >
-          {isHistoryOpen ? "Close History" : "History"}
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-        </button>
-      )}
+        {canWrite && (
+          <button
+            className="flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+            type="button"
+            onClick={() => {
+              setSelectedCoordinate(null);
+              setIsPlacementMode(true);
+            }}
+          >
+            Add Pin
+          </button>
+        )}
+      </div>
 
       {/* Checkpoint add sheet */}
       {canWrite && (
