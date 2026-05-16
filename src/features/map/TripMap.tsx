@@ -685,21 +685,48 @@ export default function TripMap({
     });
   }
 
-  // CheckInDetailSheet is max-h-[50dvh]; bottom padding uses the map canvas
-  // height (not window.innerHeight) so the calculation is correct even when
-  // browser chrome is visible and shrinks the layout viewport below dvh.
-  // Left padding is measured from the cards wrapper's rendered right edge.
   function handleCheckInDetailLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
-    const mapHeight = map.getContainer().clientHeight;
+    const mapContainer = map.getContainer();
+    const mapHeight = mapContainer.clientHeight;
+    const mapWidth = mapContainer.clientWidth;
+    const mapRect = mapContainer.getBoundingClientRect();
     const cardsRect = cardsWrapperRef.current?.getBoundingClientRect();
-    const leftPadding = cardsRect ? Math.round(cardsRect.right) + 16 : 60;
+    const cardsRight = cardsRect ? Math.round(cardsRect.right) : 0;
+    const cardsBottom = cardsRect ? cardsRect.bottom : 0;
+
+    // Measure actual rendered sheet height; fall back to 50% of mapHeight if not mounted yet.
+    const sheetEl = document.querySelector('[data-role="check-in-detail"]') as HTMLElement | null;
+    const rawSheetHeight = sheetEl?.offsetHeight ?? 0;
+    const sheetHeight = rawSheetHeight > 0 ? rawSheetHeight : Math.round(mapHeight * 0.50);
+
+    const topPad = 60;
+    const rightPad = 60;
+    const bottomPadding = sheetHeight + 30;
+    const availableHeight = Math.max(mapHeight - bottomPadding - topPad, 50);
+
+    // Only push the pin right of the cards when they cover the pin's natural
+    // center BOTH horizontally AND vertically. On wide screens or when cards
+    // are scrolled above the pin, no offset is needed.
+    const pinNaturalY_inViewport = mapRect.top + topPad + availableHeight / 2;
+    const cardsHorizontallyEncroach = cardsRight + 16 > mapWidth / 2;
+    const cardsVerticallyOverlap = cardsBottom > pinNaturalY_inViewport;
+    const leftPadding =
+      cardsHorizontallyEncroach && cardsVerticallyOverlap ? cardsRight + 16 : rightPad;
+
+    // Zoom so ~1200m fits in the available vertical space above the sheet.
+    const targetMetersPerPixel = 1200 / availableHeight;
+    const contextZoom = Math.log2(
+      (156543.03392 * Math.cos((coordinate.lat * Math.PI) / 180)) / targetMetersPerPixel,
+    );
+    const zoom = Math.min(Math.max(contextZoom, 12), 16);
+
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
-      zoom: Math.max(map.getZoom(), 14),
+      zoom,
       duration: 700,
-      padding: { top: 60, right: 60, bottom: Math.round(mapHeight * 0.60), left: leftPadding },
+      padding: { top: topPad, right: rightPad, bottom: bottomPadding, left: leftPadding },
     });
   }
 
@@ -1080,7 +1107,7 @@ export default function TripMap({
           setCheckInOpenedFromHistory(false);
           if (returnToHistory) setIsHistoryOpen(true);
         }}
-        onLocationFocus={centerMapOnCoordinate}
+        onLocationFocus={handleCheckInDetailLocationFocus}
       />
 
       {role === "traveler" && (

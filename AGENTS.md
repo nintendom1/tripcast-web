@@ -29,6 +29,27 @@
 - Backend API changes belong in `tripcast-backend`.
 - If stuck after two failed attempts, stop, summarize what failed, and propose a better next attempt.
 
+## Debugging Strategy
+
+### Stop-and-log rule
+If you have made **two failed attempts** to fix a visual or layout bug — especially one that manifests only on device or in a browser you cannot see — stop writing guesses. Instead:
+1. Propose adding targeted `console.log` statements that dump every relevant runtime value (dimensions, rects, computed values) at the moment the problematic code runs.
+2. Ask the developer to trigger the behavior, copy the log output, and paste it back.
+3. Only then diagnose and implement the fix.
+
+This one logging round almost always costs less time than a third blind attempt.
+
+### Verify wiring before debugging logic
+Before investigating *why* a function produces wrong output, confirm it is actually being called. Put a one-line log at the very **first line** of the function — before any early returns or guards — so a missing call is immediately obvious:
+
+```typescript
+console.log("[MyFn] entry", { relevantArg });
+const map = mapRef.current;
+if (!map) return;       // ← guard comes after the entry log
+```
+
+A common failure mode: a new handler is defined but the component prop still references the old one. The entry log catches this in one round.
+
 ## Commits And PRs
 
 - Conventional Commits prefix, lowercase type/scope (i.e. `feat: `, `fix: `, `docs: `, `chore: `, `refactor: `, `dev: `).
@@ -147,3 +168,25 @@ The toast `bottom-[Npx]` must clear the left FAB cluster. With 44 px buttons and
 | Support crew | 3 | `bottom-[180px]` |
 
 Update these when buttons are added to or removed from the nav cluster.
+
+### MapLibre measurement gotchas
+
+**Viewport height** — `window.innerHeight` is the *layout* viewport; it shrinks when the mobile browser chrome appears. For padding calculations against the map canvas, always use `map.getContainer().clientHeight` (stable, matches the canvas).
+
+**Portal/sheet height** — `SheetContent` renders at body level via a portal; it escapes the React tree. To measure its rendered height, add a `data-role` attribute directly on `SheetContent`:
+```tsx
+<SheetContent data-role="my-sheet" ...>
+```
+Then read it from the DOM:
+```typescript
+const el = document.querySelector('[data-role="my-sheet"]') as HTMLElement | null;
+const height = el?.offsetHeight ?? fallback;
+```
+
+**Viewport-relative positions** — use `getBoundingClientRect()` for positions relative to the viewport (top, bottom, right, left). Use `clientHeight`/`offsetHeight` for layout dimensions.
+
+**Two-axis encroachment** — when deciding whether to push a pin/element to avoid overlapping UI (e.g. card stack), check **both** axes:
+- Horizontal: `cardsRight + margin > mapWidth / 2`
+- Vertical: `cardsBottom > pinNaturalY_inViewport`
+
+Only offset when *both* are true. A one-axis check causes unnecessary offsets when cards are collapsed or horizontally narrow.

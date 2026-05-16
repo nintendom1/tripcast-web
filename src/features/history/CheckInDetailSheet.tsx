@@ -220,6 +220,7 @@ export default function CheckInDetailSheet({
         side="bottom"
         showBackdrop={false}
         className="z-[11] shadow-2xl max-h-[50dvh]"
+        data-role="check-in-detail"
       >
         {event ? (
           <CheckInDetail key={event._id} event={event} onClose={onClose} />
