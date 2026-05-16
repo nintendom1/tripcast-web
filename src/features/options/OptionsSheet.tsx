@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { LogOut, ShieldAlert, UserPlus, Users } from "lucide-react";
+import { LogOut, ShieldAlert, UserPlus, Users, Wallet } from "lucide-react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { ChallengeModerationMode, ChallengeRateLimitPreset } from "../../convex/tripcastApi";
 
@@ -14,6 +14,7 @@ import { Button } from "../../components/ui/button";
 import type { StoredSession } from "../../lib/auth";
 import CreateInviteControl from "../followers/CreateInviteControl";
 import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
+import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -28,7 +29,7 @@ type OptionsSheetProps = {
   onResetStarted: (message: string) => void;
 };
 
-type OptionsView = "options" | "emergency-reset";
+type OptionsView = "options" | "emergency-reset" | "travel-funds";
 
 // ---------------------------------------------------------------------------
 // Challenge settings inline section
@@ -162,7 +163,24 @@ export default function OptionsSheet({
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent side="bottom">
-        {view === "emergency-reset" ? (
+        {view === "travel-funds" ? (
+          <>
+            <SheetHeader>
+              <SheetTitle>Travel Funds</SheetTitle>
+            </SheetHeader>
+            <div className="overflow-y-auto p-4 pt-0">
+              <TravelFundsSheet
+                token={session.token}
+                onClose={() => setView("options")}
+              />
+              <div className="flex justify-start mt-4">
+                <Button variant="ghost" size="sm" onClick={() => setView("options")}>
+                  ← Back to Options
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : view === "emergency-reset" ? (
           <EmergencyResetContent
             token={session.token}
             onClose={handleEmergencyResetClose}
@@ -232,6 +250,24 @@ export default function OptionsSheet({
 
               {role === "traveler" ? (
                 <ChallengeSettingsSection token={session.token} />
+              ) : null}
+
+              {role === "traveler" ? (
+                <section className="flex flex-col gap-2">
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Travel Funds
+                  </h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => setView("travel-funds")}
+                    className="w-fit"
+                  >
+                    <Wallet className="h-4 w-4 mr-1.5" aria-hidden />
+                    Manage Travel Funds
+                  </Button>
+                </section>
               ) : null}
 
               {role === "traveler" ? (

@@ -24,6 +24,14 @@ import RouteVoteProgress from "../routevote/RouteVoteProgress";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
 import TravelerStateCard from "../travelstate/TravelerStateCard";
 import CurrentActivityCard from "../currentactivity/CurrentActivityCard";
+import TravelFundsCard from "../travelfunds/TravelFundsCard";
+import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "../../components/ui/sheet";
 import type { CurrentActivity } from "../../convex/tripcastApi";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import HistoryPanel from "../history/HistoryPanel";
@@ -342,6 +350,7 @@ export default function TripMap({
   const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
   const [checkInOpenedFromHistory, setCheckInOpenedFromHistory] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
+  const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState<CurrentActivity | null>(null);
   const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
   const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null);
@@ -1068,7 +1077,28 @@ export default function TripMap({
           onCompleteAsCheckIn={handleCompleteAsCheckIn}
           onRequestSetActivity={() => setIsSetActivityOpen(true)}
         />
+        <TravelFundsCard
+          token={token}
+          role={role}
+          onOpenSheet={role === "traveler" ? () => setIsTravelFundsSheetOpen(true) : undefined}
+        />
       </div>
+
+      <Sheet open={isTravelFundsSheetOpen} onOpenChange={setIsTravelFundsSheetOpen}>
+        <SheetContent side="bottom">
+          <SheetHeader>
+            <SheetTitle>Travel Funds</SheetTitle>
+          </SheetHeader>
+          <div className="overflow-y-auto p-4 pt-0">
+            {role === "traveler" && isTravelFundsSheetOpen && (
+              <TravelFundsSheet
+                token={token}
+                onClose={() => setIsTravelFundsSheetOpen(false)}
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <ChallengePanel
         open={isChallengesPanelOpen}

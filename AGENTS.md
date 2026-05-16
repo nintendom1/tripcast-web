@@ -98,7 +98,9 @@ When adding new component tests:
 - History events are fetched in `TripMap.tsx`, not inside `HistoryPanel` — one Convex subscription drives both the panel and the unread badge. Do not move the query into the panel.
 - `CheckInDetailSheet` auto-focuses the map on mount via `useEffect` when `lat`/`lon` are present.
 - Unread history state is tracked in `localStorage` under the key `tripcast.historyLastReadAt` (`src/features/history/useHistoryUnread.ts`).
-- `TravelerStateCard` and `CurrentActivityCard` share a positioning wrapper in `TripMap.tsx` (`absolute top-5 left-5 z-[2] flex flex-col gap-2`). Neither card carries its own absolute positioning.
+- `TravelerStateCard` and `CurrentActivityCard` share a positioning wrapper in `TripMap.tsx` (`absolute top-5 left-5 z-[2] flex flex-col gap-2`). Neither card carries its own absolute positioning. `TravelFundsCard` mounts as the third sibling in the same wrapper.
+- Travel Funds management (`src/features/travelfunds/TravelFundsSheet.tsx`) is Traveler-only. Both the Options entry ("Manage Travel Funds") and the map card's "Manage" button render the same `TravelFundsSheet` content. Support Crew sees the meter card only — no management UI.
+- The Add/Edit Transaction form's exchange-rate field uses **"Local currency per 1 USD"** (spec Option B): `usdAmount = localAmount / localCurrencyPerUsd`. For `USD` the rate is forced to `1` server-side. The per-transaction rate and computed USD value are frozen at write time — later rate edits do not affect existing transactions.
 
 ## Coordinate-Pick UX Pattern
 
