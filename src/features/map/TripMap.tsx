@@ -325,6 +325,7 @@ export default function TripMap({
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cardsWrapperRef = useRef<HTMLDivElement>(null);
 
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
@@ -684,15 +685,19 @@ export default function TripMap({
   }
 
   // CheckInDetailSheet is max-h-[50dvh]; use 60dvh bottom padding so the pin
-  // appears clearly above the sheet rather than at the midpoint of the full viewport.
+  // appears clearly above the sheet. Left padding is measured from the cards
+  // wrapper's actual rendered right edge so the pin lands to the right of the
+  // cards on narrow screens (iPhone) and in open map space on wide screens.
   function handleCheckInDetailLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
+    const cardsRect = cardsWrapperRef.current?.getBoundingClientRect();
+    const leftPadding = cardsRect ? Math.round(cardsRect.right) + 16 : 60;
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
       zoom: Math.max(map.getZoom(), 14),
       duration: 700,
-      padding: { top: 60, right: 60, bottom: Math.round(window.innerHeight * 0.60), left: 60 },
+      padding: { top: 60, right: 60, bottom: Math.round(window.innerHeight * 0.60), left: leftPadding },
     });
   }
 
@@ -1026,7 +1031,7 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      <div className="absolute top-5 left-5 z-[2] flex flex-col gap-2">
+      <div ref={cardsWrapperRef} className="absolute top-5 left-5 z-[2] flex flex-col gap-2">
         <TravelerStateCard token={token} role={role} />
         <CurrentActivityCard
           token={token}
@@ -1073,7 +1078,7 @@ export default function TripMap({
           setCheckInOpenedFromHistory(false);
           if (returnToHistory) setIsHistoryOpen(true);
         }}
-        onLocationFocus={handleCheckInDetailLocationFocus}
+        onLocationFocus={centerMapOnCoordinate}
       />
 
       {role === "traveler" && (
