@@ -1,5 +1,6 @@
 import type { HistoryEvent } from "../../convex/tripcastApi";
 import { getStateEmoji } from "../travelstate/travelerStateUtils";
+import { formatUsd } from "../travelfunds/currency";
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -29,12 +30,16 @@ type HistoryEventCardProps = {
   event: HistoryEvent;
   onCheckInSelect: ((event: HistoryEvent) => void) | null;
   onLocationFocus: ((coord: { lat: number; lon: number }) => void) | null;
+  /** Sum of usdAmount across linked counted transactions for this event's
+   *  challengeId or checkpointId. Honors role visibility upstream. */
+  actualCostUsd?: number;
 };
 
 export default function HistoryEventCard({
   event,
   onCheckInSelect,
   onLocationFocus,
+  actualCostUsd,
 }: HistoryEventCardProps) {
   const hasLocation = event.lat !== undefined && event.lon !== undefined;
 
@@ -76,6 +81,11 @@ export default function HistoryEventCard({
         {event.body && (
           <p className="text-sm text-foreground line-clamp-2">{event.body}</p>
         )}
+        {actualCostUsd !== undefined && actualCostUsd !== 0 && (
+          <p className="text-xs text-emerald-700 font-medium">
+            Actual cost: {formatUsd(actualCostUsd)}
+          </p>
+        )}
       </button>
     );
   }
@@ -101,6 +111,11 @@ export default function HistoryEventCard({
         >
           Focus on map
         </button>
+      )}
+      {actualCostUsd !== undefined && actualCostUsd !== 0 && (
+        <p className="text-xs text-emerald-700 font-medium">
+          Actual cost: {formatUsd(actualCostUsd)}
+        </p>
       )}
     </div>
   );

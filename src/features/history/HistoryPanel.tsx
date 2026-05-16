@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "convex/react";
 import { X } from "lucide-react";
 
+import { tripcastApi } from "../../convex/tripcastApi";
 import type { HistoryEvent } from "../../convex/tripcastApi";
 import {
   Sheet,
@@ -37,6 +39,7 @@ function filterEvents(events: HistoryEvent[], tab: FilterTab): HistoryEvent[] {
 
 type HistoryPanelProps = {
   events: HistoryEvent[];
+  token: string;
   onClose: () => void;
   onCheckInSelect: (event: HistoryEvent) => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
@@ -45,12 +48,14 @@ type HistoryPanelProps = {
 
 export default function HistoryPanel({
   events,
+  token,
   onClose,
   onCheckInSelect,
   onLocationFocus,
   onMarkAllRead,
 }: HistoryPanelProps) {
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
+  const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
@@ -124,14 +129,28 @@ export default function HistoryPanel({
             </p>
           ) : (
             <div className="flex flex-col gap-2">
-              {filtered.map((event) => (
-                <HistoryEventCard
-                  key={event._id}
-                  event={event}
-                  onCheckInSelect={onCheckInSelect}
-                  onLocationFocus={onLocationFocus}
-                />
-              ))}
+              {filtered.map((event) => {
+                let actualCostUsd: number | undefined;
+                if (costMap) {
+                  if (event.type === "check_in" && event.checkpointId) {
+                    actualCostUsd = costMap.byCheckpointId[event.checkpointId];
+                  } else if (
+                    event.type === "challenge_completed" &&
+                    event.challengeId
+                  ) {
+                    actualCostUsd = costMap.byChallengeId[event.challengeId];
+                  }
+                }
+                return (
+                  <HistoryEventCard
+                    key={event._id}
+                    event={event}
+                    onCheckInSelect={onCheckInSelect}
+                    onLocationFocus={onLocationFocus}
+                    actualCostUsd={actualCostUsd}
+                  />
+                );
+              })}
             </div>
           )}
         </div>

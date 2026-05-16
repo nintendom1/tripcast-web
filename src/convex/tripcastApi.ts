@@ -40,6 +40,10 @@ export type AddCheckpointArgs = {
   stressScore?: number;
   schedulePressureLevel?: TravelerSchedulePressureLevel;
   statusNote?: string;
+  // Optional inline Travel Funds transaction (atomic with checkpoint save).
+  // Linked IDs are filled server-side: checkpointId from the new checkpoint,
+  // and challengeId/activityId from the active current activity when available.
+  transaction?: TransactionInlineInput;
 };
 
 // ---------------------------------------------------------------------------
@@ -523,6 +527,25 @@ export type UpdateTravelFundsConfigArgs = {
   budgetLabel?: string;
 };
 
+// Inline transaction payload attached to addCheckpoint / travelerCompleteChallenge.
+// Linked IDs are filled in server-side based on the calling mutation's context.
+export type TransactionInlineInput = {
+  title: string;
+  note?: string;
+  category: TransactionCategory;
+  currencyCode: string;
+  localAmount: number;
+  localCurrencyPerUsd: number;
+  countsTowardMeter: boolean;
+  visibility: TransactionVisibility;
+  occurredAt?: number;
+};
+
+export type LinkedCostMap = {
+  byChallengeId: Record<string, number>;
+  byCheckpointId: Record<string, number>;
+};
+
 // ---------------------------------------------------------------------------
 // Follower / account types
 // ---------------------------------------------------------------------------
@@ -806,7 +829,7 @@ export const tripcastApi = {
     travelerCompleteChallenge: (anyApi as any).challenges.travelerCompleteChallenge as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string },
+      { token: string; challengeId: string; transaction?: TransactionInlineInput },
       null
     >,
     travelerToggleChallengeMapPin: (anyApi as any).challenges.travelerToggleChallengeMapPin as FunctionReference<
@@ -1062,6 +1085,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       TransactionForCrew[]
+    >,
+    getLinkedCostMap: (anyApi as any).travelFunds.getLinkedCostMap as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      LinkedCostMap
     >,
   },
 } as const;

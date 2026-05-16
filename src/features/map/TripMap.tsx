@@ -26,6 +26,8 @@ import TravelerStateCard from "../travelstate/TravelerStateCard";
 import CurrentActivityCard from "../currentactivity/CurrentActivityCard";
 import TravelFundsCard from "../travelfunds/TravelFundsCard";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
+import TravelFundsInlineSection from "../travelfunds/TravelFundsInlineSection";
+import type { TransactionInlineInput } from "../../convex/tripcastApi";
 import {
   Sheet,
   SheetContent,
@@ -194,6 +196,7 @@ function ConvexCheckpointSheet({
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
 
   const [stateOpen, setStateOpen] = useState(false);
+  const [transactionValue, setTransactionValue] = useState<TransactionInlineInput | null>(null);
   const [moodValue, setMoodValue] = useState<import("../../convex/tripcastApi").TravelerMoodValue | undefined>();
   const [energyLevel, setEnergyLevel] = useState<import("../../convex/tripcastApi").TravelerEnergyLevel | undefined>();
   const [stomachLevel, setStomachLevel] = useState<import("../../convex/tripcastApi").TravelerStomachLevel | undefined>();
@@ -211,6 +214,7 @@ function ConvexCheckpointSheet({
       setStressLevel(undefined);
       setScheduleLevel(undefined);
       setQuickNote("");
+      setTransactionValue(null);
     }
   }, [selectedCoordinate]);
 
@@ -227,6 +231,7 @@ function ConvexCheckpointSheet({
       stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
       schedulePressureLevel: scheduleLevel,
       statusNote: quickNote.trim() || undefined,
+      transaction: transactionValue ?? undefined,
     });
   }
 
@@ -291,6 +296,7 @@ function ConvexCheckpointSheet({
           </div>
         </div>
       )}
+      <TravelFundsInlineSection token={token} onChange={setTransactionValue} />
     </div>
   );
 
