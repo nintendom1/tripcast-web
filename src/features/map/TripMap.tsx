@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, Clock, LocateFixed, Trophy } from "lucide-react";
+import { Activity, Clock, LocateFixed, MapPin, Navigation, Trophy, Vote } from "lucide-react";
 
 import {
   tripcastApi,
@@ -58,6 +58,14 @@ function isFiniteLngLatBounds(
   bounds: [[number, number], [number, number]],
 ) {
   return bounds.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+}
+
+function BadgeSpan({ count }: { count: number }) {
+  return (
+    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white pointer-events-none">
+      {count > 9 ? "9+" : count}
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -373,6 +381,25 @@ export default function TripMap({
     role === "traveler"
       ? (allChallengesForBadge ?? []).filter((c) => c.status === "proposed").length
       : 0;
+
+  function openHistory() {
+    if (isHistoryOpen) { setIsHistoryOpen(false); return; }
+    setIsHistoryOpen(true);
+    setIsChallengesPanelOpen(false);
+    setIsVotePanelOpen(false);
+  }
+  function openChallenges() {
+    if (isChallengesPanelOpen) { setIsChallengesPanelOpen(false); return; }
+    setIsChallengesPanelOpen(true);
+    setIsHistoryOpen(false);
+    setIsVotePanelOpen(false);
+  }
+  function openVotes() {
+    if (isVotePanelOpen) { setIsVotePanelOpen(false); return; }
+    setIsVotePanelOpen(true);
+    setIsHistoryOpen(false);
+    setIsChallengesPanelOpen(false);
+  }
 
   // Keep placement mode ref in sync
   useEffect(() => {
@@ -711,7 +738,7 @@ export default function TripMap({
   }, [latestCheckpointLat, latestCheckpointLon, livePosition, role]);
 
   return (
-    <section className="relative min-h-0 flex-1" aria-label="Checkpoint map">
+    <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
       <div ref={mapContainerRef} className={mapClassName} />
 
       {/* Side-effect marker components */}
@@ -799,7 +826,7 @@ export default function TripMap({
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="status"
             className={`absolute left-1/2 z-[6] -translate-x-1/2 rounded-md bg-navy px-4 py-2 text-sm font-medium text-white shadow-lg max-w-[calc(100%-24px)] ${
-              role === "traveler" ? "bottom-[236px]" : "bottom-[128px]"
+              role === "traveler" ? "bottom-[230px]" : "bottom-[180px]"
             }`}
           >
             {toastMessage}
@@ -807,104 +834,98 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      {/* Panel-navigation cluster — horizontal row, bottom-left */}
-      <div className="absolute bottom-5 left-5 z-[2] flex flex-row gap-2">
+      {/* Panel-navigation cluster — icon-only vertical column, bottom-left */}
+      <div className="absolute bottom-5 left-5 z-[2] flex flex-col gap-2">
         <button
           type="button"
-          className="relative flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={() => setIsHistoryOpen((p) => !p)}
+          aria-label={isHistoryOpen ? "Close history" : "History"}
+          onClick={openHistory}
+          className="relative w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
         >
-          <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-          {isHistoryOpen ? "Close History" : "History"}
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
+          <Clock className="h-5 w-5" aria-hidden="true" />
+          {unreadCount > 0 && <BadgeSpan count={unreadCount} />}
         </button>
 
         {(role === "traveler" || role === "support_crew") && (
           <button
             type="button"
-            className={`relative flex items-center gap-1.5 min-h-11 px-4 border rounded-md shadow-lg font-bold text-sm transition-colors ${
+            aria-label={isChallengesPanelOpen ? "Close challenges" : "Challenges"}
+            onClick={openChallenges}
+            className={`relative w-11 h-11 flex items-center justify-center border rounded-md shadow-lg transition-colors ${
               isChallengesPanelOpen
                 ? "bg-navy text-white border-navy hover:bg-navy/90"
                 : "bg-white text-navy border-slate-300 hover:bg-slate-50"
             }`}
-            onClick={() => setIsChallengesPanelOpen((p) => !p)}
           >
-            <Trophy className="h-3.5 w-3.5" aria-hidden="true" />
-            {isChallengesPanelOpen ? "Close Challenges" : "Challenges"}
-            {challengeBadgeCount > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white">
-                {challengeBadgeCount > 9 ? "9+" : challengeBadgeCount}
-              </span>
-            )}
+            <Trophy className="h-5 w-5" aria-hidden="true" />
+            {challengeBadgeCount > 0 && <BadgeSpan count={challengeBadgeCount} />}
           </button>
         )}
 
         {role === "traveler" && (
           <button
             type="button"
-            className="flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
+            aria-label={isTravelerStateOpen ? "Close state" : "Traveler state"}
             onClick={() => setIsTravelerStateOpen((p) => !p)}
+            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
           >
-            <Activity className="h-3.5 w-3.5" aria-hidden="true" />
-            {isTravelerStateOpen ? "Close State" : "State"}
+            <Activity className="h-5 w-5" aria-hidden="true" />
           </button>
         )}
 
         {role === "traveler" && (
           <button
             type="button"
-            className="flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-            onClick={() => setIsVotePanelOpen((p) => !p)}
+            aria-label={isVotePanelOpen ? "Close votes" : "Route votes"}
+            onClick={openVotes}
+            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
           >
-            {isVotePanelOpen ? "Close Votes" : "Votes"}
+            <Vote className="h-5 w-5" aria-hidden="true" />
           </button>
         )}
 
         {role === "support_crew" && (
-          <RouteVoteButton token={token} onClick={() => setIsVotePanelOpen(true)} />
+          <RouteVoteButton token={token} onClick={openVotes} />
         )}
       </div>
 
-      {/* Map-utilities cluster — vertical column, bottom-right */}
+      {/* Map-utilities cluster — icon-only vertical column, bottom-right */}
       <div className="absolute bottom-5 right-5 z-[2] flex flex-col-reverse gap-2">
         <button
           type="button"
-          className="flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
-          onClick={handleCenterLocation}
           aria-label="Center map on traveler location"
+          onClick={handleCenterLocation}
+          className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
         >
-          <LocateFixed className="h-4 w-4" aria-hidden="true" />
-          Locate
+          <LocateFixed className="h-5 w-5" aria-hidden="true" />
         </button>
 
         {role === "traveler" && (
           <button
             type="button"
-            className={`flex items-center gap-1.5 min-h-11 px-4 border rounded-md shadow-lg font-bold text-sm transition-colors ${
+            aria-label={isLocationSharing ? "Stop sharing location" : "Share location"}
+            onClick={handleToggleLocationSharing}
+            className={`w-11 h-11 flex items-center justify-center border rounded-md shadow-lg transition-colors ${
               isLocationSharing
                 ? "bg-navy text-white border-navy hover:bg-navy/90"
                 : "bg-white text-navy border-slate-300 hover:bg-slate-50"
             }`}
-            onClick={handleToggleLocationSharing}
           >
-            {isLocationSharing ? "Stop Sharing" : "Share Location"}
+            <Navigation className="h-5 w-5" aria-hidden="true" />
           </button>
         )}
 
         {canWrite && (
           <button
-            className="flex items-center gap-1.5 min-h-11 px-4 bg-white border border-slate-300 rounded-md shadow-lg text-navy font-bold text-sm hover:bg-slate-50 transition-colors"
             type="button"
+            aria-label="Add pin"
             onClick={() => {
               setSelectedCoordinate(null);
               setIsPlacementMode(true);
             }}
+            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
           >
-            Add Pin
+            <MapPin className="h-5 w-5" aria-hidden="true" />
           </button>
         )}
       </div>
@@ -985,20 +1006,18 @@ export default function TripMap({
         />
       </div>
 
-      <div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>
-        <ChallengePanel
-          open={isChallengesPanelOpen}
-          token={token}
-          role={role}
-          onClose={() => setIsChallengesPanelOpen(false)}
-          onStartChallenge={() => setIsChallengesPanelOpen(false)}
-          onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
-          isPickingCoordinate={isPickingCoordinate}
-          pendingOpenChallengeId={pendingOpenChallengeId}
-          onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
-          onRequestNavigateToChallenge={handleNavigateToChallenge}
-        />
-      </div>
+      <ChallengePanel
+        open={isChallengesPanelOpen}
+        token={token}
+        role={role}
+        onClose={() => setIsChallengesPanelOpen(false)}
+        onStartChallenge={() => setIsChallengesPanelOpen(false)}
+        onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
+        isPickingCoordinate={isPickingCoordinate}
+        pendingOpenChallengeId={pendingOpenChallengeId}
+        onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
+        onRequestNavigateToChallenge={handleNavigateToChallenge}
+      />
 
       <AnimatePresence>
         {isHistoryOpen && (

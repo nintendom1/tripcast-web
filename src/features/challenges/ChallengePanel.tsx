@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { AnimatePresence, motion } from "framer-motion";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Challenge, Role } from "../../convex/tripcastApi";
@@ -543,78 +542,72 @@ export default function ChallengePanel({
   const isTraveler = role === "traveler";
 
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={{ x: -320, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
-          exit={{ x: -320, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 260, damping: 28 }}
-          className="absolute top-0 left-0 bottom-0 z-[10] w-80 bg-white shadow-xl flex flex-col overflow-hidden"
-          aria-label="Challenges panel"
-        >
-          {/* Single header row */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 gap-2">
-            <span className="font-semibold text-navy text-sm shrink-0">Challenges</span>
-            <div className="flex items-center gap-2 ml-auto">
-              {isTraveler && (
-                <Button
-                  size="sm"
-                  variant={isCreating ? "outline" : "default"}
-                  type="button"
-                  onClick={() => setIsCreating((p) => !p)}
-                >
-                  {isCreating ? "Cancel" : "+ New"}
-                </Button>
-              )}
-              {!isTraveler && (
-                <Button
-                  size="sm"
-                  variant={isProposeOpen ? "outline" : "default"}
-                  type="button"
-                  onClick={() => setIsProposeOpen((p) => !p)}
-                >
-                  {isProposeOpen ? "Cancel" : "+ Propose"}
-                </Button>
-              )}
-              <button
+    <Sheet open={open} modal={false} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}
+      >
+        <SheetHeader className="flex-row items-center justify-between space-y-0 shrink-0 px-4 py-3 border-b border-slate-100">
+          <SheetTitle className="font-semibold text-navy text-sm">Challenges</SheetTitle>
+          <div className="flex items-center gap-2">
+            {isTraveler && (
+              <Button
+                size="sm"
+                variant={isCreating ? "outline" : "default"}
                 type="button"
-                className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 rounded hover:bg-slate-50"
-                onClick={onClose}
-                aria-label="Close challenges panel"
+                onClick={() => setIsCreating((p) => !p)}
               >
-                Close
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {isTraveler ? (
-              <TravelerChallengePanel
-                token={token}
-                onClose={onClose}
-                onStartChallenge={onStartChallenge}
-                onRequestCoordinatePick={onRequestCoordinatePick}
-                isPickingCoordinate={isPickingCoordinate}
-                isCreating={isCreating}
-                pendingOpenChallengeId={pendingOpenChallengeId}
-                onClearPendingChallenge={onClearPendingChallenge}
-                onRequestNavigateToChallenge={onRequestNavigateToChallenge}
-              />
-            ) : (
-              <SupportCrewChallengePanel
-                token={token}
-                userId={userId}
-                onRequestCoordinatePick={onRequestCoordinatePick}
-                isProposeOpen={isProposeOpen}
-                pendingOpenChallengeId={pendingOpenChallengeId}
-                onClearPendingChallenge={onClearPendingChallenge}
-                onRequestNavigateToChallenge={onRequestNavigateToChallenge}
-              />
+                {isCreating ? "Cancel" : "+ New"}
+              </Button>
             )}
+            {!isTraveler && (
+              <Button
+                size="sm"
+                variant={isProposeOpen ? "outline" : "default"}
+                type="button"
+                onClick={() => setIsProposeOpen((p) => !p)}
+              >
+                {isProposeOpen ? "Cancel" : "+ Propose"}
+              </Button>
+            )}
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 rounded hover:bg-slate-50"
+              onClick={onClose}
+              aria-label="Close challenges panel"
+            >
+              Close
+            </button>
           </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+        </SheetHeader>
+
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {isTraveler ? (
+            <TravelerChallengePanel
+              token={token}
+              onClose={onClose}
+              onStartChallenge={onStartChallenge}
+              onRequestCoordinatePick={onRequestCoordinatePick}
+              isPickingCoordinate={isPickingCoordinate}
+              isCreating={isCreating}
+              pendingOpenChallengeId={pendingOpenChallengeId}
+              onClearPendingChallenge={onClearPendingChallenge}
+              onRequestNavigateToChallenge={onRequestNavigateToChallenge}
+            />
+          ) : (
+            <SupportCrewChallengePanel
+              token={token}
+              userId={userId}
+              onRequestCoordinatePick={onRequestCoordinatePick}
+              isProposeOpen={isProposeOpen}
+              pendingOpenChallengeId={pendingOpenChallengeId}
+              onClearPendingChallenge={onClearPendingChallenge}
+              onRequestNavigateToChallenge={onRequestNavigateToChallenge}
+            />
+          )}
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
