@@ -111,6 +111,13 @@ function TravelerChallengePanel({
     }
   }
 
+  function handleDetailOpenChange(nextOpen: boolean) {
+    if (!nextOpen && !isPickingCoordinate) {
+      setIsDetailOpen(false);
+      setSelectedChallenge(null);
+    }
+  }
+
   return (
     <>
       <div className="flex flex-col gap-3 overflow-y-auto h-full">
@@ -172,7 +179,11 @@ function TravelerChallengePanel({
         </div>
       </div>
 
-      <Sheet open={isDetailOpen} onOpenChange={(o) => { if (!o) { setIsDetailOpen(false); setSelectedChallenge(null); } }}>
+      <Sheet
+        open={isDetailOpen}
+        onOpenChange={handleDetailOpenChange}
+        disablePointerDismissal={isPickingCoordinate}
+      >
         <SheetContent
           side="bottom"
           showBackdrop={!isPickingCoordinate}
@@ -541,8 +552,19 @@ export default function ChallengePanel({
 
   const isTraveler = role === "traveler";
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && !isPickingCoordinate) {
+      onClose();
+    }
+  }
+
   return (
-    <Sheet open={open} modal={false} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Sheet
+      open={open}
+      modal={false}
+      onOpenChange={handleOpenChange}
+      disablePointerDismissal={isPickingCoordinate}
+    >
       <SheetContent
         side="bottom"
         showBackdrop={false}
