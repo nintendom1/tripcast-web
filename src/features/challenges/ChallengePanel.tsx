@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, ChallengeStatus, Role } from "../../convex/tripcastApi";
+import type { Challenge, Role } from "../../convex/tripcastApi";
 import ChallengeCard from "./ChallengeCard";
 import ChallengeProposalForm from "./ChallengeProposalForm";
 import ChallengeDetailSheet from "./ChallengeDetailSheet";
@@ -25,6 +25,9 @@ type Props = {
   onStartChallenge?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   isPickingCoordinate?: boolean;
+  pendingOpenChallengeId?: string | null;
+  onClearPendingChallenge?: () => void;
+  onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
 };
 
 type TravelerFilter = "all" | "proposed" | "visible" | "in_progress" | "completed" | "dropped";
@@ -48,19 +51,36 @@ function TravelerChallengePanel({
   onStartChallenge,
   onRequestCoordinatePick,
   isPickingCoordinate,
+  isCreating,
+  pendingOpenChallengeId,
+  onClearPendingChallenge,
+  onRequestNavigateToChallenge,
 }: {
   token: string;
   onClose: () => void;
   onStartChallenge?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   isPickingCoordinate?: boolean;
+  isCreating: boolean;
+  pendingOpenChallengeId?: string | null;
+  onClearPendingChallenge?: () => void;
+  onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
 }) {
   const [filter, setFilter] = useState<TravelerFilter>("all");
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isCreating, setIsCreating] = useState(false);
 
   const allChallenges = useQuery(tripcastApi.challenges.travelerListChallenges, { token });
+
+  // Auto-open detail when a challenge pin is clicked on the map
+  useEffect(() => {
+    if (!pendingOpenChallengeId || !allChallenges) return;
+    const challenge = allChallenges.find((c) => c._id === pendingOpenChallengeId);
+    if (challenge) {
+      openDetail(challenge);
+      onClearPendingChallenge?.();
+    }
+  }, [pendingOpenChallengeId, allChallenges]);
 
   const filtered = (allChallenges ?? []).filter((c) => {
     if (filter === "all") return true;
@@ -71,40 +91,21 @@ function TravelerChallengePanel({
   function openDetail(challenge: Challenge) {
     setSelectedChallenge(challenge);
     setIsDetailOpen(true);
+    if (challenge.lat !== undefined && challenge.lon !== undefined) {
+      onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
+    }
   }
 
   return (
     <>
       <div className="flex flex-col gap-3 overflow-y-auto h-full">
-        <div className="flex gap-2 items-center justify-between px-4 pt-2">
-          <h2 className="text-sm font-semibold text-navy">Challenges</h2>
-          <Button
-            size="sm"
-            variant={isCreating ? "outline" : "default"}
-            type="button"
-            onClick={() => setIsCreating((p) => !p)}
-          >
-            {isCreating ? "Cancel" : "+ New Challenge"}
-          </Button>
-        </div>
-
-        {isCreating && (
-          <div className="px-4 pb-2 border-b border-slate-100">
-            <TravelerCreateForm
-              token={token}
-              onSuccess={() => setIsCreating(false)}
-              onRequestCoordinatePick={onRequestCoordinatePick}
-            />
-          </div>
-        )}
-
         {/* Filters */}
-        <div className="px-4 flex gap-2 overflow-x-auto pb-1">
+        <div className="px-4 pt-2 flex gap-2 overflow-x-auto pb-1">
           {TRAVELER_FILTERS.map((f) => (
             <button
               key={f.value}
               type="button"
-              className={`px-3 py-1 text-xs rounded-full border whitespace-nowrap transition-colors ${
+              className={`shrink-0 px-3 py-1 text-xs rounded-full border whitespace-nowrap transition-colors ${
                 filter === f.value
                   ? "bg-navy text-white border-navy"
                   : "bg-white text-navy border-slate-300 hover:bg-slate-50"
@@ -115,6 +116,17 @@ function TravelerChallengePanel({
             </button>
           ))}
         </div>
+
+        {/* Create form */}
+        {isCreating && (
+          <div className="px-4 pb-2 border-b border-slate-100">
+            <TravelerCreateForm
+              token={token}
+              onSuccess={() => {}}
+              onRequestCoordinatePick={onRequestCoordinatePick}
+            />
+          </div>
+        )}
 
         {/* List */}
         <div className="flex flex-col gap-2 px-4 pb-4">
@@ -283,47 +295,56 @@ function SupportCrewChallengePanel({
   token,
   userId,
   onRequestCoordinatePick,
+  isProposeOpen,
+  pendingOpenChallengeId,
+  onClearPendingChallenge,
+  onRequestNavigateToChallenge,
 }: {
   token: string;
   userId?: string;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  isProposeOpen: boolean;
+  pendingOpenChallengeId?: string | null;
+  onClearPendingChallenge?: () => void;
+  onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
 }) {
   const [tab, setTab] = useState<CrewTab>("active");
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const [isProposeOpen, setIsProposeOpen] = useState(false);
 
   const myChallenges = useQuery(tripcastApi.challenges.followerListMyChallenges, { token });
-
-  function openDetail(challenge: Challenge) {
-    setSelectedChallenge(challenge);
-    setIsDetailOpen(true);
-  }
 
   const mine = myChallenges?.mine ?? [];
   const publicChallenges = myChallenges?.public ?? [];
   const mineIds = new Set(mine.map((c) => c._id));
 
+  // Auto-open detail when a challenge pin is clicked on the map
+  useEffect(() => {
+    if (!pendingOpenChallengeId || !myChallenges) return;
+    const challenge =
+      mine.find((c) => c._id === pendingOpenChallengeId) ??
+      publicChallenges.find((c) => c._id === pendingOpenChallengeId);
+    if (challenge) {
+      openDetail(challenge);
+      onClearPendingChallenge?.();
+    }
+  }, [pendingOpenChallengeId, myChallenges]);
+
+  function openDetail(challenge: Challenge) {
+    setSelectedChallenge(challenge);
+    setIsDetailOpen(true);
+    if (challenge.lat !== undefined && challenge.lon !== undefined) {
+      onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
+    }
+  }
+
   return (
     <>
       <div className="flex flex-col gap-3 overflow-y-auto h-full">
-        {/* Header with Propose button */}
-        <div className="px-4 pt-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-navy">Challenges</h2>
-          <Button
-            size="sm"
-            variant={isProposeOpen ? "outline" : "default"}
-            type="button"
-            onClick={() => { setIsProposeOpen((p) => !p); setSuccessMsg(null); }}
-          >
-            {isProposeOpen ? "Cancel" : "+ Propose"}
-          </Button>
-        </div>
-
         {/* Inline proposal form */}
         {isProposeOpen && (
-          <div className="px-4 pb-2 border-b border-slate-100">
+          <div className="px-4 pt-2 pb-2 border-b border-slate-100">
             <ChallengeProposalForm
               token={token}
               onRequestCoordinatePick={onRequestCoordinatePick}
@@ -333,7 +354,6 @@ function SupportCrewChallengePanel({
                     ? "Challenge posted!"
                     : "Challenge sent to Traveler for review.",
                 );
-                setIsProposeOpen(false);
                 setTab("mine");
               }}
             />
@@ -347,7 +367,7 @@ function SupportCrewChallengePanel({
         )}
 
         {/* Tabs: Mine | Active */}
-        <div className="flex gap-1 px-4 border-b border-slate-100 pb-2">
+        <div className="flex gap-1 px-4 pt-2 border-b border-slate-100 pb-2">
           {([
             { value: "mine" as CrewTab, label: `Mine (${mine.length})` },
             { value: "active" as CrewTab, label: "Active" },
@@ -355,7 +375,7 @@ function SupportCrewChallengePanel({
             <button
               key={value}
               type="button"
-              className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              className={`shrink-0 px-3 py-1 text-xs rounded-full border transition-colors ${
                 tab === value
                   ? "bg-navy text-white border-navy"
                   : "bg-white text-navy border-slate-300 hover:bg-slate-50"
@@ -441,7 +461,24 @@ export default function ChallengePanel({
   onStartChallenge,
   onRequestCoordinatePick,
   isPickingCoordinate,
+  pendingOpenChallengeId,
+  onClearPendingChallenge,
+  onRequestNavigateToChallenge,
 }: Props) {
+  // Lifted create/propose toggle state so the button lives in the outer header
+  const [isCreating, setIsCreating] = useState(false);
+  const [isProposeOpen, setIsProposeOpen] = useState(false);
+
+  // Reset form state when panel closes
+  useEffect(() => {
+    if (!open) {
+      setIsCreating(false);
+      setIsProposeOpen(false);
+    }
+  }, [open]);
+
+  const isTraveler = role === "traveler";
+
   return (
     <AnimatePresence>
       {open && (
@@ -453,32 +490,63 @@ export default function ChallengePanel({
           className="absolute top-0 left-0 bottom-0 z-[10] w-80 bg-white shadow-xl flex flex-col overflow-hidden"
           aria-label="Challenges panel"
         >
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0">
-            <span className="font-semibold text-navy text-sm">Challenges</span>
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 rounded hover:bg-slate-50"
-              onClick={onClose}
-              aria-label="Close challenges panel"
-            >
-              Close
-            </button>
+          {/* Single header row */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 shrink-0 gap-2">
+            <span className="font-semibold text-navy text-sm shrink-0">Challenges</span>
+            <div className="flex items-center gap-2 ml-auto">
+              {isTraveler && (
+                <Button
+                  size="sm"
+                  variant={isCreating ? "outline" : "default"}
+                  type="button"
+                  onClick={() => setIsCreating((p) => !p)}
+                >
+                  {isCreating ? "Cancel" : "+ New"}
+                </Button>
+              )}
+              {!isTraveler && (
+                <Button
+                  size="sm"
+                  variant={isProposeOpen ? "outline" : "default"}
+                  type="button"
+                  onClick={() => setIsProposeOpen((p) => !p)}
+                >
+                  {isProposeOpen ? "Cancel" : "+ Propose"}
+                </Button>
+              )}
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 rounded hover:bg-slate-50"
+                onClick={onClose}
+                aria-label="Close challenges panel"
+              >
+                Close
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {role === "traveler" ? (
+            {isTraveler ? (
               <TravelerChallengePanel
                 token={token}
                 onClose={onClose}
                 onStartChallenge={onStartChallenge}
                 onRequestCoordinatePick={onRequestCoordinatePick}
                 isPickingCoordinate={isPickingCoordinate}
+                isCreating={isCreating}
+                pendingOpenChallengeId={pendingOpenChallengeId}
+                onClearPendingChallenge={onClearPendingChallenge}
+                onRequestNavigateToChallenge={onRequestNavigateToChallenge}
               />
             ) : (
               <SupportCrewChallengePanel
                 token={token}
                 userId={userId}
                 onRequestCoordinatePick={onRequestCoordinatePick}
+                isProposeOpen={isProposeOpen}
+                pendingOpenChallengeId={pendingOpenChallengeId}
+                onClearPendingChallenge={onClearPendingChallenge}
+                onRequestNavigateToChallenge={onRequestNavigateToChallenge}
               />
             )}
           </div>

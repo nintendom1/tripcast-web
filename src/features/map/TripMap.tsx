@@ -342,6 +342,7 @@ export default function TripMap({
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState<CurrentActivity | null>(null);
   const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
+  const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null);
 
   const canWrite = role === "traveler";
 
@@ -560,6 +561,17 @@ export default function TripMap({
     setCoordinatePickMode({ label, callback });
   }
 
+  function handleNavigateToChallenge(coord: { lat: number; lon: number }) {
+    if (!mapRef.current) return;
+    // Offset the target so it appears in the visible area to the right of the
+    // 320px panel and above the bottom detail sheet (~300px).
+    mapRef.current.flyTo({
+      center: [coord.lon, coord.lat],
+      zoom: Math.max(mapRef.current.getZoom(), 14),
+      padding: { top: 60, right: 60, bottom: 320, left: 380 },
+    });
+  }
+
   function handleRequestChallengeCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
@@ -714,7 +726,10 @@ export default function TripMap({
         map={mapInstance}
         token={token}
         role={role}
-        onChallengeClick={() => setIsChallengesPanelOpen(true)}
+        onChallengeClick={(id) => {
+          setIsChallengesPanelOpen(true);
+          setPendingOpenChallengeId(id);
+        }}
       />
 
       {/* Placement / coordinate pick banners */}
@@ -972,6 +987,9 @@ export default function TripMap({
           onStartChallenge={() => setIsChallengesPanelOpen(false)}
           onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
           isPickingCoordinate={isPickingCoordinate}
+          pendingOpenChallengeId={pendingOpenChallengeId}
+          onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
+          onRequestNavigateToChallenge={handleNavigateToChallenge}
         />
       </div>
 

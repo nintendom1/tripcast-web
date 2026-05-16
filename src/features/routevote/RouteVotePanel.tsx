@@ -300,7 +300,7 @@ export default function RouteVotePanel({
       animate={{ y: 0 }}
       exit={{ y: "100%" }}
       transition={{ duration: 0.22, ease: "easeOut" as const }}
-      className="absolute bottom-0 left-0 right-0 z-[4] bg-background border-t max-h-[60vh] overflow-y-auto flex flex-col"
+      className="absolute bottom-0 left-0 right-0 z-[4] bg-background border-t max-h-[80dvh] overflow-y-auto flex flex-col"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div className="sticky top-0 bg-background border-b flex items-center justify-between px-4 py-3 z-[1]">
