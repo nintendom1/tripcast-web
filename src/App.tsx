@@ -1,9 +1,10 @@
 import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { ErrorBoundary } from "react-error-boundary";
 import { AnimatePresence, motion } from "framer-motion";
 import { Settings } from "lucide-react";
 
-import { tripcastApi } from "./convex/tripcastApi";
+import { tripcastApi, type Role } from "./convex/tripcastApi";
 import {
   clearStoredSession,
   getStoredSession,
@@ -18,6 +19,11 @@ import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
 import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
+import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
+import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
+import { PendingNotice } from "./components/resilience/PendingNotice";
+import { useDelayedPending } from "./components/resilience/useDelayedPending";
+import { useOnlineStatus } from "./components/resilience/useOnlineStatus";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -47,7 +53,16 @@ export default function App({ convexReady }: AppProps) {
       </div>
     );
   }
-  return <ConnectedApp />;
+  return (
+    <ErrorBoundary
+      FallbackComponent={FullScreenErrorFallback}
+      onError={(error, info) => {
+        console.error("Root render failure", error, info);
+      }}
+    >
+      <ConnectedApp />
+    </ErrorBoundary>
+  );
 }
 
 function ConnectedApp() {
@@ -62,6 +77,7 @@ function ConnectedApp() {
   const [view, setView] = useState<"map" | "follower-management">("map");
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
+  const [sessionRetryNonce, setSessionRetryNonce] = useState(0);
   const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -79,6 +95,12 @@ function ConnectedApp() {
 
   const signOutMutation = useMutation(tripcastApi.auth.signOut);
   const followerSignOutMutation = useMutation(tripcastApi.followers.followerSignOut);
+  const sessionCheckIsDelayed = useDelayedPending(
+    session !== null && activeSessionCheck === undefined,
+    5000,
+    sessionRetryNonce,
+  );
+  const isOnline = useOnlineStatus();
 
   useEffect(() => {
     if (session !== null && activeSessionCheck === null) {
@@ -117,6 +139,20 @@ function ConnectedApp() {
     }
     clearStoredSession();
     setSession(null);
+  }
+
+  function handleLocalSignOut() {
+    clearStoredSession();
+    setSession(null);
+    setIsOptionsOpen(false);
+
+    if (!session) return;
+
+    const mutation =
+      session.sessionType === "follower" ? followerSignOutMutation : signOutMutation;
+    mutation({ token: session.token }).catch(() => {
+      // best-effort server-side cleanup when the service is reachable again
+    });
   }
 
   function handleLoggedOut() {
@@ -199,8 +235,35 @@ function ConnectedApp() {
   // Session check still loading
   if (activeSessionCheck === undefined) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-muted/30">
-        <p className="text-sm text-muted-foreground">Verifying session…</p>
+      <div className="flex min-h-dvh items-center justify-center bg-muted/30 px-4">
+        <div key={sessionRetryNonce} className="grid max-w-sm gap-4 text-center">
+          <PendingNotice
+            label="Verifying session..."
+            pending={activeSessionCheck === undefined}
+            className="text-sm text-muted-foreground"
+          />
+          {sessionCheckIsDelayed ? (
+            <div role="status" className="grid gap-3 rounded-md border bg-background p-4 shadow-sm">
+              <p className="text-sm text-muted-foreground">
+                {isOnline
+                  ? "TripCast is still waiting for the service. Your session is being kept on this device."
+                  : "Your browser appears to be offline. Your session is being kept on this device."}
+              </p>
+              <div className="flex justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setSessionRetryNonce((value) => value + 1)}
+                >
+                  Retry
+                </Button>
+                <Button type="button" variant="outline" onClick={handleLocalSignOut}>
+                  Sign out
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -224,10 +287,18 @@ function ConnectedApp() {
 
   if (view === "follower-management" && role === "traveler") {
     return (
-      <FollowerManagementPage
-        token={session.token}
-        onBack={() => setView("map")}
-      />
+      <FeatureBoundary
+        resetKeys={[view, session.token]}
+        onClose={() => setView("map")}
+        title="Follower management hit a problem."
+        message="Try again, or go back to the map."
+        fallbackClassName="m-4 grid gap-3 rounded-md border bg-background p-4 text-sm shadow-sm"
+      >
+        <FollowerManagementPage
+          token={session.token}
+          onBack={() => setView("map")}
+        />
+      </FeatureBoundary>
     );
   }
 
@@ -263,20 +334,31 @@ function ConnectedApp() {
         onResetStarted={showResetToast}
       />
 
-      <Suspense
-        fallback={
-          <div className="flex items-center justify-center h-full min-h-[200px]">
-            Loading map…
-          </div>
-        }
+      <ErrorBoundary
+        resetKeys={[session.token, role, locationResetNonce, tripDataResetNonce]}
+        fallbackRender={(props) => (
+          <FullScreenErrorFallback
+            {...props}
+            title="The map could not load."
+            message="Try again, or reload the app if the map keeps failing."
+          />
+        )}
       >
-        <TripMap
-          token={session.token}
-          role={role}
-          locationResetNonce={locationResetNonce}
-          tripDataResetNonce={tripDataResetNonce}
-        />
-      </Suspense>
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center h-full min-h-[200px]">
+              Loading map...
+            </div>
+          }
+        >
+          <TripMap
+            token={session.token}
+            role={role}
+            locationResetNonce={locationResetNonce}
+            tripDataResetNonce={tripDataResetNonce}
+          />
+        </Suspense>
+      </ErrorBoundary>
 
       <AnimatePresence>
         {resetToastMessage ? (
