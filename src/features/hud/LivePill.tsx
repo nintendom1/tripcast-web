@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Compass, Pause } from "lucide-react";
+import { Compass } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface LivePillProps {
@@ -29,11 +29,7 @@ export function LivePill({ on, onToggle, className }: LivePillProps) {
       )}
     >
       <span className="flex h-4 w-4 items-center justify-center">
-        {on ? (
-          <Compass className="h-3 w-3" aria-hidden="true" />
-        ) : (
-          <Pause className="h-3 w-3" aria-hidden="true" />
-        )}
+        <Compass className="h-3 w-3" aria-hidden="true" />
       </span>
       {on ? "LIVE" : "PAUSED"}
       {on ? (
