@@ -221,7 +221,7 @@ describe("TripMap location marker", () => {
     });
     expect(getTravelerMarker()).not.toHaveClass("traveler-location-marker--pulsing");
 
-    fireEvent.click(screen.getByRole("button", { name: /share location/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
 
     await waitFor(() => {
       expect(getTravelerMarker()).toHaveClass("traveler-location-marker--pulsing");
@@ -249,7 +249,7 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /share location/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
     window.dispatchEvent(new Event("pagehide"));
 
     await waitFor(() => {

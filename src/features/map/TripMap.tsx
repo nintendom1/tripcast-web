@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, Clock, LocateFixed, MapPin, Navigation, Trophy, Vote } from "lucide-react";
-
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -18,14 +16,21 @@ import AddCheckpointSheet, { type SelectedCoordinate } from "./AddCheckpointShee
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import ChallengeMarkers from "./ChallengeMarkers";
 import ChallengePanel from "../challenges/ChallengePanel";
-import RouteVoteButton from "../routevote/RouteVoteButton";
 import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
-import TravelerStateCard from "../travelstate/TravelerStateCard";
-import CurrentActivityCard from "../currentactivity/CurrentActivityCard";
-import TravelFundsCard from "../travelfunds/TravelFundsCard";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
+import {
+  Dock,
+  type DockTab,
+  FanMenu,
+  type FanAction,
+  FundsCompactConnected,
+  LivePill,
+  MapCenterButton,
+  MusicMuteIndicator,
+  StatusCardConnected,
+} from "../hud";
 import TravelFundsInlineSection, {
   type TravelFundsInlineState,
 } from "../travelfunds/TravelFundsInlineSection";
@@ -35,7 +40,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
-import type { CurrentActivity } from "../../convex/tripcastApi";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import HistoryPanel from "../history/HistoryPanel";
 import CheckInDetailSheet from "../history/CheckInDetailSheet";
@@ -76,14 +80,6 @@ function isFiniteLngLatBounds(
   bounds: [[number, number], [number, number]],
 ) {
   return bounds.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
-}
-
-function BadgeSpan({ count }: { count: number }) {
-  return (
-    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-crimson text-[10px] font-bold text-white pointer-events-none">
-      {count > 9 ? "9+" : count}
-    </span>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -384,15 +380,6 @@ export default function TripMap({
   const [checkInOpenedFromHistory, setCheckInOpenedFromHistory] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
-  const [activityToComplete, setActivityToComplete] = useState<CurrentActivity | null>(null);
-  // Fetch the linked challenge (if any) so the inline Travel Funds section can
-  // pre-fill the transaction title + amount from the challenge being completed.
-  const completionLinkedChallenge = useQuery(
-    tripcastApi.challenges.getChallenge,
-    activityToComplete?.linkedChallengeId
-      ? { token, challengeId: activityToComplete.linkedChallengeId }
-      : "skip",
-  );
   const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
   const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null);
 
@@ -402,16 +389,10 @@ export default function TripMap({
   const stopTravelerLocationSharing = useMutation(
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
-  const completeCurrentActivity = useMutation(tripcastApi.currentActivity.travelerCompleteCurrentActivity);
   const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
   });
-
-  const travelerVotes = useQuery(
-    tripcastApi.routeVotes.travelerListRouteVotes,
-    role === "traveler" ? { token } : "skip",
-  ) ?? [];
 
   const historyEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
   const { unreadCount, markAllRead } = useHistoryUnread(historyEvents);
@@ -424,6 +405,11 @@ export default function TripMap({
     role === "traveler"
       ? (allChallengesForBadge ?? []).filter((c) => c.status === "proposed").length
       : 0;
+
+  const voteAlert = useQuery(tripcastApi.routeVotes.getActiveRouteVoteAlert, { token });
+  const hasUnseenVote = voteAlert?.hasUnseen ?? false;
+
+  const [fanOpen, setFanOpen] = useState(false);
 
   function openHistory() {
     if (isHistoryOpen) { setIsHistoryOpen(false); return; }
@@ -442,6 +428,61 @@ export default function TripMap({
     setIsVotePanelOpen(true);
     setIsHistoryOpen(false);
     setIsChallengesPanelOpen(false);
+  }
+  function openFunds() {
+    if (isTravelFundsSheetOpen) { setIsTravelFundsSheetOpen(false); return; }
+    setIsTravelFundsSheetOpen(true);
+    setIsHistoryOpen(false);
+    setIsChallengesPanelOpen(false);
+    setIsVotePanelOpen(false);
+  }
+
+  const activeDockTab: DockTab | null = isHistoryOpen
+    ? "history"
+    : isChallengesPanelOpen
+      ? "challenges"
+      : isVotePanelOpen
+        ? "votes"
+        : isTravelFundsSheetOpen
+          ? "funds"
+          : null;
+
+  function handleDockSelect(tab: DockTab) {
+    setFanOpen(false);
+    if (tab === "history") openHistory();
+    else if (tab === "challenges") openChallenges();
+    else if (tab === "votes") openVotes();
+    else if (tab === "funds") openFunds();
+  }
+
+  function handleDockAdd() {
+    if (role === "support_crew") {
+      openChallenges();
+      return;
+    }
+    setFanOpen((prev) => !prev);
+  }
+
+  function handleFanPick(action: FanAction) {
+    setFanOpen(false);
+    switch (action) {
+      case "checkin":
+        setSelectedCoordinate(null);
+        setIsPlacementMode(true);
+        break;
+      case "activity":
+        setIsSetActivityOpen(true);
+        break;
+      case "transaction":
+        openFunds();
+        break;
+      case "challenge":
+        openChallenges();
+        break;
+      case "vote":
+        openVotes();
+        break;
+    }
   }
 
   // Keep placement mode ref in sync
@@ -584,7 +625,6 @@ export default function TripMap({
     coordinatePickModeRef.current = null;
     setIsHistoryOpen(false);
     setSelectedCheckInEvent(null);
-    setActivityToComplete(null);
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -673,28 +713,10 @@ export default function TripMap({
     setVoteOptionNumberById(optionNumberById ?? null);
   }
 
-  function handleCompleteAsCheckIn(activity: CurrentActivity) {
-    if (activity.lat !== undefined && activity.lon !== undefined) {
-      setSelectedCoordinate({ lat: activity.lat, lon: activity.lon, source: "current_activity" });
-    } else {
-      setIsPlacementMode(true);
-    }
-    setActivityToComplete(activity);
-  }
-
-  async function handleCheckpointCreated(checkpointId: string) {
-    if (!activityToComplete) return;
-    try {
-      await completeCurrentActivity({
-        token,
-        activityId: activityToComplete._id,
-        checkpointId,
-      });
-    } catch {
-      // Non-fatal: the checkpoint was saved; activity completion is best-effort
-    }
-    setActivityToComplete(null);
-  }
+  // NOTE: the activity-complete-as-checkin flow (handleCompleteAsCheckIn +
+  // handleCheckpointCreated + activityToComplete state) was removed when the
+  // CurrentActivityCard came out with the legacy chrome. Reconnected in
+  // Part 8 when the SetActivitySheet refresh introduces the new completion UI.
 
   function showToast(message: string) {
     if (toastTimeoutRef.current !== null) {
@@ -939,110 +961,46 @@ export default function TripMap({
             exit={{ y: 16, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="status"
-            className={`absolute left-1/2 z-[6] -translate-x-1/2 rounded-md bg-navy px-4 py-2 text-sm font-medium text-white shadow-lg max-w-[calc(100%-24px)] ${
-              role === "traveler" ? "bottom-[230px]" : "bottom-[180px]"
-            }`}
+            className="absolute bottom-[112px] left-1/2 z-[6] -translate-x-1/2 rounded-md bg-navy px-4 py-2 text-sm font-medium text-white shadow-lg max-w-[calc(100%-24px)]"
           >
             {toastMessage}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Panel-navigation cluster — icon-only vertical column, bottom-left */}
-      <div className="absolute bottom-5 left-5 z-[2] flex flex-col gap-2">
-        <button
-          type="button"
-          aria-label={isHistoryOpen ? "Close history" : "History"}
-          onClick={openHistory}
-          className="relative w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
-        >
-          <Clock className="h-5 w-5" aria-hidden="true" />
-          {unreadCount > 0 && <BadgeSpan count={unreadCount} />}
-        </button>
+      {/* Music mute indicator — top-right of the map */}
+      <MusicMuteIndicator className="absolute right-3 top-3 z-[2]" />
 
-        {(role === "traveler" || role === "support_crew") && (
-          <button
-            type="button"
-            aria-label={isChallengesPanelOpen ? "Close challenges" : "Challenges"}
-            onClick={openChallenges}
-            className={`relative w-11 h-11 flex items-center justify-center border rounded-md shadow-lg transition-colors ${
-              isChallengesPanelOpen
-                ? "bg-navy text-white border-navy hover:bg-navy/90"
-                : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-            }`}
-          >
-            <Trophy className="h-5 w-5" aria-hidden="true" />
-            {challengeBadgeCount > 0 && <BadgeSpan count={challengeBadgeCount} />}
-          </button>
-        )}
+      {/* Map utility — center on traveler (replaces the LocateFixed FAB) */}
+      <MapCenterButton
+        className="absolute bottom-[88px] right-3 z-[2]"
+        active={role === "traveler" ? isLocationSharing : storedTravelerLocation !== null}
+        onClick={handleCenterLocation}
+      />
 
-        {role === "traveler" && (
-          <button
-            type="button"
-            aria-label={isTravelerStateOpen ? "Close state" : "Traveler state"}
-            onClick={() => setIsTravelerStateOpen((p) => !p)}
-            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
-          >
-            <Activity className="h-5 w-5" aria-hidden="true" />
-          </button>
-        )}
-
-        {role === "traveler" && (
-          <button
-            type="button"
-            aria-label={isVotePanelOpen ? "Close votes" : "Route votes"}
-            onClick={openVotes}
-            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
-          >
-            <Vote className="h-5 w-5" aria-hidden="true" />
-          </button>
-        )}
-
-        {role === "support_crew" && (
-          <RouteVoteButton token={token} onClick={openVotes} />
-        )}
+      {/* Bottom Dock — replaces the bottom-left + bottom-right FAB clusters */}
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[3]">
+        <Dock
+          active={activeDockTab}
+          onSelect={handleDockSelect}
+          onAdd={handleDockAdd}
+          fanOpen={fanOpen}
+          addLabel={role === "traveler" ? "Add" : "Propose mission"}
+          showFunds={role === "traveler"}
+          badges={{
+            history: unreadCount,
+            challenges: challengeBadgeCount,
+            votes: hasUnseenVote ? 1 : 0,
+            votesPulsing: hasUnseenVote,
+          }}
+        />
       </div>
 
-      {/* Map-utilities cluster — icon-only vertical column, bottom-right */}
-      <div className="absolute bottom-5 right-5 z-[2] flex flex-col-reverse gap-2">
-        <button
-          type="button"
-          aria-label="Center map on traveler location"
-          onClick={handleCenterLocation}
-          className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
-        >
-          <LocateFixed className="h-5 w-5" aria-hidden="true" />
-        </button>
-
-        {role === "traveler" && (
-          <button
-            type="button"
-            aria-label={isLocationSharing ? "Stop sharing location" : "Share location"}
-            onClick={handleToggleLocationSharing}
-            className={`w-11 h-11 flex items-center justify-center border rounded-md shadow-lg transition-colors ${
-              isLocationSharing
-                ? "bg-navy text-white border-navy hover:bg-navy/90"
-                : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-            }`}
-          >
-            <Navigation className="h-5 w-5" aria-hidden="true" />
-          </button>
-        )}
-
-        {canWrite && (
-          <button
-            type="button"
-            aria-label="Add pin"
-            onClick={() => {
-              setSelectedCoordinate(null);
-              setIsPlacementMode(true);
-            }}
-            className="w-11 h-11 flex items-center justify-center bg-white border border-slate-300 rounded-md shadow-lg text-navy hover:bg-slate-50 transition-colors"
-          >
-            <MapPin className="h-5 w-5" aria-hidden="true" />
-          </button>
-        )}
-      </div>
+      <FanMenu
+        open={fanOpen && role === "traveler"}
+        onClose={() => setFanOpen(false)}
+        onPick={handleFanPick}
+      />
 
       {/* Checkpoint add sheet */}
       {canWrite && (
@@ -1051,28 +1009,8 @@ export default function TripMap({
           token={token}
           onClose={() => {
             setSelectedCoordinate(null);
-            setActivityToComplete(null);
           }}
-          prefill={activityToComplete ? {
-            title: activityToComplete.title,
-            note: activityToComplete.note,
-            locationLabel: activityToComplete.locationLabel,
-          } : undefined}
-          transactionPrefill={
-            completionLinkedChallenge
-              ? {
-                  title: completionLinkedChallenge.title,
-                  ...(completionLinkedChallenge.estimatedCostUsd !== undefined
-                    ? {
-                        localAmount: completionLinkedChallenge.estimatedCostUsd,
-                        currencyCode: "USD",
-                        localCurrencyPerUsd: 1,
-                      }
-                    : {}),
-                }
-              : undefined
-          }
-          onCheckpointCreated={handleCheckpointCreated}
+          onCheckpointCreated={() => undefined}
         />
       )}
 
@@ -1156,40 +1094,41 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      <div ref={cardsWrapperRef} className="absolute top-5 left-5 z-[2] flex flex-col gap-2">
+      <div
+        ref={cardsWrapperRef}
+        className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2"
+      >
         <FeatureBoundary
-          resetKeys={[token, role, "traveler-state-card"]}
-          title="State card hit a problem."
+          resetKeys={[token, role, "hud-status-card"]}
+          title="Status card hit a problem."
           message="Try again."
           fallbackClassName={CARD_ERROR_CLASS}
         >
-          <TravelerStateCard token={token} role={role} />
-        </FeatureBoundary>
-        <FeatureBoundary
-          resetKeys={[token, role, "current-activity-card"]}
-          title="Activity card hit a problem."
-          message="Try again."
-          fallbackClassName={CARD_ERROR_CLASS}
-        >
-          <CurrentActivityCard
+          <StatusCardConnected
             token={token}
             role={role}
-            onCompleteAsCheckIn={handleCompleteAsCheckIn}
-            onRequestSetActivity={() => setIsSetActivityOpen(true)}
+            onOpenState={() => setIsTravelerStateOpen(true)}
           />
         </FeatureBoundary>
-        <FeatureBoundary
-          resetKeys={[token, role, "travel-funds-card"]}
-          title="Travel Funds card hit a problem."
-          message="Try again."
-          fallbackClassName={CARD_ERROR_CLASS}
-        >
-          <TravelFundsCard
-            token={token}
-            role={role}
-            onOpenSheet={role === "traveler" ? () => setIsTravelFundsSheetOpen(true) : undefined}
-          />
-        </FeatureBoundary>
+        <div className="flex items-center justify-between gap-2">
+          {role === "traveler" ? (
+            <LivePill on={isLocationSharing} onToggle={handleToggleLocationSharing} />
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          <FeatureBoundary
+            resetKeys={[token, role, "hud-funds-compact"]}
+            title="Funds chip hit a problem."
+            message="Try again."
+            fallbackClassName={CARD_ERROR_CLASS}
+          >
+            <FundsCompactConnected
+              token={token}
+              role={role}
+              onOpenSheet={role === "traveler" ? () => setIsTravelFundsSheetOpen(true) : undefined}
+            />
+          </FeatureBoundary>
+        </div>
       </div>
 
       <Sheet open={isTravelFundsSheetOpen} onOpenChange={setIsTravelFundsSheetOpen}>

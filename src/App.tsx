@@ -2,7 +2,6 @@ import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { ErrorBoundary } from "react-error-boundary";
 import { AnimatePresence, motion } from "framer-motion";
-import { Settings } from "lucide-react";
 
 import { tripcastApi, type Role } from "./convex/tripcastApi";
 import {
@@ -11,7 +10,6 @@ import {
   setStoredSession,
   type StoredSession,
 } from "./lib/auth";
-import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import AuthScreen from "./features/auth/AuthScreen";
 import FollowerLoginScreen from "./features/auth/FollowerLoginScreen";
@@ -19,6 +17,7 @@ import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
 import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
+import { TopBar } from "./features/hud";
 import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
 import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
 import { PendingNotice } from "./components/resilience/PendingNotice";
@@ -283,7 +282,6 @@ function ConnectedApp() {
   }
 
   const role = activeSessionCheck.role;
-  const roleLabel = role === "traveler" ? "Traveler" : "Support Crew";
 
   if (view === "follower-management" && role === "traveler") {
     return (
@@ -304,22 +302,7 @@ function ConnectedApp() {
 
   return (
     <div className="relative flex flex-col h-dvh">
-      <header className="flex min-h-14 flex-wrap items-center gap-2 border-b bg-background px-4 py-2 z-[2]">
-        <h1 className="text-lg font-bold">TripCast</h1>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-          <Badge variant="secondary">{roleLabel}</Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            type="button"
-            onClick={() => setIsOptionsOpen(true)}
-            aria-label="Options"
-          >
-            <Settings className="h-4 w-4" aria-hidden="true" />
-            Options
-          </Button>
-        </div>
-      </header>
+      <TopBar role={role} onOpenOptions={() => setIsOptionsOpen(true)} />
 
       <OptionsSheet
         open={isOptionsOpen}

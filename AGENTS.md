@@ -129,20 +129,22 @@ TripMap targets 390px-wide viewports (iPhone 12 Pro class) as the primary form f
 
 This clips all absolutely-positioned children — button clusters, panel overlays, animated banners. Without it, any child that extends past the section boundary creates document-level horizontal scroll. **This is the single most important CSS rule in the map view.** If it's removed, or a new wrapper element is introduced without it, the page scrolls on mobile.
 
-### Use vertical FAB clusters, never horizontal button rows
+### Map chrome composition (post-rework)
 
-All map controls live in two `absolute` vertical columns (`flex flex-col gap-2`):
+Map controls live in a single horizontal Dock at the bottom plus two corner utilities. There are **no more vertical FAB clusters** — the legacy `bottom-5 left-5` and `bottom-5 right-5` columns have been replaced.
 
-| Cluster | Position | Contents |
-|---------|----------|----------|
-| Panel navigation | `bottom-5 left-5` | History, Challenges, Traveler State, Votes |
-| Map utilities | `bottom-5 right-5` | Locate, Share Location, Add Pin |
+| Region | Position | Contents |
+|--------|----------|----------|
+| HUD top stack | `inset-x-3 top-3` | `StatusCard` (state + activity), `LivePill` (Traveler only), `FundsCompact` |
+| Music indicator | `right-3 top-3` | `MusicMuteIndicator` |
+| Map utility | `bottom-[88px] right-3` | `MapCenterButton` (recenter on traveler / last check-in) |
+| Bottom Dock | `inset-x-3 bottom-3` | `Dock` (Story · Missions · `+` · Votes · Funds) |
 
-**Every button is exactly `w-11 h-11` (44 × 44 px).** This is the Apple HIG / WCAG minimum touch target size. Fixed squares guarantee the cluster never contributes to horizontal overflow regardless of how many items are added.
+The Dock is the single nav surface. Its center `+` is a FAB: Traveler opens `FanMenu` (Check-in / Activity / Transaction / Challenge / Vote); Support Crew goes straight to "Propose Mission" (no fan).
 
-Buttons are icon-only — `aria-label` carries the text equivalent. No visible text labels in these clusters.
+Touch targets in the Dock are 44 × 44 px or larger; the FAB is 48 × 48 px and bleeds slightly above the dock baseline. Live the design tokens in `src/styles.css` (`--dock-h`, `--shadow-fab`, `--flag`) — do not hardcode colors at use sites.
 
-When adding a new map control: pick the correct cluster, use a `lucide-react` icon, write an `aria-label`, keep `w-11 h-11`. Do not add text.
+When adding a new HUD or Dock control: extend the component in `src/features/hud/` and surface it through `src/features/hud/index.ts`. Do not reintroduce vertical FAB columns.
 
 ### All secondary panels are bottom sheets
 
@@ -154,7 +156,7 @@ Modal flows (Options, Emergency Reset) keep the default backdrop/modal behavior.
 
 ### Mutual panel exclusion
 
-At most one bottom sheet (History, Challenges, Votes) may be open at a time. Use named helper functions — not raw `setState` on the button `onClick` — to enforce this:
+At most one bottom sheet (History, Challenges, Votes, Funds) may be open at a time. The Dock's `onSelect` callback funnels into the existing `open<Panel>` helpers, which use named functions — not raw `setState` on the button `onClick` — to enforce exclusion:
 
 ```typescript
 function openHistory() {
@@ -165,20 +167,13 @@ function openHistory() {
 }
 ```
 
-Each helper closes the other two panels and toggles itself closed if already open (tap-to-dismiss). `TravelerState` is a full-height dialog and does not participate in exclusion.
+Each helper closes its siblings and toggles itself closed if already open (tap-to-dismiss). `TravelerState` is a full-height dialog and does not participate in exclusion. The Dock's `activeDockTab` is derived directly from the panel open flags so it stays in sync.
 
-When adding a new panel: write an `open<Panel>` helper, call `set<ExistingPanel>Open(false)` for each existing panel inside it, and wire the button to the helper.
+When adding a new panel: write an `open<Panel>` helper, call `set<ExistingPanel>Open(false)` for each existing panel inside it, expose a `DockTab` variant if it belongs in the Dock, and update `activeDockTab`/`handleDockSelect` accordingly.
 
-### Toast positioning must clear the nav cluster
+### Toast positioning must clear the Dock
 
-The toast `bottom-[Npx]` must clear the left FAB cluster. With 44 px buttons and 8 px gaps:
-
-| Role | Buttons | `bottom` value |
-|------|---------|----------------|
-| Traveler | 4 | `bottom-[230px]` |
-| Support crew | 3 | `bottom-[180px]` |
-
-Update these when buttons are added to or removed from the nav cluster.
+The toast lives at `bottom-[112px]` so it sits above the Dock (~76 px tall) plus the bottom gutter. Role no longer matters — the Dock is the same height for Traveler and Support Crew. Update the constant if the Dock height changes.
 
 ### MapLibre measurement gotchas
 
