@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
@@ -88,5 +88,28 @@ describe("FollowerLoginScreen", () => {
     renderScreen();
     await userEvent.click(screen.getByText(/sign in as traveler/i));
     expect(mockOnShowTravelerLogin).toHaveBeenCalled();
+  });
+
+  it("shows delayed connection feedback while sign-in is still pending", async () => {
+    vi.useFakeTimers();
+    const mockSignIn = vi.fn(() => new Promise(() => {}));
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+    renderScreen();
+
+    fireEvent.change(screen.getByPlaceholderText("your-username"), {
+      target: { value: "alice" },
+    });
+    fireEvent.change(screen.getByLabelText(/^password$/i), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    await act(async () => {
+      vi.advanceTimersByTime(5000);
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(/still trying to finish this sign-in/i);
+    vi.useRealTimers();
   });
 });

@@ -29,6 +29,7 @@ import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import HistoryPanel from "../history/HistoryPanel";
 import CheckInDetailSheet from "../history/CheckInDetailSheet";
 import { useHistoryUnread } from "../history/useHistoryUnread";
+import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import {
   MOOD_LABELS,
   MOOD_VALUES,
@@ -48,6 +49,12 @@ import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const OPEN_FREE_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
+const PANEL_ERROR_CLASS =
+  "absolute bottom-5 left-5 z-[4] grid w-80 max-w-[calc(100%-40px)] gap-3 rounded-md border bg-background p-4 text-sm shadow-lg";
+const BOTTOM_SHEET_ERROR_CLASS =
+  "absolute inset-x-0 bottom-0 z-[4] grid gap-3 border-t bg-background p-4 text-sm shadow-lg";
+const CARD_ERROR_CLASS =
+  "grid w-56 gap-3 rounded-md border bg-background/95 p-3 text-xs shadow-md backdrop-blur-sm";
 
 type CoordinatePickMode = {
   label: string;
@@ -1015,87 +1022,149 @@ export default function TripMap({
       {/* Vote panels — hidden (not unmounted) during coordinate pick to preserve form state */}
       <AnimatePresence>
         {role === "support_crew" && isVotePanelOpen && (
-          <RouteVotePanel
-            key="crew-vote-panel"
-            token={token}
+          <FeatureBoundary
+            resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
               setIsVotePanelOpen(false);
               setVoteMapOverlay(null);
               setVoteOptionNumberById(null);
             }}
-            onVoteOverlayChange={handleVoteOverlayChange}
-            onRequestFitMap={handleRequestFitMap}
-            fallbackOrigin={routeVoteFallbackOrigin}
-          />
+            title="Votes hit a problem."
+            message="Try again, or close votes and reopen them."
+            fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
+          >
+            <RouteVotePanel
+              key="crew-vote-panel"
+              token={token}
+              onClose={() => {
+                setIsVotePanelOpen(false);
+                setVoteMapOverlay(null);
+                setVoteOptionNumberById(null);
+              }}
+              onVoteOverlayChange={handleVoteOverlayChange}
+              onRequestFitMap={handleRequestFitMap}
+              fallbackOrigin={routeVoteFallbackOrigin}
+            />
+          </FeatureBoundary>
         )}
       </AnimatePresence>
 
       {role === "traveler" && isVotePanelOpen && (
         <div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>
-          <RouteVoteProgress
-            token={token}
+          <FeatureBoundary
+            resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
               setIsVotePanelOpen(false);
               setVoteMapOverlay(null);
               setVoteOptionNumberById(null);
             }}
-            onRequestCoordinatePick={handleRequestCoordinatePick}
-            referenceLocation={livePosition}
-            onVoteOverlayChange={handleVoteOverlayChange}
-            onRequestFitMap={handleRequestFitMap}
-            fallbackOrigin={routeVoteFallbackOrigin}
-          />
+            title="Route votes hit a problem."
+            message="Try again, or close votes and reopen them."
+            fallbackClassName={PANEL_ERROR_CLASS}
+          >
+            <RouteVoteProgress
+              token={token}
+              onClose={() => {
+                setIsVotePanelOpen(false);
+                setVoteMapOverlay(null);
+                setVoteOptionNumberById(null);
+              }}
+              onRequestCoordinatePick={handleRequestCoordinatePick}
+              referenceLocation={livePosition}
+              onVoteOverlayChange={handleVoteOverlayChange}
+              onRequestFitMap={handleRequestFitMap}
+              fallbackOrigin={routeVoteFallbackOrigin}
+            />
+          </FeatureBoundary>
         </div>
       )}
 
       <AnimatePresence>
         {role === "traveler" && isTravelerStateOpen && (
           <div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>
-            <TravelerStateSheet
-              token={token}
+            <FeatureBoundary
+              resetKeys={[isTravelerStateOpen, token]}
               onClose={() => setIsTravelerStateOpen(false)}
-              onToast={showToast}
-            />
+              title="Traveler state hit a problem."
+              message="Try again, or close state and reopen it."
+              fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
+            >
+              <TravelerStateSheet
+                token={token}
+                onClose={() => setIsTravelerStateOpen(false)}
+                onToast={showToast}
+              />
+            </FeatureBoundary>
           </div>
         )}
       </AnimatePresence>
 
       <div ref={cardsWrapperRef} className="absolute top-5 left-5 z-[2] flex flex-col gap-2">
-        <TravelerStateCard token={token} role={role} />
-        <CurrentActivityCard
-          token={token}
-          role={role}
-          onCompleteAsCheckIn={handleCompleteAsCheckIn}
-          onRequestSetActivity={() => setIsSetActivityOpen(true)}
-        />
+        <FeatureBoundary
+          resetKeys={[token, role, "traveler-state-card"]}
+          title="State card hit a problem."
+          message="Try again."
+          fallbackClassName={CARD_ERROR_CLASS}
+        >
+          <TravelerStateCard token={token} role={role} />
+        </FeatureBoundary>
+        <FeatureBoundary
+          resetKeys={[token, role, "current-activity-card"]}
+          title="Activity card hit a problem."
+          message="Try again."
+          fallbackClassName={CARD_ERROR_CLASS}
+        >
+          <CurrentActivityCard
+            token={token}
+            role={role}
+            onCompleteAsCheckIn={handleCompleteAsCheckIn}
+            onRequestSetActivity={() => setIsSetActivityOpen(true)}
+          />
+        </FeatureBoundary>
       </div>
 
-      <ChallengePanel
-        open={isChallengesPanelOpen}
-        token={token}
-        role={role}
+      <FeatureBoundary
+        resetKeys={[isChallengesPanelOpen, token, role]}
         onClose={() => setIsChallengesPanelOpen(false)}
-        onStartChallenge={() => setIsChallengesPanelOpen(false)}
-        onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
-        isPickingCoordinate={isPickingCoordinate}
-        pendingOpenChallengeId={pendingOpenChallengeId}
-        onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
-        onRequestNavigateToChallenge={handleNavigateToChallenge}
-      />
+        title="Challenges hit a problem."
+        message="Try again, or close challenges and reopen them."
+        fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
+      >
+        <ChallengePanel
+          open={isChallengesPanelOpen}
+          token={token}
+          role={role}
+          onClose={() => setIsChallengesPanelOpen(false)}
+          onStartChallenge={() => setIsChallengesPanelOpen(false)}
+          onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
+          isPickingCoordinate={isPickingCoordinate}
+          pendingOpenChallengeId={pendingOpenChallengeId}
+          onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
+          onRequestNavigateToChallenge={handleNavigateToChallenge}
+        />
+      </FeatureBoundary>
 
       <AnimatePresence>
         {isHistoryOpen && (
-          <HistoryPanel
-            events={historyEvents}
+          <FeatureBoundary
+            resetKeys={[isHistoryOpen, historyEvents.length]}
             onClose={() => setIsHistoryOpen(false)}
-            onCheckInSelect={(event) => {
-              setIsHistoryOpen(false);
-              setCheckInOpenedFromHistory(true);
-              setSelectedCheckInEvent(event);
-            }}
-            onLocationFocus={handleHistoryLocationFocus}
-            onMarkAllRead={markAllRead}
-          />
+            title="History hit a problem."
+            message="Try again, or close history and reopen it."
+            fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
+          >
+            <HistoryPanel
+              events={historyEvents}
+              onClose={() => setIsHistoryOpen(false)}
+              onCheckInSelect={(event) => {
+                setIsHistoryOpen(false);
+                setCheckInOpenedFromHistory(true);
+                setSelectedCheckInEvent(event);
+              }}
+              onLocationFocus={handleHistoryLocationFocus}
+              onMarkAllRead={markAllRead}
+            />
+          </FeatureBoundary>
         )}
       </AnimatePresence>
 
@@ -1111,11 +1180,19 @@ export default function TripMap({
       />
 
       {role === "traveler" && (
-        <SetActivitySheet
-          open={isSetActivityOpen}
-          token={token}
-          onOpenChange={setIsSetActivityOpen}
-        />
+        <FeatureBoundary
+          resetKeys={[isSetActivityOpen, token]}
+          onClose={() => setIsSetActivityOpen(false)}
+          title="Activity editor hit a problem."
+          message="Try again, or close the activity editor."
+          fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
+        >
+          <SetActivitySheet
+            open={isSetActivityOpen}
+            token={token}
+            onOpenChange={setIsSetActivityOpen}
+          />
+        </FeatureBoundary>
       )}
     </section>
   );

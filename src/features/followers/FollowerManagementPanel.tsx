@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { tripcastApi, type FollowerInfo } from "../../convex/tripcastApi";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
+import { PendingNotice } from "../../components/resilience/PendingNotice";
 
 type FollowerManagementPanelProps = {
   token: string;
@@ -70,7 +71,7 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
 
   if (followers === undefined) {
     return (
-      <p className="text-sm text-muted-foreground py-4 text-center">Loading followers…</p>
+      <PendingNotice label="Loading followers..." />
     );
   }
 

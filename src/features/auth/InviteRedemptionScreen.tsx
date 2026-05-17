@@ -6,6 +6,7 @@ import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
 
 const TERMS_VERSION = "1.0";
 const PRIVACY_VERSION = "1.0";
@@ -149,6 +150,7 @@ export default function InviteRedemptionScreen({
                 {error}
               </p>
             ) : null}
+            <PendingActionNotice isPending={isPending} actionLabel="account creation" />
             <div className="flex gap-2">
               <Button
                 type="button"

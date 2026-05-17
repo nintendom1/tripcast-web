@@ -24,6 +24,8 @@
 - Consume Convex through `src/convex/tripcastApi.ts`. Do not hand-write function references — regenerate this file via `npm run export:web-api` in `tripcast-backend` then copy the output.
 - All mutations take an explicit `token` arg for auth. Do not use `clientId`; that field was removed.
 - When the backend returns `null` for a route vote detail query, the frontend shows a deleted-vote recovery state ("This route vote was deleted.") with a "Back to votes" button — do not treat this as a loading state.
+- Use `react-error-boundary` for React render, lazy import, and Convex `useQuery` thrown-error containment; it does not replace delayed pending/offline UI or local `try/catch` for async mutations and event handlers.
+- Keep lazy `TripMap` declared at module scope in `App.tsx`; creating `React.lazy()` inside a component can loop on the Suspense fallback and leave the app stuck at "Loading map...".
 - Emergency Reset sheet (`src/features/privacy/EmergencyResetSheet.tsx`) is gated to the `"traveler"` role. It uses one grouped backend reset mutation with a confirmation tap; rate-limit errors from the backend are shown in a `role="alert"` paragraph.
 - Avoid unnecessary map remounts, style resets, or tile request loops.
 - Backend API changes belong in `tripcast-backend`.

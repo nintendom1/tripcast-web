@@ -13,6 +13,7 @@ import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
 import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
+import { PendingNotice } from "../../components/resilience/PendingNotice";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -152,7 +153,7 @@ function VoteDetailView({
   }, [detail, onRequestFitMap, onVoteOverlayChange]);
 
   if (detail === undefined) {
-    return <div className="text-sm text-muted-foreground py-4 text-center">Loading…</div>;
+    return <PendingNotice label="Loading vote..." />;
   }
 
   if (detail === null) {
@@ -357,7 +358,7 @@ export default function RouteVoteProgress({
   onRequestFitMap,
   fallbackOrigin,
 }: RouteVoteProgressProps) {
-  const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token }) ?? [];
+  const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token });
 
   const closeVote = useMutation(tripcastApi.routeVotes.travelerCloseRouteVote);
   const cancelVote = useMutation(tripcastApi.routeVotes.travelerCancelRouteVote);
@@ -367,7 +368,7 @@ export default function RouteVoteProgress({
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const [actingVoteId, setActingVoteId] = useState<string | null>(null);
 
-  const selectedVote = votes.find((v) => v._id === selectedVoteId) ?? null;
+  const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
 
   const isCreateView = view === "create";
 
@@ -493,7 +494,9 @@ export default function RouteVoteProgress({
               <Button size="sm" onClick={() => setView("create")} className="w-full">
                 + Propose new route
               </Button>
-              {votes.length === 0 ? (
+              {votes === undefined ? (
+                <PendingNotice label="Loading votes..." />
+              ) : votes.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">No active votes.</p>
               ) : (
                 votes.map((vote) => (

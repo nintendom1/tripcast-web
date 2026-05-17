@@ -13,6 +13,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
+import { PendingNotice } from "../../components/resilience/PendingNotice";
 
 type Props = {
   open: boolean;
@@ -166,7 +167,7 @@ function TravelerChallengePanel({
           className="flex flex-col gap-2 px-4 pb-4"
         >
           {allChallenges === undefined ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">Loading challenges…</p>
+            <PendingNotice label="Loading challenges..." />
           ) : filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4 text-center">
               {filter === "all" ? "No challenges yet." : `No ${filter} challenges.`}
@@ -461,7 +462,7 @@ function SupportCrewChallengePanel({
           className="flex flex-col gap-2 px-4 pb-4"
         >
           {myChallenges === undefined ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">Loading challenges…</p>
+            <PendingNotice label="Loading challenges..." />
           ) : tab === "mine" ? (
             mine.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">

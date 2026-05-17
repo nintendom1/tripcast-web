@@ -5,6 +5,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
 
 type PasswordResetScreenProps = {
   resetToken: string;
@@ -106,6 +107,7 @@ export default function PasswordResetScreen({ resetToken, onDone }: PasswordRese
                   {error}
                 </p>
               ) : null}
+              <PendingActionNotice isPending={isPending} actionLabel="password reset" />
               <Button type="submit" disabled={!canSubmit}>
                 {isPending ? "Updating…" : "Update password"}
               </Button>

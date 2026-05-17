@@ -14,6 +14,7 @@ import { ChoiceList, ChoiceItem } from "../../components/rpg/ChoiceList";
 import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
 import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
+import { PendingNotice } from "../../components/resilience/PendingNotice";
 
 type RouteVotePanelProps = {
   token: string;
@@ -346,9 +347,7 @@ export default function RouteVotePanel({
               className="flex flex-col gap-2"
             >
               {votes === undefined ? (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  Loading votes…
-                </p>
+                <PendingNotice label="Loading votes..." className="text-sm text-muted-foreground text-center py-6" />
               ) : votes.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-6">
                   No active votes right now.
