@@ -3,8 +3,10 @@
 - **Date:** 2026-05-17
 
 ### Summary of Files Changed
-- `src/lib/audio/engine.ts`: Expanded idle auto scenario soundtrack resolution with time-of-day variants for evening and midnight windows.
-- `src/lib/audio/engine.test.ts`: Added a test for nighttime/midnight idle auto soundtrack selection windows.
+- `src/lib/audio/engine.ts`: Raised master output scaling so configured volume plays louder while still respecting mute and clamping.
+- `src/features/hud/MusicMuteIndicator.tsx`: Upgraded the map overlay mute control to a clearer labeled button ("Sound" / "Muted").
+- `src/features/options/OptionsSheet.tsx`: Added soundtrack volume slider in Options for direct settings-bar control.
+- `src/lib/audio/engine.test.ts`: Updated the clamping expectation to match the new master gain scaling.
 
 ### Music Soundtrack Names and Playback Context
 - **Kisaragi Morning** (`morning`): Calm morning ambience with soft pentatonic lead and gentle pad.

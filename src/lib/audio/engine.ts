@@ -246,7 +246,7 @@ export function createAudioEngine(): AudioEngine {
 
   const updateMasterVolume = () => {
     if (!masterGain || !ctx) return;
-    const target = mute ? 0 : 0.25 * clamp(volume, 0, 1);
+    const target = mute ? 0 : 0.45 * clamp(volume, 0, 1);
     masterGain.gain.cancelScheduledValues(ctx.currentTime);
     masterGain.gain.setValueAtTime(masterGain.gain.value, ctx.currentTime);
     masterGain.gain.linearRampToValueAtTime(target, ctx.currentTime + 0.03);

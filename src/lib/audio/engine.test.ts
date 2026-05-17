@@ -105,7 +105,7 @@ describe("createAudioEngine", () => {
     expect(gainCalls.length).toBeGreaterThan(0);
     const masterGain = gainCalls[0].value as FakeGainNode;
     const ramps = masterGain.gain.linearRampToValueAtTime.mock.calls.map((call) => call[0]);
-    expect(ramps).toContain(0.25);
+    expect(ramps).toContain(0.45);
     expect(ramps).toContain(0);
   });
 

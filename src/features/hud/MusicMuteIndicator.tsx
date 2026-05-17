@@ -25,7 +25,7 @@ export function MusicMuteIndicator({ className }: MusicMuteIndicatorProps) {
       aria-label={mute ? "Unmute soundtrack" : "Mute soundtrack"}
       title={mute ? "Soundtrack muted" : "Soundtrack playing"}
       className={cn(
-        "flex h-8 w-8 items-center justify-center rounded-full bg-[var(--bg-card)] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)]",
+        "flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)]",
         className,
       )}
     >
@@ -34,6 +34,7 @@ export function MusicMuteIndicator({ className }: MusicMuteIndicatorProps) {
       ) : (
         <Volume2 className="h-4 w-4" aria-hidden="true" />
       )}
+      <span className="text-[11px] font-semibold leading-none">{mute ? "Muted" : "Sound"}</span>
     </button>
   );
 }

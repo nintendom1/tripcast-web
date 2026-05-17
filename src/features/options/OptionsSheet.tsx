@@ -15,6 +15,7 @@ import type { StoredSession } from "../../lib/auth";
 import CreateInviteControl from "../followers/CreateInviteControl";
 import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -133,6 +134,7 @@ export default function OptionsSheet({
   onTripDataDeleted,
   onResetStarted,
 }: OptionsSheetProps) {
+  const { volume, setVolume } = useMusicSafe();
   const [view, setView] = useState<OptionsView>("options");
   const [isEmergencyResetPending, setIsEmergencyResetPending] = useState(false);
 
@@ -196,6 +198,28 @@ export default function OptionsSheet({
               <SheetTitle>Options</SheetTitle>
             </SheetHeader>
             <div className="overflow-y-auto p-4 pt-0 flex flex-col gap-6">
+              <section className="flex flex-col gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Audio
+                </h3>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-sm font-medium text-foreground">Soundtrack volume</span>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={volume}
+                      onChange={(event) => setVolume(Number(event.target.value))}
+                      aria-label="Soundtrack volume"
+                      className="w-full"
+                    />
+                    <span className="w-12 text-right text-xs text-muted-foreground">{Math.round(volume * 100)}%</span>
+                  </div>
+                </label>
+              </section>
+
               <section className="flex flex-col gap-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Account
