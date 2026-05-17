@@ -9,6 +9,15 @@ import {
 } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Textarea } from "../../components/ui/textarea";
+import {
+  Sheet,
+  SheetBackButton,
+  SheetCloseButton,
+  SheetContent,
+  SheetGrabber,
+  SheetKicker,
+  SheetTitle,
+} from "../../components/ui/sheet";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { ChoiceList, ChoiceItem } from "../../components/rpg/ChoiceList";
 import { StatBar } from "../../components/rpg/StatBar";
@@ -37,20 +46,20 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
     <button
       type="button"
       onClick={onSelect}
-      className="w-full text-left rounded-md border bg-card p-3 hover:bg-accent transition-colors"
+      className="w-full rounded-2xl bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="font-medium text-sm">{vote.title}</span>
+        <span className="font-[var(--font-display)] text-sm font-bold leading-snug text-[var(--ink-1)]">
+          {vote.title}
+        </span>
         <StatusBadge status={vote.effectiveStatus} />
       </div>
-      <div className="mt-1 text-xs text-muted-foreground">
+      <div className="mt-1 font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
         {formatTimeRemaining(vote.expiresAt)} · {vote.options.length} options
         {vote.totalSubmissions !== undefined && ` · ${vote.totalSubmissions} votes`}
       </div>
       {vote.mySubmission && (
-        <div className="mt-1 text-xs text-muted-foreground italic">
-          You voted
-        </div>
+        <div className="mt-1 text-xs italic text-[var(--ink-3)]">You voted</div>
       )}
     </button>
   );
@@ -295,72 +304,92 @@ export default function RouteVotePanel({
     onRequestFitMap([[lon - 0.01, lat - 0.01], [lon + 0.01, lat + 0.01]], panelPadding);
   }
 
-  return (
-    <motion.div
-      initial={{ y: "100%" }}
-      animate={{ y: 0 }}
-      exit={{ y: "100%" }}
-      transition={{ duration: 0.22, ease: "easeOut" as const }}
-      className="absolute bottom-0 left-0 right-0 z-[4] bg-background border-t max-h-[80dvh] overflow-y-auto flex flex-col"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-    >
-      <div className="sticky top-0 bg-background border-b flex items-center justify-between px-4 py-3 z-[1]">
-        <span className="font-semibold text-sm">
-          {selectedVote ? selectedVote.title : "Votes"}
-        </span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground text-sm"
-        >
-          Close
-        </button>
-      </div>
+  const showBack = Boolean(selectedVote);
+  const headerTitle = selectedVote ? "Vote" : "Route votes";
 
-      <div className="p-4 flex flex-col gap-3">
-        <AnimatePresence mode="wait">
-          {selectedVote ? (
-            <motion.div
-              key={selectedVote._id}
-              initial={{ x: 20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -20, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-            >
-              <VoteDetail
-                token={token}
-                vote={selectedVote}
-                onBack={handleBack}
-                onOptionFocus={handleOptionFocus}
-                onVoteOverlayChange={onVoteOverlayChange}
-                onRequestFitMap={onRequestFitMap}
-                fallbackOrigin={fallbackOrigin}
-              />
-            </motion.div>
-          ) : (
-            <motion.div
-              key="list"
-              initial={{ x: -20, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 20, opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="flex flex-col gap-2"
-            >
-              {votes === undefined ? (
-                <PendingNotice label="Loading votes..." className="text-sm text-muted-foreground text-center py-6" />
-              ) : votes.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  No active votes right now.
-                </p>
-              ) : (
-                votes.map((vote) => (
-                  <VoteCard key={vote._id} vote={vote} onSelect={() => setSelectedVoteId(vote._id)} />
-                ))
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </motion.div>
+  return (
+    <Sheet
+      open
+      modal={false}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) onClose();
+      }}
+    >
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className="z-[10] max-h-[80dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+        data-role="route-votes-sheet"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <SheetGrabber />
+        <div className="flex items-start justify-between gap-2 px-4 pt-2">
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            {showBack ? (
+              <SheetBackButton aria-label="Back to votes list" onClick={handleBack} />
+            ) : null}
+            <div className="flex min-w-0 flex-col gap-1">
+              <SheetKicker dotColor="var(--flag)">Voting</SheetKicker>
+              <SheetTitle className="truncate font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                {selectedVote ? selectedVote.title : headerTitle}
+              </SheetTitle>
+            </div>
+          </div>
+          <SheetCloseButton aria-label="Close votes panel" />
+        </div>
+
+        <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 pb-4 pt-3">
+          <AnimatePresence mode="wait">
+            {selectedVote ? (
+              <motion.div
+                key={selectedVote._id}
+                initial={{ x: 20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -20, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <VoteDetail
+                  token={token}
+                  vote={selectedVote}
+                  onBack={handleBack}
+                  onOptionFocus={handleOptionFocus}
+                  onVoteOverlayChange={onVoteOverlayChange}
+                  onRequestFitMap={onRequestFitMap}
+                  fallbackOrigin={fallbackOrigin}
+                />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="list"
+                initial={{ x: -20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: 20, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="flex flex-col gap-2"
+              >
+                {votes === undefined ? (
+                  <PendingNotice
+                    label="Loading votes..."
+                    className="py-6 text-center text-sm text-[var(--ink-3)]"
+                  />
+                ) : votes.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-[var(--ink-3)]">
+                    No active votes right now.
+                  </p>
+                ) : (
+                  votes.map((vote) => (
+                    <VoteCard
+                      key={vote._id}
+                      vote={vote}
+                      onSelect={() => setSelectedVoteId(vote._id)}
+                    />
+                  ))
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
