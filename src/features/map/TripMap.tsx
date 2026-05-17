@@ -43,6 +43,7 @@ import {
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import HistorySheet from "../history/HistorySheet";
 import CheckInDetailSheet from "../history/CheckInDetailSheet";
+import StoryDetailSheet from "../history/StoryDetailSheet";
 import { useHistoryUnread } from "../history/useHistoryUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import {
@@ -377,7 +378,9 @@ export default function TripMap({
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
+  const [selectedStoryEvent, setSelectedStoryEvent] = useState<HistoryEvent | null>(null);
   const [checkInOpenedFromHistory, setCheckInOpenedFromHistory] = useState(false);
+  const [storyOpenedFromHistory, setStoryOpenedFromHistory] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
   const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
@@ -625,6 +628,7 @@ export default function TripMap({
     coordinatePickModeRef.current = null;
     setIsHistoryOpen(false);
     setSelectedCheckInEvent(null);
+    setSelectedStoryEvent(null);
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -873,7 +877,11 @@ export default function TripMap({
         onCheckpointClick={(checkpoint) => {
           if (isPlacementMode || coordinatePickMode) return;
           const event = historyEvents.find((e) => e.checkpointId === checkpoint._id);
-          if (event) {
+          if (!event) return;
+          if (event.storyLevel === "story") {
+            setStoryOpenedFromHistory(false);
+            setSelectedStoryEvent(event);
+          } else {
             setCheckInOpenedFromHistory(false);
             setSelectedCheckInEvent(event);
           }
@@ -1186,6 +1194,11 @@ export default function TripMap({
                 setCheckInOpenedFromHistory(true);
                 setSelectedCheckInEvent(event);
               }}
+              onStorySelect={(event) => {
+                setIsHistoryOpen(false);
+                setStoryOpenedFromHistory(true);
+                setSelectedStoryEvent(event);
+              }}
               onLocationFocus={handleHistoryLocationFocus}
               onMarkAllRead={markAllRead}
             />
@@ -1199,6 +1212,17 @@ export default function TripMap({
           const returnToHistory = checkInOpenedFromHistory;
           setSelectedCheckInEvent(null);
           setCheckInOpenedFromHistory(false);
+          if (returnToHistory) setIsHistoryOpen(true);
+        }}
+        onLocationFocus={handleCheckInDetailLocationFocus}
+      />
+
+      <StoryDetailSheet
+        event={selectedStoryEvent}
+        onClose={() => {
+          const returnToHistory = storyOpenedFromHistory;
+          setSelectedStoryEvent(null);
+          setStoryOpenedFromHistory(false);
           if (returnToHistory) setIsHistoryOpen(true);
         }}
         onLocationFocus={handleCheckInDetailLocationFocus}

@@ -31,6 +31,7 @@ const defaultProps = {
   token: "test-token",
   onClose: vi.fn(),
   onCheckInSelect: vi.fn(),
+  onStorySelect: vi.fn(),
   onLocationFocus: vi.fn(),
   onMarkAllRead: vi.fn(),
 };
@@ -74,12 +75,40 @@ describe("HistorySheet", () => {
     expect(screen.getByText("Activity Vote")).toBeInTheDocument();
   });
 
-  it("clicking a check-in row calls onCheckInSelect", () => {
+  it("clicking a story-level check-in routes to onStorySelect, not onCheckInSelect", () => {
+    const onStorySelect = vi.fn();
     const onCheckInSelect = vi.fn();
-    const event = makeEvent({ _id: "a", storyLevel: "story", title: "My Pin" });
-    render(<HistorySheet {...defaultProps} events={[event]} onCheckInSelect={onCheckInSelect} />);
-    fireEvent.click(screen.getByRole("button", { name: /check-in: my pin/i }));
+    const event = makeEvent({ _id: "a", storyLevel: "story", title: "My Story Pin" });
+    render(
+      <HistorySheet
+        {...defaultProps}
+        events={[event]}
+        onCheckInSelect={onCheckInSelect}
+        onStorySelect={onStorySelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /check-in: my story pin/i }));
+    expect(onStorySelect).toHaveBeenCalledWith(event);
+    expect(onCheckInSelect).not.toHaveBeenCalled();
+  });
+
+  it("clicking an activity-level check-in routes to onCheckInSelect", () => {
+    const onStorySelect = vi.fn();
+    const onCheckInSelect = vi.fn();
+    const event = makeEvent({ _id: "a", storyLevel: "activity", title: "Quick Stop" });
+    // Activity-level check-ins live on the All tab, not Story
+    render(
+      <HistorySheet
+        {...defaultProps}
+        events={[event]}
+        onCheckInSelect={onCheckInSelect}
+        onStorySelect={onStorySelect}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "All" }));
+    fireEvent.click(screen.getByRole("button", { name: /check-in: quick stop/i }));
     expect(onCheckInSelect).toHaveBeenCalledWith(event);
+    expect(onStorySelect).not.toHaveBeenCalled();
   });
 
   it("check-in row renders with check-in aria-label", () => {

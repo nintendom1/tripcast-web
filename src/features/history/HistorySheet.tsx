@@ -104,6 +104,7 @@ type HistorySheetProps = {
   token: string;
   onClose: () => void;
   onCheckInSelect: (event: HistoryEvent) => void;
+  onStorySelect: (event: HistoryEvent) => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   onMarkAllRead: () => void;
 };
@@ -113,6 +114,7 @@ export default function HistorySheet({
   token,
   onClose,
   onCheckInSelect,
+  onStorySelect,
   onLocationFocus,
   onMarkAllRead,
 }: HistorySheetProps) {
@@ -191,7 +193,11 @@ export default function HistorySheet({
                     actualCostUsd={actualCostUsd}
                     onSelect={() => {
                       if (event.type === "check_in") {
-                        onCheckInSelect(event);
+                        if (event.storyLevel === "story") {
+                          onStorySelect(event);
+                        } else {
+                          onCheckInSelect(event);
+                        }
                       } else if (event.lat !== undefined && event.lon !== undefined) {
                         onLocationFocus({ lat: event.lat, lon: event.lon });
                       }
