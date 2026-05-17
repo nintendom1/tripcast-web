@@ -19,24 +19,32 @@ import {
 } from "./currency";
 
 type Prefill = {
+  title?: string;
   localAmount?: number;
   currencyCode?: string;
   localCurrencyPerUsd?: number;
   category?: TransactionCategory;
 };
 
+/**
+ * Discriminated state emitted to the parent:
+ *   - `null` — section is collapsed or fully empty; the parent should NOT
+ *     send a `transaction` arg.
+ *   - `{ value }` — section is expanded and the user has entered a valid
+ *     transaction; the parent should send `transaction: value`.
+ *   - `{ error }` — section is expanded with partial-but-invalid data; the
+ *     parent should BLOCK its save and surface this error to the user so
+ *     the transaction is not silently dropped.
+ */
+export type TravelFundsInlineState =
+  | null
+  | { value: TransactionInlineInput }
+  | { error: string };
+
 type TravelFundsInlineSectionProps = {
   token: string;
   prefill?: Prefill;
-  /**
-   * Called whenever the section's serialized value changes.
-   *   - `null` when the section is collapsed, empty, or invalid (parent should
-   *     not send a `transaction` arg in this case).
-   *   - `TransactionInlineInput` when the section is expanded and the user has
-   *     entered a valid amount.
-   * The parent inspects this on submit and decides whether to include it.
-   */
-  onChange: (value: TransactionInlineInput | null) => void;
+  onChange: (state: TravelFundsInlineState) => void;
 };
 
 /**
@@ -52,7 +60,11 @@ export default function TravelFundsInlineSection({
   onChange,
 }: TravelFundsInlineSectionProps) {
   const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
-  const [open, setOpen] = useState(false);
+  // Auto-expand when the parent provided meaningful prefill data — the user is
+  // confirming a budgeted amount, not creating a transaction from scratch.
+  const hasMeaningfulPrefill =
+    prefill?.localAmount !== undefined || Boolean(prefill?.title);
+  const [open, setOpen] = useState<boolean>(hasMeaningfulPrefill);
 
   const initialCurrency = prefill?.currencyCode ?? "USD";
   const isInitialCustom =
@@ -70,7 +82,7 @@ export default function TravelFundsInlineSection({
     prefill?.localCurrencyPerUsd !== undefined ? String(prefill.localCurrencyPerUsd) : "1",
   );
   const [category, setCategory] = useState<TransactionCategory>(prefill?.category ?? "other");
-  const [title, setTitle] = useState<string>("");
+  const [title, setTitle] = useState<string>(prefill?.title ?? "");
   const [note, setNote] = useState<string>("");
   const [visibility, setVisibility] = useState<TransactionVisibility>("public");
   const [countsTowardMeter, setCountsTowardMeter] = useState<boolean>(true);
@@ -85,36 +97,57 @@ export default function TravelFundsInlineSection({
     return Math.round((parsedLocal / effectiveRate) * 100) / 100;
   }, [parsedLocal, effectiveRate]);
 
-  // Push the serialized value upward when the section is open and valid.
+  // Compute the validation state so it can drive both the parent callback and
+  // the inline error UI in this same render. The rule: if the section is open
+  // and the user has typed *anything* (title or amount), validation must
+  // succeed for the section to participate in save. If everything is blank,
+  // the section silently emits `null` (no transaction, no block).
+  const trimmedTitle = title.trim();
+  const amountTyped = localAmount.trim().length > 0;
+  const userTypedAnything = trimmedTitle.length > 0 || amountTyped;
+
+  let inlineError: string | null = null;
+  if (open && userTypedAnything) {
+    if (trimmedTitle.length === 0) {
+      inlineError = "Transaction title is required.";
+    } else if (!amountTyped || !Number.isFinite(parsedLocal)) {
+      inlineError = "Transaction amount is required.";
+    } else if (!isValidCurrencyCode(effectiveCurrencyCode)) {
+      inlineError = "Currency must be a 3-letter code.";
+    } else if (!Number.isFinite(effectiveRate) || effectiveRate <= 0) {
+      inlineError = "Exchange rate must be a positive number.";
+    } else if (visibility === "public" && !countsTowardMeter) {
+      inlineError = "Public transactions must count toward Travel Funds.";
+    }
+  }
+
+  // Push the discriminated state upward.
   useEffect(() => {
-    if (!open) {
+    if (!open || !userTypedAnything) {
       onChange(null);
       return;
     }
-    if (
-      !title.trim() ||
-      !Number.isFinite(parsedLocal) ||
-      !isValidCurrencyCode(effectiveCurrencyCode) ||
-      !Number.isFinite(effectiveRate) ||
-      effectiveRate <= 0 ||
-      (visibility === "public" && !countsTowardMeter)
-    ) {
-      onChange(null);
+    if (inlineError) {
+      onChange({ error: inlineError });
       return;
     }
     onChange({
-      title: title.trim(),
-      note: note.trim() ? note.trim() : undefined,
-      category,
-      currencyCode: effectiveCurrencyCode,
-      localAmount: parsedLocal,
-      localCurrencyPerUsd: effectiveCurrencyCode === "USD" ? 1 : effectiveRate,
-      countsTowardMeter,
-      visibility,
+      value: {
+        title: trimmedTitle,
+        note: note.trim() ? note.trim() : undefined,
+        category,
+        currencyCode: effectiveCurrencyCode,
+        localAmount: parsedLocal,
+        localCurrencyPerUsd: effectiveCurrencyCode === "USD" ? 1 : effectiveRate,
+        countsTowardMeter,
+        visibility,
+      },
     });
   }, [
     open,
-    title,
+    userTypedAnything,
+    inlineError,
+    trimmedTitle,
     note,
     category,
     effectiveCurrencyCode,
@@ -160,7 +193,13 @@ export default function TravelFundsInlineSection({
               onChange={(e) => setTitle(e.target.value)}
               maxLength={80}
               placeholder="e.g. Lunch at the ramen shop"
+              aria-invalid={Boolean(inlineError && trimmedTitle.length === 0) || undefined}
             />
+            {inlineError && (
+              <p role="alert" className="text-xs text-rose-600">
+                {inlineError}
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2">

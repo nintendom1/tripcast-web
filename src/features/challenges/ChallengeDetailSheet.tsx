@@ -2,11 +2,13 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Challenge, Role } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
-import TravelFundsInlineSection from "../travelfunds/TravelFundsInlineSection";
+import TravelFundsInlineSection, {
+  type TravelFundsInlineState,
+} from "../travelfunds/TravelFundsInlineSection";
 
 const RESPONSE_PRESETS = [
   "Looks good",
@@ -76,7 +78,7 @@ export default function ChallengeDetailSheet({
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
-  const [completionTransaction, setCompletionTransaction] = useState<TransactionInlineInput | null>(null);
+  const [completionTxState, setCompletionTxState] = useState<TravelFundsInlineState>(null);
 
   const accept = useMutation(tripcastApi.challenges.travelerAcceptChallenge);
   const drop = useMutation(tripcastApi.challenges.travelerDropChallenge);
@@ -220,13 +222,24 @@ export default function ChallengeDetailSheet({
 
   async function handleComplete() {
     if (!challenge) return;
+    // Block save when the inline Travel Funds section is open with
+    // partial/invalid data — surface the error rather than silently dropping
+    // the transaction.
+    if (completionTxState && "error" in completionTxState) {
+      setActionError(completionTxState.error);
+      return;
+    }
+    const inlineTransaction =
+      completionTxState && "value" in completionTxState
+        ? completionTxState.value
+        : undefined;
     setIsWorking(true);
     setActionError(null);
     try {
       await complete({
         token,
         challengeId: challenge._id,
-        transaction: completionTransaction ?? undefined,
+        transaction: inlineTransaction,
       });
       onClose();
     } catch (e) {
@@ -644,16 +657,17 @@ export default function ChallengeDetailSheet({
               {isTraveler && (
                 <TravelFundsInlineSection
                   token={token}
-                  prefill={
-                    challenge.estimatedCostUsd !== undefined
+                  prefill={{
+                    title: challenge.title,
+                    ...(challenge.estimatedCostUsd !== undefined
                       ? {
                           localAmount: challenge.estimatedCostUsd,
                           currencyCode: "USD",
                           localCurrencyPerUsd: 1,
                         }
-                      : undefined
-                  }
-                  onChange={setCompletionTransaction}
+                      : {}),
+                  }}
+                  onChange={setCompletionTxState}
                 />
               )}
               <Button

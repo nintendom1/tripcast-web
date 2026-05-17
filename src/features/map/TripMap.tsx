@@ -26,8 +26,9 @@ import TravelerStateCard from "../travelstate/TravelerStateCard";
 import CurrentActivityCard from "../currentactivity/CurrentActivityCard";
 import TravelFundsCard from "../travelfunds/TravelFundsCard";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
-import TravelFundsInlineSection from "../travelfunds/TravelFundsInlineSection";
-import type { TransactionInlineInput } from "../../convex/tripcastApi";
+import TravelFundsInlineSection, {
+  type TravelFundsInlineState,
+} from "../travelfunds/TravelFundsInlineSection";
 import {
   Sheet,
   SheetContent,
@@ -192,18 +193,25 @@ function ConvexCheckpointSheet({
   token,
   onClose,
   prefill,
+  transactionPrefill,
   onCheckpointCreated,
 }: {
   selectedCoordinate: SelectedCoordinate | null;
   token: string;
   onClose: () => void;
   prefill?: { title?: string; note?: string; locationLabel?: string };
+  transactionPrefill?: {
+    title?: string;
+    localAmount?: number;
+    currencyCode?: string;
+    localCurrencyPerUsd?: number;
+  };
   onCheckpointCreated?: (id: string) => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
 
   const [stateOpen, setStateOpen] = useState(false);
-  const [transactionValue, setTransactionValue] = useState<TransactionInlineInput | null>(null);
+  const [transactionState, setTransactionState] = useState<TravelFundsInlineState>(null);
   const [moodValue, setMoodValue] = useState<import("../../convex/tripcastApi").TravelerMoodValue | undefined>();
   const [energyLevel, setEnergyLevel] = useState<import("../../convex/tripcastApi").TravelerEnergyLevel | undefined>();
   const [stomachLevel, setStomachLevel] = useState<import("../../convex/tripcastApi").TravelerStomachLevel | undefined>();
@@ -221,11 +229,19 @@ function ConvexCheckpointSheet({
       setStressLevel(undefined);
       setScheduleLevel(undefined);
       setQuickNote("");
-      setTransactionValue(null);
+      setTransactionState(null);
     }
   }, [selectedCoordinate]);
 
   async function handleSave(args: Omit<AddCheckpointArgs, "token">): Promise<string> {
+    // Block save when the inline Travel Funds section is open with
+    // partial/invalid data — surface the error rather than silently dropping
+    // the transaction. AddCheckpointSheet's onSubmit catches and displays this.
+    if (transactionState && "error" in transactionState) {
+      throw new Error(transactionState.error);
+    }
+    const inlineTransaction =
+      transactionState && "value" in transactionState ? transactionState.value : undefined;
     return addCheckpoint({
       ...args,
       token,
@@ -238,7 +254,7 @@ function ConvexCheckpointSheet({
       stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
       schedulePressureLevel: scheduleLevel,
       statusNote: quickNote.trim() || undefined,
-      transaction: transactionValue ?? undefined,
+      transaction: inlineTransaction,
     });
   }
 
@@ -303,7 +319,11 @@ function ConvexCheckpointSheet({
           </div>
         </div>
       )}
-      <TravelFundsInlineSection token={token} onChange={setTransactionValue} />
+      <TravelFundsInlineSection
+        token={token}
+        prefill={transactionPrefill}
+        onChange={setTransactionState}
+      />
     </div>
   );
 
@@ -365,6 +385,14 @@ export default function TripMap({
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
   const [activityToComplete, setActivityToComplete] = useState<CurrentActivity | null>(null);
+  // Fetch the linked challenge (if any) so the inline Travel Funds section can
+  // pre-fill the transaction title + amount from the challenge being completed.
+  const completionLinkedChallenge = useQuery(
+    tripcastApi.challenges.getChallenge,
+    activityToComplete?.linkedChallengeId
+      ? { token, challengeId: activityToComplete.linkedChallengeId }
+      : "skip",
+  );
   const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
   const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null);
 
@@ -1030,6 +1058,20 @@ export default function TripMap({
             note: activityToComplete.note,
             locationLabel: activityToComplete.locationLabel,
           } : undefined}
+          transactionPrefill={
+            completionLinkedChallenge
+              ? {
+                  title: completionLinkedChallenge.title,
+                  ...(completionLinkedChallenge.estimatedCostUsd !== undefined
+                    ? {
+                        localAmount: completionLinkedChallenge.estimatedCostUsd,
+                        currencyCode: "USD",
+                        localCurrencyPerUsd: 1,
+                      }
+                    : {}),
+                }
+              : undefined
+          }
           onCheckpointCreated={handleCheckpointCreated}
         />
       )}
