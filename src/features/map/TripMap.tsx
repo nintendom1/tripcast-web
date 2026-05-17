@@ -12,7 +12,10 @@ import {
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
 } from "../../convex/tripcastApi";
-import AddCheckpointSheet, { type SelectedCoordinate } from "./AddCheckpointSheet";
+import AddCheckpointSheet, {
+  type CheckpointPrefill,
+  type SelectedCoordinate,
+} from "./AddCheckpointSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import ChallengeMarkers from "./ChallengeMarkers";
 import ChallengePanel from "../challenges/ChallengePanel";
@@ -199,14 +202,14 @@ function ConvexCheckpointSheet({
   selectedCoordinate: SelectedCoordinate | null;
   token: string;
   onClose: () => void;
-  prefill?: { title?: string; note?: string; locationLabel?: string };
+  prefill?: CheckpointPrefill;
   transactionPrefill?: {
     title?: string;
     localAmount?: number;
     currencyCode?: string;
     localCurrencyPerUsd?: number;
   };
-  onCheckpointCreated?: (id: string) => void;
+  onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
 
@@ -388,6 +391,12 @@ export default function TripMap({
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
   const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
   const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null);
+  // Mission Complete-as-Story flow: when the Traveler picks the "Complete as story"
+  // branch in a mission detail, this prefill seeds AddCheckpointSheet with the
+  // mission's title/location and carries the challengeId through so we can call
+  // `travelerCompleteChallenge` after the resulting check-in lands.
+  const [storyPrefill, setStoryPrefill] = useState<CheckpointPrefill | null>(null);
+  const completeChallenge = useMutation(tripcastApi.challenges.travelerCompleteChallenge);
 
   const canWrite = role === "traveler";
 
@@ -722,8 +731,53 @@ export default function TripMap({
 
   // NOTE: the activity-complete-as-checkin flow (handleCompleteAsCheckIn +
   // handleCheckpointCreated + activityToComplete state) was removed when the
-  // CurrentActivityCard came out with the legacy chrome. Reconnected in
-  // Part 8 when the SetActivitySheet refresh introduces the new completion UI.
+  // CurrentActivityCard came out with the legacy chrome. The Mission
+  // Complete-as-Story flow below (Part 8) replaces it for the mission case;
+  // an explicit "complete this freeform activity as a check-in" flow can be
+  // re-added in a later pass if the SetActivitySheet refresh wants it.
+
+  function handleCompleteAsStory(challenge: {
+    _id: string;
+    title?: string;
+    description?: string;
+    locationLabel?: string;
+    lat?: number;
+    lon?: number;
+  }) {
+    setIsChallengesPanelOpen(false);
+    setStoryPrefill({
+      challengeId: challenge._id,
+      title: challenge.title,
+      note: challenge.description,
+      locationLabel: challenge.locationLabel,
+      kickerLabel: "Story · Mission completion",
+    });
+    if (challenge.lat !== undefined && challenge.lon !== undefined) {
+      setSelectedCoordinate({
+        lat: challenge.lat,
+        lon: challenge.lon,
+        source: "current_activity",
+      });
+    } else {
+      // Mission has no location yet — drop the Traveler into placement mode so
+      // they can tap where the story actually happened.
+      setIsPlacementMode(true);
+      showToast("Tap the map where the mission wrapped up.");
+    }
+  }
+
+  async function handleStoryCheckpointCreated(_id: string, prefill?: CheckpointPrefill) {
+    setStoryPrefill(null);
+    if (!prefill?.challengeId) return;
+    try {
+      await completeChallenge({ token, challengeId: prefill.challengeId });
+      showToast("Mission completed.");
+    } catch {
+      // Non-fatal: the check-in landed; just the challenge status update failed.
+      // The Traveler can mark it complete manually from the challenge detail.
+      showToast("Check-in saved. Mark the mission complete from its detail.");
+    }
+  }
 
   function showToast(message: string) {
     if (toastTimeoutRef.current !== null) {
@@ -1020,8 +1074,10 @@ export default function TripMap({
           token={token}
           onClose={() => {
             setSelectedCoordinate(null);
+            setStoryPrefill(null);
           }}
-          onCheckpointCreated={() => undefined}
+          prefill={storyPrefill ?? undefined}
+          onCheckpointCreated={handleStoryCheckpointCreated}
         />
       )}
 
@@ -1194,6 +1250,7 @@ export default function TripMap({
           pendingOpenChallengeId={pendingOpenChallengeId}
           onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
           onRequestNavigateToChallenge={handleNavigateToChallenge}
+          onCompleteAsStory={handleCompleteAsStory}
         />
       </FeatureBoundary>
 

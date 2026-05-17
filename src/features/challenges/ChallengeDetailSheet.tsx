@@ -30,6 +30,12 @@ type Props = {
   onStartChallenge?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   onViewOnMap?: () => void;
+  /** Mission Complete-as-Story branch — when provided and the mission is
+   *  in-progress, a "Complete as story" button appears alongside the existing
+   *  "Complete Challenge" action. The parent (TripMap) owns the story-prefill
+   *  state, opens AddCheckpointSheet, and calls travelerCompleteChallenge
+   *  after the resulting check-in lands. */
+  onCompleteAsStory?: (challenge: Challenge) => void;
 };
 
 function statusLabel(status: string): string {
@@ -58,6 +64,7 @@ export default function ChallengeDetailSheet({
   onStartChallenge,
   onRequestCoordinatePick,
   onViewOnMap,
+  onCompleteAsStory,
 }: Props) {
   // Drop/reject form state
   const [responseNote, setResponseNote] = useState("");
@@ -669,6 +676,18 @@ export default function ChallengeDetailSheet({
                   onChange={setCompletionTxState}
                 />
               )}
+              {onCompleteAsStory && (
+                <Button
+                  size="sm"
+                  type="button"
+                  disabled={!canAct}
+                  onClick={() => onCompleteAsStory(challenge)}
+                  className="border-[var(--plum)] text-white"
+                  style={{ background: "var(--plum)" }}
+                >
+                  Complete as story
+                </Button>
+              )}
               <Button
                 size="sm"
                 type="button"
@@ -676,7 +695,7 @@ export default function ChallengeDetailSheet({
                 onClick={handleComplete}
                 className="bg-green-600 hover:bg-green-700 text-white border-green-600"
               >
-                Complete Challenge
+                {onCompleteAsStory ? "Mark complete (no story)" : "Complete Challenge"}
               </Button>
               <Button
                 variant="outline"

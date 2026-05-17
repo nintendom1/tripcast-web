@@ -35,6 +35,7 @@ type Props = {
   pendingOpenChallengeId?: string | null;
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
+  onCompleteAsStory?: (challenge: Challenge) => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -72,6 +73,7 @@ export default function ChallengePanel({
   pendingOpenChallengeId,
   onClearPendingChallenge,
   onRequestNavigateToChallenge,
+  onCompleteAsStory,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
@@ -227,6 +229,14 @@ export default function ChallengePanel({
                   goToList();
                 }}
                 onRequestCoordinatePick={onRequestCoordinatePick}
+                onCompleteAsStory={
+                  onCompleteAsStory
+                    ? (challenge) => {
+                        onCompleteAsStory(challenge);
+                        goToList();
+                      }
+                    : undefined
+                }
                 onViewOnMap={
                   selectedChallenge.lat !== undefined && selectedChallenge.lon !== undefined
                     ? () => {

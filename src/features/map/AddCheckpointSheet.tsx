@@ -6,8 +6,10 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import {
   Sheet,
+  SheetCloseButton,
   SheetContent,
-  SheetHeader,
+  SheetGrabber,
+  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 
@@ -17,14 +19,32 @@ export type SelectedCoordinate = {
   source: CheckpointSource;
 };
 
+/**
+ * Prefill payload for `AddCheckpointSheet`.
+ *
+ * `challengeId` is opaque tracking metadata — `addCheckpoint` doesn't accept
+ * it as a mutation arg today, but the parent (TripMap) reads it back from
+ * `onCheckpointCreated` so it can call `travelerCompleteChallenge` after the
+ * check-in lands. That wiring is what closes the Vote → Mission → Story
+ * loop the user described in the model clarification.
+ */
+export type CheckpointPrefill = {
+  title?: string;
+  note?: string;
+  locationLabel?: string;
+  challengeId?: string;
+  /** Kicker label override — e.g. "Story · Mission completion" when prefilled from a mission. */
+  kickerLabel?: string;
+};
+
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
   onSave: (args: Omit<AddCheckpointArgs, "token">) => Promise<string>;
   onClose: () => void;
   saveUnavailableMessage?: string;
   stateSection?: React.ReactNode;
-  prefill?: { title?: string; note?: string; locationLabel?: string };
-  onCheckpointCreated?: (id: string) => void;
+  prefill?: CheckpointPrefill;
+  onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
 };
 
 function formatCoordinate(value: number) {
@@ -55,11 +75,17 @@ export default function AddCheckpointSheet({
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  const isFromMission = Boolean(prefill?.challengeId);
+  const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Check-in");
+  const titleText = isFromMission ? "Complete as story" : "Add pin";
+
   useEffect(() => {
     if (selectedCoordinate) {
       setTitle(prefill?.title ?? "");
       setNote(prefill?.note ?? "");
       setLocationLabel(prefill?.locationLabel ?? "");
+      // Mission completions always go to the Story feed — the whole point of the
+      // "Complete as Story" branch is to land a narrative entry.
       setShowInStory(true);
       setError(null);
       setIsSaving(false);
@@ -91,7 +117,7 @@ export default function AddCheckpointSheet({
         lon: selectedCoordinate.lon,
         source: selectedCoordinate.source,
       });
-      onCheckpointCreated?.(checkpointId);
+      onCheckpointCreated?.(checkpointId, prefill);
       onClose();
     } catch (saveError) {
       setError(friendlyError(saveError));
@@ -101,14 +127,36 @@ export default function AddCheckpointSheet({
   }
 
   return (
-    <Sheet open={selectedCoordinate !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent side="bottom">
-        <SheetHeader>
-          <SheetTitle>Add Pin</SheetTitle>
-        </SheetHeader>
-        <form className="flex flex-col gap-4 p-4 pt-0 overflow-y-auto" onSubmit={handleSubmit}>
-          <label className="flex flex-col gap-1.5 text-sm font-medium">
-            Title <span className="font-normal text-muted-foreground">(optional)</span>
+    <Sheet
+      open={selectedCoordinate !== null}
+      modal={false}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className="z-[12] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+        data-role="add-checkpoint-sheet"
+      >
+        <SheetGrabber />
+        <div className="flex items-start justify-between gap-2 px-4 pt-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            <SheetKicker dotColor={isFromMission ? "var(--plum)" : "var(--flag)"}>{kicker}</SheetKicker>
+            <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+              {titleText}
+            </SheetTitle>
+          </div>
+          <SheetCloseButton aria-label="Close check-in form" />
+        </div>
+
+        <form
+          className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto px-4 pb-4 pt-3"
+          onSubmit={handleSubmit}
+        >
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+            Title <span className="font-normal text-[var(--ink-3)]">(optional)</span>
             <Input
               autoFocus
               maxLength={120}
@@ -117,8 +165,8 @@ export default function AddCheckpointSheet({
               value={title}
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-sm font-medium">
-            Place name <span className="font-normal text-muted-foreground">(optional)</span>
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+            Place name <span className="font-normal text-[var(--ink-3)]">(optional)</span>
             <Input
               maxLength={120}
               onChange={(e) => setLocationLabel(e.target.value)}
@@ -127,40 +175,60 @@ export default function AddCheckpointSheet({
               value={locationLabel}
             />
           </label>
-          <label className="flex flex-col gap-1.5 text-sm font-medium">
-            Story / Notes
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+            {isFromMission ? "How did the mission go?" : "Story / Notes"}
             <Textarea
               maxLength={1000}
               onChange={(e) => setNote(e.target.value)}
-              rows={3}
+              placeholder={isFromMission ? "Tell the crew what happened…" : undefined}
+              rows={isFromMission ? 5 : 3}
               value={note}
             />
           </label>
-          <label className="flex items-center gap-2 text-sm font-medium cursor-pointer">
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[var(--ink-1)]">
             <input
               type="checkbox"
               checked={showInStory}
               onChange={(e) => setShowInStory(e.target.checked)}
-              className="h-4 w-4 accent-navy"
+              className="h-4 w-4"
+              style={{ accentColor: "var(--flag)" }}
+              disabled={isFromMission}
             />
             Add to Story
+            {isFromMission ? (
+              <span className="font-normal text-[var(--ink-3)]">(required for mission completion)</span>
+            ) : null}
           </label>
-          <div className="rounded-md bg-muted px-3 py-2 text-sm grid gap-1">
-            <span>Lat {formatCoordinate(selectedCoordinate?.lat ?? 0)}</span>
-            <span>Lon {formatCoordinate(selectedCoordinate?.lon ?? 0)}</span>
+          <div
+            className="grid gap-1 rounded-xl px-3 py-2 font-[var(--font-mono)] text-[11px] text-[var(--ink-2)]"
+            style={{ background: "var(--bg-paper-2)" }}
+          >
+            <span>LAT {formatCoordinate(selectedCoordinate?.lat ?? 0)}</span>
+            <span>LON {formatCoordinate(selectedCoordinate?.lon ?? 0)}</span>
           </div>
           {stateSection}
           {error ? (
-            <p role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2">
+            <p
+              role="alert"
+              className="rounded-md border px-3 py-2 text-sm"
+              style={{
+                borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
+                background: "color-mix(in oklab, var(--danger) 10%, transparent)",
+                color: "var(--danger)",
+              }}
+            >
               {error}
             </p>
           ) : null}
-          <div className="flex gap-2 justify-end" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+          <div
+            className="flex justify-end gap-2 pt-1"
+            style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+          >
             <Button disabled={isSaving} type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
             <Button disabled={isSaving} type="submit">
-              {isSaving ? "Saving…" : "Save Pin"}
+              {isSaving ? "Saving…" : isFromMission ? "Save story" : "Save pin"}
             </Button>
           </div>
         </form>
