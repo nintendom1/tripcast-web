@@ -726,6 +726,25 @@ export default function ChallengeDetailSheet({
         </div>
       )}
 
+      {/* Traveler: add a story to a completed mission (no status change) */}
+      {isTraveler && status === "completed" && onCompleteAsStory && (
+        <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-3">
+          <p className="text-xs text-muted-foreground">
+            Got a story to add for how this mission went? It'll land in the journal linked to this entry.
+          </p>
+          <Button
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => onCompleteAsStory(challenge)}
+            className="border-[var(--plum)] text-white w-fit"
+            style={{ background: "var(--plum)" }}
+          >
+            Add a story
+          </Button>
+        </div>
+      )}
+
       {/* Support crew: withdraw own proposed challenge */}
       {!isTraveler && isOwn && status === "proposed" && (
         <Button

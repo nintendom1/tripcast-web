@@ -198,6 +198,7 @@ function ConvexCheckpointSheet({
   prefill,
   transactionPrefill,
   onCheckpointCreated,
+  onMarkCompleteInstead,
 }: {
   selectedCoordinate: SelectedCoordinate | null;
   token: string;
@@ -210,6 +211,7 @@ function ConvexCheckpointSheet({
     localCurrencyPerUsd?: number;
   };
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
+  onMarkCompleteInstead?: (challengeId: string) => Promise<void> | void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
 
@@ -338,6 +340,7 @@ function ConvexCheckpointSheet({
       stateSection={stateSection}
       prefill={prefill}
       onCheckpointCreated={onCheckpointCreated}
+      onMarkCompleteInstead={onMarkCompleteInstead}
     />
   );
 }
@@ -772,10 +775,33 @@ export default function TripMap({
     try {
       await completeChallenge({ token, challengeId: prefill.challengeId });
       showToast("Mission completed.");
-    } catch {
-      // Non-fatal: the check-in landed; just the challenge status update failed.
-      // The Traveler can mark it complete manually from the challenge detail.
-      showToast("Check-in saved. Mark the mission complete from its detail.");
+    } catch (err) {
+      // If the mission was already completed (the "Add a story to a completed
+      // mission" path), the backend rejects the status flip — that's fine,
+      // the story still landed. Anything else is a non-fatal best-effort gap
+      // the Traveler can resolve from the mission detail.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes("only in-progress")) {
+        showToast("Story added to mission.");
+      } else {
+        showToast("Check-in saved. Mark the mission complete from its detail.");
+      }
+    }
+  }
+
+  async function handleMarkCompleteInstead(challengeId: string) {
+    setStoryPrefill(null);
+    setSelectedCoordinate(null);
+    try {
+      await completeChallenge({ token, challengeId });
+      showToast("Mission completed.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes("only in-progress")) {
+        showToast("Mission already complete.");
+      } else {
+        showToast("Could not mark mission complete.");
+      }
     }
   }
 
@@ -1078,6 +1104,7 @@ export default function TripMap({
           }}
           prefill={storyPrefill ?? undefined}
           onCheckpointCreated={handleStoryCheckpointCreated}
+          onMarkCompleteInstead={handleMarkCompleteInstead}
         />
       )}
 
