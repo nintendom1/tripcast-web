@@ -40,7 +40,17 @@ const EMPTY_COPY: Record<FilterTab, string> = {
 function filterEvents(events: HistoryEvent[], tab: FilterTab): HistoryEvent[] {
   switch (tab) {
     case "story":
-      return events.filter((e) => e.storyLevel === "story");
+      // Story tab is "narrative content the reader wants to read": check-ins
+      // and challenge completions. The backend also tags `route_vote_resolved`
+      // and `challenge_planned` as storyLevel="story" (they auto-fire when the
+      // Traveler confirms a vote winner), but those are status announcements,
+      // not narratives — the story is the eventual check-in that closes out
+      // the mission they spawned.
+      return events.filter(
+        (e) =>
+          e.storyLevel === "story" &&
+          (e.type === "check_in" || e.type === "challenge_completed"),
+      );
     case "all":
       return events;
     case "checkins":

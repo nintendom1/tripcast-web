@@ -130,8 +130,46 @@ describe("HistorySheet", () => {
       }),
     ];
     render(<HistorySheet {...defaultProps} events={events} onLocationFocus={onLocationFocus} />);
+    // route_vote_resolved is no longer a Story-tab row (vote outcomes are
+    // status announcements, not narratives) — switch to the Votes tab.
+    fireEvent.click(screen.getByRole("tab", { name: "Votes" }));
     fireEvent.click(screen.getByRole("button", { name: /vote resolved/i }));
     expect(onLocationFocus).toHaveBeenCalledWith({ lat: 47.6, lon: -122.3 });
+  });
+
+  it("Story tab excludes route_vote_resolved and challenge_planned auto-events", () => {
+    const events = [
+      makeEvent({ _id: "a", storyLevel: "story", title: "Real Story Pin" }),
+      makeEvent({
+        _id: "b",
+        type: "route_vote_resolved",
+        storyLevel: "story",
+        title: "Resolved Vote",
+      }),
+      makeEvent({
+        _id: "c",
+        type: "challenge_planned",
+        storyLevel: "story",
+        title: "Planned Mission",
+      }),
+    ];
+    render(<HistorySheet {...defaultProps} events={events} />);
+    expect(screen.getByText("Real Story Pin")).toBeInTheDocument();
+    expect(screen.queryByText("Resolved Vote")).not.toBeInTheDocument();
+    expect(screen.queryByText("Planned Mission")).not.toBeInTheDocument();
+  });
+
+  it("Story tab includes challenge_completed entries", () => {
+    const events = [
+      makeEvent({
+        _id: "c",
+        type: "challenge_completed",
+        storyLevel: "story",
+        title: "Mission Wrapped",
+      }),
+    ];
+    render(<HistorySheet {...defaultProps} events={events} />);
+    expect(screen.getByText("Mission Wrapped")).toBeInTheDocument();
   });
 
   it("onClose is called when close button is clicked", () => {
