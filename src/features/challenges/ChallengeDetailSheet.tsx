@@ -356,7 +356,6 @@ export default function ChallengeDetailSheet({
             <label className="text-xs font-medium text-muted-foreground">Est. cost (USD, optional)</label>
             <Input
               type="number"
-              min="0"
               step="0.01"
               placeholder="0.00"
               value={editCost}
