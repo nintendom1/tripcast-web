@@ -93,6 +93,20 @@ export default function ChallengePanel({
     setSelectedChallenge(null);
   }, [pendingOpenChallengeId]);
 
+  // Entering the detail view auto-focuses the map on the mission's coordinates
+  // — same UX as opening a story. The explicit "View on map" link in the
+  // detail body remains useful for re-centering after the user has panned away.
+  useEffect(() => {
+    if (viewMode !== "detail" || !selectedChallenge) return;
+    if (selectedChallenge.lat === undefined || selectedChallenge.lon === undefined) return;
+    onRequestNavigateToChallenge?.({
+      lat: selectedChallenge.lat,
+      lon: selectedChallenge.lon,
+    });
+    // onRequestNavigateToChallenge is stable enough for our purposes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, selectedChallenge?._id]);
+
   function goToList() {
     setViewMode("list");
     setSelectedChallenge(null);
