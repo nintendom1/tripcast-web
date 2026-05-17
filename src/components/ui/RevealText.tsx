@@ -3,6 +3,16 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useReadingSpeedSafe } from "@/providers/ReadingSpeedProvider";
 
+/**
+ * Hard ceiling on how long a reveal animation may take, regardless of how many
+ * characters need to reveal or how slow the user's reading-speed setting is.
+ *
+ * Long stories at "slow" (30 ms/char) would otherwise crawl for tens of seconds
+ * — the cap accelerates them so the whole on-screen passage settles within a
+ * comfortable beat while preserving the user's pace preference on short text.
+ */
+const MAX_REVEAL_MS = 2500;
+
 export interface RevealTextProps {
   text: string;
   /** Override the reading speed for this instance (ms per char). Falls back to `useReadingSpeed`. */
@@ -40,34 +50,53 @@ export function RevealText({
   const total = text.length;
 
   const [revealed, setRevealed] = React.useState<number>(() => {
-    if (instant || speedMs <= 0) return total;
+    if (instant || speedMs <= 0 || total === 0) return total;
     return 0;
   });
 
   const onCompleteRef = React.useRef(onComplete);
   onCompleteRef.current = onComplete;
 
+  // Effective per-char duration used by the per-char fade transition. When the
+  // total at the chosen speed would exceed MAX_REVEAL_MS, this scales down so
+  // each character's fade matches the compressed pace.
+  const effectiveCharMs = React.useMemo(() => {
+    if (total === 0) return speedMs;
+    return Math.min(speedMs, MAX_REVEAL_MS / total);
+  }, [speedMs, total]);
+
   React.useEffect(() => {
-    if (instant || speedMs <= 0) {
+    if (instant || speedMs <= 0 || total === 0) {
       setRevealed(total);
       onCompleteRef.current?.();
       return;
     }
     setRevealed(0);
+    const totalMs = Math.min(total * speedMs, MAX_REVEAL_MS);
+    let rafId = 0;
     let cancelled = false;
-    let i = 0;
-    const id = window.setInterval(() => {
+    const start =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+
+    const tick = (now: number) => {
       if (cancelled) return;
-      i += 1;
-      setRevealed(i);
-      if (i >= total) {
-        window.clearInterval(id);
+      const elapsed = now - start;
+      const progress = Math.min(1, elapsed / totalMs);
+      const next = Math.min(total, Math.floor(total * progress));
+      setRevealed(next);
+      if (progress < 1) {
+        rafId = window.requestAnimationFrame(tick);
+      } else {
         onCompleteRef.current?.();
       }
-    }, speedMs);
+    };
+    rafId = window.requestAnimationFrame(tick);
+
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      window.cancelAnimationFrame(rafId);
     };
   }, [text, speedMs, instant, total]);
 
@@ -81,7 +110,10 @@ export function RevealText({
             aria-hidden="true"
             style={{
               color: visible ? "currentColor" : "transparent",
-              transition: speedMs > 0 ? `color ${Math.min(140, speedMs * 6)}ms ease-out` : undefined,
+              transition:
+                effectiveCharMs > 0
+                  ? `color ${Math.min(140, effectiveCharMs * 6)}ms ease-out`
+                  : undefined,
             }}
           >
             {ch}
