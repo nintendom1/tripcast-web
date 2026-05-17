@@ -56,6 +56,18 @@ Sessions are role-gated. A token is stored in `localStorage` after login. Every 
 
 `src/features/routevote/` — the traveler proposes destination options and support crew votes. The traveler sees live results; support crew results visibility depends on the vote's `resultsVisibility` setting. When the backend returns `null` for a detail query (vote was deleted), the UI shows a deleted-vote recovery screen with a "Back to votes" button.
 
+### Travel Funds
+
+`src/features/travelfunds/` — trip-wide Travel Funds meter and transaction ledger. The Traveler sees a compact card next to Traveler State and Current Activity (top-left of the map) plus a management sheet reachable from the card's "Manage" button and from Options → "Manage Travel Funds". Support Crew sees the meter card only — no management UI — and per-target "Actual cost" totals on completed Challenge / Check-in cards in History.
+
+The Add/Edit Transaction form uses **"Local currency per 1 USD"** for the exchange-rate field (spec Option B): `usdAmount = localAmount / localCurrencyPerUsd`. The per-transaction rate is frozen at write time; later edits to other transactions never affect existing rows. Negative `localAmount` is allowed for refunds, credits, and corrections.
+
+`TravelFundsInlineSection` embeds in the check-in form and the Challenge Detail "Complete" action, mirroring the existing "Also Update Traveler State" collapsable pattern. It emits a discriminated state (`null | { value } | { error }`) so the parent form can block save when partial-but-invalid data is present rather than silently dropping the transaction.
+
+#### Known limitations (tracked)
+
+- **Auto-expand UX watch** for challenges without `estimatedCostUsd`. The inline section auto-opens whenever any prefill (title or amount) is provided; if only a title is prefilled, the section requires the user to either fill the amount or collapse before saving. Intentional ("block over silent loss"), but we'll re-evaluate after real usage. Tracked as [#24](https://github.com/nintendom1/tripcast-web/issues/24).
+
 ### Emergency Reset
 
 `src/features/privacy/EmergencyResetSheet.tsx` — traveler-only sheet with one grouped destructive action:
@@ -98,6 +110,9 @@ Test runner: `vitest` with `jsdom` environment. React components use `@testing-l
 | `src/features/privacy/EmergencyResetSheet.test.tsx` | Grouped reset mutation, confirmation dialog, error alert |
 | `src/App.privacy.test.tsx` | Emergency Reset visibility by role, post-confirm close and toast |
 | `src/features/routevote/RouteVoteProgress.detail.test.tsx` | Deleted-vote recovery state, back-navigation |
+| `src/features/travelfunds/currency.test.ts` | `formatUsd`, `formatLocal`, `isValidCurrencyCode`, category helpers, option-list invariants |
+| `src/features/travelfunds/TravelFundsMeter.test.tsx` | Under-budget fill ratio + color, over-budget cap behavior, no-budget "Spent" mode, ARIA meter attributes |
+| `src/features/travelfunds/TravelFundsInlineSection.test.tsx` | Discriminated state emission (`null` / `value` / `error`), auto-expand on meaningful prefill, inline title-required error |
 
 ## Secret Scanning
 

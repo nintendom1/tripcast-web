@@ -40,6 +40,10 @@ export type AddCheckpointArgs = {
   stressScore?: number;
   schedulePressureLevel?: TravelerSchedulePressureLevel;
   statusNote?: string;
+  // Optional inline Travel Funds transaction (atomic with checkpoint save).
+  // Linked IDs are filled server-side: checkpointId from the new checkpoint,
+  // and challengeId/activityId from the active current activity when available.
+  transaction?: TransactionInlineInput;
 };
 
 // ---------------------------------------------------------------------------
@@ -398,6 +402,151 @@ export type HistoryEvent = {
 };
 
 // ---------------------------------------------------------------------------
+// Travel Funds types
+// ---------------------------------------------------------------------------
+
+export type TransactionCategory =
+  | "food"
+  | "transport"
+  | "lodging"
+  | "event"
+  | "shopping"
+  | "souvenirs"
+  | "logistics"
+  | "research"
+  | "other";
+
+export type TransactionVisibility = "public" | "summary_only" | "private";
+
+export type TravelFundsConfigForTraveler =
+  | { enabled: false }
+  | {
+      enabled: true;
+      startingBudgetUsd: number;
+      budgetLabel?: string;
+      remainingUsd: number;
+      spentUsd: number;
+    };
+
+export type TravelFundsSummaryForCrew =
+  | { enabled: false }
+  | {
+      enabled: true;
+      startingBudgetUsd: number;
+      budgetLabel?: string;
+      remainingUsd: number;
+      spentUsd: number;
+    };
+
+export type Transaction = {
+  _id: string;
+  _creationTime: number;
+  title: string;
+  note?: string;
+  category: TransactionCategory;
+  currencyCode: string;
+  localAmount: number;
+  localCurrencyPerUsd: number;
+  usdAmount: number;
+  countsTowardMeter: boolean;
+  visibility: TransactionVisibility;
+  linkedActivityId?: string;
+  linkedChallengeId?: string;
+  linkedCheckpointId?: string;
+  occurredAt: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type TransactionForCrewSummary = {
+  _id: string;
+  visibility: "summary_only";
+  usdAmount: number;
+  occurredAt: number;
+};
+
+export type TransactionForCrewPublic = {
+  _id: string;
+  _creationTime: number;
+  visibility: "public";
+  title: string;
+  note?: string;
+  category: TransactionCategory;
+  currencyCode: string;
+  localAmount: number;
+  localCurrencyPerUsd: number;
+  usdAmount: number;
+  countsTowardMeter: boolean;
+  linkedActivityId?: string;
+  linkedChallengeId?: string;
+  linkedCheckpointId?: string;
+  occurredAt: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type TransactionForCrew = TransactionForCrewSummary | TransactionForCrewPublic;
+
+export type AddTransactionArgs = {
+  token: string;
+  title: string;
+  note?: string;
+  category: TransactionCategory;
+  currencyCode: string;
+  localAmount: number;
+  localCurrencyPerUsd: number;
+  countsTowardMeter: boolean;
+  visibility: TransactionVisibility;
+  linkedActivityId?: string;
+  linkedChallengeId?: string;
+  linkedCheckpointId?: string;
+  occurredAt?: number;
+};
+
+export type UpdateTransactionArgs = {
+  token: string;
+  transactionId: string;
+  title?: string;
+  note?: string;
+  category?: TransactionCategory;
+  currencyCode?: string;
+  localAmount?: number;
+  localCurrencyPerUsd?: number;
+  countsTowardMeter?: boolean;
+  visibility?: TransactionVisibility;
+  linkedActivityId?: string;
+  linkedChallengeId?: string;
+  linkedCheckpointId?: string;
+  occurredAt?: number;
+};
+
+export type UpdateTravelFundsConfigArgs = {
+  token: string;
+  featureEnabled?: boolean;
+  startingBudgetUsd?: number;
+  budgetLabel?: string;
+};
+
+// Inline transaction payload attached to addCheckpoint / travelerCompleteChallenge.
+// Linked IDs are filled in server-side based on the calling mutation's context.
+export type TransactionInlineInput = {
+  title: string;
+  note?: string;
+  category: TransactionCategory;
+  currencyCode: string;
+  localAmount: number;
+  localCurrencyPerUsd: number;
+  countsTowardMeter: boolean;
+  visibility: TransactionVisibility;
+  occurredAt?: number;
+};
+
+export type LinkedCostMap = {
+  byChallengeId: Record<string, number>;
+  byCheckpointId: Record<string, number>;
+};
+
+// ---------------------------------------------------------------------------
 // Follower / account types
 // ---------------------------------------------------------------------------
 
@@ -680,7 +829,7 @@ export const tripcastApi = {
     travelerCompleteChallenge: (anyApi as any).challenges.travelerCompleteChallenge as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string },
+      { token: string; challengeId: string; transaction?: TransactionInlineInput },
       null
     >,
     travelerToggleChallengeMapPin: (anyApi as any).challenges.travelerToggleChallengeMapPin as FunctionReference<
@@ -886,6 +1035,62 @@ export const tripcastApi = {
       "public",
       { resetToken: string; newPassword: string },
       null
+    >,
+  },
+  travelFunds: {
+    travelerGetConfig: (anyApi as any).travelFunds.travelerGetConfig as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TravelFundsConfigForTraveler
+    >,
+    travelerUpdateConfig: (anyApi as any).travelFunds.travelerUpdateConfig as FunctionReference<
+      "mutation",
+      "public",
+      UpdateTravelFundsConfigArgs,
+      null
+    >,
+    travelerListTransactions: (anyApi as any).travelFunds.travelerListTransactions as FunctionReference<
+      "query",
+      "public",
+      { token: string; limit?: number },
+      Transaction[]
+    >,
+    travelerAddTransaction: (anyApi as any).travelFunds.travelerAddTransaction as FunctionReference<
+      "mutation",
+      "public",
+      AddTransactionArgs,
+      string
+    >,
+    travelerUpdateTransaction: (anyApi as any).travelFunds.travelerUpdateTransaction as FunctionReference<
+      "mutation",
+      "public",
+      UpdateTransactionArgs,
+      null
+    >,
+    travelerDeleteTransaction: (anyApi as any).travelFunds.travelerDeleteTransaction as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; transactionId: string },
+      null
+    >,
+    supportCrewGetFundsSummary: (anyApi as any).travelFunds.supportCrewGetFundsSummary as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TravelFundsSummaryForCrew
+    >,
+    supportCrewListVisibleTransactions: (anyApi as any).travelFunds.supportCrewListVisibleTransactions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TransactionForCrew[]
+    >,
+    getLinkedCostMap: (anyApi as any).travelFunds.getLinkedCostMap as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      LinkedCostMap
     >,
   },
 } as const;

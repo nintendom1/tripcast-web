@@ -194,7 +194,6 @@ export default function ChallengeProposalForm({ token, onSuccess, onRequestCoord
           <Input
             id="challenge-cost"
             type="number"
-            min="0"
             step="0.01"
             placeholder="0.00"
             value={costStr}

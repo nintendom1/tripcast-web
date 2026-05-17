@@ -1,0 +1,14 @@
+# Force LF for all text files. Avoids autocrlf flip-flopping (especially for
+# generated files such as src/convex/tripcastApi.ts copied from the backend).
+* text=auto eol=lf
+
+# Binary files git already auto-detects, but pin the obvious ones to skip text munging.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pdf binary

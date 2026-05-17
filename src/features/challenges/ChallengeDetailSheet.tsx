@@ -6,6 +6,9 @@ import type { Challenge, Role } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
+import TravelFundsInlineSection, {
+  type TravelFundsInlineState,
+} from "../travelfunds/TravelFundsInlineSection";
 
 const RESPONSE_PRESETS = [
   "Looks good",
@@ -75,6 +78,7 @@ export default function ChallengeDetailSheet({
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
+  const [completionTxState, setCompletionTxState] = useState<TravelFundsInlineState>(null);
 
   const accept = useMutation(tripcastApi.challenges.travelerAcceptChallenge);
   const drop = useMutation(tripcastApi.challenges.travelerDropChallenge);
@@ -218,10 +222,25 @@ export default function ChallengeDetailSheet({
 
   async function handleComplete() {
     if (!challenge) return;
+    // Block save when the inline Travel Funds section is open with
+    // partial/invalid data — surface the error rather than silently dropping
+    // the transaction.
+    if (completionTxState && "error" in completionTxState) {
+      setActionError(completionTxState.error);
+      return;
+    }
+    const inlineTransaction =
+      completionTxState && "value" in completionTxState
+        ? completionTxState.value
+        : undefined;
     setIsWorking(true);
     setActionError(null);
     try {
-      await complete({ token, challengeId: challenge._id });
+      await complete({
+        token,
+        challengeId: challenge._id,
+        transaction: inlineTransaction,
+      });
       onClose();
     } catch (e) {
       setActionError(friendlyError(e));
@@ -337,7 +356,6 @@ export default function ChallengeDetailSheet({
             <label className="text-xs font-medium text-muted-foreground">Est. cost (USD, optional)</label>
             <Input
               type="number"
-              min="0"
               step="0.01"
               placeholder="0.00"
               value={editCost}
@@ -635,6 +653,22 @@ export default function ChallengeDetailSheet({
               <p className="text-xs text-muted-foreground">
                 Completing this challenge will mark the linked Current Activity as done and open the Check-in form.
               </p>
+              {isTraveler && (
+                <TravelFundsInlineSection
+                  token={token}
+                  prefill={{
+                    title: challenge.title,
+                    ...(challenge.estimatedCostUsd !== undefined
+                      ? {
+                          localAmount: challenge.estimatedCostUsd,
+                          currencyCode: "USD",
+                          localCurrencyPerUsd: 1,
+                        }
+                      : {}),
+                  }}
+                  onChange={setCompletionTxState}
+                />
+              )}
               <Button
                 size="sm"
                 type="button"

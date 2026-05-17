@@ -1,0 +1,381 @@
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "convex/react";
+
+import { tripcastApi } from "../../convex/tripcastApi";
+import type {
+  AddTransactionArgs,
+  Transaction,
+  TransactionCategory,
+  TransactionVisibility,
+} from "../../convex/tripcastApi";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
+import {
+  CATEGORY_OPTIONS,
+  COMMON_CURRENCIES,
+  VISIBILITY_OPTIONS,
+  formatUsd,
+  isValidCurrencyCode,
+} from "./currency";
+
+export type TransactionFormValues = {
+  title: string;
+  note?: string;
+  category: TransactionCategory;
+  currencyCode: string;
+  localAmount: number;
+  localCurrencyPerUsd: number;
+  countsTowardMeter: boolean;
+  visibility: TransactionVisibility;
+  linkedActivityId?: string;
+  occurredAt?: number;
+};
+
+type TransactionFormProps = {
+  token: string;
+  mode: "add" | "edit";
+  initial?: Transaction;
+  onSubmit: (values: TransactionFormValues) => Promise<void>;
+  onCancel: () => void;
+  onDelete?: () => Promise<void>;
+  submitLabel?: string;
+};
+
+function defaultCategory(): TransactionCategory {
+  return "other";
+}
+
+export default function TransactionForm({
+  token,
+  mode,
+  initial,
+  onSubmit,
+  onCancel,
+  onDelete,
+  submitLabel,
+}: TransactionFormProps) {
+  const activity = useQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
+
+  const [title, setTitle] = useState(initial?.title ?? "");
+  const [note, setNote] = useState(initial?.note ?? "");
+  const [category, setCategory] = useState<TransactionCategory>(initial?.category ?? defaultCategory());
+  const initialCurrency = initial?.currencyCode ?? "USD";
+  const isInitialCustom = initial && !COMMON_CURRENCIES.some((c) => c.code === initial.currencyCode);
+  const [currencySelect, setCurrencySelect] = useState<string>(
+    isInitialCustom ? "OTHER" : initialCurrency,
+  );
+  const [customCurrency, setCustomCurrency] = useState<string>(
+    isInitialCustom ? initialCurrency : "",
+  );
+  const [localAmount, setLocalAmount] = useState<string>(
+    initial?.localAmount !== undefined ? String(initial.localAmount) : "",
+  );
+  const [rate, setRate] = useState<string>(
+    initial?.localCurrencyPerUsd !== undefined ? String(initial.localCurrencyPerUsd) : "1",
+  );
+  const [countsTowardMeter, setCountsTowardMeter] = useState<boolean>(
+    initial?.countsTowardMeter ?? true,
+  );
+  const [visibility, setVisibility] = useState<TransactionVisibility>(
+    initial?.visibility ?? "public",
+  );
+  const [linkToActivity, setLinkToActivity] = useState<boolean>(
+    mode === "add"
+      ? Boolean(activity) // default true if activity exists
+      : Boolean(initial?.linkedActivityId),
+  );
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // When the activity query loads, default the link checkbox for add mode
+  useEffect(() => {
+    if (mode === "add" && activity && !initial) {
+      setLinkToActivity(true);
+    }
+  }, [mode, activity, initial]);
+
+  const effectiveCurrencyCode =
+    currencySelect === "OTHER" ? customCurrency.trim().toUpperCase() : currencySelect;
+
+  const effectiveRate = effectiveCurrencyCode === "USD" ? 1 : Number(rate);
+  const parsedLocal = Number(localAmount);
+  const usdPreview = useMemo(() => {
+    if (!Number.isFinite(parsedLocal) || !Number.isFinite(effectiveRate) || effectiveRate <= 0)
+      return null;
+    return Math.round((parsedLocal / effectiveRate) * 100) / 100;
+  }, [parsedLocal, effectiveRate]);
+
+  const publicForcesCounted = visibility === "public" && !countsTowardMeter;
+  const isNegative = Number.isFinite(parsedLocal) && parsedLocal < 0;
+
+  function handleVisibilityChange(next: TransactionVisibility) {
+    setVisibility(next);
+    if (next === "public" && !countsTowardMeter) {
+      setCountsTowardMeter(true);
+    }
+  }
+
+  function handleCountsChange(next: boolean) {
+    if (!next && visibility === "public") {
+      setError("Public transactions must count toward the meter. Switch to summary or private first.");
+      return;
+    }
+    setError(null);
+    setCountsTowardMeter(next);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!title.trim()) {
+      setError("Title is required.");
+      return;
+    }
+    if (!isValidCurrencyCode(effectiveCurrencyCode)) {
+      setError("Currency must be a 3-letter code.");
+      return;
+    }
+    if (!Number.isFinite(parsedLocal)) {
+      setError("Amount must be a number.");
+      return;
+    }
+    if (effectiveCurrencyCode !== "USD") {
+      if (!Number.isFinite(effectiveRate) || effectiveRate <= 0) {
+        setError("Exchange rate must be a positive number.");
+        return;
+      }
+    }
+    if (publicForcesCounted) {
+      setError("Public transactions must count toward the meter.");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const values: TransactionFormValues = {
+        title: title.trim(),
+        note: note.trim() ? note.trim() : undefined,
+        category,
+        currencyCode: effectiveCurrencyCode,
+        localAmount: parsedLocal,
+        localCurrencyPerUsd: effectiveCurrencyCode === "USD" ? 1 : effectiveRate,
+        countsTowardMeter,
+        visibility,
+        linkedActivityId: linkToActivity && activity ? activity._id : undefined,
+      };
+      await onSubmit(values);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!onDelete) return;
+    if (!confirm("Delete this transaction? This cannot be undone.")) return;
+    setIsDeleting(true);
+    try {
+      await onDelete();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium" htmlFor="tx-title">Title</label>
+        <Input
+          id="tx-title"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          maxLength={80}
+          placeholder="e.g. Onsen ticket"
+          required
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium" htmlFor="tx-amount">Amount</label>
+          <Input
+            id="tx-amount"
+            value={localAmount}
+            onChange={(e) => setLocalAmount(e.target.value)}
+            inputMode="decimal"
+            placeholder="0.00"
+          />
+          {isNegative && (
+            <span className="text-[10px] text-emerald-700">Refund / credit</span>
+          )}
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium" htmlFor="tx-currency">Currency</label>
+          <select
+            id="tx-currency"
+            value={currencySelect}
+            onChange={(e) => setCurrencySelect(e.target.value)}
+            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+          >
+            {COMMON_CURRENCIES.map((c) => (
+              <option key={c.code} value={c.code}>{c.label}</option>
+            ))}
+            <option value="OTHER">Other…</option>
+          </select>
+        </div>
+      </div>
+
+      {currencySelect === "OTHER" && (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium" htmlFor="tx-custom-currency">Currency code</label>
+          <Input
+            id="tx-custom-currency"
+            value={customCurrency}
+            onChange={(e) => setCustomCurrency(e.target.value.toUpperCase())}
+            maxLength={3}
+            placeholder="e.g. THB"
+            className="font-mono"
+          />
+        </div>
+      )}
+
+      {effectiveCurrencyCode !== "USD" && (
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium" htmlFor="tx-rate">
+            Exchange rate <span className="text-muted-foreground font-normal">— local currency per 1 USD</span>
+          </label>
+          <Input
+            id="tx-rate"
+            value={rate}
+            onChange={(e) => setRate(e.target.value)}
+            inputMode="decimal"
+            placeholder="e.g. 150"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            This rate is saved with the transaction and will not change automatically later.
+          </p>
+        </div>
+      )}
+
+      <div className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs">
+        <span className="text-muted-foreground">USD: </span>
+        <span className="font-semibold">
+          {usdPreview === null ? "—" : formatUsd(usdPreview)}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium" htmlFor="tx-category">Category</label>
+        <select
+          id="tx-category"
+          value={category}
+          onChange={(e) => setCategory(e.target.value as TransactionCategory)}
+          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+        >
+          {CATEGORY_OPTIONS.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.emoji} {c.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label className="text-xs font-medium" htmlFor="tx-note">Note (optional)</label>
+        <Textarea
+          id="tx-note"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          maxLength={500}
+          rows={2}
+          placeholder=""
+        />
+      </div>
+
+      <fieldset className="flex flex-col gap-1.5 rounded-md border border-slate-200 px-2.5 py-2">
+        <legend className="text-xs font-medium px-1">Visibility</legend>
+        {VISIBILITY_OPTIONS.map((opt) => (
+          <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="radio"
+              name="tx-visibility"
+              value={opt.value}
+              checked={visibility === opt.value}
+              onChange={() => handleVisibilityChange(opt.value)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm">{opt.label}</span>
+              <span className="text-[11px] text-muted-foreground">{opt.desc}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={countsTowardMeter}
+          onChange={(e) => handleCountsChange(e.target.checked)}
+          disabled={visibility === "public"}
+          className="mt-0.5"
+        />
+        <span className="flex flex-col">
+          <span className="text-sm">Counts toward Travel Funds</span>
+          <span className="text-[11px] text-muted-foreground">
+            Public transactions always count. Uncheck for informational entries (only available for summary/private).
+          </span>
+        </span>
+      </label>
+
+      {activity && (
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={linkToActivity}
+            onChange={(e) => setLinkToActivity(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span className="flex flex-col">
+            <span className="text-sm">Link to current activity</span>
+            <span className="text-[11px] text-muted-foreground truncate">
+              {activity.emoji ?? "⚡"} {activity.title}
+            </span>
+          </span>
+        </label>
+      )}
+
+      {error && (
+        <p className="text-xs text-rose-600" role="alert">{error}</p>
+      )}
+
+      <div className="flex justify-between gap-2 pt-1">
+        {mode === "edit" && onDelete ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-rose-600 hover:text-rose-700"
+            onClick={handleDelete}
+            disabled={isDeleting || isSubmitting}
+          >
+            {isDeleting ? "Deleting…" : "Delete"}
+          </Button>
+        ) : (
+          <span />
+        )}
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting || isDeleting}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={isSubmitting || isDeleting}>
+            {isSubmitting ? "Saving…" : submitLabel ?? (mode === "add" ? "Add" : "Save")}
+          </Button>
+        </div>
+      </div>
+    </form>
+  );
+}
