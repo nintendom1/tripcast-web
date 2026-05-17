@@ -36,8 +36,11 @@ import TravelFundsInlineSection, {
 } from "../travelfunds/TravelFundsInlineSection";
 import {
   Sheet,
+  SheetCloseButton,
   SheetContent,
+  SheetGrabber,
   SheetHeader,
+  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
@@ -1139,12 +1142,30 @@ export default function TripMap({
         </div>
       </div>
 
-      <Sheet open={isTravelFundsSheetOpen} onOpenChange={setIsTravelFundsSheetOpen}>
-        <SheetContent side="bottom">
-          <SheetHeader>
-            <SheetTitle>Travel Funds</SheetTitle>
-          </SheetHeader>
-          <div className="overflow-y-auto p-4 pt-0">
+      <Sheet
+        open={isTravelFundsSheetOpen}
+        modal={false}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setIsTravelFundsSheetOpen(false);
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          showBackdrop={false}
+          className="z-[10] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+          data-role="travel-funds-sheet"
+        >
+          <SheetGrabber />
+          <div className="flex items-start justify-between gap-2 px-4 pt-2">
+            <div className="flex min-w-0 flex-col gap-1">
+              <SheetKicker dotColor="var(--green)">Wallet</SheetKicker>
+              <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                Travel funds
+              </SheetTitle>
+            </div>
+            <SheetCloseButton aria-label="Close travel funds" />
+          </div>
+          <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 pb-4 pt-3">
             {role === "traveler" && isTravelFundsSheetOpen && (
               <TravelFundsSheet
                 token={token}
