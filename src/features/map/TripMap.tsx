@@ -41,7 +41,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
-import HistoryPanel from "../history/HistoryPanel";
+import HistorySheet from "../history/HistorySheet";
 import CheckInDetailSheet from "../history/CheckInDetailSheet";
 import { useHistoryUnread } from "../history/useHistoryUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
@@ -1177,7 +1177,7 @@ export default function TripMap({
             message="Try again, or close history and reopen it."
             fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
           >
-            <HistoryPanel
+            <HistorySheet
               events={historyEvents}
               token={token}
               onClose={() => setIsHistoryOpen(false)}
