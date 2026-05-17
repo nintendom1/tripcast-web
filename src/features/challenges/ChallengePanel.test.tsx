@@ -44,6 +44,27 @@ vi.mock("../../components/ui/sheet", () => ({
   SheetTitle: ({ children, ...props }: HTMLAttributes<HTMLHeadingElement>) => (
     <h2 {...props}>{children}</h2>
   ),
+  SheetBody: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
+    <div {...props}>{children}</div>
+  ),
+  SheetGrabber: () => <div data-testid="sheet-grabber" />,
+  SheetKicker: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
+    <div {...props}>{children}</div>
+  ),
+  SheetBackButton: ({ children, ...props }: HTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" {...props}>{children ?? "Back"}</button>
+  ),
+  SheetCloseButton: ({ children, ...props }: HTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" {...props}>{children ?? "Close"}</button>
+  ),
+  SheetTabs: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
+    <div role="tablist" {...props}>{children}</div>
+  ),
+  SheetTab: ({ children, active: _active, ...props }: HTMLAttributes<HTMLButtonElement> & { active?: boolean }) => (
+    <button type="button" role="tab" aria-selected={Boolean(_active)} {...props}>
+      {children}
+    </button>
+  ),
 }));
 
 function renderPanel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = {}) {
