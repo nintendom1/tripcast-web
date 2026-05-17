@@ -7,6 +7,7 @@ import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
 
 type AuthScreenProps = {
   onSignIn: (session: Omit<StoredSession, "sessionType" | "displayName" | "username">) => void;
@@ -78,6 +79,7 @@ export default function AuthScreen({ onSignIn, onBack }: AuthScreenProps) {
                 {error}
               </p>
             ) : null}
+            <PendingActionNotice isPending={isPending} actionLabel="sign-in" />
             <div className="flex gap-2 justify-end">
               {onBack ? (
                 <Button disabled={isPending} type="button" variant="outline" onClick={onBack}>

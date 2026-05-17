@@ -6,6 +6,7 @@ import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
 
 type FollowerLoginScreenProps = {
   onSignIn: (session: StoredSession) => void;
@@ -111,6 +112,7 @@ export default function FollowerLoginScreen({
                 {error}
               </p>
             ) : null}
+            <PendingActionNotice isPending={isPending} actionLabel="sign-in" />
             <Button disabled={isPending || !username.trim() || !password} type="submit">
               {isPending ? "Signing in…" : "Sign in"}
             </Button>

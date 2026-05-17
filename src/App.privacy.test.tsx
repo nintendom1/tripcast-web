@@ -71,7 +71,7 @@ describe("App: Options button and Emergency Reset location", () => {
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
-    expect(screen.getByTestId("trip-map")).toBeInTheDocument();
+    expect(await screen.findByTestId("trip-map")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Shared trip data deletion started.");
   });
 });
