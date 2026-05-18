@@ -23,79 +23,79 @@ import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
 
 const SAMPLE_JSON = `{
-  "timeZone": "Asia/Tokyo",
+  "timeZone": "America/Los_Angeles",
   "entries": [
     {
       "kind": "story",
-      "ref": "story:kyoto-station",
-      "timeZone": "Asia/Tokyo",
-      "occurredAt": "2026-05-18",
-      "title": "Got off the bullet train",
-      "body": "Got off the bullet train at Kyoto Station and immediately felt that little shift in the air, like the city was inviting me to slow down. After the smoothness of the Shinkansen, stepping onto the platform made everything feel suddenly real: I was finally here, in Kyoto.",
-      "locationLabel": "Kyoto Station",
-      "lat": 34.9858,
-      "lon": 135.7587
+      "ref": "story:king-street-station",
+      "timeZone": "America/Los_Angeles",
+      "occurredAt": "2026-05-14",
+      "title": "Arrived under the clock tower",
+      "body": "Stepping out near King Street Station made Seattle feel instantly cinematic. The old clock tower rose above the street, the stadiums sat just to the south, and the skyline peeked through the gray morning like the city was slowly waking up. After the ride in, I felt that little Seattle shift: damp air, coffee nearby, and hills waiting in every direction.",
+      "locationLabel": "King Street Station",
+      "lat": 47.5983,
+      "lon": -122.3299
     },
     {
       "kind": "story",
-      "ref": "story:tokyo-glow",
-      "timeZone": "Asia/Tokyo",
-      "occurredAt": "2026-05-19T20:15:00+09:00",
-      "title": "Lost in the glow",
-      "body": "Tokyo felt impossibly huge the moment I stepped out into the city. Neon signs blinked above crosswalks, train announcements echoed in the distance, and everyone seemed to know exactly where they were going except me.\\n\\nSomewhere between checking my map and pretending I knew what I was doing, I realized that being a little lost was part of the fun.",
-      "locationLabel": "Tokyo Station",
-      "lat": 35.6812,
-      "lon": 139.7671
+      "ref": "story:pike-place-rain",
+      "timeZone": "America/Los_Angeles",
+      "occurredAt": "2026-05-14T10:15:00-07:00",
+      "title": "Morning at the market",
+      "body": "Pike Place Market was already alive when I arrived. Fishmongers called across the stalls, flower bouquets spilled color into the walkways, and the smell of coffee and fresh bread seemed to drift from every corner.\\n\\nI wandered without much of a plan, which turned out to be the right plan. Seattle felt best when I let myself follow the sound of buskers, the slope of the streets, and whatever view of Elliott Bay appeared between the buildings.",
+      "locationLabel": "Pike Place Market",
+      "lat": 47.6097,
+      "lon": -122.3425
     },
     {
       "kind": "story",
-      "ref": "story:shibuya-current",
-      "timeZone": "Asia/Tokyo",
-      "occurredAt": 1779285600000,
-      "title": "Crossing into the current",
-      "body": "Tokyo rushed around me in every direction, with trains humming below, screens glowing above, and crowds flowing through the streets like a living river. For a moment, I stopped trying to keep up and just let the city carry me.",
-      "locationLabel": "Shibuya Crossing",
-      "lat": 35.6595,
-      "lon": 139.7005
+      "ref": "story:kerry-park-view",
+      "timeZone": "America/Los_Angeles",
+      "occurredAt": 1778898600000,
+      "title": "Skyline at golden hour",
+      "body": "The city opened up from Kerry Park like a postcard: the Space Needle in front, downtown stacked behind it, and Mount Rainier faintly holding the horizon. I stayed longer than planned, watching the light change across the skyline until Seattle felt both huge and strangely personal.",
+      "locationLabel": "Kerry Park",
+      "lat": 47.6295,
+      "lon": -122.3599
     },
     {
       "kind": "route_vote",
-      "ref": "vote:nara-or-osaka",
-      "timeZone": "Asia/Tokyo",
-      "occurredAt": "2026-05-20",
-      "expiresAt": "2026-05-22T09:00:00+09:00",
-      "title": "Nara deer or Osaka food?",
+      "ref": "vote:ferry-or-neighborhood",
+      "timeZone": "America/Los_Angeles",
+      "occurredAt": "2026-05-14",
+      "expiresAt": "2026-05-15T09:00:00-07:00",
+      "title": "Bainbridge ferry or Capitol Hill food crawl?",
       "options": [
-        { "ref": "option:nara", "title": "Nara Park", "locationLabel": "Nara", "lat": 34.6851, "lon": 135.8048 },
-        { "ref": "option:osaka", "title": "Dotonbori", "locationLabel": "Osaka", "lat": 34.6687, "lon": 135.5012 }
+        { "ref": "option:bainbridge", "title": "Ride the ferry to Bainbridge Island", "locationLabel": "Seattle Ferry Terminal", "lat": 47.6026, "lon": -122.3393 },
+        { "ref": "option:capitol-hill", "title": "Explore Capitol Hill", "locationLabel": "Capitol Hill", "lat": 47.6253, "lon": -122.3222 }
       ]
     },
     {
       "kind": "challenge",
-      "ref": "mission:nara-deer",
-      "timeZone": "Asia/Tokyo",
-      "occurredAt": "2026-05-23",
-      "title": "See deer at Nara Park",
+      "ref": "mission:bainbridge-ferry",
+      "timeZone": "America/Los_Angeles",
+      "occurredAt": "2026-05-15",
+      "title": "Take the ferry across Puget Sound",
       "status": "planned",
-      "sourceRouteVoteRef": "vote:nara-or-osaka",
-      "sourceRouteVoteOptionRef": "option:nara",
-      "estimatedCostUsd": 12,
+      "sourceRouteVoteRef": "vote:ferry-or-neighborhood",
+      "sourceRouteVoteOptionRef": "option:bainbridge",
+      "estimatedCostUsd": 10,
       "estimatedDurationMinutes": 180,
       "estimatedEnergyImpact": "medium"
     },
     {
       "kind": "transaction",
       "ref": "tx:coffee",
-      "timeZone": "Asia/Tokyo",
-      "occurredAt": "2026-05-18T09:30:00+09:00",
-      "title": "Flat white",
+      "timeZone": "America/Los_Angeles",
+      "occurredAt": "2026-05-14T09:30:00-07:00",
+      "title": "Latte near Pioneer Square",
       "category": "food",
-      "currencyCode": "JPY",
-      "localAmount": 700,
-      "localCurrencyPerUsd": 150,
+      "currencyCode": "USD",
+      "localAmount": 6.5,
+      "localCurrencyPerUsd": 1,
       "visibility": "public",
       "countsTowardMeter": true,
-      "linkedToRef": "story:kyoto-station"
+      "linkedToRef": "story:king-street-station"
     }
   ]
 }`;
