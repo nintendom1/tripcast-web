@@ -1130,7 +1130,7 @@ export default function TripMap({
       />
 
       {/* Bottom Dock — replaces the bottom-left + bottom-right FAB clusters */}
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[3]">
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[3] tripcast-frame">
         <Dock
           active={activeDockTab}
           onSelect={handleDockSelect}
@@ -1265,7 +1265,7 @@ export default function TripMap({
 
       <div
         ref={cardsWrapperRef}
-        className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2"
+        className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
       >
         <FeatureBoundary
           resetKeys={[token, role, "hud-status-card"]}

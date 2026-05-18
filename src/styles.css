@@ -88,6 +88,27 @@ textarea {
   50% { opacity: 0; }
 }
 
+/* Desktop chrome frame.
+   The UX rework is designed phone-first (390px viewport class). On a
+   desktop monitor the map itself happily fills the full viewport, but
+   the HUD chrome (TopBar, top status stack, Dock) looks comically wide
+   if it stretches to 1920px. `.tripcast-frame` constrains those chrome
+   elements to a centered phone-width column above the 960px breakpoint
+   while leaving mobile rendering untouched. The map underneath is not
+   wrapped — it always fills its section.
+
+   The full three-column "rail + map + panel" desktop layout from the
+   handoff is documented as a follow-up; this responsive-resize keeps the
+   interaction model 1:1 with mobile and avoids rewriting every sheet for
+   right-anchored vs bottom-anchored variants. */
+@media (min-width: 960px) {
+  .tripcast-frame {
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: 'Geist Variable', sans-serif;
