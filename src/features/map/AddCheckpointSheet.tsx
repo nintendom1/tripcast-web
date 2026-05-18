@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 
-import type { AddCheckpointArgs, CheckpointSource } from "../../convex/tripcastApi";
+import type { AddCheckpointArgs, CheckpointSource, TransactionInlineInput } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -35,6 +35,8 @@ export type CheckpointPrefill = {
   note?: string;
   locationLabel?: string;
   challengeId?: string;
+  completeChallenge?: boolean;
+  transaction?: TransactionInlineInput;
   /** Kicker label override — e.g. "Story · Mission completion" when prefilled from a mission. */
   kickerLabel?: string;
 };
@@ -102,7 +104,7 @@ export default function AddCheckpointSheet({
       setError(null);
       setIsSaving(false);
     }
-   
+
   }, [selectedCoordinate, prefill]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

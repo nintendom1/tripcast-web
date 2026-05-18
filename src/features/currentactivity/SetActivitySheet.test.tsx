@@ -36,9 +36,9 @@ function makeProps(overrides?: Partial<Parameters<typeof SetActivitySheet>[0]>) 
 
 function setupMocks(existingActivity: CurrentActivity | null = null) {
   const setActivityMock = vi.fn().mockResolvedValue("new-id");
-   
+
   (vi.mocked(convexReact.useQuery) as any).mockReturnValue(existingActivity);
-   
+
   vi.mocked(convexReact.useMutation).mockReturnValue(setActivityMock as any);
   return { setActivityMock };
 }

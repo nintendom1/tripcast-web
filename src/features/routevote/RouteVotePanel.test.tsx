@@ -48,13 +48,13 @@ const MOCK_VOTE: VisibleRouteVote = {
 const MOCK_VOTES: VisibleRouteVote[] = [MOCK_VOTE];
 
 function setupMocks() {
-   
+
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
     if (ref === tripcastApi.routeVotes.listVisibleRouteVotes) return MOCK_VOTES;
     if (ref === tripcastApi.routeVotes.getRouteVoteMapOverlay) return null;
     return undefined;
   });
-   
+
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 }
 

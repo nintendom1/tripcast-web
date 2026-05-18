@@ -1013,6 +1013,22 @@ export const tripcastApi = {
       { token: string; challengeId: string; transaction?: TransactionInlineInput },
       null
     >,
+    travelerCompleteChallengeAsStory: (anyApi as any).challenges.travelerCompleteChallengeAsStory as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        challengeId: string;
+        title?: string;
+        note?: string;
+        locationLabel?: string;
+        lat: number;
+        lon: number;
+        source: CheckpointSource;
+        transaction?: TransactionInlineInput;
+      },
+      string
+    >,
     travelerToggleChallengeMapPin: (anyApi as any).challenges.travelerToggleChallengeMapPin as FunctionReference<
       "mutation",
       "public",

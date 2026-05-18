@@ -29,7 +29,7 @@ function setupMutationMocks() {
   const mocks = {
     emergencyReset: vi.fn().mockResolvedValue(null),
   };
-   
+
   vi.mocked(convexReact.useMutation).mockReturnValue(mocks.emergencyReset as any);
   return mocks;
 }

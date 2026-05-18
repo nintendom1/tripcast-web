@@ -132,7 +132,7 @@ function CheckpointMarkers({
       markersRef.current = [];
     };
   // onCheckpointClick intentionally omitted — kept fresh via onClickRef
-   
+
   }, [map, checkpoints]);
 
   return null;
@@ -215,6 +215,7 @@ function ConvexCheckpointSheet({
   onBack?: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
+  const completeChallengeAsStory = useMutation(tripcastApi.challenges.travelerCompleteChallengeAsStory);
 
   const [stateOpen, setStateOpen] = useState(false);
   const [transactionState, setTransactionState] = useState<TravelFundsInlineState>(null);
@@ -247,7 +248,22 @@ function ConvexCheckpointSheet({
       throw new Error(transactionState.error);
     }
     const inlineTransaction =
-      transactionState && "value" in transactionState ? transactionState.value : undefined;
+      transactionState && "value" in transactionState
+        ? transactionState.value
+        : prefill?.transaction;
+    if (prefill?.challengeId && prefill.completeChallenge !== false) {
+      return completeChallengeAsStory({
+        token,
+        challengeId: prefill.challengeId,
+        title: args.title,
+        note: args.note,
+        locationLabel: args.locationLabel,
+        lat: args.lat,
+        lon: args.lon,
+        source: args.source,
+        transaction: inlineTransaction,
+      });
+    }
     return addCheckpoint({
       ...args,
       token,
@@ -406,8 +422,6 @@ export default function TripMap({
   // can reopen ChallengesPanel directly on the originating mission's detail
   // view (the four-button action set the Traveler expects to return to).
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
-  const completeChallenge = useMutation(tripcastApi.challenges.travelerCompleteChallenge);
-
   const canWrite = role === "traveler";
 
   const updateTravelerLocation = useMutation(tripcastApi.travelerLocations.updateTravelerLocation);
@@ -463,6 +477,7 @@ export default function TripMap({
     setIsHistoryOpen(true);
     setIsChallengesPanelOpen(false);
     setIsVotePanelOpen(false);
+    setIsTravelFundsSheetOpen(false);
   }
   function openChallenges() {
     if (isChallengesPanelOpen) {
@@ -474,6 +489,7 @@ export default function TripMap({
     setIsChallengesPanelOpen(true);
     setIsHistoryOpen(false);
     setIsVotePanelOpen(false);
+    setIsTravelFundsSheetOpen(false);
   }
   function openVotes() {
     if (isVotePanelOpen) {
@@ -485,6 +501,7 @@ export default function TripMap({
     setIsVotePanelOpen(true);
     setIsHistoryOpen(false);
     setIsChallengesPanelOpen(false);
+    setIsTravelFundsSheetOpen(false);
   }
   function openFunds() {
     if (isTravelFundsSheetOpen) {
@@ -557,6 +574,7 @@ export default function TripMap({
 
   // ESC cancels coordinate pick mode
   useEffect(() => {
+    console.log("[TripMap] coordinatePickMode state changed:", coordinatePickMode);
     if (!coordinatePickMode) return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") cancelCoordinatePick();
@@ -564,7 +582,7 @@ export default function TripMap({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   // cancelCoordinatePick is stable (no deps change it); adding coordinatePickMode as dep is sufficient
-   
+
   }, [coordinatePickMode]);
 
   // Map init
@@ -597,9 +615,14 @@ export default function TripMap({
     map.on("click", (event) => {
       // Coordinate pick mode takes priority
       if (coordinatePickModeRef.current) {
+        console.log("[TripMap] Map clicked in coordinate pick mode at:", event.lngLat);
         const pick = coordinatePickModeRef.current;
         coordinatePickModeRef.current = null;
         setCoordinatePickMode(null);
+        console.log("[TripMap] coordinatePickMode cleared, calling callback with:", {
+          lat: event.lngLat.lat,
+          lon: event.lngLat.lng,
+        });
         musicRef.current.sfx("pin");
         pick.callback({ lat: event.lngLat.lat, lon: event.lngLat.lng });
         return;
@@ -749,10 +772,12 @@ export default function TripMap({
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
+    console.log("[TripMap] handleRequestCoordinatePick called, optionIndex:", optionIndex);
     music.sfx("page");
     const label = `Option ${optionIndex + 1} location`;
     coordinatePickModeRef.current = { label, callback };
     setCoordinatePickMode({ label, callback });
+    console.log("[TripMap] coordinatePickMode set to:", { label, callback });
   }
 
   function handleNavigateToChallenge(coord: { lat: number; lon: number }) {
@@ -797,19 +822,22 @@ export default function TripMap({
 
   function handleCompleteAsStory(challenge: {
     _id: string;
+    status?: string;
     title?: string;
     description?: string;
     locationLabel?: string;
     lat?: number;
     lon?: number;
-  }) {
+  }, transaction?: import("../../convex/tripcastApi").TransactionInlineInput) {
     music.sfx("page");
     setIsChallengesPanelOpen(false);
     setStoryPrefill({
       challengeId: challenge._id,
+      completeChallenge: challenge.status === "in_progress",
       title: challenge.title,
       note: challenge.description,
       locationLabel: challenge.locationLabel,
+      transaction,
       kickerLabel: "Story · Mission completion",
     });
     // Remember which mission to land on if the Traveler backs out of the story
@@ -841,26 +869,15 @@ export default function TripMap({
     setIsChallengesPanelOpen(true);
   }
 
-  async function handleStoryCheckpointCreated(_id: string, prefill?: CheckpointPrefill) {
+  function handleStoryCheckpointCreated(_id: string, prefill?: CheckpointPrefill) {
     setStoryPrefill(null);
     setPendingOpenDetailMissionId(null);
-    if (!prefill?.challengeId) return;
-    try {
-      await completeChallenge({ token, challengeId: prefill.challengeId });
+    if (prefill?.completeChallenge) {
       music.sfx("success");
       showToast("Mission completed.");
-    } catch (err) {
-      // If the mission was already completed (the "Add a story to a completed
-      // mission" path), the backend rejects the status flip — that's fine,
-      // the story still landed. Anything else is a non-fatal best-effort gap
-      // the Traveler can resolve from the mission detail.
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.toLowerCase().includes("only in-progress")) {
-        music.sfx("success");
-        showToast("Story added to mission.");
-      } else {
-        showToast("Check-in saved. Mark the mission complete from its detail.");
-      }
+    } else if (prefill?.challengeId) {
+      music.sfx("success");
+      showToast("Story added to mission.");
     }
   }
 
@@ -993,6 +1010,10 @@ export default function TripMap({
   );
 
   const isPickingCoordinate = coordinatePickMode !== null;
+  useEffect(() => {
+    console.log("[TripMap] isPickingCoordinate computed value:", isPickingCoordinate);
+  }, [isPickingCoordinate]);
+
   const latestCheckpoint = checkpoints.at(-1) ?? null;
   const latestCheckpointLat = latestCheckpoint?.lat;
   const latestCheckpointLon = latestCheckpoint?.lon;
@@ -1176,6 +1197,7 @@ export default function TripMap({
             setPendingOpenDetailMissionId(null);
           }}
           prefill={storyPrefill ?? undefined}
+          transactionPrefill={storyPrefill?.transaction}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.challengeId ? handleBackFromStory : undefined}
         />
@@ -1214,8 +1236,7 @@ export default function TripMap({
       </AnimatePresence>
 
       {role === "traveler" && isVotePanelOpen && (
-        <div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>
-          <FeatureBoundary
+        <FeatureBoundary
             resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
               music.sfx("close");
@@ -1240,9 +1261,9 @@ export default function TripMap({
               onVoteOverlayChange={handleVoteOverlayChange}
               onRequestFitMap={handleRequestFitMap}
               fallbackOrigin={routeVoteFallbackOrigin}
+              isPickingCoordinate={isPickingCoordinate}
             />
           </FeatureBoundary>
-        </div>
       )}
 
       <AnimatePresence>
@@ -1302,10 +1323,7 @@ export default function TripMap({
             <FundsCompactConnected
               token={token}
               role={role}
-              onOpenSheet={role === "traveler" ? () => {
-                music.sfx("open");
-                setIsTravelFundsSheetOpen(true);
-              } : undefined}
+              onOpenSheet={role === "traveler" ? openFunds : undefined}
             />
           </FeatureBoundary>
         </div>

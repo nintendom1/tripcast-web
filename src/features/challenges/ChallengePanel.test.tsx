@@ -82,9 +82,9 @@ function renderPanel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = 
 
 beforeEach(() => {
   vi.clearAllMocks();
-   
+
   vi.mocked(convexReact.useQuery).mockReturnValue([] as any);
-   
+
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
 
@@ -115,5 +115,34 @@ describe("ChallengePanel coordinate picking", () => {
     await user.click(screen.getByRole("button", { name: "Dismiss sheet" }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ChallengePanel Support Crew ownership", () => {
+  it("lets Support Crew withdraw a mission opened from Mine even when userId is not available", async () => {
+    const user = userEvent.setup();
+    const ownChallenge = {
+      _id: "challenge-1",
+      _creationTime: 1,
+      title: "My mission",
+      status: "proposed",
+      source: "support_crew",
+      proposedByUserId: "account-user-1",
+      createdAt: 1,
+      updatedAt: 1,
+      createdBySessionId: "session-1",
+      updatedBySessionId: "session-1",
+    };
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((_ref: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return { mine: [ownChallenge], public: [] };
+    });
+
+    renderPanel({ role: "support_crew" });
+
+    await user.click(screen.getByRole("tab", { name: /Mine/ }));
+    await user.click(screen.getByText("My mission"));
+
+    expect(screen.getByRole("button", { name: "Withdraw proposal" })).toBeInTheDocument();
   });
 });

@@ -30,9 +30,9 @@ const MOCK_FOLLOWERS = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(convexReact.useQuery).mockReturnValue(MOCK_FOLLOWERS as any);  
+  vi.mocked(convexReact.useQuery).mockReturnValue(MOCK_FOLLOWERS as any);
   vi.mocked(convexReact.useMutation).mockImplementation(
-    () => vi.fn().mockResolvedValue(null) as any,  
+    () => vi.fn().mockResolvedValue(null) as any,
   );
 });
 
@@ -65,13 +65,13 @@ describe("FollowerManagementPanel", () => {
   });
 
   it("shows loading state while query is undefined", () => {
-    vi.mocked(convexReact.useQuery).mockReturnValue(undefined as any);  
+    vi.mocked(convexReact.useQuery).mockReturnValue(undefined as any);
     render(<FollowerManagementPanel token="test-token" />);
     expect(screen.getByText(/loading followers/i)).toBeInTheDocument();
   });
 
   it("shows empty state when no followers", () => {
-    vi.mocked(convexReact.useQuery).mockReturnValue([] as any);  
+    vi.mocked(convexReact.useQuery).mockReturnValue([] as any);
     render(<FollowerManagementPanel token="test-token" />);
     expect(screen.getByText(/no followers yet/i)).toBeInTheDocument();
   });
@@ -87,7 +87,7 @@ describe("FollowerManagementPanel", () => {
   it("calls banUser mutation on confirmation", async () => {
     const mockBan = vi.fn().mockResolvedValue(null);
     vi.mocked(convexReact.useMutation).mockImplementation(
-      () => mockBan as any,  
+      () => mockBan as any,
     );
 
     render(<FollowerManagementPanel token="test-token" />);
@@ -107,7 +107,7 @@ describe("FollowerManagementPanel", () => {
   it("shows Issue reset confirmation and calls mutation", async () => {
     const mockReset = vi.fn().mockResolvedValue({ resetToken: "reset-tok-abc" });
     vi.mocked(convexReact.useMutation).mockImplementation(
-      () => mockReset as any,  
+      () => mockReset as any,
     );
 
     render(<FollowerManagementPanel token="test-token" />);

@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role } from "../../convex/tripcastApi";
+import type { Challenge, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import ChallengeCard from "./ChallengeCard";
 import ChallengeProposalForm from "./ChallengeProposalForm";
 import ChallengeDetailSheet from "./ChallengeDetailSheet";
@@ -38,7 +38,7 @@ type Props = {
   pendingOpenChallengeId?: string | null;
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
-  onCompleteAsStory?: (challenge: Challenge) => void;
+  onCompleteAsStory?: (challenge: Challenge, transaction?: TransactionInlineInput) => void;
   /** When set + the panel is open, navigate straight to the matching mission's
    *  detail view rather than the list. Used by the Complete-as-Story → Back
    *  flow so dismissing the story form returns the Traveler to the mission's
@@ -48,6 +48,7 @@ type Props = {
 };
 
 type ViewMode = "list" | "create" | "detail";
+type SelectedChallenge = { challenge: Challenge; isOwn: boolean };
 
 type TravelerFilter = "all" | "proposed" | "visible" | "in_progress" | "completed" | "dropped";
 
@@ -87,7 +88,7 @@ export default function ChallengePanel({
   onClearPendingDetail,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
+  const [selectedChallenge, setSelectedChallenge] = useState<SelectedChallenge | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Challenge | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const music = useMusicSafe();
@@ -149,7 +150,10 @@ export default function ChallengePanel({
       setSelectedChallenge(null);
       return;
     }
-    setSelectedChallenge(pendingDetailChallenge);
+    setSelectedChallenge({
+      challenge: pendingDetailChallenge,
+      isOwn: role === "traveler" || Boolean(pendingDetailChallenge.proposedByUserId === userId),
+    });
     setViewMode("detail");
     onClearPendingDetail?.();
     // pendingDetailChallenge / onClearPendingDetail are stable enough for the
@@ -162,14 +166,14 @@ export default function ChallengePanel({
   // detail body remains useful for re-centering after the user has panned away.
   useEffect(() => {
     if (viewMode !== "detail" || !selectedChallenge) return;
-    if (selectedChallenge.lat === undefined || selectedChallenge.lon === undefined) return;
+    if (selectedChallenge.challenge.lat === undefined || selectedChallenge.challenge.lon === undefined) return;
     onRequestNavigateToChallenge?.({
-      lat: selectedChallenge.lat,
-      lon: selectedChallenge.lon,
+      lat: selectedChallenge.challenge.lat,
+      lon: selectedChallenge.challenge.lon,
     });
     // onRequestNavigateToChallenge is stable enough for our purposes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, selectedChallenge?._id]);
+  }, [viewMode, selectedChallenge?.challenge._id]);
 
   function goToList(sound: "page" | "success" | null = "page") {
     if (sound) music.sfx(sound);
@@ -183,9 +187,9 @@ export default function ChallengePanel({
     setViewMode("create");
   }
 
-  function goToDetail(challenge: Challenge) {
+  function goToDetail(challenge: Challenge, isOwn = role === "traveler") {
     music.sfx("page");
-    setSelectedChallenge(challenge);
+    setSelectedChallenge({ challenge, isOwn });
     setViewMode("detail");
   }
 
@@ -285,10 +289,10 @@ export default function ChallengePanel({
           ) : viewMode === "detail" && selectedChallenge ? (
             <div className="overflow-y-auto">
               <ChallengeDetailSheet
-                challenge={selectedChallenge}
+                challenge={selectedChallenge.challenge}
                 token={token}
                 role={role}
-                isOwn={role === "support_crew" ? Boolean(selectedChallenge.proposedByUserId === userId) : true}
+                isOwn={selectedChallenge.isOwn}
                 onClose={() => goToList()}
                 onStartChallenge={() => {
                   onStartChallenge?.();
@@ -297,16 +301,16 @@ export default function ChallengePanel({
                 onRequestCoordinatePick={onRequestCoordinatePick}
                 onCompleteAsStory={
                   onCompleteAsStory
-                    ? (challenge) => {
-                        onCompleteAsStory(challenge);
+                    ? (challenge, transaction) => {
+                        onCompleteAsStory(challenge, transaction);
                         goToList(null);
                       }
                     : undefined
                 }
                 onViewOnMap={
-                  selectedChallenge.lat !== undefined && selectedChallenge.lon !== undefined
+                  selectedChallenge.challenge.lat !== undefined && selectedChallenge.challenge.lon !== undefined
                     ? () => {
-                        const { lat, lon } = selectedChallenge;
+                        const { lat, lon } = selectedChallenge.challenge;
                         if (lat !== undefined && lon !== undefined) {
                           onRequestNavigateToChallenge?.({ lat, lon });
                         }
@@ -351,7 +355,7 @@ function TravelerListView({
   pendingOpenChallengeId?: string | null;
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
-  onOpenDetail: (c: Challenge) => void;
+  onOpenDetail: (c: Challenge, isOwn?: boolean) => void;
   onRequestDelete?: (c: Challenge) => void;
 }) {
   const [filter, setFilter] = useState<TravelerFilter>("all");
@@ -609,7 +613,7 @@ function CrewListView({
   pendingOpenChallengeId?: string | null;
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
-  onOpenDetail: (c: Challenge) => void;
+  onOpenDetail: (c: Challenge, isOwn?: boolean) => void;
 }) {
   const [tab, setTab] = useState<CrewTab>("active");
   const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
@@ -683,7 +687,7 @@ function CrewListView({
                 challenge={c}
                 isOwn
                 isHighlighted={c._id === highlightedChallengeId}
-                onClick={() => onOpenDetail(c)}
+                onClick={() => onOpenDetail(c, true)}
               />
             ))
           )
@@ -698,7 +702,7 @@ function CrewListView({
               challenge={c}
               isOwn={mineIds.has(c._id)}
               isHighlighted={c._id === highlightedChallengeId}
-              onClick={() => onOpenDetail(c)}
+              onClick={() => onOpenDetail(c, mineIds.has(c._id))}
             />
           ))
         )}

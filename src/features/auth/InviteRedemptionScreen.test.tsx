@@ -42,7 +42,7 @@ async function fillForm({
 
 beforeEach(() => {
   vi.clearAllMocks();
-   
+
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any);
 });
 
@@ -63,7 +63,7 @@ describe("InviteRedemptionScreen", () => {
 
   it("calls onSignIn with session on successful redemption", async () => {
     const mockRedeem = vi.fn().mockResolvedValue({ token: "new-session-token" });
-    vi.mocked(convexReact.useMutation).mockReturnValue(mockRedeem as any);  
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockRedeem as any);
     renderScreen("my-invite-token");
 
     await fillForm();
@@ -82,7 +82,7 @@ describe("InviteRedemptionScreen", () => {
 
   it("shows error on expired invite", async () => {
     const mockRedeem = vi.fn().mockRejectedValue(new Error("expired"));
-    vi.mocked(convexReact.useMutation).mockReturnValue(mockRedeem as any);  
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockRedeem as any);
     renderScreen();
 
     await fillForm();
@@ -94,7 +94,7 @@ describe("InviteRedemptionScreen", () => {
 
   it("shows error on duplicate username", async () => {
     const mockRedeem = vi.fn().mockRejectedValue(new Error("username already taken"));
-    vi.mocked(convexReact.useMutation).mockReturnValue(mockRedeem as any);  
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockRedeem as any);
     renderScreen();
 
     await fillForm();

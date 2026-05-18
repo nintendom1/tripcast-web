@@ -132,38 +132,38 @@ export function StatusCardConnected({
     return null;
   }
 
-  const energyValue = resolveScore(
-    stateFacts?.energyScore,
-    stateFacts?.energyLevel,
-    ENERGY_SCORE_FOR_LEVEL,
-    50,
-  );
-
-  const stomachScoreRaw = stateFacts?.stomachScore;
-  const stomachValue = (() => {
-    if (typeof stomachScoreRaw === "number") {
-      const decayed =
-        typeof stateFacts?.updatedAt === "number"
-          ? computeEffectiveStomachScore(stomachScoreRaw, stateFacts.updatedAt)
-          : stomachScoreRaw;
-      return Math.min(150, Math.max(0, decayed));
-    }
-    return resolveScore(undefined, stateFacts?.stomachLevel, STOMACH_SCORE_FOR_LEVEL, 50);
-  })();
-
-  const stressValue = resolveScore(
-    stateFacts?.stressScore,
-    stateFacts?.stressLevel,
-    STRESS_SCORE_FOR_LEVEL,
-    50,
-  );
-  const calmValue = Math.max(0, Math.min(100, 100 - stressValue));
-
-  const meters: StatusCardMeter[] = [
-    { label: "Energy", value: energyValue, max: 100 },
-    { label: "Stomach", value: stomachValue, max: 150 },
-    { label: "Calm", value: calmValue, max: 100 },
-  ];
+  const meters: StatusCardMeter[] = stateFacts
+    ? (() => {
+        const energyValue = resolveScore(
+          stateFacts.energyScore,
+          stateFacts.energyLevel,
+          ENERGY_SCORE_FOR_LEVEL,
+          50,
+        );
+        const stomachScoreRaw = stateFacts.stomachScore;
+        const stomachValue = (() => {
+          if (typeof stomachScoreRaw === "number") {
+            const decayed =
+              typeof stateFacts.updatedAt === "number"
+                ? computeEffectiveStomachScore(stomachScoreRaw, stateFacts.updatedAt)
+                : stomachScoreRaw;
+            return Math.min(150, Math.max(0, decayed));
+          }
+          return resolveScore(undefined, stateFacts.stomachLevel, STOMACH_SCORE_FOR_LEVEL, 50);
+        })();
+        const stressValue = resolveScore(
+          stateFacts.stressScore,
+          stateFacts.stressLevel,
+          STRESS_SCORE_FOR_LEVEL,
+          50,
+        );
+        return [
+          { label: "Energy", value: energyValue, max: 100 },
+          { label: "Stomach", value: stomachValue, max: 150 },
+          { label: "Calm", value: Math.max(0, Math.min(100, 100 - stressValue)), max: 100 },
+        ];
+      })()
+    : [];
 
   return (
     <StatusCard

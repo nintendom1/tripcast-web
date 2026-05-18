@@ -286,9 +286,12 @@ export default function CreateRouteVoteForm({
   }
 
   function handlePickOnMap(index: number) {
+    console.log("[CreateRouteVoteForm] handlePickOnMap called for option", index);
     onRequestCoordinatePick(index, ({ lat, lon }) => {
+      console.log("[CreateRouteVoteForm] Coordinate picked:", { lat, lon });
       setValue(`options.${index}.lat`, lat.toFixed(6), { shouldValidate: true });
       setValue(`options.${index}.lon`, lon.toFixed(6), { shouldValidate: true });
+      console.log("[CreateRouteVoteForm] Form fields updated");
     });
   }
 

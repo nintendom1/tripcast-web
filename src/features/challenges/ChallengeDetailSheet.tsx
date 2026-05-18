@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role } from "../../convex/tripcastApi";
+import type { Challenge, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -35,7 +35,7 @@ type Props = {
    *  "Complete Challenge" action. The parent (TripMap) owns the story-prefill
    *  state, opens AddCheckpointSheet, and calls travelerCompleteChallenge
    *  after the resulting check-in lands. */
-  onCompleteAsStory?: (challenge: Challenge) => void;
+  onCompleteAsStory?: (challenge: Challenge, transaction?: TransactionInlineInput) => void;
 };
 
 function statusLabel(status: string): string {
@@ -254,6 +254,17 @@ export default function ChallengeDetailSheet({
     } finally {
       setIsWorking(false);
     }
+  }
+
+  function handleCompleteAsStory() {
+    if (!challenge || !onCompleteAsStory) return;
+    if (completionTxState && "error" in completionTxState) {
+      setActionError(completionTxState.error);
+      return;
+    }
+    const transaction =
+      completionTxState && "value" in completionTxState ? completionTxState.value : undefined;
+    onCompleteAsStory(challenge, transaction);
   }
 
   async function handleTogglePin() {
@@ -681,7 +692,7 @@ export default function ChallengeDetailSheet({
                   size="sm"
                   type="button"
                   disabled={!canAct}
-                  onClick={() => onCompleteAsStory(challenge)}
+                  onClick={handleCompleteAsStory}
                   className="border-[var(--plum)] text-white"
                   style={{ background: "var(--plum)" }}
                 >
@@ -736,7 +747,7 @@ export default function ChallengeDetailSheet({
             size="sm"
             type="button"
             disabled={!canAct}
-            onClick={() => onCompleteAsStory(challenge)}
+            onClick={handleCompleteAsStory}
             className="border-[var(--plum)] text-white w-fit"
             style={{ background: "var(--plum)" }}
           >

@@ -98,6 +98,7 @@ export function SwipeRow({
         {showEdit ? (
           <button
             type="button"
+            tabIndex={open ? 0 : -1}
             onClick={() => {
               onOpenChange(null);
               onEdit?.();
@@ -111,6 +112,7 @@ export function SwipeRow({
         {showDelete ? (
           <button
             type="button"
+            tabIndex={open ? 0 : -1}
             onClick={() => {
               onOpenChange(null);
               onDelete?.();

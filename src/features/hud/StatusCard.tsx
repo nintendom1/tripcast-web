@@ -77,26 +77,28 @@ export function StatusCard({
           ) : null}
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
-          {meters.map((meter) => {
-            const max = meter.max ?? 100;
-            const pct = Math.min(100, Math.max(0, (meter.value / max) * 100));
-            const tier = tierFor((meter.value / max) * 100);
-            return (
-              <div key={meter.label} className="flex min-w-0 flex-col gap-1">
-                <div className="font-[var(--font-mono)] text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-3)]">
-                  {meter.label}
+        {meters.length > 0 ? (
+          <div className="grid grid-cols-3 gap-2">
+            {meters.map((meter) => {
+              const max = meter.max ?? 100;
+              const pct = Math.min(100, Math.max(0, (meter.value / max) * 100));
+              const tier = tierFor((meter.value / max) * 100);
+              return (
+                <div key={meter.label} className="flex min-w-0 flex-col gap-1">
+                  <div className="font-[var(--font-mono)] text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-3)]">
+                    {meter.label}
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-[var(--meter-track)]">
+                    <span
+                      className="block h-full rounded-full transition-[width]"
+                      style={{ width: `${pct}%`, background: TIER_COLORS[tier] }}
+                    />
+                  </div>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-[var(--meter-track)]">
-                  <span
-                    className="block h-full rounded-full transition-[width]"
-                    style={{ width: `${pct}%`, background: TIER_COLORS[tier] }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       {interactive ? (

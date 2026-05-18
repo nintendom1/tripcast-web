@@ -10,7 +10,7 @@ vi.mock("convex/react", () => ({
 
 function renderForm() {
   const createVote = vi.fn().mockResolvedValue("new-vote-id");
-   
+
   vi.mocked(convexReact.useMutation).mockReturnValue(createVote as any);
 
   const onCreated = vi.fn();

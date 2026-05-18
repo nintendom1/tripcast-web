@@ -15,8 +15,8 @@ vi.mock("./FollowerManagementPanel", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(convexReact.useQuery).mockReturnValue([] as any);  
-  vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);  
+  vi.mocked(convexReact.useQuery).mockReturnValue([] as any);
+  vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
 
 describe("FollowerManagementPage", () => {
