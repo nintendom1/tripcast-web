@@ -36,7 +36,7 @@ beforeEach(() => {
     role: "traveler",
     sessionType: "legacy",
   });
-  vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+  vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
 
 describe("App resilience", () => {
@@ -89,7 +89,7 @@ describe("App resilience", () => {
     vi.useFakeTimers();
     vi.mocked(convexReact.useQuery).mockReturnValue(undefined);
     const signOut = vi.fn(() => new Promise(() => {}));
-    vi.mocked(convexReact.useMutation).mockReturnValue(signOut as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    vi.mocked(convexReact.useMutation).mockReturnValue(signOut as any);
     render(<App convexReady={true} />);
 
     await act(async () => {

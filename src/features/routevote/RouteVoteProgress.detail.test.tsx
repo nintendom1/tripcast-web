@@ -38,7 +38,7 @@ const mockVote: RouteVoteListItem = {
 };
 
 function setupMocks({ detailResult }: { detailResult: unknown }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   (vi.mocked(convexReact.useQuery) as any).mockImplementation(
     (ref: unknown) => {
       if (ref === tripcastApi.routeVotes.travelerGetRouteVoteDetail) {
@@ -48,7 +48,7 @@ function setupMocks({ detailResult }: { detailResult: unknown }) {
       return [mockVote];
     },
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 }
 
@@ -71,6 +71,16 @@ beforeEach(() => {
 });
 
 describe("RouteVoteProgress: VoteDetailView null state", () => {
+  it("renders management inside a bottom sheet", () => {
+    setupMocks({ detailResult: mockVote });
+
+    renderProgress();
+
+    expect(screen.getByText("Manage Votes")).toBeInTheDocument();
+    expect(document.querySelector('[class*="bottom-0"]')).toBeInTheDocument();
+    expect(document.querySelector('[class*="bottom-5"][class*="left-5"]')).not.toBeInTheDocument();
+  });
+
   it("shows the deleted-vote recovery state when detail query returns null", async () => {
     setupMocks({ detailResult: null });
 

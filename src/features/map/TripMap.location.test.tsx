@@ -98,6 +98,14 @@ vi.mock("../routevote/RouteVoteProgress", () => ({
   default: () => null,
 }));
 
+vi.mock("../history/HistorySheet", () => ({
+  default: () => <div data-testid="history-sheet" />,
+}));
+
+vi.mock("../travelfunds/TravelFundsSheet", () => ({
+  default: () => <div data-testid="funds-sheet" />,
+}));
+
 function setupQueries({
   checkpoints = [],
   travelerLocation = null,
@@ -157,6 +165,22 @@ beforeEach(() => {
 });
 
 describe("TripMap location marker", () => {
+  it("closes the Funds sheet when another Dock sheet opens", async () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Funds" }));
+    expect(await screen.findByTestId("funds-sheet")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Story" }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("funds-sheet")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("history-sheet")).toBeInTheDocument();
+  });
+
   it("keeps the route vote fallback origin stable across follower rerenders", async () => {
     setupQueries({
       checkpoints: [
@@ -221,7 +245,7 @@ describe("TripMap location marker", () => {
     });
     expect(getTravelerMarker()).not.toHaveClass("traveler-location-marker--pulsing");
 
-    fireEvent.click(screen.getByRole("button", { name: /share location/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
 
     await waitFor(() => {
       expect(getTravelerMarker()).toHaveClass("traveler-location-marker--pulsing");
@@ -249,7 +273,7 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /share location/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
     window.dispatchEvent(new Event("pagehide"));
 
     await waitFor(() => {

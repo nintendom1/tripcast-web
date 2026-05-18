@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role } from "../../convex/tripcastApi";
+import type { Challenge, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -30,6 +30,12 @@ type Props = {
   onStartChallenge?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   onViewOnMap?: () => void;
+  /** Mission Complete-as-Story branch — when provided and the mission is
+   *  in-progress, a "Complete as story" button appears alongside the existing
+   *  "Complete Challenge" action. The parent (TripMap) owns the story-prefill
+   *  state, opens AddCheckpointSheet, and calls travelerCompleteChallenge
+   *  after the resulting check-in lands. */
+  onCompleteAsStory?: (challenge: Challenge, transaction?: TransactionInlineInput) => void;
 };
 
 function statusLabel(status: string): string {
@@ -58,6 +64,7 @@ export default function ChallengeDetailSheet({
   onStartChallenge,
   onRequestCoordinatePick,
   onViewOnMap,
+  onCompleteAsStory,
 }: Props) {
   // Drop/reject form state
   const [responseNote, setResponseNote] = useState("");
@@ -247,6 +254,17 @@ export default function ChallengeDetailSheet({
     } finally {
       setIsWorking(false);
     }
+  }
+
+  function handleCompleteAsStory() {
+    if (!challenge || !onCompleteAsStory) return;
+    if (completionTxState && "error" in completionTxState) {
+      setActionError(completionTxState.error);
+      return;
+    }
+    const transaction =
+      completionTxState && "value" in completionTxState ? completionTxState.value : undefined;
+    onCompleteAsStory(challenge, transaction);
   }
 
   async function handleTogglePin() {
@@ -669,6 +687,18 @@ export default function ChallengeDetailSheet({
                   onChange={setCompletionTxState}
                 />
               )}
+              {onCompleteAsStory && (
+                <Button
+                  size="sm"
+                  type="button"
+                  disabled={!canAct}
+                  onClick={handleCompleteAsStory}
+                  className="border-[var(--plum)] text-white"
+                  style={{ background: "var(--plum)" }}
+                >
+                  Complete as story
+                </Button>
+              )}
               <Button
                 size="sm"
                 type="button"
@@ -676,7 +706,7 @@ export default function ChallengeDetailSheet({
                 onClick={handleComplete}
                 className="bg-green-600 hover:bg-green-700 text-white border-green-600"
               >
-                Complete Challenge
+                {onCompleteAsStory ? "Mark complete (no story)" : "Complete Challenge"}
               </Button>
               <Button
                 variant="outline"
@@ -704,6 +734,25 @@ export default function ChallengeDetailSheet({
               </Button>
             </>
           )}
+        </div>
+      )}
+
+      {/* Traveler: add a story to a completed mission (no status change) */}
+      {isTraveler && status === "completed" && onCompleteAsStory && (
+        <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-3">
+          <p className="text-xs text-muted-foreground">
+            Got a story to add for how this mission went? It'll land in the journal linked to this entry.
+          </p>
+          <Button
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={handleCompleteAsStory}
+            className="border-[var(--plum)] text-white w-fit"
+            style={{ background: "var(--plum)" }}
+          >
+            Add a story
+          </Button>
         </div>
       )}
 

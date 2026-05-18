@@ -44,6 +44,27 @@ vi.mock("../../components/ui/sheet", () => ({
   SheetTitle: ({ children, ...props }: HTMLAttributes<HTMLHeadingElement>) => (
     <h2 {...props}>{children}</h2>
   ),
+  SheetBody: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
+    <div {...props}>{children}</div>
+  ),
+  SheetGrabber: () => <div data-testid="sheet-grabber" />,
+  SheetKicker: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
+    <div {...props}>{children}</div>
+  ),
+  SheetBackButton: ({ children, ...props }: HTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" {...props}>{children ?? "Back"}</button>
+  ),
+  SheetCloseButton: ({ children, ...props }: HTMLAttributes<HTMLButtonElement>) => (
+    <button type="button" {...props}>{children ?? "Close"}</button>
+  ),
+  SheetTabs: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
+    <div role="tablist" {...props}>{children}</div>
+  ),
+  SheetTab: ({ children, active: _active, ...props }: HTMLAttributes<HTMLButtonElement> & { active?: boolean }) => (
+    <button type="button" role="tab" aria-selected={Boolean(_active)} {...props}>
+      {children}
+    </button>
+  ),
 }));
 
 function renderPanel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = {}) {
@@ -61,9 +82,9 @@ function renderPanel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   vi.mocked(convexReact.useQuery).mockReturnValue([] as any);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
 
@@ -94,5 +115,34 @@ describe("ChallengePanel coordinate picking", () => {
     await user.click(screen.getByRole("button", { name: "Dismiss sheet" }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ChallengePanel Support Crew ownership", () => {
+  it("lets Support Crew withdraw a mission opened from Mine even when userId is not available", async () => {
+    const user = userEvent.setup();
+    const ownChallenge = {
+      _id: "challenge-1",
+      _creationTime: 1,
+      title: "My mission",
+      status: "proposed",
+      source: "support_crew",
+      proposedByUserId: "account-user-1",
+      createdAt: 1,
+      updatedAt: 1,
+      createdBySessionId: "session-1",
+      updatedBySessionId: "session-1",
+    };
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((_ref: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return { mine: [ownChallenge], public: [] };
+    });
+
+    renderPanel({ role: "support_crew" });
+
+    await user.click(screen.getByRole("tab", { name: /Mine/ }));
+    await user.click(screen.getByText("My mission"));
+
+    expect(screen.getByRole("button", { name: "Withdraw proposal" })).toBeInTheDocument();
   });
 });

@@ -27,12 +27,12 @@ describe("AddCheckpointSheet", () => {
 
   it("does not render form content when selectedCoordinate is null", () => {
     render(<AddCheckpointSheet {...makeProps({ selectedCoordinate: null })} />);
-    expect(screen.queryByRole("button", { name: "Save Pin" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save pin" })).not.toBeInTheDocument();
   });
 
   it("renders the form with all fields when open", () => {
     render(<AddCheckpointSheet {...makeProps()} />);
-    expect(screen.getByRole("button", { name: "Save Pin" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save pin" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("e.g. Capitol Hill")).toBeInTheDocument();
     expect(screen.getByLabelText(/Add to Story/)).toBeInTheDocument();
     expect(screen.getByText(/47.609700/)).toBeInTheDocument();
@@ -53,7 +53,7 @@ describe("AddCheckpointSheet", () => {
     await user.type(screen.getByPlaceholderText("e.g. Capitol Hill"), "Capitol Hill");
     await user.type(screen.getByRole("textbox", { name: /Story/i }), "Great view");
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith(
@@ -75,7 +75,7 @@ describe("AddCheckpointSheet", () => {
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ title: undefined }));
@@ -87,7 +87,7 @@ describe("AddCheckpointSheet", () => {
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith(
@@ -102,7 +102,7 @@ describe("AddCheckpointSheet", () => {
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
     await user.click(screen.getByLabelText(/Add to Story/));
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ showInStory: false }));
@@ -114,7 +114,7 @@ describe("AddCheckpointSheet", () => {
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onClose })} />);
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
@@ -135,7 +135,7 @@ describe("AddCheckpointSheet", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     expect(screen.getByRole("alert")).toHaveTextContent("Saving is disabled.");
     expect(onSave).not.toHaveBeenCalled();
@@ -146,7 +146,7 @@ describe("AddCheckpointSheet", () => {
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Too many checkpoints");
@@ -158,7 +158,7 @@ describe("AddCheckpointSheet", () => {
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Server exploded");
@@ -199,10 +199,10 @@ describe("AddCheckpointSheet", () => {
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave, onCheckpointCreated })} />);
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => {
-      expect(onCheckpointCreated).toHaveBeenCalledWith("cp-abc123");
+      expect(onCheckpointCreated).toHaveBeenCalledWith("cp-abc123", undefined);
     });
   });
 
@@ -212,7 +212,7 @@ describe("AddCheckpointSheet", () => {
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave, onCheckpointCreated })} />);
 
-    await user.click(screen.getByRole("button", { name: "Save Pin" }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();

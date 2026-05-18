@@ -77,6 +77,28 @@ Now, <describe the new state or outcome>.
 <Commands run, manual checks performed by you and/or a reviewer, or note why testing was not run.>
 ```
 
+## Linting (Rules of Hooks)
+
+Run lint:
+
+```bash
+npm run lint        # check
+npm run lint:fix    # auto-fix what it can (mostly unused-disable cleanup)
+```
+
+The lint config (`eslint.config.js`) is intentionally narrow — only `react-hooks/rules-of-hooks` (error) and `react-hooks/exhaustive-deps` (warn) are enforced. The rest of static analysis stays with `tsc -b` + tests + code review.
+
+### Rules of Hooks — non-negotiable
+
+**Every hook call must be reachable on every render of a component.** In practice that means:
+
+- Put all `useState` / `useEffect` / `useQuery` / `useMutation` / `useMemo` / `useRef` / `useContext` (and project-specific custom hooks like `useHistoryUnread`, `useReadingSpeed`, `useMusic`, `useDelayedPending`, `useOnlineStatus`) at the **top of the function body**, before any `if (…) return …` early-return branches.
+- A new hook added below an early return changes the hook count between renders that fire the early return vs. renders that fall through. React throws `"Rendered more hooks than during the previous render"` — the root `ErrorBoundary` in `App.tsx` catches it and the user sees the fullscreen error fallback instead of the app. This bug class shipped once during the UX rework (commit `704fcb8` → fix `39468ef`) and is exactly what the lint rule now blocks.
+- When the hook's body needs a value that's only well-defined after the early returns (e.g. `activeSessionCheck.role`), derive a nullable form at the top (`const currentRole = activeSessionCheck?.role ?? null`) and put the conditional logic **inside** the effect body, not around the effect call site.
+- For genuinely missing-but-stable deps in `exhaustive-deps`, add a one-line `// eslint-disable-next-line react-hooks/exhaustive-deps` with a comment above explaining why the dep is closure-stable (ref-driven, stable React setter, or stable Convex mutation handle). Don't disable the rule without the rationale.
+
+CI runs `npm run lint` before tests. Local pre-commit isn't enforced, so run it before pushing.
+
 ## Testing
 
 Run tests:
@@ -105,6 +127,8 @@ When adding new component tests:
 - The Add/Edit Transaction form's exchange-rate field uses **"Local currency per 1 USD"** (spec Option B): `usdAmount = localAmount / localCurrencyPerUsd`. For `USD` the rate is forced to `1` server-side. The per-transaction rate and computed USD value are frozen at write time — later rate edits do not affect existing transactions.
 - `src/features/travelfunds/TravelFundsInlineSection.tsx` is the collapsable cost-entry section embedded in completion forms (the check-in form via `TripMap`'s `ConvexCheckpointSheet` next to "Also Update Traveler State", and `ChallengeDetailSheet`'s in-progress complete action). It serializes to a `TransactionInlineInput | null` via its `onChange` prop. The parent passes the value as the optional `transaction` arg on `addCheckpoint` / `travelerCompleteChallenge` so the transaction lands atomically with the parent record. Server fills `linkedCheckpointId` / `linkedChallengeId` / `linkedActivityId` — the client never sends them in the inline path. For challenges with `estimatedCostUsd`, the section pre-fills `currencyCode = "USD"`, `localCurrencyPerUsd = 1`, `localAmount = estimatedCostUsd` to make confirming the budgeted amount a one-tap action.
 - `HistoryPanel` requires a `token` prop. It subscribes to `tripcastApi.travelFunds.getLinkedCostMap` and threads per-event `actualCostUsd` into each `HistoryEventCard` (matched by `event.challengeId` for `challenge_completed`, by `event.checkpointId` for `check_in`). Support Crew sees the public-only aggregate (server enforces); private/summary_only rows still affect the global meter but never the per-card "Actual cost".
+- Bulk Import is Traveler-only from Options -> Data / Dev (`src/features/options/BulkImportSheet.tsx`). It uses `tripcastApi.bulkImport.previewBulkImport` for backend-owned validation and `tripcastApi.bulkImport.travelerBulkImport` for commit; keep the paste -> preview -> commit flow so invalid rows never write partial data. The backend accepts either a raw entries array or `{ timeZone, entries }`, up to 50 entries, timestamp numbers/strings, and `ref` links between check-ins/stories, transactions, route votes/options, and challenges. Date-only timestamps use midnight in the selected IANA timezone. Image-block story import is not implemented in the backend yet.
+- Music uses the Web Audio-only engine in `src/lib/audio/engine.ts`; do not add bundled audio files or token-based providers. Components should call `useMusicSafe().sfx(...)` for local interaction sounds. Use `open` / `close` for sheet visibility, `page` for internal panel navigation, `pin` for map placement or saved pins, `vote` after a successful Support Crew vote, `success` after successful writes, `tap` for lightweight toggles, and `toast` from central toast helpers. Scenario selection for the map belongs in `src/lib/audio/useTripAudioScenario.ts`, with priority `story > overBudget > voteActive > challengeActive > idle`; keep new scenario logic there instead of scattering `setScenario` calls.
 
 ## Coordinate-Pick UX Pattern
 
@@ -129,20 +153,22 @@ TripMap targets 390px-wide viewports (iPhone 12 Pro class) as the primary form f
 
 This clips all absolutely-positioned children — button clusters, panel overlays, animated banners. Without it, any child that extends past the section boundary creates document-level horizontal scroll. **This is the single most important CSS rule in the map view.** If it's removed, or a new wrapper element is introduced without it, the page scrolls on mobile.
 
-### Use vertical FAB clusters, never horizontal button rows
+### Map chrome composition (post-rework)
 
-All map controls live in two `absolute` vertical columns (`flex flex-col gap-2`):
+Map controls live in a single horizontal Dock at the bottom plus two corner utilities. There are **no more vertical FAB clusters** — the legacy `bottom-5 left-5` and `bottom-5 right-5` columns have been replaced.
 
-| Cluster | Position | Contents |
-|---------|----------|----------|
-| Panel navigation | `bottom-5 left-5` | History, Challenges, Traveler State, Votes |
-| Map utilities | `bottom-5 right-5` | Locate, Share Location, Add Pin |
+| Region | Position | Contents |
+|--------|----------|----------|
+| HUD top stack | `inset-x-3 top-3` | `StatusCard` (state + activity), `LivePill` (Traveler only), `FundsCompact` |
+| Music indicator | `right-3 top-3` | `MusicMuteIndicator` |
+| Map utility | `bottom-[88px] right-3` | `MapCenterButton` (recenter on traveler / last check-in) |
+| Bottom Dock | `inset-x-3 bottom-3` | `Dock` (Story · Missions · `+` · Votes · Funds) |
 
-**Every button is exactly `w-11 h-11` (44 × 44 px).** This is the Apple HIG / WCAG minimum touch target size. Fixed squares guarantee the cluster never contributes to horizontal overflow regardless of how many items are added.
+The Dock is the single nav surface. Its center `+` is a FAB: Traveler opens `FanMenu` (Check-in / Activity / Transaction / Challenge / Vote); Support Crew goes straight to "Propose Mission" (no fan).
 
-Buttons are icon-only — `aria-label` carries the text equivalent. No visible text labels in these clusters.
+Touch targets in the Dock are 44 × 44 px or larger; the FAB is 48 × 48 px and bleeds slightly above the dock baseline. Live the design tokens in `src/styles.css` (`--dock-h`, `--shadow-fab`, `--flag`) — do not hardcode colors at use sites.
 
-When adding a new map control: pick the correct cluster, use a `lucide-react` icon, write an `aria-label`, keep `w-11 h-11`. Do not add text.
+When adding a new HUD or Dock control: extend the component in `src/features/hud/` and surface it through `src/features/hud/index.ts`. Do not reintroduce vertical FAB columns.
 
 ### All secondary panels are bottom sheets
 
@@ -154,7 +180,7 @@ Modal flows (Options, Emergency Reset) keep the default backdrop/modal behavior.
 
 ### Mutual panel exclusion
 
-At most one bottom sheet (History, Challenges, Votes) may be open at a time. Use named helper functions — not raw `setState` on the button `onClick` — to enforce this:
+At most one bottom sheet (History, Challenges, Votes, Funds) may be open at a time. The Dock's `onSelect` callback funnels into the existing `open<Panel>` helpers, which use named functions — not raw `setState` on the button `onClick` — to enforce exclusion:
 
 ```typescript
 function openHistory() {
@@ -165,20 +191,13 @@ function openHistory() {
 }
 ```
 
-Each helper closes the other two panels and toggles itself closed if already open (tap-to-dismiss). `TravelerState` is a full-height dialog and does not participate in exclusion.
+Each helper closes its siblings and toggles itself closed if already open (tap-to-dismiss). `TravelerState` is a full-height dialog and does not participate in exclusion. The Dock's `activeDockTab` is derived directly from the panel open flags so it stays in sync.
 
-When adding a new panel: write an `open<Panel>` helper, call `set<ExistingPanel>Open(false)` for each existing panel inside it, and wire the button to the helper.
+When adding a new panel: write an `open<Panel>` helper, call `set<ExistingPanel>Open(false)` for each existing panel inside it, expose a `DockTab` variant if it belongs in the Dock, and update `activeDockTab`/`handleDockSelect` accordingly.
 
-### Toast positioning must clear the nav cluster
+### Toast positioning must clear the Dock
 
-The toast `bottom-[Npx]` must clear the left FAB cluster. With 44 px buttons and 8 px gaps:
-
-| Role | Buttons | `bottom` value |
-|------|---------|----------------|
-| Traveler | 4 | `bottom-[230px]` |
-| Support crew | 3 | `bottom-[180px]` |
-
-Update these when buttons are added to or removed from the nav cluster.
+The toast lives at `bottom-[112px]` so it sits above the Dock (~76 px tall) plus the bottom gutter. Role no longer matters — the Dock is the same height for Traveler and Support Crew. Update the constant if the Dock height changes.
 
 ### MapLibre measurement gotchas
 

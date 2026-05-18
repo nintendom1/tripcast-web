@@ -1,19 +1,29 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { Plus } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role } from "../../convex/tripcastApi";
+import type { Challenge, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import ChallengeCard from "./ChallengeCard";
 import ChallengeProposalForm from "./ChallengeProposalForm";
 import ChallengeDetailSheet from "./ChallengeDetailSheet";
 import {
   Sheet,
+  SheetBackButton,
+  SheetCloseButton,
   SheetContent,
-  SheetHeader,
+  SheetGrabber,
+  SheetKicker,
+  SheetTab,
+  SheetTabs,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
+import { SwipeRow } from "../../components/ui/SwipeRow";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
+import { cn } from "@/lib/utils";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 type Props = {
   open: boolean;
@@ -28,7 +38,17 @@ type Props = {
   pendingOpenChallengeId?: string | null;
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
+  onCompleteAsStory?: (challenge: Challenge, transaction?: TransactionInlineInput) => void;
+  /** When set + the panel is open, navigate straight to the matching mission's
+   *  detail view rather than the list. Used by the Complete-as-Story → Back
+   *  flow so dismissing the story form returns the Traveler to the mission's
+   *  full action set. Parent clears via `onClearPendingDetail` once we land. */
+  pendingOpenDetailChallengeId?: string | null;
+  onClearPendingDetail?: () => void;
 };
+
+type ViewMode = "list" | "create" | "detail";
+type SelectedChallenge = { challenge: Challenge; isOwn: boolean };
 
 type TravelerFilter = "all" | "proposed" | "visible" | "in_progress" | "completed" | "dropped";
 
@@ -41,39 +61,308 @@ const TRAVELER_FILTERS: { value: TravelerFilter; label: string }[] = [
   { value: "dropped", label: "Dropped" },
 ];
 
+const TITLE_BY_VIEW: Record<ViewMode, { traveler: string; crew: string }> = {
+  list: { traveler: "Missions", crew: "Missions" },
+  create: { traveler: "New mission", crew: "Propose mission" },
+  detail: { traveler: "Mission", crew: "Mission" },
+};
+
 // ---------------------------------------------------------------------------
-// Traveler view
+// Main panel — owns the internal list / create / detail nav stack
 // ---------------------------------------------------------------------------
 
-function TravelerChallengePanel({
+export default function ChallengePanel({
+  open,
   token,
+  role,
+  userId,
   onClose,
   onStartChallenge,
   onRequestCoordinatePick,
   isPickingCoordinate,
-  isCreating,
   pendingOpenChallengeId,
   onClearPendingChallenge,
   onRequestNavigateToChallenge,
+  onCompleteAsStory,
+  pendingOpenDetailChallengeId,
+  onClearPendingDetail,
+}: Props) {
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [selectedChallenge, setSelectedChallenge] = useState<SelectedChallenge | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Challenge | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const music = useMusicSafe();
+  const deleteChallenge = useMutation(tripcastApi.challenges.travelerDeleteChallenge);
+
+  async function handleConfirmDelete() {
+    if (!pendingDelete || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await deleteChallenge({ token, challengeId: pendingDelete._id });
+      music.sfx("success");
+      setPendingDelete(null);
+    } catch {
+      // Mutation already shows the user-friendly error inline via ChallengeDetailSheet
+      // when they get there; here we just close the confirm and trust the data
+      // subscription to either reflect the delete or keep the row.
+      setPendingDelete(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
+  // Reset view when panel closes — the next open should always land on the list
+  useEffect(() => {
+    if (!open) {
+      setViewMode("list");
+      setSelectedChallenge(null);
+    }
+  }, [open]);
+
+  // Pin-driven navigation: the parent passes a challenge id to focus on; we
+  // always return the panel to its list view (and trust the parent to recenter
+  // the map) so the user can see the row highlight rather than the detail.
+  useEffect(() => {
+    if (!pendingOpenChallengeId) return;
+    setViewMode("list");
+    setSelectedChallenge(null);
+  }, [pendingOpenChallengeId]);
+
+  // Back-from-story navigation: the parent (TripMap) sets this when the
+  // Traveler hits "← Back" inside AddCheckpointSheet's mission-completion
+  // mode. We look up the challenge by id and drop the user straight back on
+  // the same mission's detail view so the four-button action set is visible.
+  const pendingDetailChallenge = useQuery(
+    tripcastApi.challenges.getChallenge,
+    pendingOpenDetailChallengeId && open
+      ? { token, challengeId: pendingOpenDetailChallengeId }
+      : "skip",
+  );
+
+  useEffect(() => {
+    if (!open || !pendingOpenDetailChallengeId) return;
+    if (pendingDetailChallenge === undefined) return; // still loading
+    if (pendingDetailChallenge === null) {
+      // Challenge was deleted while the user was writing the story — fall back
+      // to the list view and clear the pending id so we don't loop.
+      onClearPendingDetail?.();
+      setViewMode("list");
+      setSelectedChallenge(null);
+      return;
+    }
+    setSelectedChallenge({
+      challenge: pendingDetailChallenge,
+      isOwn: role === "traveler" || Boolean(pendingDetailChallenge.proposedByUserId === userId),
+    });
+    setViewMode("detail");
+    onClearPendingDetail?.();
+    // pendingDetailChallenge / onClearPendingDetail are stable enough for the
+    // one-shot navigation behavior we want here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pendingOpenDetailChallengeId, pendingDetailChallenge]);
+
+  // Entering the detail view auto-focuses the map on the mission's coordinates
+  // — same UX as opening a story. The explicit "View on map" link in the
+  // detail body remains useful for re-centering after the user has panned away.
+  useEffect(() => {
+    if (viewMode !== "detail" || !selectedChallenge) return;
+    if (selectedChallenge.challenge.lat === undefined || selectedChallenge.challenge.lon === undefined) return;
+    onRequestNavigateToChallenge?.({
+      lat: selectedChallenge.challenge.lat,
+      lon: selectedChallenge.challenge.lon,
+    });
+    // onRequestNavigateToChallenge is stable enough for our purposes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, selectedChallenge?.challenge._id]);
+
+  function goToList(sound: "page" | "success" | null = "page") {
+    if (sound) music.sfx(sound);
+    setViewMode("list");
+    setSelectedChallenge(null);
+  }
+
+  function goToCreate() {
+    music.sfx("page");
+    setSelectedChallenge(null);
+    setViewMode("create");
+  }
+
+  function goToDetail(challenge: Challenge, isOwn = role === "traveler") {
+    music.sfx("page");
+    setSelectedChallenge({ challenge, isOwn });
+    setViewMode("detail");
+  }
+
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && !isPickingCoordinate) {
+      onClose();
+    }
+  }
+
+  const isTraveler = role === "traveler";
+  const headerTitle = isTraveler ? TITLE_BY_VIEW[viewMode].traveler : TITLE_BY_VIEW[viewMode].crew;
+  const showBack = viewMode !== "list";
+
+  return (
+    <Sheet
+      open={open}
+      modal={false}
+      onOpenChange={handleOpenChange}
+      disablePointerDismissal={isPickingCoordinate}
+    >
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className={cn(
+          "z-[10] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+          isPickingCoordinate && "invisible pointer-events-none",
+        )}
+        data-role="missions-sheet"
+      >
+        <SheetGrabber />
+        <div className="flex items-start justify-between gap-2 px-4 pt-2">
+          <div className="flex min-w-0 flex-1 items-start gap-2">
+            {showBack ? (
+              <SheetBackButton aria-label="Back to missions list" onClick={() => goToList()} />
+            ) : null}
+            <div className="flex min-w-0 flex-col gap-1">
+              <SheetKicker dotColor="var(--plum)">Missions</SheetKicker>
+              <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                {headerTitle}
+              </SheetTitle>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {viewMode === "list" ? (
+              <Button
+                size="sm"
+                type="button"
+                onClick={goToCreate}
+                aria-label={isTraveler ? "Create mission" : "Propose mission"}
+                className="rounded-full"
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                {isTraveler ? "New" : "Propose"}
+              </Button>
+            ) : null}
+            <SheetCloseButton aria-label="Close challenges panel" />
+          </div>
+        </div>
+
+        <div className="flex flex-1 min-h-0 flex-col">
+          {viewMode === "list" ? (
+            isTraveler ? (
+              <TravelerListView
+                token={token}
+                pendingOpenChallengeId={pendingOpenChallengeId}
+                onClearPendingChallenge={onClearPendingChallenge}
+                onRequestNavigateToChallenge={onRequestNavigateToChallenge}
+                onOpenDetail={goToDetail}
+                onRequestDelete={(c) => setPendingDelete(c)}
+              />
+            ) : (
+              <CrewListView
+                token={token}
+                userId={userId}
+                pendingOpenChallengeId={pendingOpenChallengeId}
+                onClearPendingChallenge={onClearPendingChallenge}
+                onRequestNavigateToChallenge={onRequestNavigateToChallenge}
+                onOpenDetail={goToDetail}
+              />
+            )
+          ) : viewMode === "create" ? (
+            <div className="overflow-y-auto px-4 py-3">
+              {isTraveler ? (
+                <TravelerCreateForm
+                  token={token}
+                  onRequestCoordinatePick={onRequestCoordinatePick}
+                  onSuccess={() => goToList("success")}
+                />
+              ) : (
+                <ChallengeProposalForm
+                  token={token}
+                  onRequestCoordinatePick={onRequestCoordinatePick}
+                  onSuccess={() => goToList("success")}
+                />
+              )}
+            </div>
+          ) : viewMode === "detail" && selectedChallenge ? (
+            <div className="overflow-y-auto">
+              <ChallengeDetailSheet
+                challenge={selectedChallenge.challenge}
+                token={token}
+                role={role}
+                isOwn={selectedChallenge.isOwn}
+                onClose={() => goToList()}
+                onStartChallenge={() => {
+                  onStartChallenge?.();
+                  goToList(null);
+                }}
+                onRequestCoordinatePick={onRequestCoordinatePick}
+                onCompleteAsStory={
+                  onCompleteAsStory
+                    ? (challenge, transaction) => {
+                        onCompleteAsStory(challenge, transaction);
+                        goToList(null);
+                      }
+                    : undefined
+                }
+                onViewOnMap={
+                  selectedChallenge.challenge.lat !== undefined && selectedChallenge.challenge.lon !== undefined
+                    ? () => {
+                        const { lat, lon } = selectedChallenge.challenge;
+                        if (lat !== undefined && lon !== undefined) {
+                          onRequestNavigateToChallenge?.({ lat, lon });
+                        }
+                        goToList("page");
+                      }
+                    : undefined
+                }
+              />
+            </div>
+          ) : null}
+        </div>
+      </SheetContent>
+
+      <ConfirmDelete
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title="Delete this mission?"
+        itemLabel={pendingDelete?.title ?? undefined}
+        description="The mission is removed for everyone. Linked transactions are kept but unlinked. This can't be undone."
+        onConfirm={handleConfirmDelete}
+        pending={isDeleting}
+      />
+    </Sheet>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Traveler list view — tabs + ChallengeCard list
+// ---------------------------------------------------------------------------
+
+function TravelerListView({
+  token,
+  pendingOpenChallengeId,
+  onClearPendingChallenge,
+  onRequestNavigateToChallenge,
+  onOpenDetail,
+  onRequestDelete,
 }: {
   token: string;
-  onClose: () => void;
-  onStartChallenge?: () => void;
-  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
-  isPickingCoordinate?: boolean;
-  isCreating: boolean;
   pendingOpenChallengeId?: string | null;
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
+  onOpenDetail: (c: Challenge, isOwn?: boolean) => void;
+  onRequestDelete?: (c: Challenge) => void;
 }) {
   const [filter, setFilter] = useState<TravelerFilter>("all");
-  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
-
+  const [swipedId, setSwipedId] = useState<string | null>(null);
   const allChallenges = useQuery(tripcastApi.challenges.travelerListChallenges, { token });
 
-  // Pin click: navigate to the challenge location only — don't auto-open the detail sheet
   useEffect(() => {
     if (!pendingOpenChallengeId || !allChallenges) return;
     const challenge = allChallenges.find((c) => c._id === pendingOpenChallengeId);
@@ -83,12 +372,15 @@ function TravelerChallengePanel({
       }
       const id = pendingOpenChallengeId;
       setTimeout(() => {
-        document.querySelector(`[data-challenge-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        document
+          .querySelector(`[data-challenge-id="${id}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
         setHighlightedChallengeId(id);
         setTimeout(() => setHighlightedChallengeId(null), 2000);
       }, 100);
       onClearPendingChallenge?.();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingOpenChallengeId, allChallenges]);
 
   const filtered = allChallenges?.filter((c) => {
@@ -97,119 +389,65 @@ function TravelerChallengePanel({
     return c.status === filter;
   }) ?? [];
 
-  function openDetail(challenge: Challenge) {
-    setSelectedChallenge(challenge);
-    setIsDetailOpen(true);
-    // Navigation is opt-in via "View on map" in the detail sheet, not automatic
-  }
-
-  function handleViewOnMap() {
-    if (!selectedChallenge) return;
-    setIsDetailOpen(false);
-    setSelectedChallenge(null);
-    if (selectedChallenge.lat !== undefined && selectedChallenge.lon !== undefined) {
-      onRequestNavigateToChallenge?.({ lat: selectedChallenge.lat, lon: selectedChallenge.lon });
-    }
-  }
-
-  function handleDetailOpenChange(nextOpen: boolean) {
-    if (!nextOpen && !isPickingCoordinate) {
-      setIsDetailOpen(false);
-      setSelectedChallenge(null);
-    }
-  }
-
   return (
     <>
-      <div className="flex flex-col gap-3 overflow-y-auto h-full">
-        {/* Filters */}
-        <div
-          role="tablist"
-          aria-label="Challenge filters"
-          className="px-4 pt-2 flex gap-2 overflow-x-auto pb-1"
-        >
-          {TRAVELER_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              role="tab"
-              id={`challenge-tab-${f.value}`}
-              aria-selected={filter === f.value}
-              aria-controls="challenge-tabpanel"
-              className={`shrink-0 px-3 py-1 text-xs rounded-full border whitespace-nowrap transition-colors ${
-                filter === f.value
-                  ? "bg-navy text-white border-navy"
-                  : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-              }`}
-              onClick={() => setFilter(f.value)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+      <SheetTabs aria-label="Challenge filters" className="mt-3">
+        {TRAVELER_FILTERS.map((f) => (
+          <SheetTab
+            key={f.value}
+            id={`challenge-tab-${f.value}`}
+            aria-controls="challenge-tabpanel"
+            active={filter === f.value}
+            onClick={() => setFilter(f.value)}
+          >
+            {f.label}
+          </SheetTab>
+        ))}
+      </SheetTabs>
 
-        {/* Create form */}
-        {isCreating && (
-          <div className="px-4 pb-2 border-b border-slate-100">
-            <TravelerCreateForm
-              token={token}
-              onSuccess={() => {}}
-              onRequestCoordinatePick={onRequestCoordinatePick}
-            />
-          </div>
-        )}
-
-        {/* List */}
-        <div
-          id="challenge-tabpanel"
-          role="tabpanel"
-          aria-labelledby={`challenge-tab-${filter}`}
-          className="flex flex-col gap-2 px-4 pb-4"
-        >
-          {allChallenges === undefined ? (
-            <PendingNotice label="Loading challenges..." />
-          ) : filtered.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              {filter === "all" ? "No challenges yet." : `No ${filter} challenges.`}
-            </p>
-          ) : (
-            filtered.map((c) => (
-              <ChallengeCard key={c._id} challenge={c} isHighlighted={c._id === highlightedChallengeId} onClick={() => openDetail(c)} />
-            ))
-          )}
-        </div>
-      </div>
-
-      <Sheet
-        open={isDetailOpen}
-        onOpenChange={handleDetailOpenChange}
-        disablePointerDismissal={isPickingCoordinate}
+      <div
+        id="challenge-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`challenge-tab-${filter}`}
+        className="flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-4 pt-3"
       >
-        <SheetContent
-          side="bottom"
-          showBackdrop={!isPickingCoordinate}
-          className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}
-        >
-          <SheetHeader>
-            <SheetTitle className="sr-only">Challenge details</SheetTitle>
-          </SheetHeader>
-          <ChallengeDetailSheet
-            challenge={selectedChallenge}
-            token={token}
-            role="traveler"
-            onClose={() => { setIsDetailOpen(false); setSelectedChallenge(null); }}
-            onStartChallenge={onStartChallenge}
-            onRequestCoordinatePick={onRequestCoordinatePick}
-            onViewOnMap={selectedChallenge?.lat !== undefined ? handleViewOnMap : undefined}
-          />
-        </SheetContent>
-      </Sheet>
+        {allChallenges === undefined ? (
+          <PendingNotice label="Loading challenges..." />
+        ) : filtered.length === 0 ? (
+          <p className="py-6 text-center text-sm text-[var(--ink-3)]">
+            {filter === "all" ? "No missions yet." : `No ${filter.replace(/_/g, " ")} missions.`}
+          </p>
+        ) : (
+          filtered.map((c) => {
+            const card = (
+              <ChallengeCard
+                challenge={c}
+                isHighlighted={c._id === highlightedChallengeId}
+                onClick={() => onOpenDetail(c)}
+              />
+            );
+            if (!onRequestDelete) return <span key={c._id}>{card}</span>;
+            return (
+              <SwipeRow
+                key={c._id}
+                id={c._id}
+                openId={swipedId}
+                onOpenChange={setSwipedId}
+                onEdit={() => onOpenDetail(c)}
+                onDelete={() => onRequestDelete(c)}
+              >
+                {card}
+              </SwipeRow>
+            );
+          })
+        )}
+      </div>
     </>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Traveler create form
+// Traveler create form — inline, used in viewMode="create"
 // ---------------------------------------------------------------------------
 
 function TravelerCreateForm({
@@ -259,7 +497,7 @@ function TravelerCreateForm({
       onSuccess();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setError(msg || "Unable to create challenge.");
+      setError(msg || "Unable to create mission.");
     } finally {
       setIsSaving(false);
     }
@@ -268,40 +506,40 @@ function TravelerCreateForm({
   return (
     <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground">Title</label>
+        <label className="text-xs font-medium text-[var(--ink-3)]">Title</label>
         <input
-          className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-navy focus:ring-1 focus:ring-navy"
-          placeholder="Challenge title"
+          className="w-full rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-1.5 text-sm outline-none focus:border-[var(--ink-1)] focus:ring-1 focus:ring-[var(--ink-1)]"
+          placeholder="Mission title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={200}
         />
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground">Location (optional)</label>
+        <label className="text-xs font-medium text-[var(--ink-3)]">Location (optional)</label>
         <input
-          className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-navy focus:ring-1 focus:ring-navy"
+          className="w-full rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-1.5 text-sm outline-none focus:border-[var(--ink-1)] focus:ring-1 focus:ring-[var(--ink-1)]"
           placeholder="Place name"
           value={locationLabel}
           onChange={(e) => setLocationLabel(e.target.value)}
           maxLength={200}
         />
-        <div className="flex items-center gap-2 mt-1">
+        <div className="mt-1 flex items-center gap-2">
           {onRequestCoordinatePick && (
             <button
               type="button"
-              className="text-xs text-navy underline"
+              className="text-xs text-[var(--ink-1)] underline"
               onClick={handlePickOnMap}
             >
               ↗ Pick on map
             </button>
           )}
           {lat !== undefined && lon !== undefined && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-[var(--ink-3)]">
               📍 {lat.toFixed(5)}, {lon.toFixed(5)}
               <button
                 type="button"
-                className="ml-1 text-rose-500 underline"
+                className="ml-1 text-[var(--danger)] underline"
                 onClick={() => { setLat(undefined); setLon(undefined); }}
               >
                 clear
@@ -311,9 +549,9 @@ function TravelerCreateForm({
         </div>
       </div>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
+        <label className="text-xs font-medium text-[var(--ink-3)]">Notes (optional)</label>
         <textarea
-          className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-navy focus:ring-1 focus:ring-navy resize-none"
+          className="w-full resize-none rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-1.5 text-sm outline-none focus:border-[var(--ink-1)] focus:ring-1 focus:ring-[var(--ink-1)]"
           placeholder="Any details…"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
@@ -321,41 +559,63 @@ function TravelerCreateForm({
           maxLength={500}
         />
       </div>
-      {error && <p className="text-sm text-rose-600" role="alert">{error}</p>}
+      <div className="flex gap-2">
+        <div className="flex flex-1 flex-col gap-1">
+          <label className="text-xs font-medium text-[var(--ink-3)]">Est. cost (USD)</label>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            className="w-full rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-1.5 text-sm outline-none focus:border-[var(--ink-1)] focus:ring-1 focus:ring-[var(--ink-1)]"
+            placeholder="0"
+            value={costStr}
+            onChange={(e) => setCostStr(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-1 flex-col gap-1">
+          <label className="text-xs font-medium text-[var(--ink-3)]">Est. time (min)</label>
+          <input
+            type="number"
+            inputMode="numeric"
+            min="0"
+            step="1"
+            className="w-full rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-1.5 text-sm outline-none focus:border-[var(--ink-1)] focus:ring-1 focus:ring-[var(--ink-1)]"
+            placeholder="0"
+            value={durationStr}
+            onChange={(e) => setDurationStr(e.target.value)}
+          />
+        </div>
+      </div>
+      {error && <p className="text-sm text-[var(--danger)]" role="alert">{error}</p>}
       <Button size="sm" type="submit" disabled={isSaving || !title.trim()}>
-        {isSaving ? "Creating…" : "Create Challenge"}
+        {isSaving ? "Creating…" : "Create mission"}
       </Button>
     </form>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Support crew view
+// Crew list view — tabs + ChallengeCard list
 // ---------------------------------------------------------------------------
 
 type CrewTab = "mine" | "active";
 
-function SupportCrewChallengePanel({
+function CrewListView({
   token,
-  userId,
-  onRequestCoordinatePick,
-  isProposeOpen,
   pendingOpenChallengeId,
   onClearPendingChallenge,
   onRequestNavigateToChallenge,
+  onOpenDetail,
 }: {
   token: string;
   userId?: string;
-  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
-  isProposeOpen: boolean;
   pendingOpenChallengeId?: string | null;
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
+  onOpenDetail: (c: Challenge, isOwn?: boolean) => void;
 }) {
   const [tab, setTab] = useState<CrewTab>("active");
-  const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
 
   const myChallenges = useQuery(tripcastApi.challenges.followerListMyChallenges, { token });
@@ -364,7 +624,6 @@ function SupportCrewChallengePanel({
   const publicChallenges = myChallenges?.public ?? [];
   const mineIds = new Set(mine.map((c) => c._id));
 
-  // Navigate to challenge pin on the map without auto-opening detail
   useEffect(() => {
     if (!pendingOpenChallengeId || !myChallenges) return;
     const challenge =
@@ -376,261 +635,78 @@ function SupportCrewChallengePanel({
       }
       const id = pendingOpenChallengeId;
       setTimeout(() => {
-        document.querySelector(`[data-challenge-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        document
+          .querySelector(`[data-challenge-id="${id}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
         setHighlightedChallengeId(id);
         setTimeout(() => setHighlightedChallengeId(null), 2000);
       }, 100);
       onClearPendingChallenge?.();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingOpenChallengeId, myChallenges]);
-
-  function openDetail(challenge: Challenge) {
-    setSelectedChallenge(challenge);
-    setIsDetailOpen(true);
-  }
-
-  function handleViewOnMap() {
-    if (!selectedChallenge) return;
-    setIsDetailOpen(false);
-    setSelectedChallenge(null);
-    if (selectedChallenge.lat !== undefined && selectedChallenge.lon !== undefined) {
-      onRequestNavigateToChallenge?.({ lat: selectedChallenge.lat, lon: selectedChallenge.lon });
-    }
-  }
 
   return (
     <>
-      <div className="flex flex-col gap-3 overflow-y-auto h-full">
-        {/* Inline proposal form */}
-        {isProposeOpen && (
-          <div className="px-4 pt-2 pb-2 border-b border-slate-100">
-            <ChallengeProposalForm
-              token={token}
-              onRequestCoordinatePick={onRequestCoordinatePick}
-              onSuccess={(autoPublished) => {
-                setSuccessMsg(
-                  autoPublished
-                    ? "Challenge posted!"
-                    : "Challenge sent to Traveler for review.",
-                );
-                setTab("mine");
-              }}
-            />
-          </div>
-        )}
+      <SheetTabs aria-label="Crew challenge tabs" className="mt-3">
+        <SheetTab
+          id="crew-tab-active"
+          aria-controls="crew-tabpanel"
+          active={tab === "active"}
+          onClick={() => setTab("active")}
+        >
+          Traveler's board
+        </SheetTab>
+        <SheetTab
+          id="crew-tab-mine"
+          aria-controls="crew-tabpanel"
+          active={tab === "mine"}
+          onClick={() => setTab("mine")}
+        >
+          Mine ({mine.length})
+        </SheetTab>
+      </SheetTabs>
 
-        {successMsg && (
-          <p className="px-4 text-sm text-green-700 bg-green-50 py-2 rounded-md mx-4" role="status">
-            {successMsg}
+      <div
+        id="crew-tabpanel"
+        role="tabpanel"
+        aria-labelledby={`crew-tab-${tab}`}
+        className="flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-4 pt-3"
+      >
+        {myChallenges === undefined ? (
+          <PendingNotice label="Loading challenges..." />
+        ) : tab === "mine" ? (
+          mine.length === 0 ? (
+            <p className="py-6 text-center text-sm text-[var(--ink-3)]">
+              You haven't proposed any missions yet.
+            </p>
+          ) : (
+            mine.map((c) => (
+              <ChallengeCard
+                key={c._id}
+                challenge={c}
+                isOwn
+                isHighlighted={c._id === highlightedChallengeId}
+                onClick={() => onOpenDetail(c, true)}
+              />
+            ))
+          )
+        ) : publicChallenges.length === 0 ? (
+          <p className="py-6 text-center text-sm text-[var(--ink-3)]">
+            No active missions right now.
           </p>
+        ) : (
+          publicChallenges.map((c) => (
+            <ChallengeCard
+              key={c._id}
+              challenge={c}
+              isOwn={mineIds.has(c._id)}
+              isHighlighted={c._id === highlightedChallengeId}
+              onClick={() => onOpenDetail(c, mineIds.has(c._id))}
+            />
+          ))
         )}
-
-        {/* Tabs: Mine | Active */}
-        <div
-          role="tablist"
-          aria-label="Challenge tabs"
-          className="flex gap-1 px-4 pt-2 border-b border-slate-100 pb-2"
-        >
-          {([
-            { value: "mine" as CrewTab, label: `Mine (${mine.length})` },
-            { value: "active" as CrewTab, label: "Traveler's Board" },
-          ] as const).map(({ value, label }) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              id={`crew-tab-${value}`}
-              aria-selected={tab === value}
-              aria-controls="crew-tabpanel"
-              className={`shrink-0 px-3 py-1 text-xs rounded-full border transition-colors ${
-                tab === value
-                  ? "bg-navy text-white border-navy"
-                  : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-              }`}
-              onClick={() => { setTab(value); setSuccessMsg(null); }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Tab content */}
-        <div
-          id="crew-tabpanel"
-          role="tabpanel"
-          aria-labelledby={`crew-tab-${tab}`}
-          className="flex flex-col gap-2 px-4 pb-4"
-        >
-          {myChallenges === undefined ? (
-            <PendingNotice label="Loading challenges..." />
-          ) : tab === "mine" ? (
-            mine.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                You haven't proposed any challenges yet.
-              </p>
-            ) : (
-              mine.map((c) => (
-                <ChallengeCard
-                  key={c._id}
-                  challenge={c}
-                  isOwn
-                  isHighlighted={c._id === highlightedChallengeId}
-                  onClick={() => openDetail(c)}
-                />
-              ))
-            )
-          ) : (
-            publicChallenges.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No active challenges right now.
-              </p>
-            ) : (
-              publicChallenges.map((c) => (
-                <ChallengeCard
-                  key={c._id}
-                  challenge={c}
-                  isOwn={mineIds.has(c._id)}
-                  isHighlighted={c._id === highlightedChallengeId}
-                  onClick={() => openDetail(c)}
-                />
-              ))
-            )
-          )}
-        </div>
       </div>
-
-      <Sheet
-        open={isDetailOpen}
-        onOpenChange={(o) => { if (!o) { setIsDetailOpen(false); setSelectedChallenge(null); } }}
-      >
-        <SheetContent side="bottom">
-          <SheetHeader>
-            <SheetTitle className="sr-only">Challenge details</SheetTitle>
-          </SheetHeader>
-          <ChallengeDetailSheet
-            challenge={selectedChallenge}
-            token={token}
-            role="support_crew"
-            isOwn={selectedChallenge ? mineIds.has(selectedChallenge._id) : false}
-            onClose={() => { setIsDetailOpen(false); setSelectedChallenge(null); }}
-            onViewOnMap={selectedChallenge?.lat !== undefined ? handleViewOnMap : undefined}
-          />
-        </SheetContent>
-      </Sheet>
     </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main panel
-// ---------------------------------------------------------------------------
-
-export default function ChallengePanel({
-  open,
-  token,
-  role,
-  sessionId,
-  userId,
-  onClose,
-  onStartChallenge,
-  onRequestCoordinatePick,
-  isPickingCoordinate,
-  pendingOpenChallengeId,
-  onClearPendingChallenge,
-  onRequestNavigateToChallenge,
-}: Props) {
-  // Lifted create/propose toggle state so the button lives in the outer header
-  const [isCreating, setIsCreating] = useState(false);
-  const [isProposeOpen, setIsProposeOpen] = useState(false);
-
-  // Reset form state when panel closes
-  useEffect(() => {
-    if (!open) {
-      setIsCreating(false);
-      setIsProposeOpen(false);
-    }
-  }, [open]);
-
-  const isTraveler = role === "traveler";
-
-  function handleOpenChange(nextOpen: boolean) {
-    if (!nextOpen && !isPickingCoordinate) {
-      onClose();
-    }
-  }
-
-  return (
-    <Sheet
-      open={open}
-      modal={false}
-      onOpenChange={handleOpenChange}
-      disablePointerDismissal={isPickingCoordinate}
-    >
-      <SheetContent
-        side="bottom"
-        showBackdrop={false}
-        className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}
-      >
-        <SheetHeader className="flex-row items-center justify-between space-y-0 shrink-0 px-4 py-3 border-b border-slate-100">
-          <SheetTitle className="font-semibold text-navy text-sm">Challenges</SheetTitle>
-          <div className="flex items-center gap-2">
-            {isTraveler && (
-              <Button
-                size="sm"
-                variant={isCreating ? "outline" : "default"}
-                type="button"
-                onClick={() => setIsCreating((p) => !p)}
-              >
-                {isCreating ? "Cancel" : "+ New"}
-              </Button>
-            )}
-            {!isTraveler && (
-              <Button
-                size="sm"
-                variant={isProposeOpen ? "outline" : "default"}
-                type="button"
-                onClick={() => setIsProposeOpen((p) => !p)}
-              >
-                {isProposeOpen ? "Cancel" : "+ Propose"}
-              </Button>
-            )}
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground text-xs px-2 py-1 rounded hover:bg-slate-50"
-              onClick={onClose}
-              aria-label="Close challenges panel"
-            >
-              Close
-            </button>
-          </div>
-        </SheetHeader>
-
-        <div className="flex-1 overflow-y-auto min-h-0">
-          {isTraveler ? (
-            <TravelerChallengePanel
-              token={token}
-              onClose={onClose}
-              onStartChallenge={onStartChallenge}
-              onRequestCoordinatePick={onRequestCoordinatePick}
-              isPickingCoordinate={isPickingCoordinate}
-              isCreating={isCreating}
-              pendingOpenChallengeId={pendingOpenChallengeId}
-              onClearPendingChallenge={onClearPendingChallenge}
-              onRequestNavigateToChallenge={onRequestNavigateToChallenge}
-            />
-          ) : (
-            <SupportCrewChallengePanel
-              token={token}
-              userId={userId}
-              onRequestCoordinatePick={onRequestCoordinatePick}
-              isProposeOpen={isProposeOpen}
-              pendingOpenChallengeId={pendingOpenChallengeId}
-              onClearPendingChallenge={onClearPendingChallenge}
-              onRequestNavigateToChallenge={onRequestNavigateToChallenge}
-            />
-          )}
-        </div>
-      </SheetContent>
-    </Sheet>
   );
 }

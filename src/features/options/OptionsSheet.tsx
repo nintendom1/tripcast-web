@@ -1,20 +1,46 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { LogOut, ShieldAlert, UserPlus, Users, Wallet } from "lucide-react";
-import { tripcastApi } from "../../convex/tripcastApi";
-import type { ChallengeModerationMode, ChallengeRateLimitPreset } from "../../convex/tripcastApi";
+import {
+  BookOpen,
+  ChevronRight,
+  Database,
+  LogOut,
+  Play,
+  ShieldAlert,
+  User,
+  UserPlus,
+  Users,
+  Volume2,
+  VolumeX,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 
+import { tripcastApi } from "../../convex/tripcastApi";
+import type {
+  ChallengeModerationMode,
+  ChallengeRateLimitPreset,
+} from "../../convex/tripcastApi";
+import type { ReadingSpeed } from "../../providers/ReadingSpeedProvider";
 import {
   Sheet,
+  SheetBackButton,
+  SheetBody,
+  SheetCloseButton,
   SheetContent,
-  SheetHeader,
+  SheetGrabber,
+  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
 import type { StoredSession } from "../../lib/auth";
+import { cn } from "@/lib/utils";
+import { useMusicSafe } from "../../providers/MusicProvider";
+import { useReadingSpeedSafe } from "../../providers/ReadingSpeedProvider";
 import CreateInviteControl from "../followers/CreateInviteControl";
 import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
+import BulkImportSheet from "./BulkImportSheet";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -23,21 +49,18 @@ type OptionsSheetProps = {
   role: "traveler" | "support_crew";
   onSignOut: () => void;
   onManageFollowers: () => void;
+  onReplayCrewTour: () => void;
   onLoggedOut: () => void;
   onLocationDataCleared: () => void;
   onTripDataDeleted: () => void;
   onResetStarted: (message: string) => void;
 };
 
-type OptionsView = "options" | "emergency-reset" | "travel-funds";
-
-// ---------------------------------------------------------------------------
-// Challenge settings inline section
-// ---------------------------------------------------------------------------
+type OptionsView = "options" | "emergency-reset" | "travel-funds" | "bulk-import";
 
 const MODERATION_OPTIONS: { value: ChallengeModerationMode; label: string; desc: string }[] = [
-  { value: "manual_review", label: "Manual review", desc: "You approve each challenge before it's visible." },
-  { value: "auto_publish", label: "Auto-publish", desc: "Challenges appear immediately (rate limits still apply)." },
+  { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
+  { value: "auto_publish", label: "Auto-publish", desc: "Support Crew proposals appear immediately." },
 ];
 
 const RATE_LIMIT_OPTIONS: { value: ChallengeRateLimitPreset; label: string }[] = [
@@ -47,6 +70,17 @@ const RATE_LIMIT_OPTIONS: { value: ChallengeRateLimitPreset; label: string }[] =
   { value: "per_hour", label: "1 per hour" },
   { value: "per_day", label: "1 per day" },
 ];
+
+const SOUNDTRACK_OPTIONS = [
+  { value: "auto", label: "Auto" },
+  { value: "idle", label: "Calm" },
+  { value: "happy", label: "Happy" },
+  { value: "morning", label: "Morning" },
+  { value: "cafe", label: "Cafe" },
+  { value: "story", label: "Story" },
+  { value: "vote", label: "Vote" },
+  { value: "challenge", label: "Mission" },
+] as const;
 
 function ChallengeSettingsSection({ token }: { token: string }) {
   const settings = useQuery(tripcastApi.challengeSettings.travelerGetChallengeSettings, { token });
@@ -75,49 +109,44 @@ function ChallengeSettingsSection({ token }: { token: string }) {
   const currentPreset = settings?.rateLimitPreset ?? "per_second";
 
   return (
-    <section className="flex flex-col gap-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Challenges
-      </h3>
-
-      <div className="flex flex-col gap-1.5">
-        <p className="text-xs font-medium text-foreground">Proposal moderation</p>
-        <div className="flex flex-col gap-1.5">
-          {MODERATION_OPTIONS.map((opt) => (
-            <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="moderation-mode"
-                value={opt.value}
-                checked={currentMode === opt.value}
-                onChange={() => handleModerationChange(opt.value)}
-                className="mt-0.5"
-              />
-              <span className="flex flex-col">
-                <span className="text-sm font-medium text-foreground">{opt.label}</span>
-                <span className="text-xs text-muted-foreground">{opt.desc}</span>
-              </span>
-            </label>
-          ))}
-        </div>
+    <OptionsSection label="Missions">
+      <div className="grid gap-2 rounded-xl bg-[var(--bg-card)] p-3">
+        <p className="text-sm font-semibold text-[var(--ink-1)]">Proposal moderation</p>
+        {MODERATION_OPTIONS.map((opt) => (
+          <label key={opt.value} className="flex cursor-pointer items-start gap-2 text-sm text-[var(--ink-2)]">
+            <input
+              type="radio"
+              name="moderation-mode"
+              value={opt.value}
+              checked={currentMode === opt.value}
+              onChange={() => handleModerationChange(opt.value)}
+              className="mt-1"
+              style={{ accentColor: "var(--flag)" }}
+            />
+            <span>
+              <span className="block font-semibold text-[var(--ink-1)]">{opt.label}</span>
+              <span className="text-xs">{opt.desc}</span>
+            </span>
+          </label>
+        ))}
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <p className="text-xs font-medium text-foreground">Per-follower proposal rate limit</p>
+      <label className="grid gap-1.5 rounded-xl bg-[var(--bg-card)] p-3 text-sm font-semibold text-[var(--ink-1)]">
+        Per-follower proposal rate limit
         <select
           value={currentPreset}
           onChange={(e) => handleRateLimitChange(e.target.value as ChallengeRateLimitPreset)}
-          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+          className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
         >
           {RATE_LIMIT_OPTIONS.map((opt) => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        <p className="text-xs text-muted-foreground">Hard cap: 300 proposals per trip per day regardless of setting.</p>
-      </div>
+        <span className="text-xs font-normal text-[var(--ink-3)]">Hard cap: 300 proposals per trip per day.</span>
+      </label>
 
-      {error && <p className="text-xs text-rose-600" role="alert">{error}</p>}
-    </section>
+      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+    </OptionsSection>
   );
 }
 
@@ -128,6 +157,7 @@ export default function OptionsSheet({
   role,
   onSignOut,
   onManageFollowers,
+  onReplayCrewTour,
   onLoggedOut,
   onLocationDataCleared,
   onTripDataDeleted,
@@ -135,6 +165,7 @@ export default function OptionsSheet({
 }: OptionsSheetProps) {
   const [view, setView] = useState<OptionsView>("options");
   const [isEmergencyResetPending, setIsEmergencyResetPending] = useState(false);
+  const music = useMusicSafe();
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen && view === "emergency-reset" && isEmergencyResetPending) return;
@@ -150,10 +181,6 @@ export default function OptionsSheet({
     onSignOut();
   }
 
-  function handleEmergencyReset() {
-    setView("emergency-reset");
-  }
-
   function handleEmergencyResetClose() {
     onOpenChange(false);
     setView("options");
@@ -161,139 +188,362 @@ export default function OptionsSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="bottom">
-        {view === "travel-funds" ? (
-          <>
-            <SheetHeader>
-              <SheetTitle>Travel Funds</SheetTitle>
-            </SheetHeader>
-            <div className="overflow-y-auto p-4 pt-0">
+    <>
+      <Sheet open={open && view !== "bulk-import"} onOpenChange={handleOpenChange}>
+        <SheetContent
+          side="bottom"
+          className="max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+        >
+          <SheetGrabber />
+          {view === "travel-funds" ? (
+            <SubViewHeader
+              kicker="Traveler"
+              title="Travel Funds"
+              onBack={() => {
+                music.sfx("page");
+                setView("options");
+              }}
+            />
+          ) : view === "emergency-reset" ? (
+            <EmergencyResetContent
+              token={session.token}
+              onClose={handleEmergencyResetClose}
+              onLoggedOut={onLoggedOut}
+              onLocationDataCleared={onLocationDataCleared}
+              onTripDataDeleted={onTripDataDeleted}
+              onResetStarted={onResetStarted}
+              onPendingChange={setIsEmergencyResetPending}
+            />
+          ) : (
+            <OptionsHomeHeader role={role} />
+          )}
+
+          {view === "travel-funds" ? (
+            <SheetBody className="px-5">
               <TravelFundsSheet
                 token={session.token}
-                onClose={() => setView("options")}
+                onClose={() => {
+                  music.sfx("page");
+                  setView("options");
+                }}
               />
-              <div className="flex justify-start mt-4">
-                <Button variant="ghost" size="sm" onClick={() => setView("options")}>
-                  ← Back to Options
-                </Button>
-              </div>
+            </SheetBody>
+          ) : view === "options" ? (
+            <OptionsHome
+              role={role}
+              session={session}
+              onSignOut={handleSignOut}
+              onManageFollowers={onManageFollowers}
+              onReplayCrewTour={onReplayCrewTour}
+              onTravelFunds={() => {
+                music.sfx("page");
+                setView("travel-funds");
+              }}
+              onBulkImport={() => {
+                music.sfx("page");
+                setView("bulk-import");
+              }}
+              onEmergencyReset={() => {
+                music.sfx("page");
+                setView("emergency-reset");
+              }}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      {role === "traveler" ? (
+        <BulkImportSheet
+          open={open && view === "bulk-import"}
+          token={session.token}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              music.sfx("page");
+              setView("options");
+              onOpenChange(true);
+            }
+          }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function OptionsHome({
+  role,
+  session,
+  onSignOut,
+  onManageFollowers,
+  onReplayCrewTour,
+  onTravelFunds,
+  onBulkImport,
+  onEmergencyReset,
+}: {
+  role: "traveler" | "support_crew";
+  session: StoredSession;
+  onSignOut: () => void;
+  onManageFollowers: () => void;
+  onReplayCrewTour: () => void;
+  onTravelFunds: () => void;
+  onBulkImport: () => void;
+  onEmergencyReset: () => void;
+}) {
+  return (
+    <SheetBody className="grid gap-5 px-5">
+      <SoundSection />
+      <ReadingSection />
+
+      <OptionsSection label="Account">
+        <InfoRow
+          icon={User}
+          title={session.displayName ?? (session.username ? `@${session.username}` : "Signed in")}
+          detail="Display name"
+        />
+        <OptionsRow icon={LogOut} title="Sign out" onClick={onSignOut} />
+      </OptionsSection>
+
+      {role === "traveler" ? (
+        <>
+          <OptionsSection label="Followers">
+            <div className="rounded-xl bg-[var(--bg-card)] p-3">
+              <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+                <UserPlus className="h-4 w-4" aria-hidden />
+                Create Invite
+              </p>
+              <CreateInviteControl token={session.token} />
             </div>
-          </>
-        ) : view === "emergency-reset" ? (
-          <EmergencyResetContent
-            token={session.token}
-            onClose={handleEmergencyResetClose}
-            onLoggedOut={onLoggedOut}
-            onLocationDataCleared={onLocationDataCleared}
-            onTripDataDeleted={onTripDataDeleted}
-            onResetStarted={onResetStarted}
-            onPendingChange={setIsEmergencyResetPending}
+            <OptionsRow icon={Users} title="Manage Followers" detail="Active and pending crew" onClick={onManageFollowers} />
+          </OptionsSection>
+
+          <OptionsSection label="Travel Funds">
+            <OptionsRow icon={Wallet} title="Manage Travel Funds" detail="Budget, pace, and transactions" onClick={onTravelFunds} />
+          </OptionsSection>
+
+          <ChallengeSettingsSection token={session.token} />
+
+          <OptionsSection label="Data / Dev">
+            <OptionsRow icon={Database} title="Bulk Import" detail="Paste JSON to batch-add pins, funds, missions, and votes" onClick={onBulkImport} />
+          </OptionsSection>
+
+          <OptionsSection label="Tour">
+            <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the Support Crew tour" onClick={onReplayCrewTour} />
+          </OptionsSection>
+
+          <OptionsSection label="Danger Zone">
+            <OptionsRow icon={ShieldAlert} title="Emergency Reset" detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
+          </OptionsSection>
+        </>
+      ) : (
+        <OptionsSection label="Trip">
+          <OptionsRow icon={Play} title="Replay welcome tour" detail="See the pixel guide again" onClick={onReplayCrewTour} />
+        </OptionsSection>
+      )}
+
+    </SheetBody>
+  );
+}
+
+function OptionsHomeHeader({ role }: { role: "traveler" | "support_crew" }) {
+  return (
+    <div className="flex items-start justify-between gap-2 px-5 pt-2">
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <SheetKicker dotColor={role === "traveler" ? "var(--flag)" : "var(--teal)"}>
+          {role === "traveler" ? "Traveler" : "Support Crew"}
+        </SheetKicker>
+        <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
+          Options
+        </SheetTitle>
+      </div>
+      <SheetCloseButton aria-label="Close options" />
+    </div>
+  );
+}
+
+function SubViewHeader({
+  kicker,
+  title,
+  onBack,
+}: {
+  kicker: string;
+  title: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-2 px-5 pt-2">
+      <div className="flex min-w-0 items-start gap-2">
+        <SheetBackButton onClick={onBack} />
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <SheetKicker dotColor="var(--green)">{kicker}</SheetKicker>
+          <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
+            {title}
+          </SheetTitle>
+        </div>
+      </div>
+      <SheetCloseButton aria-label={`Close ${title}`} />
+    </div>
+  );
+}
+
+function SoundSection() {
+  const music = useMusicSafe();
+  return (
+    <OptionsSection label="Sound">
+      <div className="grid gap-3 rounded-xl bg-[var(--bg-card)] p-3">
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              music.sfx("tap");
+              music.setMute(!music.mute);
+            }}
+            className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-1)]"
+            aria-label={music.mute ? "Unmute sound" : "Mute sound"}
+          >
+            {music.mute ? <VolumeX className="h-5 w-5" aria-hidden /> : <Volume2 className="h-5 w-5" aria-hidden />}
+          </button>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-[var(--ink-1)]">{music.mute ? "Muted" : "Playing"}</p>
+          </div>
+        </div>
+        <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+          Volume
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(music.volume * 100)}
+            onChange={(event) => music.setVolume(Number(event.target.value) / 100)}
+            style={{ accentColor: "var(--flag)" }}
+            aria-label="Sound volume"
           />
-        ) : (
-          <>
-            <SheetHeader>
-              <SheetTitle>Options</SheetTitle>
-            </SheetHeader>
-            <div className="overflow-y-auto p-4 pt-0 flex flex-col gap-6">
-              <section className="flex flex-col gap-2">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Account
-                </h3>
-                {session.displayName ? (
-                  <p className="text-sm text-muted-foreground">
-                    Signed in as{" "}
-                    <span className="font-medium text-foreground">{session.displayName}</span>
-                  </p>
-                ) : session.username ? (
-                  <p className="text-sm text-muted-foreground">
-                    Signed in as{" "}
-                    <span className="font-medium text-foreground">@{session.username}</span>
-                  </p>
-                ) : null}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  onClick={handleSignOut}
-                  className="w-fit"
-                >
-                  <LogOut className="h-4 w-4 mr-1.5" aria-hidden />
-                  Sign out
-                </Button>
-              </section>
+        </label>
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">Soundtrack</p>
+          <div className="grid grid-cols-4 gap-1.5">
+            {SOUNDTRACK_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => {
+                  music.sfx("tap");
+                  music.setSoundtrack(option.value);
+                }}
+                className={cn(
+                  "rounded-full px-2 py-1.5 text-xs font-semibold",
+                  music.soundtrack === option.value
+                    ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+                    : "bg-[var(--meter-track)] text-[var(--ink-2)]",
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </OptionsSection>
+  );
+}
 
-              {role === "traveler" ? (
-                <section className="flex flex-col gap-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Followers
-                  </h3>
-                  <div className="flex flex-col gap-2">
-                    <p className="text-xs font-medium text-foreground flex items-center gap-1.5">
-                      <UserPlus className="h-3.5 w-3.5" aria-hidden />
-                      Create Invite
-                    </p>
-                    <CreateInviteControl token={session.token} />
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    onClick={onManageFollowers}
-                    className="w-fit"
-                  >
-                    <Users className="h-4 w-4 mr-1.5" aria-hidden />
-                    Manage Followers
-                  </Button>
-                </section>
-              ) : null}
+function ReadingSection() {
+  const reading = useReadingSpeedSafe();
+  return (
+    <OptionsSection label="Story / Reading">
+      <div className="grid gap-3 rounded-xl bg-[var(--bg-card)] p-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--ink-1)]">
+          <BookOpen className="h-4 w-4" aria-hidden />
+          Story text reveal speed
+        </div>
+        <div className="grid grid-cols-4 gap-1.5">
+          {(["slow", "normal", "fast", "instant"] as ReadingSpeed[]).map((speed) => (
+            <button
+              key={speed}
+              type="button"
+              onClick={() => reading.setSpeed(speed)}
+              className={cn(
+                "rounded-full px-2 py-1.5 text-xs font-semibold capitalize",
+                reading.speed === speed
+                  ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+                  : "bg-[var(--meter-track)] text-[var(--ink-2)]",
+              )}
+            >
+              {speed}
+            </button>
+          ))}
+        </div>
+      </div>
+    </OptionsSection>
+  );
+}
 
-              {role === "traveler" ? (
-                <ChallengeSettingsSection token={session.token} />
-              ) : null}
+function OptionsSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="grid gap-2">
+      <h3 className="font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">
+        {label}
+      </h3>
+      <div className="grid gap-2">{children}</div>
+    </section>
+  );
+}
 
-              {role === "traveler" ? (
-                <section className="flex flex-col gap-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Travel Funds
-                  </h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    onClick={() => setView("travel-funds")}
-                    className="w-fit"
-                  >
-                    <Wallet className="h-4 w-4 mr-1.5" aria-hidden />
-                    Manage Travel Funds
-                  </Button>
-                </section>
-              ) : null}
+function InfoRow({
+  icon: Icon,
+  title,
+  detail,
+}: {
+  icon: LucideIcon;
+  title: string;
+  detail?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl bg-[var(--bg-card)] p-3">
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-2)]">
+        <Icon className="h-4 w-4" aria-hidden />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-[var(--ink-1)]">{title}</p>
+        {detail ? <p className="text-xs text-[var(--ink-3)]">{detail}</p> : null}
+      </div>
+    </div>
+  );
+}
 
-              {role === "traveler" ? (
-                <section className="flex flex-col gap-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Danger Zone
-                  </h3>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    type="button"
-                    className="border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100 dark:hover:bg-rose-950/60 w-fit"
-                    onClick={handleEmergencyReset}
-                  >
-                    <ShieldAlert
-                      className="h-4 w-4 text-rose-700 dark:text-rose-300 mr-1.5"
-                      aria-hidden
-                    />
-                    Emergency Reset
-                  </Button>
-                </section>
-              ) : null}
-            </div>
-          </>
+function OptionsRow({
+  icon: Icon,
+  title,
+  detail,
+  danger = false,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  detail?: string;
+  danger?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-3 rounded-xl bg-[var(--bg-card)] p-3 text-left shadow-sm",
+        danger && "bg-rose-50 text-rose-900",
+      )}
+    >
+      <div
+        className={cn(
+          "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-2)]",
+          danger && "bg-rose-100 text-rose-700",
         )}
-      </SheetContent>
-    </Sheet>
+      >
+        <Icon className="h-4 w-4" aria-hidden />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className={cn("text-sm font-semibold text-[var(--ink-1)]", danger && "text-rose-950")}>{title}</p>
+        {detail ? <p className={cn("text-xs text-[var(--ink-3)]", danger && "text-rose-700")}>{detail}</p> : null}
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ink-3)]" aria-hidden />
+    </button>
   );
 }

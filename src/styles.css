@@ -75,9 +75,64 @@ textarea {
   70%, 100% { transform: scale(2.5); opacity: 0; }
 }
 
+/* Pixel-character sprite + speech-bubble caret animations.
+   The bob is a sub-pixel vertical wobble so the sprite feels alive without
+   shifting layout; the caret blink is a hard step (no halftones) to read as
+   pixel-art rather than text-cursor. */
+@keyframes tripcast-pixel-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-0.3px); }
+}
+@keyframes tripcast-pixel-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Desktop chrome frame.
+   The UX rework is designed phone-first (390px viewport class). On a
+   desktop monitor the map itself happily fills the full viewport, but
+   the HUD chrome (TopBar, top status stack, Dock) looks comically wide
+   if it stretches to 1920px. `.tripcast-frame` constrains those chrome
+   elements to a centered phone-width column above the 960px breakpoint
+   while leaving mobile rendering untouched. The map underneath is not
+   wrapped — it always fills its section.
+
+   The full three-column "rail + map + panel" desktop layout from the
+   handoff is documented as a follow-up; this responsive-resize keeps the
+   interaction model 1:1 with mobile and avoids rewriting every sheet for
+   right-anchored vs bottom-anchored variants. */
+@media (min-width: 960px) {
+  .tripcast-frame {
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: 'Geist Variable', sans-serif;
+  --font-display: 'Archivo', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --color-ink-1: var(--ink-1);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-paper: var(--bg-paper);
+  --color-paper-2: var(--bg-paper-2);
+  --color-water: var(--bg-water);
+  --color-flag: var(--flag);
+  --color-flag-2: var(--flag-2);
+  --color-green-trail: var(--green);
+  --color-green-trail-2: var(--green-2);
+  --color-amber-trail: var(--amber);
+  --color-amber-trail-2: var(--amber-2);
+  --color-teal-trail: var(--teal);
+  --color-teal-trail-2: var(--teal-2);
+  --color-plum: var(--plum);
+  --color-danger-trail: var(--danger);
+  --color-line-soft: var(--line-soft);
+  --color-line-strong: var(--line-strong);
+  --color-meter-track: var(--meter-track);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -123,6 +178,46 @@ textarea {
 :root {
   --brand-crimson: #d92332;
   --brand-navy: #102a43;
+
+  /* Trail palette — UX rework design tokens.
+     Mirrors the handoff at tripcast-claude-design-handoff-temp/project/styles.css.
+     Used directly via var(--token) and via Tailwind utilities declared in @theme inline above. */
+  --bg-paper: #F1E8D2;
+  --bg-paper-2: #E8DCBE;
+  --bg-water: #C9D8D6;
+  --bg-card: #FFFFFF;
+  --bg-ink: #1B2A33;
+  --bg-ink-2: #243845;
+  --ink-1: #1B2A33;
+  --ink-2: #4A5965;
+  --ink-3: #8A95A0;
+  --ink-on-dark: #F4EDDE;
+  --ink-on-dark-2: #B8C2CC;
+  --line: #1B2A33;
+  --line-soft: rgba(27, 42, 51, 0.12);
+  --line-strong: rgba(27, 42, 51, 0.85);
+  --flag: #D9532B;
+  --flag-2: #B43F1A;
+  --green: #2F7D4F;
+  --green-2: #1F5A37;
+  --amber: #E2A23A;
+  --amber-2: #B47E1F;
+  --teal: #2C7E8F;
+  --teal-2: #1E5C6B;
+  --plum: #7A4576;
+  --danger: #C2392A;
+  --meter-track: rgba(27, 42, 51, 0.10);
+  --meter-fill: var(--ink-1);
+  --radius-card: 18px;
+  --radius-chip: 999px;
+  --radius-button: 14px;
+  --radius-sheet: 24px;
+  --safe-top: 14px;
+  --topbar-h: 56px;
+  --dock-h: 76px;
+  --shadow-card: 0 1px 0 rgba(27,42,51,0.06), 0 8px 24px -8px rgba(27,42,51,0.18);
+  --shadow-fab: 0 2px 0 rgba(27,42,51,0.10), 0 12px 30px -8px rgba(217,83,43,0.55);
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

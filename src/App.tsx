@@ -2,7 +2,6 @@ import React, { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { ErrorBoundary } from "react-error-boundary";
 import { AnimatePresence, motion } from "framer-motion";
-import { Settings } from "lucide-react";
 
 import { tripcastApi, type Role } from "./convex/tripcastApi";
 import {
@@ -11,7 +10,6 @@ import {
   setStoredSession,
   type StoredSession,
 } from "./lib/auth";
-import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import AuthScreen from "./features/auth/AuthScreen";
 import FollowerLoginScreen from "./features/auth/FollowerLoginScreen";
@@ -19,11 +17,14 @@ import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
 import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
+import { TopBar } from "./features/hud";
+import CrewLandingTour, { hasSeenCrewTour, resetCrewTourSeen } from "./features/onboarding/CrewLandingTour";
 import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
 import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
 import { PendingNotice } from "./components/resilience/PendingNotice";
 import { useDelayedPending } from "./components/resilience/useDelayedPending";
 import { useOnlineStatus } from "./components/resilience/useOnlineStatus";
+import { useMusicSafe } from "./providers/MusicProvider";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -75,6 +76,11 @@ function ConnectedApp() {
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
+  const music = useMusicSafe();
+  // Crew first-launch tour visibility — only shown for Support Crew sessions
+  // that haven't already seen it on this browser. Toggled to false on tour
+  // completion or skip; localStorage persists the seen flag separately.
+  const [isCrewTourOpen, setIsCrewTourOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
   const [sessionRetryNonce, setSessionRetryNonce] = useState(0);
@@ -116,6 +122,22 @@ function ConnectedApp() {
       }
     };
   }, []);
+
+  // First-launch tour for Support Crew. Derives the role from the session
+  // check (which may be undefined/null while it resolves) so this hook lives
+  // at the top of the function alongside the others — moving it below the
+  // early-return branches below would change the hook count between renders
+  // and trip React's "rendered more hooks than during the previous render"
+  // invariant. The effect itself only does work once a real role lands.
+  const currentRole =
+    activeSessionCheck && typeof activeSessionCheck === "object"
+      ? activeSessionCheck.role
+      : null;
+  useEffect(() => {
+    if (currentRole === "support_crew" && !hasSeenCrewTour()) {
+      setIsCrewTourOpen(true);
+    }
+  }, [currentRole]);
 
   function handleSignIn(newSession: StoredSession) {
     setStoredSession(newSession);
@@ -283,7 +305,8 @@ function ConnectedApp() {
   }
 
   const role = activeSessionCheck.role;
-  const roleLabel = role === "traveler" ? "Traveler" : "Support Crew";
+  const followerHandle =
+    session.sessionType === "follower" ? session.username : undefined;
 
   if (view === "follower-management" && role === "traveler") {
     return (
@@ -304,30 +327,34 @@ function ConnectedApp() {
 
   return (
     <div className="relative flex flex-col h-dvh">
-      <header className="flex min-h-14 flex-wrap items-center gap-2 border-b bg-background px-4 py-2 z-[2]">
-        <h1 className="text-lg font-bold">TripCast</h1>
-        <div className="ml-auto flex flex-wrap items-center justify-end gap-3">
-          <Badge variant="secondary">{roleLabel}</Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            type="button"
-            onClick={() => setIsOptionsOpen(true)}
-            aria-label="Options"
-          >
-            <Settings className="h-4 w-4" aria-hidden="true" />
-            Options
-          </Button>
-        </div>
-      </header>
+      <TopBar
+        role={role}
+        onOpenOptions={() => {
+          music.sfx("open");
+          setIsOptionsOpen(true);
+        }}
+      />
 
       <OptionsSheet
         open={isOptionsOpen}
-        onOpenChange={setIsOptionsOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) music.sfx("close");
+          setIsOptionsOpen(nextOpen);
+        }}
         session={session}
         role={role}
         onSignOut={handleSignOut}
-        onManageFollowers={() => { setIsOptionsOpen(false); setView("follower-management"); }}
+        onManageFollowers={() => {
+          music.sfx("page");
+          setIsOptionsOpen(false);
+          setView("follower-management");
+        }}
+        onReplayCrewTour={() => {
+          music.sfx("page");
+          resetCrewTourSeen();
+          setIsOptionsOpen(false);
+          setIsCrewTourOpen(true);
+        }}
         onLoggedOut={handleLoggedOut}
         onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
         onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
@@ -359,6 +386,14 @@ function ConnectedApp() {
           />
         </Suspense>
       </ErrorBoundary>
+
+      {isCrewTourOpen ? (
+        <CrewLandingTour
+          userHandle={followerHandle ?? "you"}
+          travelerName="the Traveler"
+          onDone={() => setIsCrewTourOpen(false)}
+        />
+      ) : null}
 
       <AnimatePresence>
         {resetToastMessage ? (

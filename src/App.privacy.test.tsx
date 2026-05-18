@@ -30,7 +30,7 @@ function setupSessionMocks(role: "traveler" | "support_crew") {
   });
   // currentSession query returns the role; all mutations return no-ops.
   vi.mocked(convexReact.useQuery).mockReturnValue({ role });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any);
 }
 

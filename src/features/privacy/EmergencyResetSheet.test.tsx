@@ -29,7 +29,7 @@ function setupMutationMocks() {
   const mocks = {
     emergencyReset: vi.fn().mockResolvedValue(null),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   vi.mocked(convexReact.useMutation).mockReturnValue(mocks.emergencyReset as any);
   return mocks;
 }

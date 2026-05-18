@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Dialog } from "@base-ui/react/dialog";
+import { ChevronLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Sheet = Dialog.Root;
@@ -88,6 +89,121 @@ const SheetDescription = React.forwardRef<
 ));
 SheetDescription.displayName = "SheetDescription";
 
+const SheetGrabber = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    aria-hidden="true"
+    className={cn("mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-[var(--meter-track)]", className)}
+    {...props}
+  />
+);
+SheetGrabber.displayName = "SheetGrabber";
+
+interface SheetKickerProps extends React.HTMLAttributes<HTMLDivElement> {
+  dotColor?: string;
+}
+
+const SheetKicker = ({ className, dotColor, children, ...props }: SheetKickerProps) => (
+  <div
+    className={cn(
+      "flex items-center gap-1.5 font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]",
+      className,
+    )}
+    {...props}
+  >
+    {dotColor ? (
+      <span
+        aria-hidden="true"
+        className="inline-block h-1.5 w-1.5 rounded-full"
+        style={{ background: dotColor }}
+      />
+    ) : null}
+    {children}
+  </div>
+);
+SheetKicker.displayName = "SheetKicker";
+
+interface SheetBackButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
+
+const SheetBackButton = React.forwardRef<HTMLButtonElement, SheetBackButtonProps>(
+  ({ className, ...props }, ref) => (
+    <button
+      ref={ref}
+      type="button"
+      aria-label="Back"
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-full text-[var(--ink-1)] transition-colors hover:bg-[var(--meter-track)]",
+        className,
+      )}
+      {...props}
+    >
+      <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+    </button>
+  ),
+);
+SheetBackButton.displayName = "SheetBackButton";
+
+interface SheetCloseButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
+
+const SheetCloseButton = React.forwardRef<HTMLButtonElement, SheetCloseButtonProps>(
+  ({ className, ...props }, ref) => (
+    <Dialog.Close
+      ref={ref}
+      aria-label="Close"
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded-full text-[var(--ink-1)] transition-colors hover:bg-[var(--meter-track)]",
+        className,
+      )}
+      {...props}
+    >
+      <X className="h-4 w-4" aria-hidden="true" />
+    </Dialog.Close>
+  ),
+);
+SheetCloseButton.displayName = "SheetCloseButton";
+
+interface SheetTabsProps extends React.HTMLAttributes<HTMLDivElement> {}
+
+const SheetTabs = ({ className, ...props }: SheetTabsProps) => (
+  <div
+    role="tablist"
+    className={cn(
+      "flex gap-1 overflow-x-auto border-b border-[var(--line-soft)] px-4 pb-2",
+      className,
+    )}
+    {...props}
+  />
+);
+SheetTabs.displayName = "SheetTabs";
+
+interface SheetTabProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  active?: boolean;
+}
+
+const SheetTab = React.forwardRef<HTMLButtonElement, SheetTabProps>(
+  ({ className, active = false, ...props }, ref) => (
+    <button
+      ref={ref}
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className={cn(
+        "shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+        active
+          ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+          : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+        className,
+      )}
+      {...props}
+    />
+  ),
+);
+SheetTab.displayName = "SheetTab";
+
+const SheetBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+  <div className={cn("flex-1 overflow-y-auto p-4", className)} {...props} />
+);
+SheetBody.displayName = "SheetBody";
+
 export {
   Sheet,
   SheetPortal,
@@ -99,4 +215,11 @@ export {
   SheetFooter,
   SheetTitle,
   SheetDescription,
+  SheetGrabber,
+  SheetKicker,
+  SheetBackButton,
+  SheetCloseButton,
+  SheetTabs,
+  SheetTab,
+  SheetBody,
 };

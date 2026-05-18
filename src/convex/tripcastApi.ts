@@ -14,9 +14,13 @@ export type Checkpoint = {
   _creationTime: number;
   title: string;
   note?: string;
+  locationLabel?: string;
+  showInStory?: boolean;
   lat: number;
   lon: number;
   source: CheckpointSource;
+  /** Optional link to the challenge a check-in narrates (Complete-as-story flow). */
+  challengeId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -30,6 +34,10 @@ export type AddCheckpointArgs = {
   lat: number;
   lon: number;
   source: CheckpointSource;
+  // Optional link back to the challenge this check-in narrates. Persisted on
+  // the checkpoint and threaded into the emitted check_in history event so
+  // the Story tab can fold the paired challenge_completed row.
+  challengeId?: string;
   // Optional inline state snapshot (atomic with checkpoint save)
   moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
@@ -44,6 +52,20 @@ export type AddCheckpointArgs = {
   // Linked IDs are filled server-side: checkpointId from the new checkpoint,
   // and challengeId/activityId from the active current activity when available.
   transaction?: TransactionInlineInput;
+};
+
+export type UpdateCheckpointArgs = {
+  token: string;
+  checkpointId: string;
+  title?: string;
+  note?: string;
+  locationLabel?: string;
+  showInStory?: boolean;
+};
+
+export type DeleteCheckpointArgs = {
+  token: string;
+  checkpointId: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -547,6 +569,139 @@ export type LinkedCostMap = {
 };
 
 // ---------------------------------------------------------------------------
+// Bulk Import types
+// ---------------------------------------------------------------------------
+
+export type BulkImportKind = "checkin" | "story" | "transaction" | "challenge" | "route_vote";
+export type BulkImportTimestamp = number | string;
+
+export type BulkImportRouteVoteOption = {
+  ref?: string;
+  title: string;
+  description?: string;
+  locationLabel?: string;
+  place?: string;
+  lat?: number;
+  lon?: number;
+  estimatedCostUsd?: number;
+  estimatedDurationMinutes?: number;
+  estimatedEnergyImpact?: EnergyImpact;
+};
+
+export type BulkImportEntry =
+  | {
+      kind: "checkin" | "story";
+      ref?: string;
+      timeZone?: string;
+      title?: string;
+      note?: string;
+      body?: string;
+      locationLabel?: string;
+      place?: string;
+      showInStory?: boolean;
+      lat: number;
+      lon: number;
+      source?: CheckpointSource;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    }
+  | {
+      kind: "transaction";
+      ref?: string;
+      timeZone?: string;
+      title: string;
+      note?: string;
+      category?: TransactionCategory;
+      currencyCode?: string;
+      localAmount?: number;
+      amount?: number;
+      localCurrencyPerUsd?: number;
+      countsTowardMeter?: boolean;
+      visibility?: TransactionVisibility;
+      linkedToRef?: string;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    }
+  | {
+      kind: "challenge";
+      ref?: string;
+      timeZone?: string;
+      title: string;
+      description?: string;
+      note?: string;
+      status?: ChallengeStatus;
+      locationLabel?: string;
+      loc?: string;
+      lat?: number;
+      lon?: number;
+      estimatedCostUsd?: number;
+      estimatedDurationMinutes?: number;
+      estimatedEnergyImpact?: EnergyImpact;
+      sourceRouteVoteRef?: string;
+      sourceRouteVoteOptionRef?: string;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    }
+  | {
+      kind: "route_vote" | "vote";
+      ref?: string;
+      timeZone?: string;
+      title: string;
+      description?: string;
+      status?: RouteVoteStatus;
+      expiresAt?: BulkImportTimestamp;
+      resultsVisibility?: ResultsVisibility;
+      options: BulkImportRouteVoteOption[];
+      confirmedWinningOptionRef?: string;
+      resultingChallengeRef?: string;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    };
+
+export type BulkImportPayload =
+  | BulkImportEntry[]
+  | {
+      timeZone?: string;
+      entries: BulkImportEntry[];
+    };
+
+export type BulkImportCounts = {
+  checkins: number;
+  transactions: number;
+  challenges: number;
+  routeVotes: number;
+};
+
+export type BulkImportPreviewError = {
+  index?: number;
+  ref?: string;
+  message: string;
+};
+
+export type BulkImportPreviewRow = {
+  index: number;
+  kind: BulkImportKind;
+  ref?: string;
+  title: string;
+  detail?: string;
+  links: string[];
+};
+
+export type BulkImportPreview = {
+  valid: boolean;
+  maxEntries: number;
+  counts: BulkImportCounts;
+  rows: BulkImportPreviewRow[];
+  errors: BulkImportPreviewError[];
+};
+
+export type BulkImportResult = {
+  imported: number;
+  counts: BulkImportCounts;
+  idsByRef: Record<string, string>;
+};
+
+// ---------------------------------------------------------------------------
 // Follower / account types
 // ---------------------------------------------------------------------------
 
@@ -573,6 +728,20 @@ export type FollowerInfo = {
 // ---------------------------------------------------------------------------
 
 export const tripcastApi = {
+  bulkImport: {
+    previewBulkImport: (anyApi as any).bulkImport.previewBulkImport as FunctionReference<
+      "query",
+      "public",
+      { token: string; entries: BulkImportPayload },
+      BulkImportPreview
+    >,
+    travelerBulkImport: (anyApi as any).bulkImport.travelerBulkImport as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; entries: BulkImportPayload },
+      BulkImportResult
+    >,
+  },
   auth: {
     signIn: (anyApi as any).auth.signIn as FunctionReference<
       "mutation",
@@ -605,6 +774,18 @@ export const tripcastApi = {
       "public",
       AddCheckpointArgs,
       string
+    >,
+    updateCheckpoint: (anyApi as any).checkpoints.updateCheckpoint as FunctionReference<
+      "mutation",
+      "public",
+      UpdateCheckpointArgs,
+      null
+    >,
+    deleteCheckpoint: (anyApi as any).checkpoints.deleteCheckpoint as FunctionReference<
+      "mutation",
+      "public",
+      DeleteCheckpointArgs,
+      null
     >,
   },
   privacy: {
@@ -831,6 +1012,22 @@ export const tripcastApi = {
       "public",
       { token: string; challengeId: string; transaction?: TransactionInlineInput },
       null
+    >,
+    travelerCompleteChallengeAsStory: (anyApi as any).challenges.travelerCompleteChallengeAsStory as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        challengeId: string;
+        title?: string;
+        note?: string;
+        locationLabel?: string;
+        lat: number;
+        lon: number;
+        source: CheckpointSource;
+        transaction?: TransactionInlineInput;
+      },
+      string
     >,
     travelerToggleChallengeMapPin: (anyApi as any).challenges.travelerToggleChallengeMapPin as FunctionReference<
       "mutation",

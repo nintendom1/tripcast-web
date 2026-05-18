@@ -4,8 +4,8 @@ import { useMutation } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
+import AuthShell from "./AuthShell";
 
 type PasswordResetScreenProps = {
   resetToken: string;
@@ -54,67 +54,67 @@ export default function PasswordResetScreen({ resetToken, onDone }: PasswordRese
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-muted/30 px-4 py-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-2xl text-center">Reset Password</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isDone ? (
-            <div className="flex flex-col gap-4 text-center">
-              <p className="text-sm text-muted-foreground">
-                Password updated. You can now sign in with your new password.
-              </p>
-              <Button type="button" onClick={onDone}>
-                Sign in
-              </Button>
-            </div>
-          ) : (
-            <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-              <label className="flex flex-col gap-1.5 font-medium text-sm">
-                New password
-                <Input
-                  autoFocus
-                  autoComplete="new-password"
-                  disabled={isPending}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  required
-                  minLength={8}
-                />
-                <span className="text-xs text-muted-foreground">At least 8 characters</span>
-              </label>
-              <label className="flex flex-col gap-1.5 font-medium text-sm">
-                Confirm new password
-                <Input
-                  autoComplete="new-password"
-                  disabled={isPending}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  type="password"
-                  required
-                />
-                {passwordMismatch ? (
-                  <span className="text-xs text-destructive">Passwords do not match</span>
-                ) : null}
-              </label>
-              {error ? (
-                <p
-                  role="alert"
-                  className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2"
-                >
-                  {error}
-                </p>
-              ) : null}
-              <PendingActionNotice isPending={isPending} actionLabel="password reset" />
-              <Button type="submit" disabled={!canSubmit}>
-                {isPending ? "Updating…" : "Update password"}
-              </Button>
-            </form>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+    <AuthShell kicker="Reset" title="Reset password">
+      {isDone ? (
+        <div className="flex flex-col gap-4 text-center">
+          <p className="text-sm text-[var(--ink-2)]">
+            Password updated. You can now sign in with your new password.
+          </p>
+          <Button type="button" onClick={onDone}>
+            Sign in
+          </Button>
+        </div>
+      ) : (
+        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+            New password
+            <Input
+              autoFocus
+              autoComplete="new-password"
+              disabled={isPending}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+              required
+              minLength={8}
+            />
+            <span className="text-xs text-[var(--ink-3)]">At least 8 characters</span>
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+            Confirm new password
+            <Input
+              autoComplete="new-password"
+              disabled={isPending}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              type="password"
+              required
+            />
+            {passwordMismatch ? (
+              <span className="text-xs" style={{ color: "var(--danger)" }}>
+                Passwords do not match
+              </span>
+            ) : null}
+          </label>
+          {error ? (
+            <p
+              role="alert"
+              className="rounded-md border px-3 py-2 text-sm"
+              style={{
+                borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
+                background: "color-mix(in oklab, var(--danger) 10%, transparent)",
+                color: "var(--danger)",
+              }}
+            >
+              {error}
+            </p>
+          ) : null}
+          <PendingActionNotice isPending={isPending} actionLabel="password reset" />
+          <Button type="submit" disabled={!canSubmit}>
+            {isPending ? "Updating…" : "Update password"}
+          </Button>
+        </form>
+      )}
+    </AuthShell>
   );
 }

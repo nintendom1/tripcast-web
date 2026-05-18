@@ -22,7 +22,7 @@ function renderScreen() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any);
 });
 
@@ -42,7 +42,7 @@ describe("FollowerLoginScreen", () => {
 
   it("calls onSignIn with session on successful login", async () => {
     const mockSignIn = vi.fn().mockResolvedValue({ token: "tok-123" });
-    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any);
     renderScreen();
 
     await userEvent.type(screen.getByPlaceholderText("your-username"), "alice");
@@ -61,7 +61,7 @@ describe("FollowerLoginScreen", () => {
 
   it("shows error message on failed login", async () => {
     const mockSignIn = vi.fn().mockRejectedValue(new Error("Incorrect username or password"));
-    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any);
     renderScreen();
 
     await userEvent.type(screen.getByPlaceholderText("your-username"), "alice");
@@ -73,7 +73,7 @@ describe("FollowerLoginScreen", () => {
 
   it("shows lockout message on lockout error", async () => {
     const mockSignIn = vi.fn().mockRejectedValue(new Error("locked out"));
-    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any);
     renderScreen();
 
     await userEvent.type(screen.getByPlaceholderText("your-username"), "alice");
@@ -93,7 +93,7 @@ describe("FollowerLoginScreen", () => {
   it("shows delayed connection feedback while sign-in is still pending", async () => {
     vi.useFakeTimers();
     const mockSignIn = vi.fn(() => new Promise(() => {}));
-    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockSignIn as any);
 
     renderScreen();
 

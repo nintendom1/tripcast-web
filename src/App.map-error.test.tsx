@@ -30,7 +30,7 @@ beforeEach(() => {
     sessionType: "legacy",
   });
   vi.mocked(convexReact.useQuery).mockReturnValue({ role: "traveler" });
-  vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any); // eslint-disable-line @typescript-eslint/no-explicit-any
+  vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any);
 });
 
 describe("App map boundary", () => {

@@ -7,13 +7,22 @@ import {
   type RouteVoteListItem,
   type ChallengeStatus,
 } from "../../convex/tripcastApi";
+import { cn } from "@/lib/utils";
 import { Button } from "../../components/ui/button";
+import {
+  Sheet,
+  SheetCloseButton,
+  SheetContent,
+  SheetGrabber,
+  SheetTitle,
+} from "../../components/ui/sheet";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
 import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -29,6 +38,7 @@ type RouteVoteProgressProps = {
   ) => void;
   onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
+  isPickingCoordinate?: boolean;
 };
 
 type View = "list" | "create" | "detail";
@@ -118,6 +128,7 @@ function VoteDetailView({
   const confirmWinner = useMutation(tripcastApi.routeVotes.travelerConfirmRouteVoteWinner);
   const hideComment = useMutation(tripcastApi.routeVotes.travelerHideRouteVoteComment);
   const updateChallengeStatus = useMutation(tripcastApi.routeVotes.travelerUpdateChallengeStatus);
+  const music = useMusicSafe();
 
   const [confirmingOptionId, setConfirmingOptionId] = useState<string | null>(null);
   const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus | null>(null);
@@ -177,6 +188,7 @@ function VoteDetailView({
     setIsActing(true);
     try {
       await confirmWinner({ token, routeVoteId: vote._id, winningOptionId: optionId });
+      music.sfx("success");
       setConfirmingOptionId(null);
     } finally {
       setIsActing(false);
@@ -197,6 +209,7 @@ function VoteDetailView({
         challengeId: d.challenge._id,
         newStatus: challengeStatus,
       });
+      music.sfx("success");
     } finally {
       setIsActing(false);
     }
@@ -357,8 +370,14 @@ export default function RouteVoteProgress({
   onVoteOverlayChange,
   onRequestFitMap,
   fallbackOrigin,
+  isPickingCoordinate,
 }: RouteVoteProgressProps) {
   const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token });
+
+  // DEBUG: Log prop changes
+  useEffect(() => {
+    console.log("[RouteVoteProgress] isPickingCoordinate changed:", isPickingCoordinate);
+  }, [isPickingCoordinate]);
 
   const closeVote = useMutation(tripcastApi.routeVotes.travelerCloseRouteVote);
   const cancelVote = useMutation(tripcastApi.routeVotes.travelerCancelRouteVote);
@@ -367,15 +386,15 @@ export default function RouteVoteProgress({
   const [view, setView] = useState<View>("list");
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const [actingVoteId, setActingVoteId] = useState<string | null>(null);
+  const music = useMusicSafe();
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
-
-  const isCreateView = view === "create";
 
   async function handleCloseVote(voteId: string) {
     setActingVoteId(voteId);
     try {
       await closeVote({ token, routeVoteId: voteId });
+      music.sfx("success");
     } finally {
       setActingVoteId(null);
     }
@@ -385,6 +404,7 @@ export default function RouteVoteProgress({
     setActingVoteId(voteId);
     try {
       await cancelVote({ token, routeVoteId: voteId });
+      music.sfx("success");
     } finally {
       setActingVoteId(null);
     }
@@ -394,57 +414,63 @@ export default function RouteVoteProgress({
     setActingVoteId(voteId);
     try {
       await archiveVote({ token, routeVoteId: voteId });
+      music.sfx("success");
     } finally {
       setActingVoteId(null);
     }
   }
 
   return (
-    <motion.div
-      initial={{ y: 40, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 40, opacity: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut" as const }}
-      // Full-screen during create (gives the form room); small panel for list/detail
-      className={
-        isCreateView
-          ? "absolute inset-0 z-[4] bg-background flex flex-col"
-          : "absolute bottom-5 left-5 z-[4] w-80 max-w-[calc(100%-40px)] max-h-[calc(100%-40px)] overflow-y-auto bg-background border rounded-md shadow-lg flex flex-col"
-      }
+    <Sheet
+      open
+      modal={false}
+      disablePointerDismissal={isPickingCoordinate}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !isPickingCoordinate) onClose();
+      }}
     >
-      <div className="sticky top-0 bg-background border-b flex items-center justify-between px-4 py-3 z-[1] shrink-0">
-        <div className="flex items-center gap-2">
-          {(view === "create" || view === "detail") && (
-            <button
-              type="button"
-              onClick={() => {
-                setView("list");
-                setSelectedVoteId(null);
-              }}
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              ←
-            </button>
-          )}
-          <span className="font-semibold text-sm">
-            {view === "create" ? "New Vote" : view === "detail" ? "Vote Details" : "Manage Votes"}
-          </span>
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className={cn(
+          "z-[10] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+          isPickingCoordinate && "invisible pointer-events-none",
+        )}
+        data-role="route-votes-sheet"
+      >
+        <SheetGrabber />
+        <div className="sticky top-0 z-[1] flex shrink-0 items-center justify-between border-b bg-[var(--bg-paper)] px-4 py-3">
+          <div className="flex items-center gap-2">
+            {(view === "create" || view === "detail") && (
+              <button
+                type="button"
+                onClick={() => {
+                  music.sfx("page");
+                  setView("list");
+                  setSelectedVoteId(null);
+                }}
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                ←
+              </button>
+            )}
+            <SheetTitle className="text-sm font-semibold">
+              {view === "create"
+                ? "New Vote"
+                : view === "detail"
+                  ? "Vote Details"
+                  : "Manage Votes"}
+            </SheetTitle>
+          </div>
+          <SheetCloseButton aria-label="Close route votes" />
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground text-sm"
-        >
-          Close
-        </button>
-      </div>
 
-      <div className="flex-1 overflow-y-auto p-4">
-        <AnimatePresence mode="wait">
-          {view === "create" ? (
-            <motion.div
-              key="create"
-              initial={{ x: 20, opacity: 0 }}
+        <div className="flex-1 overflow-y-auto p-4">
+          <AnimatePresence mode="wait">
+            {view === "create" ? (
+              <motion.div
+                key="create"
+                initial={{ x: 20, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -20, opacity: 0 }}
               transition={{ duration: 0.15 }}
@@ -452,10 +478,14 @@ export default function RouteVoteProgress({
               <CreateRouteVoteForm
                 token={token}
                 onCreated={(id) => {
+                  music.sfx("success");
                   setSelectedVoteId(id);
                   setView("detail");
                 }}
-                onCancel={() => setView("list")}
+                onCancel={() => {
+                  music.sfx("page");
+                  setView("list");
+                }}
                 onRequestCoordinatePick={onRequestCoordinatePick}
                 referenceLocation={referenceLocation}
               />
@@ -472,6 +502,7 @@ export default function RouteVoteProgress({
                 token={token}
                 vote={selectedVote}
                 onBack={() => {
+                  music.sfx("page");
                   setView("list");
                   setSelectedVoteId(null);
                   onVoteOverlayChange(null);
@@ -491,7 +522,14 @@ export default function RouteVoteProgress({
               transition={{ duration: 0.15 }}
               className="flex flex-col gap-3"
             >
-              <Button size="sm" onClick={() => setView("create")} className="w-full">
+              <Button
+                size="sm"
+                onClick={() => {
+                  music.sfx("page");
+                  setView("create");
+                }}
+                className="w-full"
+              >
                 + Propose new route
               </Button>
               {votes === undefined ? (
@@ -504,6 +542,7 @@ export default function RouteVoteProgress({
                     key={vote._id}
                     vote={vote}
                     onViewDetail={() => {
+                      music.sfx("page");
                       setSelectedVoteId(vote._id);
                       setView("detail");
                     }}
@@ -518,6 +557,7 @@ export default function RouteVoteProgress({
           )}
         </AnimatePresence>
       </div>
-    </motion.div>
+      </SheetContent>
+    </Sheet>
   );
 }
