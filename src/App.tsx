@@ -121,6 +121,22 @@ function ConnectedApp() {
     };
   }, []);
 
+  // First-launch tour for Support Crew. Derives the role from the session
+  // check (which may be undefined/null while it resolves) so this hook lives
+  // at the top of the function alongside the others — moving it below the
+  // early-return branches below would change the hook count between renders
+  // and trip React's "rendered more hooks than during the previous render"
+  // invariant. The effect itself only does work once a real role lands.
+  const currentRole =
+    activeSessionCheck && typeof activeSessionCheck === "object"
+      ? activeSessionCheck.role
+      : null;
+  useEffect(() => {
+    if (currentRole === "support_crew" && !hasSeenCrewTour()) {
+      setIsCrewTourOpen(true);
+    }
+  }, [currentRole]);
+
   function handleSignIn(newSession: StoredSession) {
     setStoredSession(newSession);
     setSession(newSession);
@@ -289,16 +305,6 @@ function ConnectedApp() {
   const role = activeSessionCheck.role;
   const followerHandle =
     session.sessionType === "follower" ? session.username : undefined;
-
-  // First-launch tour for Support Crew. Only fires when the session check has
-  // resolved into a real role and the user hasn't already dismissed the tour
-  // on this browser. Guarded by a ref-stable check so we don't re-open the
-  // tour on every re-render of the session query.
-  React.useEffect(() => {
-    if (role === "support_crew" && !hasSeenCrewTour()) {
-      setIsCrewTourOpen(true);
-    }
-  }, [role]);
 
   if (view === "follower-management" && role === "traveler") {
     return (
