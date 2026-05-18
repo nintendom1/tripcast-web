@@ -18,7 +18,7 @@ import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 import { TopBar } from "./features/hud";
-import CrewLandingTour, { hasSeenCrewTour } from "./features/onboarding/CrewLandingTour";
+import CrewLandingTour, { hasSeenCrewTour, resetCrewTourSeen } from "./features/onboarding/CrewLandingTour";
 import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
 import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
 import { PendingNotice } from "./components/resilience/PendingNotice";
@@ -334,6 +334,11 @@ function ConnectedApp() {
         role={role}
         onSignOut={handleSignOut}
         onManageFollowers={() => { setIsOptionsOpen(false); setView("follower-management"); }}
+        onReplayCrewTour={() => {
+          resetCrewTourSeen();
+          setIsOptionsOpen(false);
+          setIsCrewTourOpen(true);
+        }}
         onLoggedOut={handleLoggedOut}
         onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
         onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}

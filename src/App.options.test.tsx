@@ -92,6 +92,39 @@ describe("App: Options sheet — Traveler", () => {
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(screen.getByRole("heading", { name: /followers/i })).toBeInTheDocument();
   });
+
+  it("shows Bulk Import in the traveler Data / Dev section", async () => {
+    setupSessionMocks("traveler");
+    render(<App convexReady={true} />);
+    await userEvent.click(screen.getByRole("button", { name: /options/i }));
+    expect(screen.getByRole("heading", { name: /data \/ dev/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /bulk import/i })).toBeInTheDocument();
+  });
+
+  it("orders reading speed controls slow to instant and leaves Danger Zone last", async () => {
+    setupSessionMocks("traveler");
+    render(<App convexReady={true} />);
+    await userEvent.click(screen.getByRole("button", { name: /options/i }));
+
+    const buttons = ["slow", "normal", "fast", "instant"].map((name) =>
+      screen.getByRole("button", { name }),
+    );
+    expect(buttons.map((button) => button.textContent)).toEqual(["slow", "normal", "fast", "instant"]);
+
+    const tour = screen.getByRole("heading", { name: /tour/i });
+    const dangerZone = screen.getByRole("heading", { name: /danger zone/i });
+    expect(
+      tour.compareDocumentPosition(dangerZone) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("replays the welcome tour from Options", async () => {
+    setupSessionMocks("traveler");
+    render(<App convexReady={true} />);
+    await userEvent.click(screen.getByRole("button", { name: /options/i }));
+    await userEvent.click(screen.getByRole("button", { name: /replay welcome tour/i }));
+    expect(screen.getByRole("button", { name: /^skip$/i })).toBeInTheDocument();
+  });
 });
 
 describe("App: Options sheet — Support Crew", () => {
@@ -116,6 +149,13 @@ describe("App: Options sheet — Support Crew", () => {
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(screen.queryByText(/danger zone/i)).not.toBeInTheDocument();
+  });
+
+  it("does not show traveler-only Bulk Import for support crew", async () => {
+    setupSessionMocks("support_crew");
+    render(<App convexReady={true} />);
+    await userEvent.click(screen.getByRole("button", { name: /options/i }));
+    expect(screen.queryByRole("button", { name: /bulk import/i })).not.toBeInTheDocument();
   });
 
   it("shows Sign out in Options for support crew", async () => {

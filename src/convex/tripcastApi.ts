@@ -547,6 +547,139 @@ export type LinkedCostMap = {
 };
 
 // ---------------------------------------------------------------------------
+// Bulk Import types
+// ---------------------------------------------------------------------------
+
+export type BulkImportKind = "checkin" | "story" | "transaction" | "challenge" | "route_vote";
+export type BulkImportTimestamp = number | string;
+
+export type BulkImportRouteVoteOption = {
+  ref?: string;
+  title: string;
+  description?: string;
+  locationLabel?: string;
+  place?: string;
+  lat?: number;
+  lon?: number;
+  estimatedCostUsd?: number;
+  estimatedDurationMinutes?: number;
+  estimatedEnergyImpact?: EnergyImpact;
+};
+
+export type BulkImportEntry =
+  | {
+      kind: "checkin" | "story";
+      ref?: string;
+      timeZone?: string;
+      title?: string;
+      note?: string;
+      body?: string;
+      locationLabel?: string;
+      place?: string;
+      showInStory?: boolean;
+      lat: number;
+      lon: number;
+      source?: CheckpointSource;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    }
+  | {
+      kind: "transaction";
+      ref?: string;
+      timeZone?: string;
+      title: string;
+      note?: string;
+      category?: TransactionCategory;
+      currencyCode?: string;
+      localAmount?: number;
+      amount?: number;
+      localCurrencyPerUsd?: number;
+      countsTowardMeter?: boolean;
+      visibility?: TransactionVisibility;
+      linkedToRef?: string;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    }
+  | {
+      kind: "challenge";
+      ref?: string;
+      timeZone?: string;
+      title: string;
+      description?: string;
+      note?: string;
+      status?: ChallengeStatus;
+      locationLabel?: string;
+      loc?: string;
+      lat?: number;
+      lon?: number;
+      estimatedCostUsd?: number;
+      estimatedDurationMinutes?: number;
+      estimatedEnergyImpact?: EnergyImpact;
+      sourceRouteVoteRef?: string;
+      sourceRouteVoteOptionRef?: string;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    }
+  | {
+      kind: "route_vote" | "vote";
+      ref?: string;
+      timeZone?: string;
+      title: string;
+      description?: string;
+      status?: RouteVoteStatus;
+      expiresAt?: BulkImportTimestamp;
+      resultsVisibility?: ResultsVisibility;
+      options: BulkImportRouteVoteOption[];
+      confirmedWinningOptionRef?: string;
+      resultingChallengeRef?: string;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    };
+
+export type BulkImportPayload =
+  | BulkImportEntry[]
+  | {
+      timeZone?: string;
+      entries: BulkImportEntry[];
+    };
+
+export type BulkImportCounts = {
+  checkins: number;
+  transactions: number;
+  challenges: number;
+  routeVotes: number;
+};
+
+export type BulkImportPreviewError = {
+  index?: number;
+  ref?: string;
+  message: string;
+};
+
+export type BulkImportPreviewRow = {
+  index: number;
+  kind: BulkImportKind;
+  ref?: string;
+  title: string;
+  detail?: string;
+  links: string[];
+};
+
+export type BulkImportPreview = {
+  valid: boolean;
+  maxEntries: number;
+  counts: BulkImportCounts;
+  rows: BulkImportPreviewRow[];
+  errors: BulkImportPreviewError[];
+};
+
+export type BulkImportResult = {
+  imported: number;
+  counts: BulkImportCounts;
+  idsByRef: Record<string, string>;
+};
+
+// ---------------------------------------------------------------------------
 // Follower / account types
 // ---------------------------------------------------------------------------
 
@@ -573,6 +706,20 @@ export type FollowerInfo = {
 // ---------------------------------------------------------------------------
 
 export const tripcastApi = {
+  bulkImport: {
+    previewBulkImport: (anyApi as any).bulkImport.previewBulkImport as FunctionReference<
+      "query",
+      "public",
+      { token: string; entries: BulkImportPayload },
+      BulkImportPreview
+    >,
+    travelerBulkImport: (anyApi as any).bulkImport.travelerBulkImport as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; entries: BulkImportPayload },
+      BulkImportResult
+    >,
+  },
   auth: {
     signIn: (anyApi as any).auth.signIn as FunctionReference<
       "mutation",
