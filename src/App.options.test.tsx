@@ -32,7 +32,7 @@ function setupSessionMocks(role: "traveler" | "support_crew") {
     sessionType: "legacy" as const,
   });
   vi.mocked(convexReact.useQuery).mockReturnValue({ role });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any);
 }
 

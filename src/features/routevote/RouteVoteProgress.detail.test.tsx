@@ -38,7 +38,7 @@ const mockVote: RouteVoteListItem = {
 };
 
 function setupMocks({ detailResult }: { detailResult: unknown }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   (vi.mocked(convexReact.useQuery) as any).mockImplementation(
     (ref: unknown) => {
       if (ref === tripcastApi.routeVotes.travelerGetRouteVoteDetail) {
@@ -48,7 +48,7 @@ function setupMocks({ detailResult }: { detailResult: unknown }) {
       return [mockVote];
     },
   );
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 }
 

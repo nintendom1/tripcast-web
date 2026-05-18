@@ -77,6 +77,28 @@ Now, <describe the new state or outcome>.
 <Commands run, manual checks performed by you and/or a reviewer, or note why testing was not run.>
 ```
 
+## Linting (Rules of Hooks)
+
+Run lint:
+
+```bash
+npm run lint        # check
+npm run lint:fix    # auto-fix what it can (mostly unused-disable cleanup)
+```
+
+The lint config (`eslint.config.js`) is intentionally narrow — only `react-hooks/rules-of-hooks` (error) and `react-hooks/exhaustive-deps` (warn) are enforced. The rest of static analysis stays with `tsc -b` + tests + code review.
+
+### Rules of Hooks — non-negotiable
+
+**Every hook call must be reachable on every render of a component.** In practice that means:
+
+- Put all `useState` / `useEffect` / `useQuery` / `useMutation` / `useMemo` / `useRef` / `useContext` (and project-specific custom hooks like `useHistoryUnread`, `useReadingSpeed`, `useMusic`, `useDelayedPending`, `useOnlineStatus`) at the **top of the function body**, before any `if (…) return …` early-return branches.
+- A new hook added below an early return changes the hook count between renders that fire the early return vs. renders that fall through. React throws `"Rendered more hooks than during the previous render"` — the root `ErrorBoundary` in `App.tsx` catches it and the user sees the fullscreen error fallback instead of the app. This bug class shipped once during the UX rework (commit `704fcb8` → fix `39468ef`) and is exactly what the lint rule now blocks.
+- When the hook's body needs a value that's only well-defined after the early returns (e.g. `activeSessionCheck.role`), derive a nullable form at the top (`const currentRole = activeSessionCheck?.role ?? null`) and put the conditional logic **inside** the effect body, not around the effect call site.
+- For genuinely missing-but-stable deps in `exhaustive-deps`, add a one-line `// eslint-disable-next-line react-hooks/exhaustive-deps` with a comment above explaining why the dep is closure-stable (ref-driven, stable React setter, or stable Convex mutation handle). Don't disable the rule without the rationale.
+
+CI runs `npm run lint` before tests. Local pre-commit isn't enforced, so run it before pushing.
+
 ## Testing
 
 Run tests:

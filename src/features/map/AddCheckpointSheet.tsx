@@ -100,7 +100,7 @@ export default function AddCheckpointSheet({
       setError(null);
       setIsSaving(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [selectedCoordinate, prefill]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

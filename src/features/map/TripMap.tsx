@@ -42,7 +42,6 @@ import {
   SheetCloseButton,
   SheetContent,
   SheetGrabber,
-  SheetHeader,
   SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
@@ -131,7 +130,7 @@ function CheckpointMarkers({
       markersRef.current = [];
     };
   // onCheckpointClick intentionally omitted — kept fresh via onClickRef
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [map, checkpoints]);
 
   return null;
@@ -521,7 +520,7 @@ export default function TripMap({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   // cancelCoordinatePick is stable (no deps change it); adding coordinatePickMode as dep is sufficient
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [coordinatePickMode]);
 
   // Map init
@@ -624,6 +623,9 @@ export default function TripMap({
   useEffect(() => {
     if (locationResetNonce === 0) return;
     stopLocationSharing();
+  // stopLocationSharing only touches refs + stable mutation handles; its
+  // identity changes per render but its behavior is closure-stable here.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationResetNonce]);
 
   useEffect(() => {

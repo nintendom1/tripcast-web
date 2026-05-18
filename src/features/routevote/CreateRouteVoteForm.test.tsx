@@ -10,7 +10,7 @@ vi.mock("convex/react", () => ({
 
 function renderForm() {
   const createVote = vi.fn().mockResolvedValue("new-vote-id");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   vi.mocked(convexReact.useMutation).mockReturnValue(createVote as any);
 
   const onCreated = vi.fn();

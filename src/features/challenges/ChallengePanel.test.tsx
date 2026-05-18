@@ -82,9 +82,9 @@ function renderPanel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = 
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   vi.mocked(convexReact.useQuery).mockReturnValue([] as any);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
 

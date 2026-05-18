@@ -34,7 +34,7 @@ function setupMocks({
   updateStateFn?: ReturnType<typeof vi.fn>;
   updateVisibilityFn?: ReturnType<typeof vi.fn>;
 } = {}) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
     if (ref === tripcastApi.travelerState.travelerGetState) {
       return { state, visibility };
@@ -43,7 +43,7 @@ function setupMocks({
   });
   const mutationFns = [updateStateFn, updateVisibilityFn];
   let callCount = 0;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   vi.mocked(convexReact.useMutation).mockImplementation(() => mutationFns[callCount++ % 2] as any);
   return { updateStateFn, updateVisibilityFn };
 }
