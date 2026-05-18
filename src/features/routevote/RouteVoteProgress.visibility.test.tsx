@@ -1,4 +1,4 @@
-import { render, screen, rerender } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import { tripcastApi, type RouteVoteListItem } from "../../convex/tripcastApi";
