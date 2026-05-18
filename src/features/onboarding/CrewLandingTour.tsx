@@ -3,6 +3,7 @@ import { ArrowRight } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
 import { cn } from "@/lib/utils";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 import { PixelChar } from "./PixelChar";
 import { SpeechBubble } from "./SpeechBubble";
@@ -88,10 +89,12 @@ export default function CrewLandingTour({
   );
   const [step, setStep] = React.useState(0);
   const [bubbleDone, setBubbleDone] = React.useState(false);
+  const music = useMusicSafe();
 
   const panel = panels[step];
 
-  function finish() {
+  function finish(sound: "close" | "success" = "close") {
+    music.sfx(sound);
     try {
       window.localStorage.setItem(STORAGE_KEY, "1");
     } catch {
@@ -102,10 +105,11 @@ export default function CrewLandingTour({
 
   function next() {
     if (step < panels.length - 1) {
+      music.sfx("page");
       setStep((s) => s + 1);
       setBubbleDone(false);
     } else {
-      finish();
+      finish("success");
     }
   }
 
@@ -134,7 +138,7 @@ export default function CrewLandingTour({
         </div>
         <button
           type="button"
-          onClick={finish}
+          onClick={() => finish()}
           className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)] hover:text-[var(--ink-1)]"
         >
           Skip
@@ -184,7 +188,7 @@ export default function CrewLandingTour({
           <Button
             type="button"
             variant="outline"
-            onClick={finish}
+            onClick={() => finish()}
             className="h-10 rounded-2xl"
           >
             {panel.skip}

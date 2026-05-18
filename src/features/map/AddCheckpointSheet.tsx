@@ -13,6 +13,7 @@ import {
   SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -83,6 +84,7 @@ export default function AddCheckpointSheet({
   const [showInStory, setShowInStory] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const music = useMusicSafe();
 
   const isFromMission = Boolean(prefill?.challengeId);
   const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Check-in");
@@ -127,6 +129,7 @@ export default function AddCheckpointSheet({
         lon: selectedCoordinate.lon,
         source: selectedCoordinate.source,
       });
+      music.sfx("pin");
       onCheckpointCreated?.(checkpointId, prefill);
       onClose();
     } catch (saveError) {

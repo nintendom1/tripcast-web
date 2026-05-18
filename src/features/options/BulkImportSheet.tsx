@@ -20,6 +20,7 @@ import {
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
 import { cn } from "@/lib/utils";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 const SAMPLE_JSON = `{
   "timeZone": "Asia/Tokyo",
@@ -141,6 +142,7 @@ export default function BulkImportSheet({
   const [commitError, setCommitError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkImportResult | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
+  const music = useMusicSafe();
 
   const preview = useQuery(
     tripcastApi.bulkImport.previewBulkImport,
@@ -180,6 +182,7 @@ export default function BulkImportSheet({
       const nextResult = await commitBulkImport({ token, entries });
       setResult(nextResult);
       setStage("done");
+      music.sfx("success");
       onImported?.(nextResult);
     } catch (error) {
       setCommitError(errorText(error));
@@ -229,11 +232,24 @@ export default function BulkImportSheet({
                 </p>
               ) : null}
               <div className="flex flex-wrap justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setText(SAMPLE_JSON)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    music.sfx("tap");
+                    setText(SAMPLE_JSON);
+                  }}
+                >
                   <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden="true" />
                   Reset sample
                 </Button>
-                <Button type="button" onClick={validate}>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    music.sfx("page");
+                    validate();
+                  }}
+                >
                   <ClipboardList className="mr-1.5 h-4 w-4" aria-hidden="true" />
                   Validate & Preview
                 </Button>
@@ -273,7 +289,14 @@ export default function BulkImportSheet({
                 </p>
               ) : null}
               <div className="flex flex-wrap justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setStage("paste")}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    music.sfx("page");
+                    setStage("paste");
+                  }}
+                >
                   <ChevronLeft className="mr-1.5 h-4 w-4" aria-hidden="true" />
                   Back
                 </Button>
@@ -299,7 +322,13 @@ export default function BulkImportSheet({
                   {result.counts.challenges} missions, {result.counts.routeVotes} route votes.
                 </p>
               </div>
-              <Button type="button" onClick={() => onOpenChange(false)}>
+              <Button
+                type="button"
+                onClick={() => {
+                  music.sfx("page");
+                  onOpenChange(false);
+                }}
+              >
                 Back to Options
               </Button>
             </div>

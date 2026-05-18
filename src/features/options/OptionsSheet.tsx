@@ -165,6 +165,7 @@ export default function OptionsSheet({
 }: OptionsSheetProps) {
   const [view, setView] = useState<OptionsView>("options");
   const [isEmergencyResetPending, setIsEmergencyResetPending] = useState(false);
+  const music = useMusicSafe();
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen && view === "emergency-reset" && isEmergencyResetPending) return;
@@ -195,7 +196,14 @@ export default function OptionsSheet({
         >
           <SheetGrabber />
           {view === "travel-funds" ? (
-            <SubViewHeader kicker="Traveler" title="Travel Funds" onBack={() => setView("options")} />
+            <SubViewHeader
+              kicker="Traveler"
+              title="Travel Funds"
+              onBack={() => {
+                music.sfx("page");
+                setView("options");
+              }}
+            />
           ) : view === "emergency-reset" ? (
             <EmergencyResetContent
               token={session.token}
@@ -212,7 +220,13 @@ export default function OptionsSheet({
 
           {view === "travel-funds" ? (
             <SheetBody className="px-5">
-              <TravelFundsSheet token={session.token} onClose={() => setView("options")} />
+              <TravelFundsSheet
+                token={session.token}
+                onClose={() => {
+                  music.sfx("page");
+                  setView("options");
+                }}
+              />
             </SheetBody>
           ) : view === "options" ? (
             <OptionsHome
@@ -221,9 +235,18 @@ export default function OptionsSheet({
               onSignOut={handleSignOut}
               onManageFollowers={onManageFollowers}
               onReplayCrewTour={onReplayCrewTour}
-              onTravelFunds={() => setView("travel-funds")}
-              onBulkImport={() => setView("bulk-import")}
-              onEmergencyReset={() => setView("emergency-reset")}
+              onTravelFunds={() => {
+                music.sfx("page");
+                setView("travel-funds");
+              }}
+              onBulkImport={() => {
+                music.sfx("page");
+                setView("bulk-import");
+              }}
+              onEmergencyReset={() => {
+                music.sfx("page");
+                setView("emergency-reset");
+              }}
             />
           ) : null}
         </SheetContent>
@@ -235,6 +258,7 @@ export default function OptionsSheet({
           token={session.token}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) {
+              music.sfx("page");
               setView("options");
               onOpenChange(true);
             }
@@ -368,7 +392,10 @@ function SoundSection() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => music.setMute(!music.mute)}
+            onClick={() => {
+              music.sfx("tap");
+              music.setMute(!music.mute);
+            }}
             className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-1)]"
             aria-label={music.mute ? "Unmute sound" : "Mute sound"}
           >
@@ -376,9 +403,6 @@ function SoundSection() {
           </button>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-[var(--ink-1)]">{music.mute ? "Muted" : "Playing"}</p>
-            <p className="font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
-              Generative soundtrack
-            </p>
           </div>
         </div>
         <label className="grid gap-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
@@ -400,7 +424,10 @@ function SoundSection() {
               <button
                 key={option.value}
                 type="button"
-                onClick={() => music.setSoundtrack(option.value)}
+                onClick={() => {
+                  music.sfx("tap");
+                  music.setSoundtrack(option.value);
+                }}
                 className={cn(
                   "rounded-full px-2 py-1.5 text-xs font-semibold",
                   music.soundtrack === option.value

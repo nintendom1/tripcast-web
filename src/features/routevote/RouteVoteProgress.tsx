@@ -14,6 +14,7 @@ import { StatusBadge } from "../../components/rpg/StatusBadge";
 import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -118,6 +119,7 @@ function VoteDetailView({
   const confirmWinner = useMutation(tripcastApi.routeVotes.travelerConfirmRouteVoteWinner);
   const hideComment = useMutation(tripcastApi.routeVotes.travelerHideRouteVoteComment);
   const updateChallengeStatus = useMutation(tripcastApi.routeVotes.travelerUpdateChallengeStatus);
+  const music = useMusicSafe();
 
   const [confirmingOptionId, setConfirmingOptionId] = useState<string | null>(null);
   const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus | null>(null);
@@ -177,6 +179,7 @@ function VoteDetailView({
     setIsActing(true);
     try {
       await confirmWinner({ token, routeVoteId: vote._id, winningOptionId: optionId });
+      music.sfx("success");
       setConfirmingOptionId(null);
     } finally {
       setIsActing(false);
@@ -197,6 +200,7 @@ function VoteDetailView({
         challengeId: d.challenge._id,
         newStatus: challengeStatus,
       });
+      music.sfx("success");
     } finally {
       setIsActing(false);
     }
@@ -367,6 +371,7 @@ export default function RouteVoteProgress({
   const [view, setView] = useState<View>("list");
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const [actingVoteId, setActingVoteId] = useState<string | null>(null);
+  const music = useMusicSafe();
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
 
@@ -376,6 +381,7 @@ export default function RouteVoteProgress({
     setActingVoteId(voteId);
     try {
       await closeVote({ token, routeVoteId: voteId });
+      music.sfx("success");
     } finally {
       setActingVoteId(null);
     }
@@ -385,6 +391,7 @@ export default function RouteVoteProgress({
     setActingVoteId(voteId);
     try {
       await cancelVote({ token, routeVoteId: voteId });
+      music.sfx("success");
     } finally {
       setActingVoteId(null);
     }
@@ -394,6 +401,7 @@ export default function RouteVoteProgress({
     setActingVoteId(voteId);
     try {
       await archiveVote({ token, routeVoteId: voteId });
+      music.sfx("success");
     } finally {
       setActingVoteId(null);
     }
@@ -418,6 +426,7 @@ export default function RouteVoteProgress({
             <button
               type="button"
               onClick={() => {
+                music.sfx("page");
                 setView("list");
                 setSelectedVoteId(null);
               }}
@@ -452,10 +461,14 @@ export default function RouteVoteProgress({
               <CreateRouteVoteForm
                 token={token}
                 onCreated={(id) => {
+                  music.sfx("success");
                   setSelectedVoteId(id);
                   setView("detail");
                 }}
-                onCancel={() => setView("list")}
+                onCancel={() => {
+                  music.sfx("page");
+                  setView("list");
+                }}
                 onRequestCoordinatePick={onRequestCoordinatePick}
                 referenceLocation={referenceLocation}
               />
@@ -472,6 +485,7 @@ export default function RouteVoteProgress({
                 token={token}
                 vote={selectedVote}
                 onBack={() => {
+                  music.sfx("page");
                   setView("list");
                   setSelectedVoteId(null);
                   onVoteOverlayChange(null);
@@ -491,7 +505,14 @@ export default function RouteVoteProgress({
               transition={{ duration: 0.15 }}
               className="flex flex-col gap-3"
             >
-              <Button size="sm" onClick={() => setView("create")} className="w-full">
+              <Button
+                size="sm"
+                onClick={() => {
+                  music.sfx("page");
+                  setView("create");
+                }}
+                className="w-full"
+              >
                 + Propose new route
               </Button>
               {votes === undefined ? (
@@ -504,6 +525,7 @@ export default function RouteVoteProgress({
                     key={vote._id}
                     vote={vote}
                     onViewDetail={() => {
+                      music.sfx("page");
                       setSelectedVoteId(vote._id);
                       setView("detail");
                     }}

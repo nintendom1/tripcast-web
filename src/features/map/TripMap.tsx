@@ -51,6 +51,8 @@ import CheckInDetailSheet from "../history/CheckInDetailSheet";
 import StoryDetailSheet from "../history/StoryDetailSheet";
 import { useHistoryUnread } from "../history/useHistoryUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
+import { useMusicSafe } from "../../providers/MusicProvider";
+import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import {
   MOOD_LABELS,
   MOOD_VALUES,
@@ -372,6 +374,8 @@ export default function TripMap({
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
+  const music = useMusicSafe();
+  const musicRef = useRef(music);
 
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
@@ -432,26 +436,58 @@ export default function TripMap({
 
   const [fanOpen, setFanOpen] = useState(false);
 
+  useTripAudioScenario({
+    token,
+    role,
+    storyOpen: selectedStoryEvent !== null || storyPrefill !== null,
+    voteActive: isVotePanelOpen || hasUnseenVote,
+    challengeActive: isChallengesPanelOpen || isSetActivityOpen || challengeBadgeCount > 0,
+  });
+
+  useEffect(() => {
+    musicRef.current = music;
+  }, [music]);
+
   function openHistory() {
-    if (isHistoryOpen) { setIsHistoryOpen(false); return; }
+    if (isHistoryOpen) {
+      music.sfx("close");
+      setIsHistoryOpen(false);
+      return;
+    }
+    music.sfx("open");
     setIsHistoryOpen(true);
     setIsChallengesPanelOpen(false);
     setIsVotePanelOpen(false);
   }
   function openChallenges() {
-    if (isChallengesPanelOpen) { setIsChallengesPanelOpen(false); return; }
+    if (isChallengesPanelOpen) {
+      music.sfx("close");
+      setIsChallengesPanelOpen(false);
+      return;
+    }
+    music.sfx("open");
     setIsChallengesPanelOpen(true);
     setIsHistoryOpen(false);
     setIsVotePanelOpen(false);
   }
   function openVotes() {
-    if (isVotePanelOpen) { setIsVotePanelOpen(false); return; }
+    if (isVotePanelOpen) {
+      music.sfx("close");
+      setIsVotePanelOpen(false);
+      return;
+    }
+    music.sfx("open");
     setIsVotePanelOpen(true);
     setIsHistoryOpen(false);
     setIsChallengesPanelOpen(false);
   }
   function openFunds() {
-    if (isTravelFundsSheetOpen) { setIsTravelFundsSheetOpen(false); return; }
+    if (isTravelFundsSheetOpen) {
+      music.sfx("close");
+      setIsTravelFundsSheetOpen(false);
+      return;
+    }
+    music.sfx("open");
     setIsTravelFundsSheetOpen(true);
     setIsHistoryOpen(false);
     setIsChallengesPanelOpen(false);
@@ -481,10 +517,12 @@ export default function TripMap({
       openChallenges();
       return;
     }
+    music.sfx("tap");
     setFanOpen((prev) => !prev);
   }
 
   function handleFanPick(action: FanAction) {
+    music.sfx("tap");
     setFanOpen(false);
     switch (action) {
       case "checkin":
@@ -492,6 +530,7 @@ export default function TripMap({
         setIsPlacementMode(true);
         break;
       case "activity":
+        music.sfx("open");
         setIsSetActivityOpen(true);
         break;
       case "transaction":
@@ -542,6 +581,7 @@ export default function TripMap({
     map.on("contextmenu", (event) => {
       if (!canWrite) return;
       event.preventDefault();
+      musicRef.current.sfx("pin");
       setSelectedCoordinate({
         lat: event.lngLat.lat,
         lon: event.lngLat.lng,
@@ -555,12 +595,14 @@ export default function TripMap({
         const pick = coordinatePickModeRef.current;
         coordinatePickModeRef.current = null;
         setCoordinatePickMode(null);
+        musicRef.current.sfx("pin");
         pick.callback({ lat: event.lngLat.lat, lon: event.lngLat.lng });
         return;
       }
 
       if (!placementModeRef.current) return;
       setIsPlacementMode(false);
+      musicRef.current.sfx("pin");
       setSelectedCoordinate({
         lat: event.lngLat.lat,
         lon: event.lngLat.lng,
@@ -686,6 +728,7 @@ export default function TripMap({
   }
 
   function handleToggleLocationSharing() {
+    music.sfx("tap");
     if (isLocationSharing) {
       stopLocationSharing();
     } else {
@@ -701,6 +744,7 @@ export default function TripMap({
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
+    music.sfx("page");
     const label = `Option ${optionIndex + 1} location`;
     coordinatePickModeRef.current = { label, callback };
     setCoordinatePickMode({ label, callback });
@@ -720,6 +764,7 @@ export default function TripMap({
   function handleRequestChallengeCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
+    music.sfx("page");
     const label = "the challenge location";
     coordinatePickModeRef.current = { label, callback };
     setCoordinatePickMode({ label, callback });
@@ -753,6 +798,7 @@ export default function TripMap({
     lat?: number;
     lon?: number;
   }) {
+    music.sfx("page");
     setIsChallengesPanelOpen(false);
     setStoryPrefill({
       challengeId: challenge._id,
@@ -779,6 +825,7 @@ export default function TripMap({
   }
 
   function handleBackFromStory() {
+    music.sfx("page");
     // "← Back" inside AddCheckpointSheet's mission-completion mode: dismiss
     // the story form (clears prefill + coordinate), then re-open the missions
     // panel; ChallengePanel reads `pendingOpenDetailMissionId` and lands on
@@ -795,6 +842,7 @@ export default function TripMap({
     if (!prefill?.challengeId) return;
     try {
       await completeChallenge({ token, challengeId: prefill.challengeId });
+      music.sfx("success");
       showToast("Mission completed.");
     } catch (err) {
       // If the mission was already completed (the "Add a story to a completed
@@ -803,6 +851,7 @@ export default function TripMap({
       // the Traveler can resolve from the mission detail.
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.toLowerCase().includes("only in-progress")) {
+        music.sfx("success");
         showToast("Story added to mission.");
       } else {
         showToast("Check-in saved. Mark the mission complete from its detail.");
@@ -812,6 +861,7 @@ export default function TripMap({
 
 
   function showToast(message: string) {
+    music.sfx("toast");
     if (toastTimeoutRef.current !== null) {
       clearTimeout(toastTimeoutRef.current);
     }
@@ -896,6 +946,7 @@ export default function TripMap({
   }
 
   function handleCenterLocation() {
+    music.sfx("tap");
     const currentLocation =
       role === "traveler"
         ? (livePosition ?? storedTravelerLocation ?? null)
@@ -968,9 +1019,11 @@ export default function TripMap({
           const event = historyEvents.find((e) => e.checkpointId === checkpoint._id);
           if (!event) return;
           if (event.storyLevel === "story") {
+            music.sfx("page");
             setStoryOpenedFromHistory(false);
             setSelectedStoryEvent(event);
           } else {
+            music.sfx("page");
             setCheckInOpenedFromHistory(false);
             setSelectedCheckInEvent(event);
           }
@@ -999,6 +1052,7 @@ export default function TripMap({
         token={token}
         role={role}
         onChallengeClick={(id) => {
+          music.sfx("open");
           setIsChallengesPanelOpen(true);
           setPendingOpenChallengeId(id);
         }}
@@ -1095,7 +1149,10 @@ export default function TripMap({
 
       <FanMenu
         open={fanOpen && role === "traveler"}
-        onClose={() => setFanOpen(false)}
+        onClose={() => {
+          music.sfx("close");
+          setFanOpen(false);
+        }}
         onPick={handleFanPick}
       />
 
@@ -1105,6 +1162,7 @@ export default function TripMap({
           selectedCoordinate={selectedCoordinate}
           token={token}
           onClose={() => {
+            music.sfx("close");
             setSelectedCoordinate(null);
             setStoryPrefill(null);
             // Swipe-down / escape dismissal — drop the pending detail return
@@ -1124,6 +1182,7 @@ export default function TripMap({
           <FeatureBoundary
             resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
+              music.sfx("close");
               setIsVotePanelOpen(false);
               setVoteMapOverlay(null);
               setVoteOptionNumberById(null);
@@ -1136,6 +1195,7 @@ export default function TripMap({
               key="crew-vote-panel"
               token={token}
               onClose={() => {
+                music.sfx("close");
                 setIsVotePanelOpen(false);
                 setVoteMapOverlay(null);
                 setVoteOptionNumberById(null);
@@ -1153,6 +1213,7 @@ export default function TripMap({
           <FeatureBoundary
             resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
+              music.sfx("close");
               setIsVotePanelOpen(false);
               setVoteMapOverlay(null);
               setVoteOptionNumberById(null);
@@ -1164,6 +1225,7 @@ export default function TripMap({
             <RouteVoteProgress
               token={token}
               onClose={() => {
+                music.sfx("close");
                 setIsVotePanelOpen(false);
                 setVoteMapOverlay(null);
                 setVoteOptionNumberById(null);
@@ -1190,7 +1252,10 @@ export default function TripMap({
             >
               <TravelerStateSheet
                 token={token}
-                onClose={() => setIsTravelerStateOpen(false)}
+                onClose={() => {
+                  music.sfx("close");
+                  setIsTravelerStateOpen(false);
+                }}
                 onToast={showToast}
               />
             </FeatureBoundary>
@@ -1211,7 +1276,10 @@ export default function TripMap({
           <StatusCardConnected
             token={token}
             role={role}
-            onOpenState={() => setIsTravelerStateOpen(true)}
+            onOpenState={() => {
+              music.sfx("open");
+              setIsTravelerStateOpen(true);
+            }}
           />
         </FeatureBoundary>
         <div className="flex items-center justify-between gap-2">
@@ -1229,7 +1297,10 @@ export default function TripMap({
             <FundsCompactConnected
               token={token}
               role={role}
-              onOpenSheet={role === "traveler" ? () => setIsTravelFundsSheetOpen(true) : undefined}
+              onOpenSheet={role === "traveler" ? () => {
+                music.sfx("open");
+                setIsTravelFundsSheetOpen(true);
+              } : undefined}
             />
           </FeatureBoundary>
         </div>
@@ -1239,7 +1310,10 @@ export default function TripMap({
         open={isTravelFundsSheetOpen}
         modal={false}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) setIsTravelFundsSheetOpen(false);
+          if (!nextOpen) {
+            music.sfx("close");
+            setIsTravelFundsSheetOpen(false);
+          }
         }}
       >
         <SheetContent
@@ -1262,7 +1336,10 @@ export default function TripMap({
             {role === "traveler" && isTravelFundsSheetOpen && (
               <TravelFundsSheet
                 token={token}
-                onClose={() => setIsTravelFundsSheetOpen(false)}
+                onClose={() => {
+                  music.sfx("close");
+                  setIsTravelFundsSheetOpen(false);
+                }}
               />
             )}
           </div>
@@ -1271,7 +1348,10 @@ export default function TripMap({
 
       <FeatureBoundary
         resetKeys={[isChallengesPanelOpen, token, role]}
-        onClose={() => setIsChallengesPanelOpen(false)}
+        onClose={() => {
+          music.sfx("close");
+          setIsChallengesPanelOpen(false);
+        }}
         title="Challenges hit a problem."
         message="Try again, or close challenges and reopen them."
         fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
@@ -1280,8 +1360,14 @@ export default function TripMap({
           open={isChallengesPanelOpen}
           token={token}
           role={role}
-          onClose={() => setIsChallengesPanelOpen(false)}
-          onStartChallenge={() => setIsChallengesPanelOpen(false)}
+          onClose={() => {
+            music.sfx("close");
+            setIsChallengesPanelOpen(false);
+          }}
+          onStartChallenge={() => {
+            music.sfx("success");
+            setIsChallengesPanelOpen(false);
+          }}
           onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
           isPickingCoordinate={isPickingCoordinate}
           pendingOpenChallengeId={pendingOpenChallengeId}
@@ -1297,7 +1383,10 @@ export default function TripMap({
         {isHistoryOpen && (
           <FeatureBoundary
             resetKeys={[isHistoryOpen, historyEvents.length]}
-            onClose={() => setIsHistoryOpen(false)}
+            onClose={() => {
+              music.sfx("close");
+              setIsHistoryOpen(false);
+            }}
             title="History hit a problem."
             message="Try again, or close history and reopen it."
             fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
@@ -1305,13 +1394,18 @@ export default function TripMap({
             <HistorySheet
               events={historyEvents}
               token={token}
-              onClose={() => setIsHistoryOpen(false)}
+              onClose={() => {
+                music.sfx("close");
+                setIsHistoryOpen(false);
+              }}
               onCheckInSelect={(event) => {
+                music.sfx("page");
                 setIsHistoryOpen(false);
                 setCheckInOpenedFromHistory(true);
                 setSelectedCheckInEvent(event);
               }}
               onStorySelect={(event) => {
+                music.sfx("page");
                 setIsHistoryOpen(false);
                 setStoryOpenedFromHistory(true);
                 setSelectedStoryEvent(event);
@@ -1326,6 +1420,7 @@ export default function TripMap({
       <CheckInDetailSheet
         event={selectedCheckInEvent}
         onClose={() => {
+          music.sfx(checkInOpenedFromHistory ? "page" : "close");
           const returnToHistory = checkInOpenedFromHistory;
           setSelectedCheckInEvent(null);
           setCheckInOpenedFromHistory(false);
@@ -1337,6 +1432,7 @@ export default function TripMap({
       <StoryDetailSheet
         event={selectedStoryEvent}
         onClose={() => {
+          music.sfx(storyOpenedFromHistory ? "page" : "close");
           const returnToHistory = storyOpenedFromHistory;
           setSelectedStoryEvent(null);
           setStoryOpenedFromHistory(false);
@@ -1348,7 +1444,10 @@ export default function TripMap({
       {role === "traveler" && (
         <FeatureBoundary
           resetKeys={[isSetActivityOpen, token]}
-          onClose={() => setIsSetActivityOpen(false)}
+          onClose={() => {
+            music.sfx("close");
+            setIsSetActivityOpen(false);
+          }}
           title="Activity editor hit a problem."
           message="Try again, or close the activity editor."
           fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
@@ -1356,7 +1455,10 @@ export default function TripMap({
           <SetActivitySheet
             open={isSetActivityOpen}
             token={token}
-            onOpenChange={setIsSetActivityOpen}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) music.sfx("close");
+              setIsSetActivityOpen(nextOpen);
+            }}
           />
         </FeatureBoundary>
       )}

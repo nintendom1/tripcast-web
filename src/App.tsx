@@ -24,6 +24,7 @@ import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
 import { PendingNotice } from "./components/resilience/PendingNotice";
 import { useDelayedPending } from "./components/resilience/useDelayedPending";
 import { useOnlineStatus } from "./components/resilience/useOnlineStatus";
+import { useMusicSafe } from "./providers/MusicProvider";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -75,6 +76,7 @@ function ConnectedApp() {
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
+  const music = useMusicSafe();
   // Crew first-launch tour visibility — only shown for Support Crew sessions
   // that haven't already seen it on this browser. Toggled to false on tour
   // completion or skip; localStorage persists the seen flag separately.
@@ -325,16 +327,30 @@ function ConnectedApp() {
 
   return (
     <div className="relative flex flex-col h-dvh">
-      <TopBar role={role} onOpenOptions={() => setIsOptionsOpen(true)} />
+      <TopBar
+        role={role}
+        onOpenOptions={() => {
+          music.sfx("open");
+          setIsOptionsOpen(true);
+        }}
+      />
 
       <OptionsSheet
         open={isOptionsOpen}
-        onOpenChange={setIsOptionsOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) music.sfx("close");
+          setIsOptionsOpen(nextOpen);
+        }}
         session={session}
         role={role}
         onSignOut={handleSignOut}
-        onManageFollowers={() => { setIsOptionsOpen(false); setView("follower-management"); }}
+        onManageFollowers={() => {
+          music.sfx("page");
+          setIsOptionsOpen(false);
+          setView("follower-management");
+        }}
         onReplayCrewTour={() => {
+          music.sfx("page");
           resetCrewTourSeen();
           setIsOptionsOpen(false);
           setIsCrewTourOpen(true);

@@ -9,6 +9,7 @@ import { Input } from "../../components/ui/input";
 import { cn } from "@/lib/utils";
 import { formatLocal, formatUsd, getCategoryEmoji, getCategoryLabel } from "./currency";
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 type TravelFundsSheetProps = {
   token: string;
@@ -39,8 +40,10 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
   const [labelInput, setLabelInput] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const music = useMusicSafe();
 
   function openSettings() {
+    music.sfx("page");
     if (config?.enabled) {
       setBudgetInput(String(config.startingBudgetUsd));
       setLabelInput(config.budgetLabel ?? "");
@@ -56,6 +59,7 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
     const next = !(config?.enabled ?? false);
     try {
       await updateConfig({ token, featureEnabled: next });
+      music.sfx("success");
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : String(err));
     }
@@ -77,6 +81,7 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
         startingBudgetUsd: budget,
         budgetLabel: labelInput.trim() === "" ? "" : labelInput.trim(),
       });
+      music.sfx("success");
       setView("summary");
     } catch (err) {
       setSettingsError(err instanceof Error ? err.message : String(err));
@@ -87,6 +92,7 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
 
   async function handleAddSubmit(values: TransactionFormValues) {
     await addTransaction({ token, ...values });
+    music.sfx("success");
     setView("summary");
   }
 
@@ -97,6 +103,7 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
       transactionId: editingTx._id,
       ...values,
     });
+    music.sfx("success");
     setEditingTx(null);
     setView("summary");
   }
@@ -104,11 +111,13 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
   async function handleDelete() {
     if (!editingTx) return;
     await deleteTransaction({ token, transactionId: editingTx._id });
+    music.sfx("success");
     setEditingTx(null);
     setView("summary");
   }
 
   function goBackToSummary() {
+    music.sfx("page");
     setEditingTx(null);
     setView("summary");
   }
@@ -188,9 +197,13 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
             spentUsd={config.spentUsd}
             budgetLabel={config.budgetLabel}
             transactions={transactions ?? []}
-            onAdd={() => setView("add")}
+            onAdd={() => {
+              music.sfx("page");
+              setView("add");
+            }}
             onSettings={openSettings}
             onSelectTransaction={(tx) => {
+              music.sfx("page");
               setEditingTx(tx);
               setView("edit");
             }}

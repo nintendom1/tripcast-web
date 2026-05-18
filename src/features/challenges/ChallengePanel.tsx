@@ -21,6 +21,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { cn } from "@/lib/utils";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 type Props = {
   open: boolean;
@@ -85,6 +86,7 @@ export default function ChallengePanel({
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
+  const music = useMusicSafe();
 
   // Reset view when panel closes — the next open should always land on the list
   useEffect(() => {
@@ -147,17 +149,20 @@ export default function ChallengePanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, selectedChallenge?._id]);
 
-  function goToList() {
+  function goToList(sound: "page" | "success" | null = "page") {
+    if (sound) music.sfx(sound);
     setViewMode("list");
     setSelectedChallenge(null);
   }
 
   function goToCreate() {
+    music.sfx("page");
     setSelectedChallenge(null);
     setViewMode("create");
   }
 
   function goToDetail(challenge: Challenge) {
+    music.sfx("page");
     setSelectedChallenge(challenge);
     setViewMode("detail");
   }
@@ -192,7 +197,7 @@ export default function ChallengePanel({
         <div className="flex items-start justify-between gap-2 px-4 pt-2">
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
-              <SheetBackButton aria-label="Back to missions list" onClick={goToList} />
+              <SheetBackButton aria-label="Back to missions list" onClick={() => goToList()} />
             ) : null}
             <div className="flex min-w-0 flex-col gap-1">
               <SheetKicker dotColor="var(--plum)">Missions</SheetKicker>
@@ -244,13 +249,13 @@ export default function ChallengePanel({
                 <TravelerCreateForm
                   token={token}
                   onRequestCoordinatePick={onRequestCoordinatePick}
-                  onSuccess={goToList}
+                  onSuccess={() => goToList("success")}
                 />
               ) : (
                 <ChallengeProposalForm
                   token={token}
                   onRequestCoordinatePick={onRequestCoordinatePick}
-                  onSuccess={() => goToList()}
+                  onSuccess={() => goToList("success")}
                 />
               )}
             </div>
@@ -261,17 +266,17 @@ export default function ChallengePanel({
                 token={token}
                 role={role}
                 isOwn={role === "support_crew" ? Boolean(selectedChallenge.proposedByUserId === userId) : true}
-                onClose={goToList}
+                onClose={() => goToList()}
                 onStartChallenge={() => {
                   onStartChallenge?.();
-                  goToList();
+                  goToList(null);
                 }}
                 onRequestCoordinatePick={onRequestCoordinatePick}
                 onCompleteAsStory={
                   onCompleteAsStory
                     ? (challenge) => {
                         onCompleteAsStory(challenge);
-                        goToList();
+                        goToList(null);
                       }
                     : undefined
                 }
@@ -282,7 +287,7 @@ export default function ChallengePanel({
                         if (lat !== undefined && lon !== undefined) {
                           onRequestNavigateToChallenge?.({ lat, lon });
                         }
-                        goToList();
+                        goToList("page");
                       }
                     : undefined
                 }

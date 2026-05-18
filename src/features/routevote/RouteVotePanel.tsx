@@ -24,6 +24,7 @@ import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
 import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 type RouteVotePanelProps = {
   token: string;
@@ -89,6 +90,7 @@ function VoteDetail({
 }: VoteDetailProps) {
   const submitVote = useMutation(tripcastApi.routeVotes.submitRouteVote);
   const markSeen = useMutation(tripcastApi.routeVotes.markRouteVoteSeen);
+  const music = useMusicSafe();
 
   const [selectedOptionIds, setSelectedOptionIds] = useState<Set<string>>(
     () => new Set(vote.mySubmission?.selectedOptionIds ?? []),
@@ -158,6 +160,7 @@ function VoteDetail({
         commentVisibility,
         anonymous: anonymous || undefined,
       });
+      music.sfx("vote");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to submit.");
     } finally {
@@ -290,10 +293,12 @@ export default function RouteVotePanel({
 }: RouteVotePanelProps) {
   const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token });
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
+  const music = useMusicSafe();
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
 
   function handleBack() {
+    music.sfx("page");
     setSelectedVoteId(null);
     onVoteOverlayChange(null);
     onRequestFitMap(null);
@@ -381,7 +386,10 @@ export default function RouteVotePanel({
                     <VoteCard
                       key={vote._id}
                       vote={vote}
-                      onSelect={() => setSelectedVoteId(vote._id)}
+                      onSelect={() => {
+                        music.sfx("page");
+                        setSelectedVoteId(vote._id);
+                      }}
                     />
                   ))
                 )}
