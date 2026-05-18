@@ -5,8 +5,8 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
+import AuthShell from "./AuthShell";
 
 const TERMS_VERSION = "1.0";
 const PRIVACY_VERSION = "1.0";
@@ -78,96 +78,96 @@ export default function InviteRedemptionScreen({
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-muted/30 px-4 py-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-2xl text-center">Create Account</CardTitle>
-          <p className="text-sm text-muted-foreground text-center">
-            You have been invited to follow this trip
+    <AuthShell
+      kicker="Invite"
+      title="Create account"
+      subtitle="You've been invited to follow this trip."
+    >
+      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+          Username
+          <Input
+            autoFocus
+            autoComplete="username"
+            disabled={isPending}
+            value={username}
+            onChange={(e) => setUsername(e.target.value.toLowerCase())}
+            placeholder="at least 3 characters"
+            required
+            minLength={3}
+          />
+          <span className="text-xs text-[var(--ink-3)]">Letters, numbers, - and _ only</span>
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+          Password
+          <Input
+            autoComplete="new-password"
+            disabled={isPending}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            required
+            minLength={8}
+          />
+          <span className="text-xs text-[var(--ink-3)]">At least 8 characters</span>
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+          Confirm password
+          <Input
+            autoComplete="new-password"
+            disabled={isPending}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            type="password"
+            required
+          />
+          {passwordMismatch ? (
+            <span className="text-xs" style={{ color: "var(--danger)" }}>
+              Passwords do not match
+            </span>
+          ) : null}
+        </label>
+        <label className="flex cursor-pointer items-start gap-2 text-sm text-[var(--ink-2)]">
+          <input
+            type="checkbox"
+            checked={termsAccepted}
+            onChange={(e) => setTermsAccepted(e.target.checked)}
+            disabled={isPending}
+            className="mt-0.5 h-4 w-4"
+            style={{ accentColor: "var(--flag)" }}
+            required
+          />
+          I agree to the terms of service and privacy policy
+        </label>
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-md border px-3 py-2 text-sm"
+            style={{
+              borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
+              background: "color-mix(in oklab, var(--danger) 10%, transparent)",
+              color: "var(--danger)",
+            }}
+          >
+            {error}
           </p>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            <label className="flex flex-col gap-1.5 font-medium text-sm">
-              Username
-              <Input
-                autoFocus
-                autoComplete="username"
-                disabled={isPending}
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                placeholder="at least 3 characters"
-                required
-                minLength={3}
-              />
-              <span className="text-xs text-muted-foreground">
-                Letters, numbers, - and _ only
-              </span>
-            </label>
-            <label className="flex flex-col gap-1.5 font-medium text-sm">
-              Password
-              <Input
-                autoComplete="new-password"
-                disabled={isPending}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                required
-                minLength={8}
-              />
-              <span className="text-xs text-muted-foreground">At least 8 characters</span>
-            </label>
-            <label className="flex flex-col gap-1.5 font-medium text-sm">
-              Confirm password
-              <Input
-                autoComplete="new-password"
-                disabled={isPending}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                type="password"
-                required
-              />
-              {passwordMismatch ? (
-                <span className="text-xs text-destructive">Passwords do not match</span>
-              ) : null}
-            </label>
-            <label className="flex items-start gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={termsAccepted}
-                onChange={(e) => setTermsAccepted(e.target.checked)}
-                disabled={isPending}
-                className="mt-0.5 h-4 w-4"
-                required
-              />
-              I agree to the terms of service and privacy policy
-            </label>
-            {error ? (
-              <p
-                role="alert"
-                className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2"
-              >
-                {error}
-              </p>
-            ) : null}
-            <PendingActionNotice isPending={isPending} actionLabel="account creation" />
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isPending}
-                onClick={onBack}
-                className="flex-1"
-              >
-                Back
-              </Button>
-              <Button type="submit" disabled={!canSubmit} className="flex-1">
-                {isPending ? "Creating…" : "Create account"}
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+        ) : null}
+        <PendingActionNotice isPending={isPending} actionLabel="account creation" />
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isPending}
+            onClick={onBack}
+            className="flex-1"
+          >
+            Back
+          </Button>
+          <Button type="submit" disabled={!canSubmit} className="flex-1">
+            {isPending ? "Creating…" : "Create account"}
+          </Button>
+        </div>
+      </form>
+    </AuthShell>
   );
 }

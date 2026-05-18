@@ -5,8 +5,8 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
+import AuthShell from "./AuthShell";
 
 type FollowerLoginScreenProps = {
   onSignIn: (session: StoredSession) => void;
@@ -63,69 +63,72 @@ export default function FollowerLoginScreen({
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-muted/30 px-4 py-6">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-2xl text-center">TripCast</CardTitle>
-          <p className="text-sm text-muted-foreground text-center">Sign in to view this trip</p>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            <label className="flex flex-col gap-1.5 font-medium text-sm">
-              Username
-              <Input
-                autoFocus
-                autoComplete="username"
-                disabled={isPending}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="your-username"
-                required
-              />
-            </label>
-            <label className="flex flex-col gap-1.5 font-medium text-sm">
-              Password
-              <Input
-                autoComplete="current-password"
-                disabled={isPending}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                required
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                disabled={isPending}
-                className="h-4 w-4"
-              />
-              Remember me for 30 days
-            </label>
-            {error ? (
-              <p
-                role="alert"
-                className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2"
-              >
-                {error}
-              </p>
-            ) : null}
-            <PendingActionNotice isPending={isPending} actionLabel="sign-in" />
-            <Button disabled={isPending || !username.trim() || !password} type="submit">
-              {isPending ? "Signing in…" : "Sign in"}
-            </Button>
-            <button
-              type="button"
-              className="text-xs text-muted-foreground/70 text-center underline-offset-4 hover:underline"
-              onClick={onShowTravelerLogin}
-            >
-              Sign in as Traveler
-            </button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
+    <AuthShell
+      kicker="Support Crew"
+      subtitle="Sign in to follow this trip."
+      footer={
+        <button
+          type="button"
+          className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)] underline-offset-4 hover:text-[var(--ink-1)] hover:underline"
+          onClick={onShowTravelerLogin}
+        >
+          Sign in as Traveler
+        </button>
+      }
+    >
+      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+          Username
+          <Input
+            autoFocus
+            autoComplete="username"
+            disabled={isPending}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="your-username"
+            required
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+          Password
+          <Input
+            autoComplete="current-password"
+            disabled={isPending}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            required
+          />
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-[var(--ink-2)]">
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            disabled={isPending}
+            className="h-4 w-4"
+            style={{ accentColor: "var(--flag)" }}
+          />
+          Remember me for 30 days
+        </label>
+        {error ? (
+          <p
+            role="alert"
+            className="rounded-md border px-3 py-2 text-sm"
+            style={{
+              borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
+              background: "color-mix(in oklab, var(--danger) 10%, transparent)",
+              color: "var(--danger)",
+            }}
+          >
+            {error}
+          </p>
+        ) : null}
+        <PendingActionNotice isPending={isPending} actionLabel="sign-in" />
+        <Button disabled={isPending || !username.trim() || !password} type="submit">
+          {isPending ? "Signing in…" : "Sign in"}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

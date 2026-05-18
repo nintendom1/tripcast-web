@@ -18,6 +18,7 @@ import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 import { TopBar } from "./features/hud";
+import CrewLandingTour, { hasSeenCrewTour } from "./features/onboarding/CrewLandingTour";
 import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
 import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
 import { PendingNotice } from "./components/resilience/PendingNotice";
@@ -74,6 +75,10 @@ function ConnectedApp() {
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
+  // Crew first-launch tour visibility — only shown for Support Crew sessions
+  // that haven't already seen it on this browser. Toggled to false on tour
+  // completion or skip; localStorage persists the seen flag separately.
+  const [isCrewTourOpen, setIsCrewTourOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
   const [sessionRetryNonce, setSessionRetryNonce] = useState(0);
@@ -282,6 +287,18 @@ function ConnectedApp() {
   }
 
   const role = activeSessionCheck.role;
+  const followerHandle =
+    session.sessionType === "follower" ? session.username : undefined;
+
+  // First-launch tour for Support Crew. Only fires when the session check has
+  // resolved into a real role and the user hasn't already dismissed the tour
+  // on this browser. Guarded by a ref-stable check so we don't re-open the
+  // tour on every re-render of the session query.
+  React.useEffect(() => {
+    if (role === "support_crew" && !hasSeenCrewTour()) {
+      setIsCrewTourOpen(true);
+    }
+  }, [role]);
 
   if (view === "follower-management" && role === "traveler") {
     return (
@@ -342,6 +359,14 @@ function ConnectedApp() {
           />
         </Suspense>
       </ErrorBoundary>
+
+      {isCrewTourOpen ? (
+        <CrewLandingTour
+          userHandle={followerHandle ?? "you"}
+          travelerName="the Traveler"
+          onDone={() => setIsCrewTourOpen(false)}
+        />
+      ) : null}
 
       <AnimatePresence>
         {resetToastMessage ? (
