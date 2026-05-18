@@ -19,6 +19,8 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
+import { SwipeRow } from "../../components/ui/SwipeRow";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -86,7 +88,27 @@ export default function ChallengePanel({
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Challenge | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const music = useMusicSafe();
+  const deleteChallenge = useMutation(tripcastApi.challenges.travelerDeleteChallenge);
+
+  async function handleConfirmDelete() {
+    if (!pendingDelete || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await deleteChallenge({ token, challengeId: pendingDelete._id });
+      music.sfx("success");
+      setPendingDelete(null);
+    } catch {
+      // Mutation already shows the user-friendly error inline via ChallengeDetailSheet
+      // when they get there; here we just close the confirm and trust the data
+      // subscription to either reflect the delete or keep the row.
+      setPendingDelete(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   // Reset view when panel closes — the next open should always land on the list
   useEffect(() => {
@@ -232,6 +254,7 @@ export default function ChallengePanel({
                 onClearPendingChallenge={onClearPendingChallenge}
                 onRequestNavigateToChallenge={onRequestNavigateToChallenge}
                 onOpenDetail={goToDetail}
+                onRequestDelete={(c) => setPendingDelete(c)}
               />
             ) : (
               <CrewListView
@@ -296,6 +319,18 @@ export default function ChallengePanel({
           ) : null}
         </div>
       </SheetContent>
+
+      <ConfirmDelete
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title="Delete this mission?"
+        itemLabel={pendingDelete?.title ?? undefined}
+        description="The mission is removed for everyone. Linked transactions are kept but unlinked. This can't be undone."
+        onConfirm={handleConfirmDelete}
+        pending={isDeleting}
+      />
     </Sheet>
   );
 }
@@ -310,15 +345,18 @@ function TravelerListView({
   onClearPendingChallenge,
   onRequestNavigateToChallenge,
   onOpenDetail,
+  onRequestDelete,
 }: {
   token: string;
   pendingOpenChallengeId?: string | null;
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Challenge) => void;
+  onRequestDelete?: (c: Challenge) => void;
 }) {
   const [filter, setFilter] = useState<TravelerFilter>("all");
   const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
+  const [swipedId, setSwipedId] = useState<string | null>(null);
   const allChallenges = useQuery(tripcastApi.challenges.travelerListChallenges, { token });
 
   useEffect(() => {
@@ -376,14 +414,28 @@ function TravelerListView({
             {filter === "all" ? "No missions yet." : `No ${filter.replace(/_/g, " ")} missions.`}
           </p>
         ) : (
-          filtered.map((c) => (
-            <ChallengeCard
-              key={c._id}
-              challenge={c}
-              isHighlighted={c._id === highlightedChallengeId}
-              onClick={() => onOpenDetail(c)}
-            />
-          ))
+          filtered.map((c) => {
+            const card = (
+              <ChallengeCard
+                challenge={c}
+                isHighlighted={c._id === highlightedChallengeId}
+                onClick={() => onOpenDetail(c)}
+              />
+            );
+            if (!onRequestDelete) return <span key={c._id}>{card}</span>;
+            return (
+              <SwipeRow
+                key={c._id}
+                id={c._id}
+                openId={swipedId}
+                onOpenChange={setSwipedId}
+                onEdit={() => onOpenDetail(c)}
+                onDelete={() => onRequestDelete(c)}
+              >
+                {card}
+              </SwipeRow>
+            );
+          })
         )}
       </div>
     </>

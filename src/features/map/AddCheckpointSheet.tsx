@@ -24,11 +24,11 @@ export type SelectedCoordinate = {
 /**
  * Prefill payload for `AddCheckpointSheet`.
  *
- * `challengeId` is opaque tracking metadata — `addCheckpoint` doesn't accept
- * it as a mutation arg today, but the parent (TripMap) reads it back from
- * `onCheckpointCreated` so it can call `travelerCompleteChallenge` after the
- * check-in lands. That wiring is what closes the Vote → Mission → Story
- * loop the user described in the model clarification.
+ * `challengeId` is forwarded straight into `addCheckpoint` so the row + its
+ * history event are linked to the mission atomically. The parent (TripMap)
+ * also reads it back from `onCheckpointCreated` to fire
+ * `travelerCompleteChallenge`, which is what flips the mission to
+ * "completed" and closes the Vote → Mission → Story loop.
  */
 export type CheckpointPrefill = {
   title?: string;
@@ -128,6 +128,7 @@ export default function AddCheckpointSheet({
         lat: selectedCoordinate.lat,
         lon: selectedCoordinate.lon,
         source: selectedCoordinate.source,
+        challengeId: prefill?.challengeId,
       });
       music.sfx("pin");
       onCheckpointCreated?.(checkpointId, prefill);

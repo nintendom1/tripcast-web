@@ -426,10 +426,15 @@ export default function TripMap({
     tripcastApi.challenges.travelerListChallenges,
     role === "traveler" ? { token } : "skip",
   );
+  const crewChallenges = useQuery(
+    tripcastApi.challenges.supportCrewListChallenges,
+    role === "support_crew" ? { token } : "skip",
+  );
   const challengeBadgeCount =
     role === "traveler"
       ? (allChallengesForBadge ?? []).filter((c) => c.status === "proposed").length
       : 0;
+  const challengesForLookup = role === "traveler" ? allChallengesForBadge : crewChallenges;
 
   const voteAlert = useQuery(tripcastApi.routeVotes.getActiveRouteVoteAlert, { token });
   const hasUnseenVote = voteAlert?.hasUnseen ?? false;
@@ -1394,6 +1399,7 @@ export default function TripMap({
             <HistorySheet
               events={historyEvents}
               token={token}
+              role={role}
               onClose={() => {
                 music.sfx("close");
                 setIsHistoryOpen(false);
@@ -1439,6 +1445,11 @@ export default function TripMap({
           if (returnToHistory) setIsHistoryOpen(true);
         }}
         onLocationFocus={handleCheckInDetailLocationFocus}
+        missionTitle={
+          selectedStoryEvent?.challengeId
+            ? (challengesForLookup ?? []).find((c) => c._id === selectedStoryEvent.challengeId)?.title
+            : undefined
+        }
       />
 
       {role === "traveler" && (

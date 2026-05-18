@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "convex/react";
-import { Camera, ChevronRight, MapPin, Sparkles, Trophy, Vote as VoteIcon, type LucideIcon } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
+import {
+  Camera,
+  ChevronRight,
+  MapPin,
+  Sparkles,
+  Trophy,
+  Vote as VoteIcon,
+  type LucideIcon,
+} from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { HistoryEvent, HistoryEventType, HistoryStoryLevel } from "../../convex/tripcastApi";
+import type { HistoryEvent, HistoryEventType, HistoryStoryLevel, Role } from "../../convex/tripcastApi";
 import {
   Sheet,
   SheetBody,
@@ -15,9 +23,14 @@ import {
   SheetTabs,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { SwipeRow } from "../../components/ui/SwipeRow";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { cn } from "@/lib/utils";
 import { getStateEmoji } from "../travelstate/travelerStateUtils";
 import { formatUsd } from "../travelfunds/currency";
+import { useMusicSafe } from "../../providers/MusicProvider";
+
+import EditCheckpointSheet from "./EditCheckpointSheet";
 
 type FilterTab = "story" | "all" | "checkins" | "challenges" | "votes";
 
@@ -39,18 +52,31 @@ const EMPTY_COPY: Record<FilterTab, string> = {
 
 function filterEvents(events: HistoryEvent[], tab: FilterTab): HistoryEvent[] {
   switch (tab) {
-    case "story":
-      // Story tab is "narrative content the reader wants to read": check-ins
-      // and challenge completions. The backend also tags `route_vote_resolved`
-      // and `challenge_planned` as storyLevel="story" (they auto-fire when the
-      // Traveler confirms a vote winner), but those are status announcements,
-      // not narratives — the story is the eventual check-in that closes out
-      // the mission they spawned.
-      return events.filter(
-        (e) =>
-          e.storyLevel === "story" &&
-          (e.type === "check_in" || e.type === "challenge_completed"),
-      );
+    case "story": {
+      // Story tab = narrative content the reader wants to read: check-ins
+      // (story-level) and challenge completions that don't already have a
+      // paired story-level check-in pointing at the same challenge. The
+      // Complete-as-Story flow lands BOTH a `check_in` (with `challengeId`)
+      // and a `challenge_completed` event; the check-in is the canonical
+      // narrative row and the challenge_completed row is the auto-emitted
+      // status announcement, so we hide it. The backend also tags
+      // `route_vote_resolved` + `challenge_planned` as storyLevel "story"
+      // — those are status announcements, not narratives.
+      const challengeIdsCoveredByCheckIns = new Set<string>();
+      for (const e of events) {
+        if (e.type === "check_in" && e.storyLevel === "story" && e.challengeId) {
+          challengeIdsCoveredByCheckIns.add(e.challengeId);
+        }
+      }
+      return events.filter((e) => {
+        if (e.storyLevel !== "story") return false;
+        if (e.type === "check_in") return true;
+        if (e.type === "challenge_completed") {
+          return !e.challengeId || !challengeIdsCoveredByCheckIns.has(e.challengeId);
+        }
+        return false;
+      });
+    }
     case "all":
       return events;
     case "checkins":
@@ -112,6 +138,8 @@ function formatDate(ts: number): string {
 type HistorySheetProps = {
   events: HistoryEvent[];
   token: string;
+  /** Role gates the edit/delete swipe actions on check-in rows — Traveler only. */
+  role?: Role;
   onClose: () => void;
   onCheckInSelect: (event: HistoryEvent) => void;
   onStorySelect: (event: HistoryEvent) => void;
@@ -122,6 +150,7 @@ type HistorySheetProps = {
 export default function HistorySheet({
   events,
   token,
+  role,
   onClose,
   onCheckInSelect,
   onStorySelect,
@@ -129,7 +158,13 @@ export default function HistorySheet({
   onMarkAllRead,
 }: HistorySheetProps) {
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
+  const [swipedId, setSwipedId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<HistoryEvent | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<HistoryEvent | null>(null);
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
+  const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
+  const music = useMusicSafe();
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
@@ -137,8 +172,30 @@ export default function HistorySheet({
   }, []);
 
   const filtered = filterEvents(events, activeTab);
+  const isTraveler = role === "traveler";
+
+  async function handleConfirmDelete() {
+    if (!pendingDelete || pendingDelete.type !== "check_in" || !pendingDelete.checkpointId) {
+      setPendingDelete(null);
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      await deleteCheckpoint({ token, checkpointId: pendingDelete.checkpointId });
+      music.sfx("success");
+      setPendingDelete(null);
+    } catch {
+      // The mutation throws ConvexError on rate-limit or auth issues — close
+      // the confirm but leave the row in the list (the data subscription
+      // will refresh if it actually landed).
+      setPendingDelete(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   return (
+    <>
     <Sheet
       open
       modal={false}
@@ -169,7 +226,10 @@ export default function HistorySheet({
               id={`history-tab-${tab.id}`}
               aria-controls="history-tabpanel"
               active={activeTab === tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setSwipedId(null);
+              }}
             >
               {tab.label}
             </SheetTab>
@@ -195,9 +255,9 @@ export default function HistorySheet({
                     actualCostUsd = costMap.byChallengeId[event.challengeId];
                   }
                 }
-                return (
+                const canSwipe = isTraveler && event.type === "check_in" && Boolean(event.checkpointId);
+                const item = (
                   <StoryRailItem
-                    key={event._id}
                     event={event}
                     isLast={index === filtered.length - 1}
                     actualCostUsd={actualCostUsd}
@@ -214,12 +274,45 @@ export default function HistorySheet({
                     }}
                   />
                 );
+                if (!canSwipe) return <span key={event._id}>{item}</span>;
+                return (
+                  <SwipeRow
+                    key={event._id}
+                    id={event._id}
+                    openId={swipedId}
+                    onOpenChange={setSwipedId}
+                    onEdit={() => setEditingEvent(event)}
+                    onDelete={() => setPendingDelete(event)}
+                    className="mb-2"
+                  >
+                    {item}
+                  </SwipeRow>
+                );
               })}
             </ol>
           )}
         </SheetBody>
       </SheetContent>
     </Sheet>
+
+    <ConfirmDelete
+      open={pendingDelete !== null}
+      onOpenChange={(open) => {
+        if (!open) setPendingDelete(null);
+      }}
+      title="Delete this check-in?"
+      itemLabel={pendingDelete?.title ?? undefined}
+      description="The pin disappears from the map and the journal. Linked transactions are kept but unlinked. This can't be undone."
+      onConfirm={handleConfirmDelete}
+      pending={isDeleting}
+    />
+
+    <EditCheckpointSheet
+      event={editingEvent}
+      token={token}
+      onClose={() => setEditingEvent(null)}
+    />
+    </>
   );
 }
 

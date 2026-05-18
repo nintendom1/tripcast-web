@@ -14,9 +14,13 @@ export type Checkpoint = {
   _creationTime: number;
   title: string;
   note?: string;
+  locationLabel?: string;
+  showInStory?: boolean;
   lat: number;
   lon: number;
   source: CheckpointSource;
+  /** Optional link to the challenge a check-in narrates (Complete-as-story flow). */
+  challengeId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -30,6 +34,10 @@ export type AddCheckpointArgs = {
   lat: number;
   lon: number;
   source: CheckpointSource;
+  // Optional link back to the challenge this check-in narrates. Persisted on
+  // the checkpoint and threaded into the emitted check_in history event so
+  // the Story tab can fold the paired challenge_completed row.
+  challengeId?: string;
   // Optional inline state snapshot (atomic with checkpoint save)
   moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
@@ -44,6 +52,20 @@ export type AddCheckpointArgs = {
   // Linked IDs are filled server-side: checkpointId from the new checkpoint,
   // and challengeId/activityId from the active current activity when available.
   transaction?: TransactionInlineInput;
+};
+
+export type UpdateCheckpointArgs = {
+  token: string;
+  checkpointId: string;
+  title?: string;
+  note?: string;
+  locationLabel?: string;
+  showInStory?: boolean;
+};
+
+export type DeleteCheckpointArgs = {
+  token: string;
+  checkpointId: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -752,6 +774,18 @@ export const tripcastApi = {
       "public",
       AddCheckpointArgs,
       string
+    >,
+    updateCheckpoint: (anyApi as any).checkpoints.updateCheckpoint as FunctionReference<
+      "mutation",
+      "public",
+      UpdateCheckpointArgs,
+      null
+    >,
+    deleteCheckpoint: (anyApi as any).checkpoints.deleteCheckpoint as FunctionReference<
+      "mutation",
+      "public",
+      DeleteCheckpointArgs,
+      null
     >,
   },
   privacy: {

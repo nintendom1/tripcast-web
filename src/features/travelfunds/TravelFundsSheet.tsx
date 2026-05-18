@@ -6,6 +6,8 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import type { Transaction } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { SwipeRow } from "../../components/ui/SwipeRow";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { cn } from "@/lib/utils";
 import { formatLocal, formatUsd, getCategoryEmoji, getCategoryLabel } from "./currency";
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
@@ -35,6 +37,8 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
 
   const [view, setView] = useState<View>("summary");
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
+  const [pendingDeleteTx, setPendingDeleteTx] = useState<Transaction | null>(null);
+  const [isSwipeDeleting, setIsSwipeDeleting] = useState(false);
 
   const [budgetInput, setBudgetInput] = useState<string>("");
   const [labelInput, setLabelInput] = useState<string>("");
@@ -114,6 +118,23 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
     music.sfx("success");
     setEditingTx(null);
     setView("summary");
+  }
+
+  async function handleSwipeDelete() {
+    if (!pendingDeleteTx || isSwipeDeleting) return;
+    setIsSwipeDeleting(true);
+    try {
+      await deleteTransaction({ token, transactionId: pendingDeleteTx._id });
+      music.sfx("success");
+      setPendingDeleteTx(null);
+    } catch {
+      // Surface a no-op close on failure — the data subscription refreshes
+      // anyway, so the row will either still be there (failed) or gone
+      // (succeeded server-side after the throw, unlikely but defensive).
+      setPendingDeleteTx(null);
+    } finally {
+      setIsSwipeDeleting(false);
+    }
   }
 
   function goBackToSummary() {
@@ -207,8 +228,21 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
               setEditingTx(tx);
               setView("edit");
             }}
+            onRequestDelete={(tx) => setPendingDeleteTx(tx)}
           />
         ))}
+
+      <ConfirmDelete
+        open={pendingDeleteTx !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDeleteTx(null);
+        }}
+        title="Delete this transaction?"
+        itemLabel={pendingDeleteTx?.title ?? undefined}
+        description="The spend disappears from the Travel Funds list and the meter recalculates. This can't be undone."
+        onConfirm={handleSwipeDelete}
+        pending={isSwipeDeleting}
+      />
     </div>
   );
 }
@@ -226,6 +260,7 @@ function SummaryView({
   onAdd,
   onSettings,
   onSelectTransaction,
+  onRequestDelete,
 }: {
   startingBudgetUsd: number;
   remainingUsd: number;
@@ -235,6 +270,7 @@ function SummaryView({
   onAdd: () => void;
   onSettings: () => void;
   onSelectTransaction: (tx: Transaction) => void;
+  onRequestDelete: (tx: Transaction) => void;
 }) {
   const over = remainingUsd < 0;
   const noBudget = startingBudgetUsd <= 0;
@@ -315,7 +351,11 @@ function SummaryView({
       </div>
 
       <div className="-mx-1 max-h-72 overflow-y-auto px-1">
-        <TransactionRows transactions={transactions} onSelect={onSelectTransaction} />
+        <TransactionRows
+          transactions={transactions}
+          onSelect={onSelectTransaction}
+          onRequestDelete={onRequestDelete}
+        />
       </div>
     </>
   );
@@ -324,10 +364,13 @@ function SummaryView({
 function TransactionRows({
   transactions,
   onSelect,
+  onRequestDelete,
 }: {
   transactions: Transaction[];
   onSelect: (tx: Transaction) => void;
+  onRequestDelete: (tx: Transaction) => void;
 }) {
+  const [swipedId, setSwipedId] = useState<string | null>(null);
   if (transactions.length === 0) {
     return (
       <p className="py-6 text-center text-sm text-[var(--ink-3)]">
@@ -340,62 +383,73 @@ function TransactionRows({
       {transactions.map((tx) => {
         const isUsd = tx.currencyCode === "USD";
         const isNegative = tx.usdAmount < 0;
+        const row = (
+          <button
+            type="button"
+            onClick={() => onSelect(tx)}
+            className="flex w-full items-start gap-3 rounded-2xl bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
+            aria-label={`Edit ${tx.title}`}
+          >
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-paper-2)] text-base"
+              aria-hidden="true"
+            >
+              {getCategoryEmoji(tx.category)}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="truncate font-[var(--font-display)] text-sm font-bold text-[var(--ink-1)]">
+                  {tx.title}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 font-[var(--font-display)] text-sm font-bold",
+                    isNegative ? "text-[var(--green)]" : "text-[var(--ink-1)]",
+                  )}
+                >
+                  {formatUsd(tx.usdAmount)}
+                </span>
+              </span>
+              <span className="flex items-baseline justify-between gap-2 font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
+                <span className="truncate">
+                  {getCategoryLabel(tx.category)} · {formatDate(tx.occurredAt)}
+                  {!isUsd && <> · {formatLocal(tx.localAmount, tx.currencyCode)}</>}
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  {!tx.countsTowardMeter && (
+                    <span className="rounded-full bg-[var(--meter-track)] px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-2)]">
+                      Not counted
+                    </span>
+                  )}
+                  {tx.visibility === "summary_only" && (
+                    <span
+                      className="rounded-full px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-1)]"
+                      style={{ background: "color-mix(in oklab, var(--amber) 18%, transparent)" }}
+                    >
+                      Summary
+                    </span>
+                  )}
+                  {tx.visibility === "private" && (
+                    <span className="rounded-full bg-[var(--meter-track)] px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-2)]">
+                      Private
+                    </span>
+                  )}
+                </span>
+              </span>
+            </span>
+          </button>
+        );
         return (
           <li key={tx._id}>
-            <button
-              type="button"
-              onClick={() => onSelect(tx)}
-              className="flex w-full items-start gap-3 rounded-2xl bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
-              aria-label={`Edit ${tx.title}`}
+            <SwipeRow
+              id={tx._id}
+              openId={swipedId}
+              onOpenChange={setSwipedId}
+              onEdit={() => onSelect(tx)}
+              onDelete={() => onRequestDelete(tx)}
             >
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--bg-paper-2)] text-base"
-                aria-hidden="true"
-              >
-                {getCategoryEmoji(tx.category)}
-              </span>
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="truncate font-[var(--font-display)] text-sm font-bold text-[var(--ink-1)]">
-                    {tx.title}
-                  </span>
-                  <span
-                    className={cn(
-                      "shrink-0 font-[var(--font-display)] text-sm font-bold",
-                      isNegative ? "text-[var(--green)]" : "text-[var(--ink-1)]",
-                    )}
-                  >
-                    {formatUsd(tx.usdAmount)}
-                  </span>
-                </span>
-                <span className="flex items-baseline justify-between gap-2 font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
-                  <span className="truncate">
-                    {getCategoryLabel(tx.category)} · {formatDate(tx.occurredAt)}
-                    {!isUsd && <> · {formatLocal(tx.localAmount, tx.currencyCode)}</>}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1">
-                    {!tx.countsTowardMeter && (
-                      <span className="rounded-full bg-[var(--meter-track)] px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-2)]">
-                        Not counted
-                      </span>
-                    )}
-                    {tx.visibility === "summary_only" && (
-                      <span
-                        className="rounded-full px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-1)]"
-                        style={{ background: "color-mix(in oklab, var(--amber) 18%, transparent)" }}
-                      >
-                        Summary
-                      </span>
-                    )}
-                    {tx.visibility === "private" && (
-                      <span className="rounded-full bg-[var(--meter-track)] px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-2)]">
-                        Private
-                      </span>
-                    )}
-                  </span>
-                </span>
-              </span>
-            </button>
+              {row}
+            </SwipeRow>
           </li>
         );
       })}

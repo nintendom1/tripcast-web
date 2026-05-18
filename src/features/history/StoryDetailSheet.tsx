@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Camera } from "lucide-react";
+import { Camera, Target } from "lucide-react";
 
 import type { HistoryEvent } from "../../convex/tripcastApi";
 import {
@@ -29,6 +29,9 @@ type StoryDetailSheetProps = {
   event: HistoryEvent | null;
   onClose: () => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
+  /** Title of the mission the story was filed against, when `event.challengeId`
+   *  is set. Parent resolves this from the challenge list. */
+  missionTitle?: string;
 };
 
 /**
@@ -47,6 +50,7 @@ export default function StoryDetailSheet({
   event,
   onClose,
   onLocationFocus,
+  missionTitle,
 }: StoryDetailSheetProps) {
   useEffect(() => {
     if (event?.lat !== undefined && event?.lon !== undefined) {
@@ -71,13 +75,14 @@ export default function StoryDetailSheet({
         data-role="story-detail"
       >
         <SheetGrabber />
-        {event ? <StoryBody key={event._id} event={event} /> : null}
+        {event ? <StoryBody key={event._id} event={event} missionTitle={missionTitle} /> : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-function StoryBody({ event }: { event: HistoryEvent }) {
+function StoryBody({ event, missionTitle }: { event: HistoryEvent; missionTitle?: string }) {
+  const showMissionProvenance = Boolean(event.challengeId);
   return (
     <>
       <div className="flex items-start justify-between gap-2 px-5 pt-2">
@@ -102,6 +107,21 @@ function StoryBody({ event }: { event: HistoryEvent }) {
         className="px-5"
         style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
       >
+        {showMissionProvenance ? (
+          <div
+            className="mb-4 flex items-center gap-2 rounded-xl px-3 py-2 text-[12px] font-semibold text-[var(--ink-2)]"
+            data-testid="story-mission-provenance"
+            style={{
+              background: "color-mix(in oklab, var(--plum) 10%, transparent)",
+              border: "1px solid color-mix(in oklab, var(--plum) 25%, transparent)",
+            }}
+          >
+            <Target className="h-3.5 w-3.5 shrink-0" aria-hidden="true" style={{ color: "var(--plum)" }} />
+            <span className="truncate">
+              From mission{missionTitle ? <> · <span className="text-[var(--ink-1)]">{missionTitle}</span></> : null}
+            </span>
+          </div>
+        ) : null}
         {event.body ? (
           <RevealText
             text={event.body}
