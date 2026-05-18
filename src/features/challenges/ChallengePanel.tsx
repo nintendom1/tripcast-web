@@ -36,6 +36,12 @@ type Props = {
   onClearPendingChallenge?: () => void;
   onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
   onCompleteAsStory?: (challenge: Challenge) => void;
+  /** When set + the panel is open, navigate straight to the matching mission's
+   *  detail view rather than the list. Used by the Complete-as-Story → Back
+   *  flow so dismissing the story form returns the Traveler to the mission's
+   *  full action set. Parent clears via `onClearPendingDetail` once we land. */
+  pendingOpenDetailChallengeId?: string | null;
+  onClearPendingDetail?: () => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -74,6 +80,8 @@ export default function ChallengePanel({
   onClearPendingChallenge,
   onRequestNavigateToChallenge,
   onCompleteAsStory,
+  pendingOpenDetailChallengeId,
+  onClearPendingDetail,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
@@ -94,6 +102,36 @@ export default function ChallengePanel({
     setViewMode("list");
     setSelectedChallenge(null);
   }, [pendingOpenChallengeId]);
+
+  // Back-from-story navigation: the parent (TripMap) sets this when the
+  // Traveler hits "← Back" inside AddCheckpointSheet's mission-completion
+  // mode. We look up the challenge by id and drop the user straight back on
+  // the same mission's detail view so the four-button action set is visible.
+  const pendingDetailChallenge = useQuery(
+    tripcastApi.challenges.getChallenge,
+    pendingOpenDetailChallengeId && open
+      ? { token, challengeId: pendingOpenDetailChallengeId }
+      : "skip",
+  );
+
+  useEffect(() => {
+    if (!open || !pendingOpenDetailChallengeId) return;
+    if (pendingDetailChallenge === undefined) return; // still loading
+    if (pendingDetailChallenge === null) {
+      // Challenge was deleted while the user was writing the story — fall back
+      // to the list view and clear the pending id so we don't loop.
+      onClearPendingDetail?.();
+      setViewMode("list");
+      setSelectedChallenge(null);
+      return;
+    }
+    setSelectedChallenge(pendingDetailChallenge);
+    setViewMode("detail");
+    onClearPendingDetail?.();
+    // pendingDetailChallenge / onClearPendingDetail are stable enough for the
+    // one-shot navigation behavior we want here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pendingOpenDetailChallengeId, pendingDetailChallenge]);
 
   // Entering the detail view auto-focuses the map on the mission's coordinates
   // — same UX as opening a story. The explicit "View on map" link in the

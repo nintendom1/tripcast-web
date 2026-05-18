@@ -198,7 +198,7 @@ function ConvexCheckpointSheet({
   prefill,
   transactionPrefill,
   onCheckpointCreated,
-  onMarkCompleteInstead,
+  onBack,
 }: {
   selectedCoordinate: SelectedCoordinate | null;
   token: string;
@@ -211,7 +211,7 @@ function ConvexCheckpointSheet({
     localCurrencyPerUsd?: number;
   };
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
-  onMarkCompleteInstead?: (challengeId: string) => Promise<void> | void;
+  onBack?: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
 
@@ -340,7 +340,7 @@ function ConvexCheckpointSheet({
       stateSection={stateSection}
       prefill={prefill}
       onCheckpointCreated={onCheckpointCreated}
-      onMarkCompleteInstead={onMarkCompleteInstead}
+      onBack={onBack}
     />
   );
 }
@@ -399,6 +399,10 @@ export default function TripMap({
   // mission's title/location and carries the challengeId through so we can call
   // `travelerCompleteChallenge` after the resulting check-in lands.
   const [storyPrefill, setStoryPrefill] = useState<CheckpointPrefill | null>(null);
+  // Set alongside `storyPrefill` so hitting "← Back" inside the story sheet
+  // can reopen ChallengesPanel directly on the originating mission's detail
+  // view (the four-button action set the Traveler expects to return to).
+  const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const completeChallenge = useMutation(tripcastApi.challenges.travelerCompleteChallenge);
 
   const canWrite = role === "traveler";
@@ -755,6 +759,9 @@ export default function TripMap({
       locationLabel: challenge.locationLabel,
       kickerLabel: "Story · Mission completion",
     });
+    // Remember which mission to land on if the Traveler backs out of the story
+    // form — the ChallengePanel re-opens directly on this detail view.
+    setPendingOpenDetailMissionId(challenge._id);
     if (challenge.lat !== undefined && challenge.lon !== undefined) {
       setSelectedCoordinate({
         lat: challenge.lat,
@@ -769,8 +776,20 @@ export default function TripMap({
     }
   }
 
+  function handleBackFromStory() {
+    // "← Back" inside AddCheckpointSheet's mission-completion mode: dismiss
+    // the story form (clears prefill + coordinate), then re-open the missions
+    // panel; ChallengePanel reads `pendingOpenDetailMissionId` and lands on
+    // the originating mission's detail view (the full four-button set).
+    setStoryPrefill(null);
+    setSelectedCoordinate(null);
+    setIsPlacementMode(false);
+    setIsChallengesPanelOpen(true);
+  }
+
   async function handleStoryCheckpointCreated(_id: string, prefill?: CheckpointPrefill) {
     setStoryPrefill(null);
+    setPendingOpenDetailMissionId(null);
     if (!prefill?.challengeId) return;
     try {
       await completeChallenge({ token, challengeId: prefill.challengeId });
@@ -789,21 +808,6 @@ export default function TripMap({
     }
   }
 
-  async function handleMarkCompleteInstead(challengeId: string) {
-    setStoryPrefill(null);
-    setSelectedCoordinate(null);
-    try {
-      await completeChallenge({ token, challengeId });
-      showToast("Mission completed.");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.toLowerCase().includes("only in-progress")) {
-        showToast("Mission already complete.");
-      } else {
-        showToast("Could not mark mission complete.");
-      }
-    }
-  }
 
   function showToast(message: string) {
     if (toastTimeoutRef.current !== null) {
@@ -1101,10 +1105,14 @@ export default function TripMap({
           onClose={() => {
             setSelectedCoordinate(null);
             setStoryPrefill(null);
+            // Swipe-down / escape dismissal — drop the pending detail return
+            // so a later unrelated open of the missions panel doesn't surprise
+            // the Traveler by jumping to this mission's detail.
+            setPendingOpenDetailMissionId(null);
           }}
           prefill={storyPrefill ?? undefined}
           onCheckpointCreated={handleStoryCheckpointCreated}
-          onMarkCompleteInstead={handleMarkCompleteInstead}
+          onBack={storyPrefill?.challengeId ? handleBackFromStory : undefined}
         />
       )}
 
@@ -1278,6 +1286,8 @@ export default function TripMap({
           onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
           onRequestNavigateToChallenge={handleNavigateToChallenge}
           onCompleteAsStory={handleCompleteAsStory}
+          pendingOpenDetailChallengeId={pendingOpenDetailMissionId}
+          onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
         />
       </FeatureBoundary>
 

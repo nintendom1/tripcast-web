@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
+import { ChevronLeft } from "lucide-react";
 
 import type { AddCheckpointArgs, CheckpointSource } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -45,10 +46,13 @@ type AddCheckpointSheetProps = {
   stateSection?: React.ReactNode;
   prefill?: CheckpointPrefill;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
-  /** Mission-completion mode only — invoked when the Traveler changes their
-   *  mind about narrating the completion and wants to mark the mission done
-   *  without a check-in. Closes the sheet and clears storyPrefill. */
-  onMarkCompleteInstead?: (challengeId: string) => Promise<void> | void;
+  /** When provided AND a story prefill is active (mission completion path),
+   *  the action row swaps the "Cancel" button for a "← Back" button that the
+   *  parent can wire to "reopen the mission detail" — matching the rest of the
+   *  rework's internal-nav back affordance. Dismissal via swipe-down / escape
+   *  still flows through `onClose` and just closes the sheet without
+   *  navigating back to the mission. */
+  onBack?: () => void;
 };
 
 function formatCoordinate(value: number) {
@@ -71,7 +75,7 @@ export default function AddCheckpointSheet({
   stateSection,
   prefill,
   onCheckpointCreated,
-  onMarkCompleteInstead,
+  onBack,
 }: AddCheckpointSheetProps) {
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -79,25 +83,11 @@ export default function AddCheckpointSheet({
   const [showInStory, setShowInStory] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [isCompletingWithoutStory, setIsCompletingWithoutStory] = useState(false);
 
   const isFromMission = Boolean(prefill?.challengeId);
   const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Check-in");
   const titleText = isFromMission ? "Complete as story" : "Add pin";
-
-  async function handleMarkCompleteInstead() {
-    if (!onMarkCompleteInstead || !prefill?.challengeId || isCompletingWithoutStory) return;
-    setIsCompletingWithoutStory(true);
-    setError(null);
-    try {
-      await onMarkCompleteInstead(prefill.challengeId);
-      onClose();
-    } catch (e) {
-      setError(friendlyError(e));
-    } finally {
-      setIsCompletingWithoutStory(false);
-    }
-  }
+  const showBackAffordance = isFromMission && Boolean(onBack);
 
   useEffect(() => {
     if (selectedCoordinate) {
@@ -244,26 +234,22 @@ export default function AddCheckpointSheet({
             className="flex flex-wrap justify-end gap-2 pt-1"
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
           >
-            <Button
-              disabled={isSaving || isCompletingWithoutStory}
-              type="button"
-              variant="outline"
-              onClick={onClose}
-            >
-              Cancel
-            </Button>
-            {isFromMission && onMarkCompleteInstead ? (
+            {showBackAffordance ? (
               <Button
-                disabled={isSaving || isCompletingWithoutStory}
+                disabled={isSaving}
                 type="button"
                 variant="outline"
-                onClick={handleMarkCompleteInstead}
-                title="Mark the mission complete without writing a story"
+                onClick={onBack}
               >
-                {isCompletingWithoutStory ? "Marking…" : "Mark complete instead"}
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                Back
               </Button>
-            ) : null}
-            <Button disabled={isSaving || isCompletingWithoutStory} type="submit">
+            ) : (
+              <Button disabled={isSaving} type="button" variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+            )}
+            <Button disabled={isSaving} type="submit">
               {isSaving ? "Saving…" : isFromMission ? "Save story" : "Save pin"}
             </Button>
           </div>
