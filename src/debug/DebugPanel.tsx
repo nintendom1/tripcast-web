@@ -34,10 +34,15 @@ async function copyToClipboard(text: string): Promise<void> {
   ta.style.position = "fixed";
   ta.style.opacity = "0";
   document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
+  try {
+    ta.focus();
+    ta.select();
+    if (!document.execCommand("copy")) {
+      throw new Error("Clipboard copy failed");
+    }
+  } finally {
+    document.body.removeChild(ta);
+  }
 }
 
 function downloadJson(filename: string, data: unknown): void {

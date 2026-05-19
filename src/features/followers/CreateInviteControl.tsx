@@ -73,8 +73,16 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
 
   async function handleCopy() {
     if (!inviteUrl) return;
-    await navigator.clipboard.writeText(inviteUrl);
-    showCopied();
+    setError(null);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(inviteUrl);
+      showCopied();
+    } catch {
+      clearCopiedTimer();
+      setCopied(false);
+      setError("Clipboard unavailable. Select and copy the invite link manually.");
+    }
   }
 
   return (

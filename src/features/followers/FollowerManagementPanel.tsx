@@ -90,8 +90,16 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
 
   async function handleCopyReset() {
     if (!resetUrl) return;
-    await navigator.clipboard.writeText(resetUrl);
-    showCopied();
+    setError(null);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(resetUrl);
+      showCopied();
+    } catch {
+      clearCopiedTimer();
+      setCopied(false);
+      setError("Clipboard unavailable. Select and copy the reset link manually.");
+    }
   }
 
   if (followers === undefined) {
