@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { useMutation } from "convex/react";
 import { tripcastApi, type EnergyImpact, type ResultsVisibility } from "../../convex/tripcastApi";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -242,6 +243,12 @@ export default function CreateRouteVoteForm({
 }: CreateRouteVoteFormProps) {
   const createVote = useMutation(tripcastApi.routeVotes.travelerCreateRouteVote);
   const [selectedClosePreset, setSelectedClosePreset] = useState<number | null>(DEFAULT_CLOSE_HOURS);
+  const log = useDebugLogger("CreateRouteVoteForm", "src/features/routevote/CreateRouteVoteForm.tsx");
+
+  useEffect(() => {
+    log.logInteraction("form:open");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const {
     register,
@@ -262,6 +269,7 @@ export default function CreateRouteVoteForm({
   const { fields, append, remove } = useFieldArray({ control, name: "options" });
 
   async function onSubmit(values: FormValues) {
+    log.logInteraction("form:submit");
     const expiresAt = new Date(values.expiresAtLocal).getTime();
     const options = values.options.map((o) => ({
       title: o.title.trim(),
@@ -274,24 +282,29 @@ export default function CreateRouteVoteForm({
       estimatedEnergyImpact: (o.estimatedEnergyImpact || undefined) as EnergyImpact | undefined,
     }));
 
-    const id = await createVote({
-      token,
-      title: values.title.trim() || DEFAULT_TITLE,
-      description: values.description.trim() || undefined,
-      expiresAt,
-      resultsVisibility: values.resultsVisibility,
-      options,
-    });
-    onCreated(id);
+    try {
+      const id = await createVote({
+        token,
+        title: values.title.trim() || DEFAULT_TITLE,
+        description: values.description.trim() || undefined,
+        expiresAt,
+        resultsVisibility: values.resultsVisibility,
+        options,
+      });
+      log.logInteraction("submit:success", { id });
+      onCreated(id);
+    } catch (err) {
+      log.logInteraction("submit:error", { message: String(err) });
+      throw err;
+    }
   }
 
   function handlePickOnMap(index: number) {
-    console.log("[CreateRouteVoteForm] handlePickOnMap called for option", index);
+    log.logInteraction("coordinate:pick-requested", { optionIndex: index });
     onRequestCoordinatePick(index, ({ lat, lon }) => {
-      console.log("[CreateRouteVoteForm] Coordinate picked:", { lat, lon });
+      log.logInteraction("coordinate:picked", { optionIndex: index, lat, lon });
       setValue(`options.${index}.lat`, lat.toFixed(6), { shouldValidate: true });
       setValue(`options.${index}.lon`, lon.toFixed(6), { shouldValidate: true });
-      console.log("[CreateRouteVoteForm] Form fields updated");
     });
   }
 
@@ -406,7 +419,7 @@ export default function CreateRouteVoteForm({
       </div>
 
       <div className="flex gap-2 justify-end pb-4">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting}>
+        <Button type="button" variant="outline" onClick={() => { log.logInteraction("form:cancel"); onCancel(); }} disabled={isSubmitting}>
           Cancel
         </Button>
         <Button type="submit" disabled={isSubmitting}>

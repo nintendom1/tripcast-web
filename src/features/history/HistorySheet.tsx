@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   Camera,
@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { getStateEmoji } from "../travelstate/travelerStateUtils";
 import { formatUsd } from "../travelfunds/currency";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 import EditCheckpointSheet from "./EditCheckpointSheet";
 
@@ -162,12 +163,23 @@ export default function HistorySheet({
   const [pendingDelete, setPendingDelete] = useState<HistoryEvent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingEvent, setEditingEvent] = useState<HistoryEvent | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
   const music = useMusicSafe();
+  const log = useDebugLogger("HistorySheet", "src/features/history/HistorySheet.tsx");
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const h = containerRef.current?.getBoundingClientRect().height ?? 0;
+      if (h > 0) log.logInteraction("sheet:size", { heightPx: Math.round(h), viewportPx: window.innerHeight });
+    }, 300);
+    return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -200,10 +212,14 @@ export default function HistorySheet({
       open
       modal={false}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) {
+          log.logInteraction("sheet:close", { trigger: "backdrop" });
+          onClose();
+        }
       }}
     >
       <SheetContent
+        ref={containerRef}
         side="bottom"
         showBackdrop={false}
         className="z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
@@ -227,6 +243,7 @@ export default function HistorySheet({
               aria-controls="history-tabpanel"
               active={activeTab === tab.id}
               onClick={() => {
+                log.logInteraction("filter:change", { from: activeTab, to: tab.id });
                 setActiveTab(tab.id);
                 setSwipedId(null);
               }}
@@ -262,6 +279,7 @@ export default function HistorySheet({
                     isLast={index === filtered.length - 1}
                     actualCostUsd={actualCostUsd}
                     onSelect={() => {
+                      log.logInteraction("row:click", { type: event.type, storyLevel: event.storyLevel });
                       if (event.type === "check_in") {
                         if (event.storyLevel === "story") {
                           onStorySelect(event);

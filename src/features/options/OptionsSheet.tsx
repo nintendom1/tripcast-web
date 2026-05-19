@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
+  Bug,
   ChevronRight,
   Database,
   LogOut,
@@ -15,6 +16,8 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
+import DebugPanel from "../../debug/DebugPanel";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
@@ -45,6 +48,7 @@ import BulkImportSheet from "./BulkImportSheet";
 type OptionsSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  defaultView?: OptionsView;
   session: StoredSession;
   role: "traveler" | "support_crew";
   onSignOut: () => void;
@@ -56,7 +60,7 @@ type OptionsSheetProps = {
   onResetStarted: (message: string) => void;
 };
 
-type OptionsView = "options" | "emergency-reset" | "travel-funds" | "bulk-import";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "bulk-import" | "debug-logs";
 
 const MODERATION_OPTIONS: { value: ChallengeModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -153,6 +157,7 @@ function ChallengeSettingsSection({ token }: { token: string }) {
 export default function OptionsSheet({
   open,
   onOpenChange,
+  defaultView,
   session,
   role,
   onSignOut,
@@ -166,9 +171,27 @@ export default function OptionsSheet({
   const [view, setView] = useState<OptionsView>("options");
   const [isEmergencyResetPending, setIsEmergencyResetPending] = useState(false);
   const music = useMusicSafe();
+  const log = useDebugLogger("OptionsSheet", "src/features/options/OptionsSheet.tsx");
+
+  useEffect(() => {
+    log.logInteraction(open ? "sheet:open" : "sheet:close");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (open && defaultView && defaultView !== "options") {
+      setView(defaultView);
+    }
+  }, [open, defaultView]);
+
+  function navigateTo(next: OptionsView) {
+    log.logInteraction("view:change", { from: view, to: next });
+    setView(next);
+  }
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen && view === "emergency-reset" && isEmergencyResetPending) return;
+    if (!nextOpen) log.logInteraction("sheet:close", { trigger: "backdrop" });
     onOpenChange(nextOpen);
     if (!nextOpen) {
       setView("options");
@@ -177,13 +200,14 @@ export default function OptionsSheet({
   }
 
   function handleSignOut() {
+    log.logInteraction("sign-out", { role });
     handleOpenChange(false);
     onSignOut();
   }
 
   function handleEmergencyResetClose() {
     onOpenChange(false);
-    setView("options");
+    navigateTo("options");
     setIsEmergencyResetPending(false);
   }
 
@@ -199,10 +223,7 @@ export default function OptionsSheet({
             <SubViewHeader
               kicker="Traveler"
               title="Travel Funds"
-              onBack={() => {
-                music.sfx("page");
-                setView("options");
-              }}
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
           ) : view === "emergency-reset" ? (
             <EmergencyResetContent
@@ -214,7 +235,7 @@ export default function OptionsSheet({
               onResetStarted={onResetStarted}
               onPendingChange={setIsEmergencyResetPending}
             />
-          ) : (
+          ) : view === "debug-logs" ? null : (
             <OptionsHomeHeader role={role} />
           )}
 
@@ -222,10 +243,7 @@ export default function OptionsSheet({
             <SheetBody className="px-5">
               <TravelFundsSheet
                 token={session.token}
-                onClose={() => {
-                  music.sfx("page");
-                  setView("options");
-                }}
+                onClose={() => { music.sfx("page"); navigateTo("options"); }}
               />
             </SheetBody>
           ) : view === "options" ? (
@@ -235,19 +253,15 @@ export default function OptionsSheet({
               onSignOut={handleSignOut}
               onManageFollowers={onManageFollowers}
               onReplayCrewTour={onReplayCrewTour}
-              onTravelFunds={() => {
-                music.sfx("page");
-                setView("travel-funds");
-              }}
-              onBulkImport={() => {
-                music.sfx("page");
-                setView("bulk-import");
-              }}
-              onEmergencyReset={() => {
-                music.sfx("page");
-                setView("emergency-reset");
-              }}
+              onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
+              onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
+              onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
+              onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
             />
+          ) : view === "debug-logs" ? (
+            <SheetBody className="overflow-y-auto">
+              <DebugPanel onBack={() => { music.sfx("page"); navigateTo("options"); }} />
+            </SheetBody>
           ) : null}
         </SheetContent>
       </Sheet>
@@ -259,7 +273,7 @@ export default function OptionsSheet({
           onOpenChange={(nextOpen) => {
             if (!nextOpen) {
               music.sfx("page");
-              setView("options");
+              navigateTo("options");
               onOpenChange(true);
             }
           }}
@@ -278,6 +292,7 @@ function OptionsHome({
   onTravelFunds,
   onBulkImport,
   onEmergencyReset,
+  onDebugLogs,
 }: {
   role: "traveler" | "support_crew";
   session: StoredSession;
@@ -285,6 +300,7 @@ function OptionsHome({
   onManageFollowers: () => void;
   onReplayCrewTour: () => void;
   onTravelFunds: () => void;
+  onDebugLogs: () => void;
   onBulkImport: () => void;
   onEmergencyReset: () => void;
 }) {
@@ -328,16 +344,22 @@ function OptionsHome({
           <OptionsSection label="Tour">
             <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the Support Crew tour" onClick={onReplayCrewTour} />
           </OptionsSection>
-
-          <OptionsSection label="Danger Zone">
-            <OptionsRow icon={ShieldAlert} title="Emergency Reset" detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
-          </OptionsSection>
         </>
       ) : (
         <OptionsSection label="Trip">
           <OptionsRow icon={Play} title="Replay welcome tour" detail="See the pixel guide again" onClick={onReplayCrewTour} />
         </OptionsSection>
       )}
+
+      <OptionsSection label="Developer">
+        <OptionsRow icon={Bug} title="Dev Tools" detail="Debug logging and session log export" onClick={onDebugLogs} />
+      </OptionsSection>
+
+      {role === "traveler" ? (
+        <OptionsSection label="Danger Zone">
+          <OptionsRow icon={ShieldAlert} title="Emergency Reset" detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
+        </OptionsSection>
+      ) : null}
 
     </SheetBody>
   );

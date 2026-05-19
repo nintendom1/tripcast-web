@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -23,6 +23,7 @@ import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteU
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -373,11 +374,8 @@ export default function RouteVoteProgress({
   isPickingCoordinate,
 }: RouteVoteProgressProps) {
   const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token });
-
-  // DEBUG: Log prop changes
-  useEffect(() => {
-    console.log("[RouteVoteProgress] isPickingCoordinate changed:", isPickingCoordinate);
-  }, [isPickingCoordinate]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const log = useDebugLogger("RouteVoteProgress", "src/features/routevote/RouteVoteProgress.tsx");
 
   const closeVote = useMutation(tripcastApi.routeVotes.travelerCloseRouteVote);
   const cancelVote = useMutation(tripcastApi.routeVotes.travelerCancelRouteVote);
@@ -387,6 +385,20 @@ export default function RouteVoteProgress({
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const [actingVoteId, setActingVoteId] = useState<string | null>(null);
   const music = useMusicSafe();
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const h = containerRef.current?.getBoundingClientRect().height ?? 0;
+      if (h > 0) log.logInteraction("sheet:size", { heightPx: Math.round(h), viewportPx: window.innerHeight });
+    }, 300);
+    return () => clearTimeout(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    log.logInteraction("coordinate:pick-mode:active", { isPickingCoordinate: !!isPickingCoordinate });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPickingCoordinate]);
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
 
@@ -426,10 +438,14 @@ export default function RouteVoteProgress({
       modal={false}
       disablePointerDismissal={isPickingCoordinate}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen && !isPickingCoordinate) onClose();
+        if (!nextOpen && !isPickingCoordinate) {
+          log.logInteraction("sheet:close", { trigger: "backdrop" });
+          onClose();
+        }
       }}
     >
       <SheetContent
+        ref={containerRef}
         side="bottom"
         showBackdrop={false}
         className={cn(
@@ -479,11 +495,13 @@ export default function RouteVoteProgress({
                 token={token}
                 onCreated={(id) => {
                   music.sfx("success");
+                  log.logInteraction("view:change", { from: "create", to: "detail", voteId: id });
                   setSelectedVoteId(id);
                   setView("detail");
                 }}
                 onCancel={() => {
                   music.sfx("page");
+                  log.logInteraction("view:change", { from: "create", to: "list" });
                   setView("list");
                 }}
                 onRequestCoordinatePick={onRequestCoordinatePick}
@@ -526,6 +544,7 @@ export default function RouteVoteProgress({
                 size="sm"
                 onClick={() => {
                   music.sfx("page");
+                  log.logInteraction("view:change", { from: view, to: "create" });
                   setView("create");
                 }}
                 className="w-full"

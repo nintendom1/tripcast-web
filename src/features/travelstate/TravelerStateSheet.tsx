@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
@@ -188,6 +189,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
 
+  const log = useDebugLogger("TravelerStateSheet", "src/features/travelstate/TravelerStateSheet.tsx");
   const hasPopulatedRef = useRef(false);
   const [tab, setTab] = useState<TabView>("state");
   const [reviewing, setReviewing] = useState(false);
@@ -304,6 +306,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
     if (saving) return;
     setSaving(true);
     setError(null);
+    log.logInteraction("state:submit", { mood: moodValue, energy: energyLevel, stress: stressLevel });
     try {
       await updateState({
         token,
@@ -326,8 +329,10 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
         biometricNote: biometricNote || undefined,
         biometricSource: steps !== undefined || avgHr !== undefined ? "manual" : undefined,
       });
+      log.logInteraction("submit:success", { action: "updateState" });
       onClose();
     } catch (e) {
+      log.error("submit:error", { message: e instanceof Error ? e.message : String(e) });
       setError(formatSaveError(e));
       setReviewing(false);
     } finally {
@@ -398,6 +403,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
             key={t}
             type="button"
             onClick={() => {
+              log.logInteraction("tab:change", { from: tab, to: t });
               setTab(t);
               setError(null);
             }}

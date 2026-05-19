@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { formatLocal, formatUsd, getCategoryEmoji, getCategoryLabel } from "./currency";
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 type TravelFundsSheetProps = {
   token: string;
@@ -45,8 +46,10 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const music = useMusicSafe();
+  const log = useDebugLogger("TravelFundsSheet", "src/features/travelfunds/TravelFundsSheet.tsx");
 
   function openSettings() {
+    log.logInteraction("view:change", { from: view, to: "settings" });
     music.sfx("page");
     if (config?.enabled) {
       setBudgetInput(String(config.startingBudgetUsd));
@@ -95,18 +98,22 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
   }
 
   async function handleAddSubmit(values: TransactionFormValues) {
+    log.logInteraction("transaction:submit", { action: "add", currencyCode: values.currencyCode });
     await addTransaction({ token, ...values });
+    log.logInteraction("submit:success", { action: "add" });
     music.sfx("success");
     setView("summary");
   }
 
   async function handleEditSubmit(values: TransactionFormValues) {
     if (!editingTx) return;
+    log.logInteraction("transaction:submit", { action: "edit", transactionId: editingTx._id });
     await updateTransaction({
       token,
       transactionId: editingTx._id,
       ...values,
     });
+    log.logInteraction("submit:success", { action: "edit" });
     music.sfx("success");
     setEditingTx(null);
     setView("summary");
@@ -219,11 +226,13 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
             budgetLabel={config.budgetLabel}
             transactions={transactions ?? []}
             onAdd={() => {
+              log.logInteraction("view:change", { from: view, to: "add" });
               music.sfx("page");
               setView("add");
             }}
             onSettings={openSettings}
             onSelectTransaction={(tx) => {
+              log.logInteraction("view:change", { from: view, to: "edit", transactionId: tx._id });
               music.sfx("page");
               setEditingTx(tx);
               setView("edit");

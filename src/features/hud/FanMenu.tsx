@@ -1,6 +1,8 @@
 import * as React from "react";
+import { useEffect } from "react";
 import { MapPin, Sparkles, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 export type FanAction = "checkin" | "activity" | "transaction" | "challenge" | "vote";
 
@@ -62,6 +64,13 @@ export function FanMenu({
   items = DEFAULT_TRAVELER_ITEMS,
   className,
 }: FanMenuProps) {
+  const log = useDebugLogger("FanMenu", "src/features/hud/FanMenu.tsx");
+
+  useEffect(() => {
+    if (open) log.logInteraction("menu:open");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   if (!open) return null;
   return (
     <>
@@ -86,7 +95,7 @@ export function FanMenu({
               key={id}
               type="button"
               role="menuitem"
-              onClick={() => onPick(id)}
+              onClick={() => { log.logInteraction("action:select", { action: id, label: cfg.label }); onPick(id); }}
               className="flex items-center gap-2 rounded-full bg-[var(--bg-card)] py-2 pl-2 pr-4 text-sm font-semibold text-[var(--ink-1)] shadow-[var(--shadow-card)] transition-transform active:scale-[0.98]"
             >
               <span

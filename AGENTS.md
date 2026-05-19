@@ -31,11 +31,67 @@
 - Backend API changes belong in `tripcast-backend`.
 - If stuck after two failed attempts, stop, summarize what failed, and propose a better next attempt.
 
+## Debug Logging (Required for New Features)
+
+TripCast has a local-only debug logger (`src/debug/`) that is always present but disabled by default. **Every new component or feature must instrument itself using this system.** Do not add `console.log` for diagnostic output — use the logger instead.
+
+### Quick-start
+
+```tsx
+import { useDebugLogger } from "../../debug/useDebugLogger";
+
+export default function MySheet({ ... }) {
+  const log = useDebugLogger("MySheet", "src/features/myfeature/MySheet.tsx");
+  ...
+}
+```
+
+### What to log and which helper to use
+
+| Event | Helper | Category |
+|-------|--------|----------|
+| Sheet or panel opens | `log.logUi("sheet:open", { ... })` | `ui` |
+| Sheet closes (backdrop tap) | `log.logUi("sheet:close", { trigger: "backdrop" })` | `ui` |
+| User taps a button / selects a tab | `log.logUi("action:name", { ... })` | `ui` |
+| Form mount / submit / cancel | `log.logForm("form:open")` / `log.logForm("form:submit")` / `log.logForm("form:cancel")` | `form` |
+| Mutation fired | `log.logMutation("mutation:name", { ... })` | `mutation` |
+| Mutation succeeded | `log.logMutation("mutation:name:success")` | `mutation` |
+| Mutation error | `log.error("mutation:name:error", "mutation", { message: e.message })` | `mutation` |
+| Query error (caught) | `log.error("query:name:error", "query", { ... })` | `query` |
+| Map camera move (programmatic) | `log.logMap("map:camera:move", { lat, lon, trigger })` | `map` |
+| Auth event | `log.logAuth("event:name", { ... })` — details auto-redacted | `auth` |
+| State transition worth tracking | `log.logState("stateName", before, after)` | `state` |
+| Travel-funds change | `log.logFunds("event:name", { ... })` | `funds` |
+| Routing/navigation change | `log.info("route:change", "route", { ... })` | `route` |
+
+### Required instrumentation for every new sheet or panel
+
+```tsx
+useEffect(() => {
+  log.logUi(open ? "sheet:open" : "sheet:close");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [open]);
+
+// Also log backdrop close in onOpenChange:
+function handleOpenChange(nextOpen: boolean) {
+  if (!nextOpen) log.logUi("sheet:close", { trigger: "backdrop" });
+  onOpenChange(nextOpen);
+}
+```
+
+### Rules
+
+- **Always pass the correct category.** Wrong categories break the preset filter (e.g. everything at category `"interaction"` hides behind Interaction Trace only).
+- **Never log secrets.** The redaction regex covers `token|secret|password|auth|apikey|api_key|email|phone|bearer|invite|reset` — do not manually pass these fields. For auth events, use `log.logAuth()` which routes to the `auth` category that is enabled in Normal preset; even with redaction active, keep the payload minimal.
+- **Register the component.** `useDebugLogger(componentName, filePath)` auto-registers the component in the LLM summary map — always pass the real file path as the second argument.
+
+---
+
 ## Debugging Strategy
 
 ### Stop-and-log rule
 If you have made **two failed attempts** to fix a visual or layout bug — especially one that manifests only on device or in a browser you cannot see — stop writing guesses. Instead:
-1. Propose adding targeted `console.log` statements that dump every relevant runtime value (dimensions, rects, computed values) at the moment the problematic code runs.
+1. Propose leveraging the debug logger for where the problematic code runs.
 2. Ask the developer to trigger the behavior, copy the log output, and paste it back.
 3. Only then diagnose and implement the fix.
 
@@ -45,7 +101,7 @@ This one logging round almost always costs less time than a third blind attempt.
 Before investigating *why* a function produces wrong output, confirm it is actually being called. Put a one-line log at the very **first line** of the function — before any early returns or guards — so a missing call is immediately obvious:
 
 ```typescript
-console.log("[MyFn] entry", { relevantArg });
+// Put relevant logging here
 const map = mapRef.current;
 if (!map) return;       // ← guard comes after the entry log
 ```
