@@ -218,15 +218,8 @@ function ConvexCheckpointSheet({
   onBack?: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  // NOTE: `travelerCompleteChallengeAsStory` is not exported by
-  // tripcast-backend's scripts/exportTripcastApi.ts and no matching mutation
-  // exists in convex/challenges.ts — this call site has been runtime-broken
-  // since the API export script and the hand-edited tripcastApi.ts drifted.
-  // Cast to any to keep the existing call site compiling; a follow-up backend
-  // pass needs to either add the dedicated story-completion function or migrate
-  // this call to travelerCompleteChallenge with a story flag.
   const completeChallengeAsStory = useMutation(
-    (tripcastApi.challenges as any).travelerCompleteChallengeAsStory,
+    tripcastApi.challenges.travelerCompleteChallengeAsStory,
   );
 
   const [stateOpen, setStateOpen] = useState(false);
