@@ -10,6 +10,7 @@ import AuthShell from "./AuthShell";
 
 const TERMS_VERSION = "1.0";
 const PRIVACY_VERSION = "1.0";
+const USERNAME_PATTERN = /^[a-z0-9_-]+$/;
 
 type InviteRedemptionScreenProps = {
   inviteToken: string;
@@ -30,6 +31,18 @@ function friendlyError(error: unknown) {
   return "Failed to create account. Please try again.";
 }
 
+function getUsernameValidationMessage(rawUsername: string): string | null {
+  const username = rawUsername.trim();
+  if (username.length === 0) return null;
+  if (username.length < 3 || username.length > 30) {
+    return "Username must be 3 to 30 characters.";
+  }
+  if (!USERNAME_PATTERN.test(username)) {
+    return "Username may only contain letters, numbers, underscores, and hyphens.";
+  }
+  return null;
+}
+
 export default function InviteRedemptionScreen({
   inviteToken,
   onSignIn,
@@ -43,9 +56,12 @@ export default function InviteRedemptionScreen({
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
+  const normalizedUsername = username.trim();
+  const usernameValidationMessage = getUsernameValidationMessage(username);
   const passwordMismatch = confirmPassword.length > 0 && password !== confirmPassword;
   const canSubmit =
-    username.trim().length >= 3 &&
+    normalizedUsername.length >= 3 &&
+    usernameValidationMessage === null &&
     password.length >= 8 &&
     password === confirmPassword &&
     termsAccepted &&
@@ -59,7 +75,7 @@ export default function InviteRedemptionScreen({
     try {
       const result = await redeemInvite({
         inviteToken,
-        username: username.trim(),
+        username: normalizedUsername,
         password,
         termsVersion: TERMS_VERSION,
         privacyVersion: PRIVACY_VERSION,
@@ -68,7 +84,7 @@ export default function InviteRedemptionScreen({
         token: result.token,
         role: "support_crew",
         sessionType: "follower",
-        username: username.trim(),
+        username: normalizedUsername,
       });
     } catch (err) {
       setError(friendlyError(err));
@@ -95,8 +111,19 @@ export default function InviteRedemptionScreen({
             placeholder="at least 3 characters"
             required
             minLength={3}
+            maxLength={30}
+            pattern="[a-z0-9_-]+"
+            aria-invalid={usernameValidationMessage ? true : undefined}
+            aria-describedby="username-help username-error"
           />
-          <span className="text-xs text-[var(--ink-3)]">Letters, numbers, - and _ only</span>
+          <span id="username-help" className="text-xs text-[var(--ink-3)]">
+            Letters, numbers, - and _ only
+          </span>
+          {usernameValidationMessage ? (
+            <span id="username-error" className="text-xs" style={{ color: "var(--danger)" }}>
+              {usernameValidationMessage}
+            </span>
+          ) : null}
         </label>
         <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
           Password
