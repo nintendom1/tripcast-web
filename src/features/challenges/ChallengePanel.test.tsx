@@ -1,7 +1,8 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { act } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import ChallengePanel from "./ChallengePanel";
 
@@ -88,6 +89,10 @@ beforeEach(() => {
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe("ChallengePanel coordinate picking", () => {
   it("ignores sheet close requests while the map is collecting a challenge coordinate", async () => {
     const user = userEvent.setup();
@@ -143,6 +148,56 @@ describe("ChallengePanel sheet layout", () => {
     const createBody = titleInput.closest("div.flex-1");
 
     expect(createBody).toHaveClass("flex", "min-h-0", "flex-col");
+  });
+});
+
+describe("ChallengePanel pending mission highlight", () => {
+  it("scrolls to the pending traveler mission and clears its highlight", () => {
+    vi.useFakeTimers();
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const challenge = {
+      _id: "challenge-1",
+      _creationTime: 1,
+      title: "Pinned mission",
+      status: "visible",
+      source: "traveler",
+      createdAt: 1,
+      updatedAt: 1,
+      createdBySessionId: "session-1",
+      updatedBySessionId: "session-1",
+      lat: 47.6,
+      lon: -122.3,
+    };
+    const challenges = [challenge];
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((_ref: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return challenges;
+    });
+    const onClearPendingChallenge = vi.fn();
+    const onRequestNavigateToChallenge = vi.fn();
+
+    renderPanel({
+      pendingOpenChallengeId: "challenge-1",
+      onClearPendingChallenge,
+      onRequestNavigateToChallenge,
+    });
+    const getCard = () => document.querySelector('[data-challenge-id="challenge-1"]');
+
+    expect(onRequestNavigateToChallenge).toHaveBeenCalledWith({ lat: 47.6, lon: -122.3 });
+    expect(onClearPendingChallenge).toHaveBeenCalledTimes(1);
+    expect(getCard()).not.toHaveClass("ring-2");
+
+    act(() => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(scrollIntoView).toHaveBeenCalled();
+    expect(getCard()).toHaveClass("ring-2");
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(getCard()).not.toHaveClass("ring-2");
   });
 });
 
