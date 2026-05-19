@@ -1,30 +1,48 @@
 import { useMemo } from "react";
-import { log, registerComponent, type DebugLevel } from "./debugLogger";
+import { log, registerComponent, type DebugCategory, type DebugLevel } from "./debugLogger";
 
 export interface DebugLogger {
-  debug: (action: string, details?: Record<string, unknown>, state?: Record<string, unknown>) => void;
-  info:  (action: string, details?: Record<string, unknown>, state?: Record<string, unknown>) => void;
-  warn:  (action: string, details?: Record<string, unknown>, state?: Record<string, unknown>) => void;
-  error: (action: string, details?: Record<string, unknown>, state?: Record<string, unknown>) => void;
+  debug: (action: string, category?: DebugCategory, details?: Record<string, unknown>, state?: Record<string, unknown>) => void;
+  info:  (action: string, category?: DebugCategory, details?: Record<string, unknown>, state?: Record<string, unknown>) => void;
+  warn:  (action: string, category?: DebugCategory, details?: Record<string, unknown>, state?: Record<string, unknown>) => void;
+  error: (action: string, category?: DebugCategory, details?: Record<string, unknown>, state?: Record<string, unknown>) => void;
   logInteraction: (action: string, details?: Record<string, unknown>) => void;
-  logStateChange: (stateName: string, before: unknown, after?: unknown) => void;
+  logMap: (action: string, details?: Record<string, unknown>) => void;
+  logUi: (action: string, details?: Record<string, unknown>) => void;
+  logAuth: (action: string, details?: Record<string, unknown>) => void;
+  logMutation: (action: string, details?: Record<string, unknown>) => void;
+  logQuery: (action: string, level?: DebugLevel, details?: Record<string, unknown>) => void;
+  logForm: (action: string, details?: Record<string, unknown>) => void;
+  logAudio: (action: string, details?: Record<string, unknown>) => void;
+  logState: (stateName: string, before: unknown, after?: unknown) => void;
+  logFunds: (action: string, details?: Record<string, unknown>) => void;
+  logPerformance: (action: string, details?: Record<string, unknown>) => void;
   withLoggedHandler: <T>(action: string, handler: () => T) => T;
 }
 
 function makeLogger(src: string): DebugLogger {
-  const emit = (level: DebugLevel, action: string, details?: Record<string, unknown>, state?: Record<string, unknown>) =>
-    log(level, src, action, details, state);
+  const emit = (level: DebugLevel, action: string, category: DebugCategory, details?: Record<string, unknown>, state?: Record<string, unknown>) =>
+    log(level, src, action, category, details, state);
 
   return {
-    debug: (action, details, state) => emit("debug", action, details, state),
-    info:  (action, details, state) => emit("info",  action, details, state),
-    warn:  (action, details, state) => emit("warn",  action, details, state),
-    error: (action, details, state) => emit("error", action, details, state),
-    logInteraction: (action, details) => emit("info", action, details),
-    logStateChange: (stateName, before, after) =>
-      emit("debug", `state:${stateName}`, undefined, { before, after } as Record<string, unknown>),
+    debug: (action, category = "debug", details, state) => emit("debug", action, category, details, state),
+    info:  (action, category = "debug", details, state) => emit("info",  action, category, details, state),
+    warn:  (action, category = "debug", details, state) => emit("warn",  action, category, details, state),
+    error: (action, category = "error", details, state) => emit("error", action, category, details, state),
+    logInteraction: (action, details) => emit("info", action, "ui", details),
+    logMap: (action, details) => emit("info", action, "map", details),
+    logUi: (action, details) => emit("info", action, "ui", details),
+    logAuth: (action, details) => emit("info", action, "auth", details),
+    logMutation: (action, details) => emit("info", action, "mutation", details),
+    logQuery: (action, level = "info", details) => emit(level, action, "query", details),
+    logForm: (action, details) => emit("info", action, "form", details),
+    logAudio: (action, details) => emit("info", action, "audio", details),
+    logState: (stateName, before, after) =>
+      emit("debug", `state:${stateName}`, "state", undefined, { before, after } as Record<string, unknown>),
+    logFunds: (action, details) => emit("info", action, "funds", details),
+    logPerformance: (action, details) => emit("info", action, "performance", details),
     withLoggedHandler: <T>(action: string, handler: () => T): T => {
-      emit("info", action);
+      emit("info", action, "ui");
       return handler();
     },
   };

@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { ErrorBoundary } from "react-error-boundary";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { tripcastApi, type Role } from "./convex/tripcastApi";
+import { tripcastApi } from "./convex/tripcastApi";
 import {
   clearStoredSession,
   getStoredSession,
@@ -15,7 +15,7 @@ import AuthScreen from "./features/auth/AuthScreen";
 import FollowerLoginScreen from "./features/auth/FollowerLoginScreen";
 import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
 import PasswordResetScreen from "./features/auth/PasswordResetScreen";
-import OptionsSheet from "./features/options/OptionsSheet";
+import OptionsSheet, { type OptionsView } from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 import { TopBar } from "./features/hud";
 import CrewLandingTour, { hasSeenCrewTour, resetCrewTourSeen } from "./features/onboarding/CrewLandingTour";
@@ -25,6 +25,7 @@ import { PendingNotice } from "./components/resilience/PendingNotice";
 import { useDelayedPending } from "./components/resilience/useDelayedPending";
 import { useOnlineStatus } from "./components/resilience/useOnlineStatus";
 import { useMusicSafe } from "./providers/MusicProvider";
+import { useInteractionLogger } from "./debug/useInteractionLogger";
 import DebugErrorBoundary from "./debug/DebugErrorBoundary";
 import { log as debugLog } from "./debug/debugLogger";
 
@@ -79,6 +80,7 @@ function ConnectedApp() {
 
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [optionsDefaultView, setOptionsDefaultView] = useState<OptionsView>("options");
   const [view, setView] = useState<"map" | "follower-management">("map");
   const music = useMusicSafe();
   // Crew first-launch tour visibility — only shown for Support Crew sessions
@@ -91,11 +93,13 @@ function ConnectedApp() {
   const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useInteractionLogger();
+
   useEffect(() => {
     const onError = (e: ErrorEvent) =>
-      debugLog("error", "window", "global:error", { message: e.message, filename: e.filename, line: e.lineno });
+      debugLog("error", "window", "global:error", "error", { message: e.message, filename: e.filename, line: e.lineno });
     const onUnhandled = (e: PromiseRejectionEvent) =>
-      debugLog("error", "window", "global:unhandledrejection", { reason: String(e.reason) });
+      debugLog("error", "window", "global:unhandledrejection", "error", { reason: String(e.reason) });
     window.addEventListener("error", onError);
     window.addEventListener("unhandledrejection", onUnhandled);
     return () => {
@@ -348,6 +352,7 @@ function ConnectedApp() {
         role={role}
         onOpenOptions={() => {
           music.sfx("open");
+          setOptionsDefaultView("options");
           setIsOptionsOpen(true);
         }}
       />
@@ -355,9 +360,13 @@ function ConnectedApp() {
       <OptionsSheet
         open={isOptionsOpen}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen) music.sfx("close");
+          if (!nextOpen) {
+            music.sfx("close");
+            setOptionsDefaultView("options");
+          }
           setIsOptionsOpen(nextOpen);
         }}
+        defaultView={optionsDefaultView}
         session={session}
         role={role}
         onSignOut={handleSignOut}
@@ -400,6 +409,11 @@ function ConnectedApp() {
             role={role}
             locationResetNonce={locationResetNonce}
             tripDataResetNonce={tripDataResetNonce}
+            onOpenDebugPanel={() => {
+              music.sfx("open");
+              setOptionsDefaultView("debug-logs");
+              setIsOptionsOpen(true);
+            }}
           />
         </Suspense>
       </ErrorBoundary>

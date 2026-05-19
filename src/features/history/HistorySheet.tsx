@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   Camera,
@@ -163,6 +163,7 @@ export default function HistorySheet({
   const [pendingDelete, setPendingDelete] = useState<HistoryEvent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingEvent, setEditingEvent] = useState<HistoryEvent | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
   const music = useMusicSafe();
@@ -170,6 +171,15 @@ export default function HistorySheet({
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const h = containerRef.current?.getBoundingClientRect().height ?? 0;
+      if (h > 0) log.logInteraction("sheet:size", { heightPx: Math.round(h), viewportPx: window.innerHeight });
+    }, 300);
+    return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -202,10 +212,14 @@ export default function HistorySheet({
       open
       modal={false}
       onOpenChange={(open) => {
-        if (!open) onClose();
+        if (!open) {
+          log.logInteraction("sheet:close", { trigger: "backdrop" });
+          onClose();
+        }
       }}
     >
       <SheetContent
+        ref={containerRef}
         side="bottom"
         showBackdrop={false}
         className="z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"

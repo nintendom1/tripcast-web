@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { X } from "lucide-react";
 
 import type { HistoryEvent } from "../../convex/tripcastApi";
+import { log } from "../../debug/debugLogger";
 import { StatBar } from "../../components/rpg/StatBar";
 import {
   Sheet,
@@ -200,6 +201,15 @@ export default function CheckInDetailSheet({
   onClose,
   onLocationFocus,
 }: CheckInDetailSheetProps) {
+  useEffect(() => {
+    if (event) {
+      log("info", "CheckInDetailSheet", "sheet:open", "ui", {
+        checkpointId: event.checkpointId,
+        storyLevel: event.storyLevel,
+      });
+    }
+  }, [event]);
+
   useEffect(() => {
     if (event?.lat !== undefined && event?.lon !== undefined) {
       onLocationFocus({ lat: event.lat, lon: event.lon });

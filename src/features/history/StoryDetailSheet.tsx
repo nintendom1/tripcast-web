@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Camera, Target } from "lucide-react";
 
 import type { HistoryEvent } from "../../convex/tripcastApi";
+import { log } from "../../debug/debugLogger";
 import {
   Sheet,
   SheetBody,
@@ -52,6 +53,15 @@ export default function StoryDetailSheet({
   onLocationFocus,
   missionTitle,
 }: StoryDetailSheetProps) {
+  useEffect(() => {
+    if (event) {
+      log("info", "StoryDetailSheet", "sheet:open", "ui", {
+        checkpointId: event.checkpointId,
+        storyLevel: event.storyLevel,
+      });
+    }
+  }, [event]);
+
   useEffect(() => {
     if (event?.lat !== undefined && event?.lon !== undefined) {
       onLocationFocus({ lat: event.lat, lon: event.lon });

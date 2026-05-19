@@ -54,6 +54,8 @@ import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { DebugChip } from "../../debug/DebugChip";
+import { isEnabled, isCategoryEnabled, log as rawLog } from "../../debug/debugLogger";
 import {
   MOOD_LABELS,
   MOOD_VALUES,
@@ -374,6 +376,7 @@ type TripMapProps = {
   role: Role;
   locationResetNonce?: number;
   tripDataResetNonce?: number;
+  onOpenDebugPanel?: () => void;
 };
 
 export default function TripMap({
@@ -381,6 +384,7 @@ export default function TripMap({
   role,
   locationResetNonce = 0,
   tripDataResetNonce = 0,
+  onOpenDebugPanel,
 }: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -629,16 +633,28 @@ export default function TripMap({
     });
 
     map.on("click", (event) => {
+      if (isEnabled() && isCategoryEnabled("interaction")) {
+        const features = map.queryRenderedFeatures(event.point);
+        rawLog("info", "TripMap", "map:click", "interaction", {
+          screenX: Math.round(event.point.x),
+          screenY: Math.round(event.point.y),
+          viewportW: map.getContainer().clientWidth,
+          viewportH: map.getContainer().clientHeight,
+          lat: parseFloat(event.lngLat.lat.toFixed(5)),
+          lon: parseFloat(event.lngLat.lng.toFixed(5)),
+          zoom: parseFloat(map.getZoom().toFixed(2)),
+          pointerType: (event.originalEvent as PointerEvent).pointerType || undefined,
+          featuresHit: features.slice(0, 5).map((f) => ({ id: f.id, source: f.source, layer: f.layer?.id })),
+          markerHit: features.length > 0,
+        });
+      }
+
       // Coordinate pick mode takes priority
       if (coordinatePickModeRef.current) {
-        console.log("[TripMap] Map clicked in coordinate pick mode at:", event.lngLat);
         const pick = coordinatePickModeRef.current;
         coordinatePickModeRef.current = null;
         setCoordinatePickMode(null);
-        console.log("[TripMap] coordinatePickMode cleared, calling callback with:", {
-          lat: event.lngLat.lat,
-          lon: event.lngLat.lng,
-        });
+        log.logInteraction("coordinate:picked", { lat: event.lngLat.lat, lon: event.lngLat.lng, source: "coordinate-pick" });
         musicRef.current.sfx("pin");
         pick.callback({ lat: event.lngLat.lat, lon: event.lngLat.lng });
         return;
@@ -789,16 +805,16 @@ export default function TripMap({
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
-    console.log("[TripMap] handleRequestCoordinatePick called, optionIndex:", optionIndex);
+    log.logInteraction("coordinate:pick-mode:enter", { source: "route-vote", optionIndex });
     music.sfx("page");
     const label = `Option ${optionIndex + 1} location`;
     coordinatePickModeRef.current = { label, callback };
     setCoordinatePickMode({ label, callback });
-    console.log("[TripMap] coordinatePickMode set to:", { label, callback });
   }
 
   function handleNavigateToChallenge(coord: { lat: number; lon: number }) {
     if (!mapRef.current) return;
+    log.logInteraction("map:camera:move", { lat: coord.lat, lon: coord.lon, trigger: "challenge:location-focus" });
     // Offset the target so it appears in the visible area to the right of the
     // 320px panel and above the bottom detail sheet (~300px).
     mapRef.current.flyTo({
@@ -811,6 +827,7 @@ export default function TripMap({
   function handleRequestChallengeCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
+    log.logInteraction("coordinate:pick-mode:enter", { source: "challenge" });
     music.sfx("page");
     const label = "the challenge location";
     coordinatePickModeRef.current = { label, callback };
@@ -818,6 +835,7 @@ export default function TripMap({
   }
 
   function cancelCoordinatePick() {
+    log.logInteraction("coordinate:pick-mode:cancel");
     coordinatePickModeRef.current = null;
     setCoordinatePickMode(null);
   }
@@ -914,7 +932,7 @@ export default function TripMap({
   function centerMapOnCoordinate(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
-
+    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "center:location" });
     // Reset any persistent padding set by handleNavigateToChallenge before easing
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
@@ -930,6 +948,7 @@ export default function TripMap({
   function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
+    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "history:location-focus" });
     const mapHeight = map.getContainer().clientHeight;
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
@@ -942,6 +961,7 @@ export default function TripMap({
   function handleCheckInDetailLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
+    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "checkin-detail:location-focus" });
     const mapContainer = map.getContainer();
     const mapHeight = mapContainer.clientHeight;
     const mapWidth = mapContainer.clientWidth;
@@ -1012,6 +1032,12 @@ export default function TripMap({
     if (!mapRef.current || !bounds) return;
     if (!isFiniteLngLatBounds(bounds)) return;
     const bottom = paddingBottom ?? 80;
+    log.logInteraction("map:camera:fitbounds", {
+      sw: { lon: bounds[0][0], lat: bounds[0][1] },
+      ne: { lon: bounds[1][0], lat: bounds[1][1] },
+      paddingBottom: bottom,
+      trigger: "route-vote",
+    });
     mapRef.current.fitBounds(bounds, {
       padding: { top: 80, right: 80, bottom, left: 80 },
       maxZoom: 14,
@@ -1164,6 +1190,13 @@ export default function TripMap({
 
       {/* Music mute indicator — top-right of the map */}
       <MusicMuteIndicator className="absolute right-3 top-3 z-[2]" />
+
+      {/* Debug chip — only visible when debug logging is enabled */}
+      {onOpenDebugPanel ? (
+        <div className="absolute right-3 top-12 z-[3]">
+          <DebugChip onOpen={onOpenDebugPanel} />
+        </div>
+      ) : null}
 
       {/* Map utility — center on traveler (replaces the LocateFixed FAB) */}
       <MapCenterButton
