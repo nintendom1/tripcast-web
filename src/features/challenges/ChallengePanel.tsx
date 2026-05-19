@@ -24,6 +24,7 @@ import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 type Props = {
   open: boolean;
@@ -92,6 +93,7 @@ export default function ChallengePanel({
   const [pendingDelete, setPendingDelete] = useState<Challenge | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const music = useMusicSafe();
+  const log = useDebugLogger("ChallengePanel", "src/features/challenges/ChallengePanel.tsx");
   const deleteChallenge = useMutation(tripcastApi.challenges.travelerDeleteChallenge);
 
   async function handleConfirmDelete() {
@@ -176,18 +178,21 @@ export default function ChallengePanel({
   }, [viewMode, selectedChallenge?.challenge._id]);
 
   function goToList(sound: "page" | "success" | null = "page") {
+    log.logInteraction("view:change", { from: viewMode, to: "list" });
     if (sound) music.sfx(sound);
     setViewMode("list");
     setSelectedChallenge(null);
   }
 
   function goToCreate() {
+    log.logInteraction("view:change", { from: viewMode, to: "create" });
     music.sfx("page");
     setSelectedChallenge(null);
     setViewMode("create");
   }
 
   function goToDetail(challenge: Challenge, isOwn = role === "traveler") {
+    log.logInteraction("view:change", { from: viewMode, to: "detail", challengeId: challenge._id, status: challenge.status });
     music.sfx("page");
     setSelectedChallenge({ challenge, isOwn });
     setViewMode("detail");
@@ -362,6 +367,7 @@ function TravelerListView({
   const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const allChallenges = useQuery(tripcastApi.challenges.travelerListChallenges, { token });
+  const log = useDebugLogger("ChallengePanel", "src/features/challenges/ChallengePanel.tsx");
 
   useEffect(() => {
     if (!pendingOpenChallengeId || !allChallenges) return;
@@ -398,7 +404,7 @@ function TravelerListView({
             id={`challenge-tab-${f.value}`}
             aria-controls="challenge-tabpanel"
             active={filter === f.value}
-            onClick={() => setFilter(f.value)}
+            onClick={() => { log.logInteraction("filter:change", { from: filter, to: f.value }); setFilter(f.value); }}
           >
             {f.label}
           </SheetTab>

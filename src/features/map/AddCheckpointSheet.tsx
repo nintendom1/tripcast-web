@@ -14,6 +14,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -88,6 +89,7 @@ export default function AddCheckpointSheet({
   const [isSaving, setIsSaving] = useState(false);
   const music = useMusicSafe();
 
+  const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
   const isFromMission = Boolean(prefill?.challengeId);
   const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Check-in");
   const titleText = isFromMission ? "Complete as story" : "Add pin";
@@ -95,6 +97,12 @@ export default function AddCheckpointSheet({
 
   useEffect(() => {
     if (selectedCoordinate) {
+      log.logInteraction("sheet:open", {
+        source: selectedCoordinate.source,
+        hasPrefill: Boolean(prefill),
+        isFromMission,
+      });
+      performance.mark("tripcast:debug:addCheckpoint:open");
       setTitle(prefill?.title ?? "");
       setNote(prefill?.note ?? "");
       setLocationLabel(prefill?.locationLabel ?? "");
@@ -104,7 +112,7 @@ export default function AddCheckpointSheet({
       setError(null);
       setIsSaving(false);
     }
-
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCoordinate, prefill]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -120,6 +128,7 @@ export default function AddCheckpointSheet({
     }
 
     setIsSaving(true);
+    log.logInteraction("form:submit", { isFromMission, showInStory, source: selectedCoordinate.source });
 
     try {
       const checkpointId = await onSave({
@@ -132,10 +141,12 @@ export default function AddCheckpointSheet({
         source: selectedCoordinate.source,
         challengeId: prefill?.challengeId,
       });
+      log.logInteraction("submit:success", { checkpointId });
       music.sfx("pin");
       onCheckpointCreated?.(checkpointId, prefill);
       onClose();
     } catch (saveError) {
+      log.error("submit:error", { message: saveError instanceof Error ? saveError.message : String(saveError) });
       setError(friendlyError(saveError));
     } finally {
       setIsSaving(false);

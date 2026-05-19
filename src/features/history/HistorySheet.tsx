@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { getStateEmoji } from "../travelstate/travelerStateUtils";
 import { formatUsd } from "../travelfunds/currency";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 import EditCheckpointSheet from "./EditCheckpointSheet";
 
@@ -165,6 +166,7 @@ export default function HistorySheet({
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
   const music = useMusicSafe();
+  const log = useDebugLogger("HistorySheet", "src/features/history/HistorySheet.tsx");
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
@@ -227,6 +229,7 @@ export default function HistorySheet({
               aria-controls="history-tabpanel"
               active={activeTab === tab.id}
               onClick={() => {
+                log.logInteraction("filter:change", { from: activeTab, to: tab.id });
                 setActiveTab(tab.id);
                 setSwipedId(null);
               }}
@@ -262,6 +265,7 @@ export default function HistorySheet({
                     isLast={index === filtered.length - 1}
                     actualCostUsd={actualCostUsd}
                     onSelect={() => {
+                      log.logInteraction("row:click", { type: event.type, storyLevel: event.storyLevel });
                       if (event.type === "check_in") {
                         if (event.storyLevel === "story") {
                           onStorySelect(event);

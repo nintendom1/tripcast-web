@@ -114,6 +114,53 @@ Test runner: `vitest` with `jsdom` environment. React components use `@testing-l
 | `src/features/travelfunds/TravelFundsMeter.test.tsx` | Under-budget fill ratio + color, over-budget cap behavior, no-budget "Spent" mode, ARIA meter attributes |
 | `src/features/travelfunds/TravelFundsInlineSection.test.tsx` | Discriminated state emission (`null` / `value` / `error`), auto-expand on meaningful prefill, inline title-required error |
 
+## Debug Logging
+
+TripCast includes a local-only debug logger for reproducing and describing UI bugs to an LLM.
+
+### Enabling
+
+1. Open the app and tap the **settings icon** (top-right).
+2. Scroll to **Developer → Dev Tools**.
+3. Toggle **Debug Logging** on.
+
+Logging is **off by default**. The toggle state persists across page reloads.
+
+### Reproducing a bug
+
+1. Enable debug logging.
+2. Reproduce the steps that trigger the bug (open menus, tap actions, submit forms, etc.).
+3. Return to **Options → Dev Tools → Refresh**.
+4. Tap **Copy LLM Summary** and paste it into your LLM conversation.
+
+The summary contains:
+- A component-to-file path table for every component that fired.
+- All warnings and errors highlighted at the top.
+- A compact timeline of the last 100 interaction events with inline state snapshots.
+
+**Copy JSON** gives the full structured log. **Download JSON** saves it as a file.
+
+### What is logged
+
+- Sheet / panel open and close (History, Challenges, Votes, Funds, Options, Check-in form, etc.)
+- Dock tab selections and FanMenu action picks
+- View-mode changes inside panels (list → detail → create)
+- Filter tab changes
+- Form submit attempts, successes, and errors
+- Global `window.onerror` and `unhandledrejection` events
+- React render errors (via error boundary)
+
+### What is NOT logged
+
+- Auth tokens, passwords, secrets, API keys, email addresses, or phone numbers — these keys are automatically redacted.
+- Raw user-typed text (titles, notes, captions).
+- Large objects — depth capped at 4, arrays at 10 items, strings at 200 chars.
+- Convex query payloads or backend responses.
+
+### Storage and privacy
+
+Logs live in `localStorage` (`tripcast.debug.logs`) and never leave the browser unless you explicitly copy or download them. The buffer caps at 500 entries (~256 KB); older entries are dropped automatically. **Clear logs** removes the entry immediately.
+
 ## Secret Scanning
 
 This repo runs Gitleaks in GitHub Actions on pushes, pull requests, and manual workflow runs. The workflow checks full git history and redacts detected secret values from logs.

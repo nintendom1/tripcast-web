@@ -53,6 +53,7 @@ import { useHistoryUnread } from "../history/useHistoryUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 import {
   MOOD_LABELS,
   MOOD_VALUES,
@@ -392,6 +393,7 @@ export default function TripMap({
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   const music = useMusicSafe();
   const musicRef = useRef(music);
+  const log = useDebugLogger("TripMap", "src/features/map/TripMap.tsx");
 
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
@@ -469,10 +471,13 @@ export default function TripMap({
 
   function openHistory() {
     if (isHistoryOpen) {
+      log.logInteraction("panel:close", { panel: "history" });
       music.sfx("close");
       setIsHistoryOpen(false);
       return;
     }
+    log.logInteraction("panel:open", { panel: "history" });
+    performance.mark("tripcast:debug:history:open");
     music.sfx("open");
     setIsHistoryOpen(true);
     setIsChallengesPanelOpen(false);
@@ -481,10 +486,13 @@ export default function TripMap({
   }
   function openChallenges() {
     if (isChallengesPanelOpen) {
+      log.logInteraction("panel:close", { panel: "challenges" });
       music.sfx("close");
       setIsChallengesPanelOpen(false);
       return;
     }
+    log.logInteraction("panel:open", { panel: "challenges" });
+    performance.mark("tripcast:debug:challenges:open");
     music.sfx("open");
     setIsChallengesPanelOpen(true);
     setIsHistoryOpen(false);
@@ -493,10 +501,13 @@ export default function TripMap({
   }
   function openVotes() {
     if (isVotePanelOpen) {
+      log.logInteraction("panel:close", { panel: "votes" });
       music.sfx("close");
       setIsVotePanelOpen(false);
       return;
     }
+    log.logInteraction("panel:open", { panel: "votes" });
+    performance.mark("tripcast:debug:votes:open");
     music.sfx("open");
     setIsVotePanelOpen(true);
     setIsHistoryOpen(false);
@@ -505,10 +516,13 @@ export default function TripMap({
   }
   function openFunds() {
     if (isTravelFundsSheetOpen) {
+      log.logInteraction("panel:close", { panel: "funds" });
       music.sfx("close");
       setIsTravelFundsSheetOpen(false);
       return;
     }
+    log.logInteraction("panel:open", { panel: "funds" });
+    performance.mark("tripcast:debug:funds:open");
     music.sfx("open");
     setIsTravelFundsSheetOpen(true);
     setIsHistoryOpen(false);
@@ -548,6 +562,8 @@ export default function TripMap({
     setFanOpen(false);
     switch (action) {
       case "checkin":
+        log.logInteraction("placement:enter", { trigger: "fan:checkin" });
+        performance.mark("tripcast:debug:placement:enter");
         setSelectedCoordinate(null);
         setIsPlacementMode(true);
         break;
@@ -629,6 +645,7 @@ export default function TripMap({
       }
 
       if (!placementModeRef.current) return;
+      log.logInteraction("coordinate:picked", { lat: event.lngLat.lat, lon: event.lngLat.lng, source: "placement" });
       setIsPlacementMode(false);
       musicRef.current.sfx("pin");
       setSelectedCoordinate({
@@ -1099,7 +1116,7 @@ export default function TripMap({
             <button
               type="button"
               className="rounded bg-white text-navy px-2.5 py-1 text-sm font-medium"
-              onClick={() => setIsPlacementMode(false)}
+              onClick={() => { log.logInteraction("placement:cancel"); setIsPlacementMode(false); }}
             >
               Cancel
             </button>

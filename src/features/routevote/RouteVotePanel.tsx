@@ -25,6 +25,7 @@ import { StatusBadge } from "../../components/rpg/StatusBadge";
 import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 type RouteVotePanelProps = {
   token: string;
@@ -91,6 +92,7 @@ function VoteDetail({
   const submitVote = useMutation(tripcastApi.routeVotes.submitRouteVote);
   const markSeen = useMutation(tripcastApi.routeVotes.markRouteVoteSeen);
   const music = useMusicSafe();
+  const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
 
   const [selectedOptionIds, setSelectedOptionIds] = useState<Set<string>>(
     () => new Set(vote.mySubmission?.selectedOptionIds ?? []),
@@ -149,6 +151,7 @@ function VoteDetail({
   const canSubmit = vote.effectiveStatus === "active" && selectedOptionIds.size > 0 && !isSubmitting;
 
   async function handleSubmit() {
+    log.logInteraction("vote:submit", { voteId: vote._id, optionCount: selectedOptionIds.size, anonymous });
     setError(null);
     setIsSubmitting(true);
     try {
@@ -160,8 +163,10 @@ function VoteDetail({
         commentVisibility,
         anonymous: anonymous || undefined,
       });
+      log.logInteraction("submit:success", { voteId: vote._id });
       music.sfx("vote");
     } catch (e) {
+      log.error("submit:error", { message: e instanceof Error ? e.message : String(e) });
       setError(e instanceof Error ? e.message : "Failed to submit.");
     } finally {
       setIsSubmitting(false);
@@ -294,10 +299,12 @@ export default function RouteVotePanel({
   const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token });
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const music = useMusicSafe();
+  const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
 
   function handleBack() {
+    log.logInteraction("view:change", { from: "detail", to: "list" });
     music.sfx("page");
     setSelectedVoteId(null);
     onVoteOverlayChange(null);
@@ -387,6 +394,7 @@ export default function RouteVotePanel({
                       key={vote._id}
                       vote={vote}
                       onSelect={() => {
+                        log.logInteraction("view:change", { from: "list", to: "detail", voteId: vote._id });
                         music.sfx("page");
                         setSelectedVoteId(vote._id);
                       }}
