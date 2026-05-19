@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
+  AutoState,
   TravelerMoodValue,
   TravelerEnergyLevel,
   TravelerStomachLevel,
@@ -36,6 +37,7 @@ import {
 } from "./travelerStateUtils";
 import { formatSaveError } from "./formatSaveError";
 import AutoStateTab from "./AutoStateTab";
+import { computeAutoState } from "./autoStateCalc";
 
 type TravelerStateSheetProps = {
   token: string;
@@ -51,6 +53,37 @@ const PANEL_MOTION = {
   exit: { y: "100%" },
   transition: { duration: 0.22, ease: "easeOut" as const },
 };
+
+function computeCurrentAutoScores(autoState: AutoState | null | undefined) {
+  if (!autoState?.autoStateEnabled || autoState.autoEnabledAt == null) return null;
+  const hasEnergy = typeof autoState.autoBaseEnergyScore === "number";
+  const hasStomach = typeof autoState.autoBaseStomachScore === "number";
+  if (!hasEnergy && !hasStomach) return null;
+
+  const estimate = computeAutoState({
+    autoTimeZone: autoState.autoTimeZone,
+    autoBedtimeMinutes: autoState.autoBedtimeMinutes,
+    autoWakeTimeMinutes: autoState.autoWakeTimeMinutes,
+    autoEnergyMin: autoState.autoEnergyMin,
+    autoEnergyMax: autoState.autoEnergyMax,
+    autoStomachMin: autoState.autoStomachMin,
+    autoStomachMax: autoState.autoStomachMax,
+    autoEnergySleepDeltaPerTick: autoState.autoEnergySleepDeltaPerTick,
+    autoEnergyAwakeDeltaPerTick: autoState.autoEnergyAwakeDeltaPerTick,
+    autoStomachAwakeDeltaPerTick: autoState.autoStomachAwakeDeltaPerTick,
+    autoStomachNightAboveHungryEveryTicks: autoState.autoStomachNightAboveHungryEveryTicks,
+    autoStomachNightAtOrBelowHungryEveryTicks: autoState.autoStomachNightAtOrBelowHungryEveryTicks,
+    baseEnergy: autoState.autoBaseEnergyScore ?? 50,
+    baseStomach: autoState.autoBaseStomachScore ?? 50,
+    autoEnabledAt: autoState.autoEnabledAt,
+    targetTime: Date.now(),
+  });
+
+  return {
+    energyScore: hasEnergy ? estimate.estimatedEnergy : undefined,
+    stomachScore: hasStomach ? estimate.estimatedStomach : undefined,
+  };
+}
 
 function ChipRow<T extends string>({
   values,
@@ -218,21 +251,32 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
   const [showStatusNote, setShowStatusNote] = useState(DEFAULT_VISIBILITY.showStatusNote);
   const [showBiometrics, setShowBiometrics] = useState(DEFAULT_VISIBILITY.showBiometrics);
 
+  useEffect(() => {
+    log.logUi("sheet:open", { tab: "state" });
+    return () => log.logUi("sheet:close", { trigger: "unmount" });
+  }, [log]);
+
   // Populate form once from loaded data
   useEffect(() => {
-    if (!result || hasPopulatedRef.current) return;
+    if (!result || autoState === undefined || hasPopulatedRef.current) return;
     hasPopulatedRef.current = true;
     const { state, visibility } = result;
+    const currentAutoScores = computeCurrentAutoScores(autoState);
     if (state) {
+      const currentEnergyScore =
+        currentAutoScores?.energyScore ??
+        state.energyScore ??
+        (state.energyLevel ? ENERGY_SCORE_FOR_LEVEL[state.energyLevel] : undefined);
+      const currentStomachScore =
+        currentAutoScores?.stomachScore ??
+        state.stomachScore ??
+        (state.stomachLevel ? STOMACH_SCORE_FOR_LEVEL[state.stomachLevel] : undefined);
+
       setMoodValue(state.moodValue);
-      setEnergyLevel(state.energyLevel);
-      setEnergyScore(
-        state.energyScore ?? (state.energyLevel ? ENERGY_SCORE_FOR_LEVEL[state.energyLevel] : undefined),
-      );
-      setStomachLevel(state.stomachLevel);
-      setStomachScore(
-        state.stomachScore ?? (state.stomachLevel ? STOMACH_SCORE_FOR_LEVEL[state.stomachLevel] : undefined),
-      );
+      setEnergyLevel(currentEnergyScore !== undefined ? getEnergyLevelFromScore(currentEnergyScore) : state.energyLevel);
+      setEnergyScore(currentEnergyScore);
+      setStomachLevel(currentStomachScore !== undefined ? getStomachLevelFromScore(currentStomachScore) : state.stomachLevel);
+      setStomachScore(currentStomachScore);
       setStressLevel(state.stressLevel);
       setStressScore(
         state.stressScore ?? (state.stressLevel ? STRESS_SCORE_FOR_LEVEL[state.stressLevel] : undefined),
@@ -246,6 +290,15 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
       setSleepHours(state.biometricSleepHours);
       setActiveMin(state.biometricActiveMinutes);
       setBiometricNote(state.biometricNote ?? "");
+    } else if (currentAutoScores) {
+      setEnergyLevel(
+        currentAutoScores.energyScore !== undefined ? getEnergyLevelFromScore(currentAutoScores.energyScore) : undefined,
+      );
+      setEnergyScore(currentAutoScores.energyScore);
+      setStomachLevel(
+        currentAutoScores.stomachScore !== undefined ? getStomachLevelFromScore(currentAutoScores.stomachScore) : undefined,
+      );
+      setStomachScore(currentAutoScores.stomachScore);
     }
     if (visibility && visibility.updatedAt !== null) {
       setShowTravelerState(visibility.showTravelerState);
@@ -257,7 +310,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
       setShowStatusNote(visibility.showStatusNote);
       setShowBiometrics(visibility.showBiometrics);
     }
-  }, [result]);
+  }, [result, autoState]);
 
   function toIsoLocal(ts: number) {
     const d = new Date(ts);

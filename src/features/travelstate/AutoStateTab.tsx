@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { useDebugLogger, type DebugLogger } from "../../debug/useDebugLogger";
 import { Button } from "../../components/ui/button";
+import { InfoTooltip, type InfoTooltipPlacement } from "../../components/ui/info-tooltip";
 import {
   AUTO_TICK_MS,
   PHASE_META,
@@ -142,6 +143,16 @@ function buildPhaseSegments(
     }
   }
   return segments;
+}
+
+function logTooltipOpen(
+  log: DebugLogger,
+  id: string,
+  open: boolean,
+  placement?: InfoTooltipPlacement,
+) {
+  if (!open) return;
+  log.logUi("tooltip:open", { id, placement });
 }
 
 export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
@@ -500,20 +511,37 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
           />
           {segments.length > 0 && (
             <div
-              className="flex h-5 w-full overflow-hidden rounded-sm border"
+              className="relative h-5 w-full overflow-hidden rounded-sm border"
               aria-label="24-hour phase strip"
             >
+              <div className="flex h-full w-full" aria-hidden="true">
+                {segments.map((seg, i) => {
+                  const widthPct = ((seg.endMinute - seg.startMinute) / 1440) * 100;
+                  return (
+                    <div
+                      key={i}
+                      className="bg-muted"
+                      style={{ width: `${widthPct}%` }}
+                    />
+                  );
+                })}
+              </div>
               {segments.map((seg, i) => {
-                const widthPct = ((seg.endMinute - seg.startMinute) / 1440) * 100;
                 return (
-                  <div
+                  <span
                     key={i}
-                    className="flex items-center justify-center bg-muted text-[10px]"
-                    style={{ width: `${widthPct}%` }}
+                    className="absolute top-1/2 text-[10px] leading-none"
+                    style={{
+                      left: `${(seg.startMinute / 1440) * 100}%`,
+                      transform:
+                        seg.startMinute === 0
+                          ? "translateY(-50%)"
+                          : "translate(-50%, -50%)",
+                    }}
                     aria-label={PHASE_META[seg.phase].label}
                   >
-                    <span aria-hidden="true">{PHASE_META[seg.phase].emoji}</span>
-                  </div>
+                    {PHASE_META[seg.phase].emoji}
+                  </span>
                 );
               })}
             </div>
@@ -614,8 +642,11 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
         </div>
 
         <div className="grid gap-2">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Rates
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Rates
+            </div>
+            <div className="text-xs text-muted-foreground">1 tick = 15 minutes.</div>
           </div>
           <div className="flex items-center justify-between gap-2 text-sm">
             <span>Energy while asleep (per 15 min)</span>
@@ -648,7 +679,19 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
             />
           </div>
           <div className="flex items-center justify-between gap-2 text-sm">
-            <span>Stomach night &gt;50: -1 every N ticks</span>
+            <span className="inline-flex items-center gap-1">
+              Stomach night &gt;50: -1 every N ticks
+              <InfoTooltip
+                label="About Stomach night above Hungry rate"
+                onOpenChange={(open, placement) =>
+                  logTooltipOpen(log, "stomach-night-above", open, placement)
+                }
+              >
+                While the Traveler is asleep and Stomach is above Hungry (&gt;50),
+                Stomach drops 1 point every N ticks. Default N=2 → one point every
+                30 minutes. Lower N = faster overnight decay; higher N = slower.
+              </InfoTooltip>
+            </span>
             <NumberStepper
               value={stomachAboveEvery}
               onChange={setStomachAboveEvery}
@@ -658,7 +701,20 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
             />
           </div>
           <div className="flex items-center justify-between gap-2 text-sm">
-            <span>Stomach night ≤50: -1 every N ticks</span>
+            <span className="inline-flex items-center gap-1">
+              Stomach night ≤50: -1 every N ticks
+              <InfoTooltip
+                label="About Stomach night at-or-below Hungry rate"
+                onOpenChange={(open, placement) =>
+                  logTooltipOpen(log, "stomach-night-below", open, placement)
+                }
+              >
+                While the Traveler is asleep and Stomach is at or below Hungry
+                (≤50), Stomach drops 1 point every N ticks. Default N=4 → one
+                point every 60 minutes. Designed slower than the &gt;50 case so
+                the body conserves once already hungry.
+              </InfoTooltip>
+            </span>
             <NumberStepper
               value={stomachBelowEvery}
               onChange={setStomachBelowEvery}

@@ -1,9 +1,10 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import TravelerStateSheet from "./TravelerStateSheet";
+import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -26,11 +27,13 @@ vi.mock("framer-motion", () => ({
 function setupMocks({
   state = null,
   visibility = null,
+  autoState = null,
   updateStateFn = vi.fn().mockResolvedValue(null),
   updateVisibilityFn = vi.fn().mockResolvedValue(null),
 }: {
   state?: object | null;
   visibility?: object | null;
+  autoState?: object | null;
   updateStateFn?: ReturnType<typeof vi.fn>;
   updateVisibilityFn?: ReturnType<typeof vi.fn>;
 } = {}) {
@@ -40,7 +43,7 @@ function setupMocks({
       return { state, visibility };
     }
     if (ref === tripcastApi.travelerAutoState.travelerGetAutoState) {
-      return null;
+      return autoState;
     }
     return undefined;
   });
@@ -67,9 +70,67 @@ function renderSheet(overrides?: Partial<React.ComponentProps<typeof TravelerSta
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useRealTimers();
+  clearLogs();
+  setEnabled(false);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("TravelerStateSheet — State tab", () => {
+  it("logs sheet open when mounted", async () => {
+    setEnabled(true);
+    setupMocks();
+    renderSheet();
+
+    await waitFor(() => {
+      expect(getLogs().some((entry) => entry.src === "TravelerStateSheet" && entry.action === "sheet:open")).toBe(true);
+    });
+  });
+
+  it("loads current auto-estimated energy and stomach into the state form", () => {
+    const now = Date.UTC(2024, 5, 15, 12, 15, 0);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    setupMocks({
+      state: {
+        energyLevel: "high",
+        energyScore: 80,
+        stomachLevel: "full",
+        stomachScore: 120,
+        updatedAt: now - 60_000,
+      },
+      autoState: {
+        autoStateEnabled: true,
+        autoEnabledAt: Date.UTC(2024, 5, 15, 12, 0, 0),
+        autoTimeZone: "UTC",
+        autoBaseEnergyScore: 60,
+        autoBaseStomachScore: 80,
+        autoBedtimeMinutes: 23 * 60,
+        autoWakeTimeMinutes: 9 * 60,
+        autoEnergyMin: 0,
+        autoEnergyMax: 100,
+        autoStomachMin: 0,
+        autoStomachMax: 150,
+        autoEnergySleepDeltaPerTick: 1,
+        autoEnergyAwakeDeltaPerTick: -1,
+        autoStomachAwakeDeltaPerTick: -2,
+        autoStomachNightAboveHungryEveryTicks: 2,
+        autoStomachNightAtOrBelowHungryEveryTicks: 4,
+        updatedAt: now,
+        updatedBySessionId: null,
+      },
+    });
+
+    renderSheet();
+
+    const sliders = screen.getAllByRole("slider");
+    expect(sliders[0]).toHaveValue("59");
+    expect(sliders[1]).toHaveValue("78");
+  });
+
   it("renders mood chips in worst-to-best order", () => {
     setupMocks();
     renderSheet();
