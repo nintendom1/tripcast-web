@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { Check, Copy, Link } from "lucide-react";
 
@@ -17,12 +17,37 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
   const [copied, setCopied] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!inviteUrl) return;
     const timeout = setTimeout(() => setInviteUrl(null), INVITE_DISMISS_MS);
     return () => clearTimeout(timeout);
   }, [inviteUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
+
+  function clearCopiedTimer() {
+    if (copiedTimerRef.current !== null) {
+      clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = null;
+    }
+  }
+
+  function showCopied() {
+    clearCopiedTimer();
+    setCopied(true);
+    copiedTimerRef.current = setTimeout(() => {
+      setCopied(false);
+      copiedTimerRef.current = null;
+    }, 2000);
+  }
 
   async function handleCreate() {
     if (isPending) return;
@@ -32,6 +57,7 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
       const result = await createInvite({ token });
       const url = `${window.location.origin}?invite=${result.inviteToken}`;
       setInviteUrl(url);
+      clearCopiedTimer();
       setCopied(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -48,8 +74,7 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
   async function handleCopy() {
     if (!inviteUrl) return;
     await navigator.clipboard.writeText(inviteUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    showCopied();
   }
 
   return (
