@@ -213,6 +213,7 @@ export default function HistorySheet({
       modal={false}
       onOpenChange={(open) => {
         if (!open) {
+          if (editingEvent !== null || pendingDelete !== null) return;
           log.logInteraction("sheet:close", { trigger: "backdrop" });
           onClose();
         }

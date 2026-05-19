@@ -159,7 +159,7 @@ export function SwipeRow({
           aria-hidden="true"
           tabIndex={-1}
           onClick={close}
-          className="absolute inset-0 z-0 cursor-default"
+          className="absolute inset-y-0 left-0 right-[132px] z-0 cursor-default"
         />
       ) : null}
     </div>
