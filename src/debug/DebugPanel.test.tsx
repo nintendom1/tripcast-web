@@ -11,6 +11,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: undefined,
+  });
 });
 
 describe("DebugPanel", () => {
@@ -76,5 +81,35 @@ describe("DebugPanel", () => {
       vi.advanceTimersByTime(1000);
     });
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("downloads JSON when fallback clipboard copy reports failure", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+    const execCommand = vi.fn().mockReturnValue(false);
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: execCommand,
+    });
+    const anchorClick = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => undefined);
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:debug-json");
+    const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    setEnabled(true);
+    render(<DebugPanel onBack={vi.fn()} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^copy json$/i }));
+    });
+
+    expect(execCommand).toHaveBeenCalledWith("copy");
+    expect(createObjectUrl).toHaveBeenCalled();
+    expect(anchorClick).toHaveBeenCalled();
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:debug-json");
+    expect(screen.getByRole("status")).toHaveTextContent(/downloaded json/i);
   });
 });
