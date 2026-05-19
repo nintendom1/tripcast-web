@@ -20,6 +20,8 @@ export interface StatusCardMeter {
   label: string;
   value: number;
   max?: number;
+  /** When true, render a small inline AUTO pill next to the label. */
+  autoChip?: boolean;
 }
 
 export interface StatusCardProps {
@@ -85,8 +87,16 @@ export function StatusCard({
               const tier = tierFor((meter.value / max) * 100);
               return (
                 <div key={meter.label} className="flex min-w-0 flex-col gap-1">
-                  <div className="font-[var(--font-mono)] text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-3)]">
-                    {meter.label}
+                  <div className="flex items-center gap-1 font-[var(--font-mono)] text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-3)]">
+                    <span>{meter.label}</span>
+                    {meter.autoChip ? (
+                      <span
+                        aria-label="Auto-estimated"
+                        className="rounded-full bg-navy/10 px-1 py-px text-[8px] font-bold uppercase tracking-wider text-navy"
+                      >
+                        AUTO
+                      </span>
+                    ) : null}
                   </div>
                   <div className="h-1.5 overflow-hidden rounded-full bg-[var(--meter-track)]">
                     <span

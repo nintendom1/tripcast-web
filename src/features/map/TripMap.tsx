@@ -218,7 +218,9 @@ function ConvexCheckpointSheet({
   onBack?: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  const completeChallengeAsStory = useMutation(tripcastApi.challenges.travelerCompleteChallengeAsStory);
+  const completeChallengeAsStory = useMutation(
+    tripcastApi.challenges.travelerCompleteChallengeAsStory,
+  );
 
   const [stateOpen, setStateOpen] = useState(false);
   const [transactionState, setTransactionState] = useState<TravelFundsInlineState>(null);

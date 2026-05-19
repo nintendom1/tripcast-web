@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  computeEffectiveStomachScore,
   getStomachLevelFromScore,
   getEnergyLevelFromScore,
   getStressLevelFromScore,
   formatRelativeTime,
+  formatTimeOfDay,
+  parseTimeOfDay,
   getStateEmoji,
   MOOD_VALUES,
   SCHEDULE_VALUES,
@@ -13,19 +14,31 @@ import {
   STOMACH_SCORE_FOR_LEVEL,
 } from "./travelerStateUtils";
 
-describe("computeEffectiveStomachScore", () => {
-  it("decays by 10 per hour", () => {
-    const oneHourAgo = Date.now() - 3_600_000;
-    expect(computeEffectiveStomachScore(80, oneHourAgo)).toBeCloseTo(70, 0);
+describe("formatTimeOfDay", () => {
+  it("formats midnight as 12:00 AM", () => {
+    expect(formatTimeOfDay(0)).toBe("12:00 AM");
   });
-
-  it("clamps at 0 when fully decayed", () => {
-    const tenHoursAgo = Date.now() - 36_000_000;
-    expect(computeEffectiveStomachScore(50, tenHoursAgo)).toBe(0);
+  it("formats noon as 12:00 PM", () => {
+    expect(formatTimeOfDay(12 * 60)).toBe("12:00 PM");
   });
+  it("formats 11:00 PM correctly", () => {
+    expect(formatTimeOfDay(23 * 60)).toBe("11:00 PM");
+  });
+  it("formats 9:00 AM correctly", () => {
+    expect(formatTimeOfDay(9 * 60)).toBe("9:00 AM");
+  });
+});
 
-  it("returns near-raw score when updatedAt is now", () => {
-    expect(computeEffectiveStomachScore(100, Date.now())).toBeCloseTo(100, 0);
+describe("parseTimeOfDay", () => {
+  it("parses HH:MM into minutes", () => {
+    expect(parseTimeOfDay("23:00")).toBe(23 * 60);
+    expect(parseTimeOfDay("09:00")).toBe(9 * 60);
+    expect(parseTimeOfDay("00:00")).toBe(0);
+  });
+  it("returns null on bad input", () => {
+    expect(parseTimeOfDay("abc")).toBeNull();
+    expect(parseTimeOfDay("25:00")).toBeNull();
+    expect(parseTimeOfDay("12:60")).toBeNull();
   });
 });
 

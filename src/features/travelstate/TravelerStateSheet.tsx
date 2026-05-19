@@ -6,6 +6,7 @@ import { X } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
+  AutoState,
   TravelerMoodValue,
   TravelerEnergyLevel,
   TravelerStomachLevel,
@@ -34,6 +35,9 @@ import {
   STOMACH_SCORE_FOR_LEVEL,
   getStomachLevelFromScore,
 } from "./travelerStateUtils";
+import { formatSaveError } from "./formatSaveError";
+import AutoStateTab from "./AutoStateTab";
+import { computeAutoState } from "./autoStateCalc";
 
 type TravelerStateSheetProps = {
   token: string;
@@ -41,7 +45,7 @@ type TravelerStateSheetProps = {
   onToast?: (msg: string) => void;
 };
 
-type TabView = "state" | "visibility";
+type TabView = "state" | "visibility" | "auto";
 
 const PANEL_MOTION = {
   initial: { y: "100%" },
@@ -50,15 +54,35 @@ const PANEL_MOTION = {
   transition: { duration: 0.22, ease: "easeOut" as const },
 };
 
-function formatSaveError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e);
-  if (msg.toLowerCase().includes("too many") || msg.toLowerCase().includes("rate")) {
-    return "Too many updates. Try again in a minute.";
-  }
-  if (msg.toLowerCase().includes("traveler")) {
-    return "Traveler access is required.";
-  }
-  return "Failed to save. Please try again.";
+function computeCurrentAutoScores(autoState: AutoState | null | undefined) {
+  if (!autoState?.autoStateEnabled || autoState.autoEnabledAt == null) return null;
+  const hasEnergy = typeof autoState.autoBaseEnergyScore === "number";
+  const hasStomach = typeof autoState.autoBaseStomachScore === "number";
+  if (!hasEnergy && !hasStomach) return null;
+
+  const estimate = computeAutoState({
+    autoTimeZone: autoState.autoTimeZone,
+    autoBedtimeMinutes: autoState.autoBedtimeMinutes,
+    autoWakeTimeMinutes: autoState.autoWakeTimeMinutes,
+    autoEnergyMin: autoState.autoEnergyMin,
+    autoEnergyMax: autoState.autoEnergyMax,
+    autoStomachMin: autoState.autoStomachMin,
+    autoStomachMax: autoState.autoStomachMax,
+    autoEnergySleepDeltaPerTick: autoState.autoEnergySleepDeltaPerTick,
+    autoEnergyAwakeDeltaPerTick: autoState.autoEnergyAwakeDeltaPerTick,
+    autoStomachAwakeDeltaPerTick: autoState.autoStomachAwakeDeltaPerTick,
+    autoStomachNightAboveHungryEveryTicks: autoState.autoStomachNightAboveHungryEveryTicks,
+    autoStomachNightAtOrBelowHungryEveryTicks: autoState.autoStomachNightAtOrBelowHungryEveryTicks,
+    baseEnergy: autoState.autoBaseEnergyScore ?? 50,
+    baseStomach: autoState.autoBaseStomachScore ?? 50,
+    autoEnabledAt: autoState.autoEnabledAt,
+    targetTime: Date.now(),
+  });
+
+  return {
+    energyScore: hasEnergy ? estimate.estimatedEnergy : undefined,
+    stomachScore: hasStomach ? estimate.estimatedStomach : undefined,
+  };
 }
 
 function ChipRow<T extends string>({
@@ -186,6 +210,7 @@ function ToggleRow({
 
 export default function TravelerStateSheet({ token, onClose, onToast }: TravelerStateSheetProps) {
   const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
+  const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
 
@@ -226,21 +251,32 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
   const [showStatusNote, setShowStatusNote] = useState(DEFAULT_VISIBILITY.showStatusNote);
   const [showBiometrics, setShowBiometrics] = useState(DEFAULT_VISIBILITY.showBiometrics);
 
+  useEffect(() => {
+    log.logUi("sheet:open", { tab: "state" });
+    return () => log.logUi("sheet:close", { trigger: "unmount" });
+  }, [log]);
+
   // Populate form once from loaded data
   useEffect(() => {
-    if (!result || hasPopulatedRef.current) return;
+    if (!result || autoState === undefined || hasPopulatedRef.current) return;
     hasPopulatedRef.current = true;
     const { state, visibility } = result;
+    const currentAutoScores = computeCurrentAutoScores(autoState);
     if (state) {
+      const currentEnergyScore =
+        currentAutoScores?.energyScore ??
+        state.energyScore ??
+        (state.energyLevel ? ENERGY_SCORE_FOR_LEVEL[state.energyLevel] : undefined);
+      const currentStomachScore =
+        currentAutoScores?.stomachScore ??
+        state.stomachScore ??
+        (state.stomachLevel ? STOMACH_SCORE_FOR_LEVEL[state.stomachLevel] : undefined);
+
       setMoodValue(state.moodValue);
-      setEnergyLevel(state.energyLevel);
-      setEnergyScore(
-        state.energyScore ?? (state.energyLevel ? ENERGY_SCORE_FOR_LEVEL[state.energyLevel] : undefined),
-      );
-      setStomachLevel(state.stomachLevel);
-      setStomachScore(
-        state.stomachScore ?? (state.stomachLevel ? STOMACH_SCORE_FOR_LEVEL[state.stomachLevel] : undefined),
-      );
+      setEnergyLevel(currentEnergyScore !== undefined ? getEnergyLevelFromScore(currentEnergyScore) : state.energyLevel);
+      setEnergyScore(currentEnergyScore);
+      setStomachLevel(currentStomachScore !== undefined ? getStomachLevelFromScore(currentStomachScore) : state.stomachLevel);
+      setStomachScore(currentStomachScore);
       setStressLevel(state.stressLevel);
       setStressScore(
         state.stressScore ?? (state.stressLevel ? STRESS_SCORE_FOR_LEVEL[state.stressLevel] : undefined),
@@ -254,6 +290,15 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
       setSleepHours(state.biometricSleepHours);
       setActiveMin(state.biometricActiveMinutes);
       setBiometricNote(state.biometricNote ?? "");
+    } else if (currentAutoScores) {
+      setEnergyLevel(
+        currentAutoScores.energyScore !== undefined ? getEnergyLevelFromScore(currentAutoScores.energyScore) : undefined,
+      );
+      setEnergyScore(currentAutoScores.energyScore);
+      setStomachLevel(
+        currentAutoScores.stomachScore !== undefined ? getStomachLevelFromScore(currentAutoScores.stomachScore) : undefined,
+      );
+      setStomachScore(currentAutoScores.stomachScore);
     }
     if (visibility && visibility.updatedAt !== null) {
       setShowTravelerState(visibility.showTravelerState);
@@ -265,7 +310,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
       setShowStatusNote(visibility.showStatusNote);
       setShowBiometrics(visibility.showBiometrics);
     }
-  }, [result]);
+  }, [result, autoState]);
 
   function toIsoLocal(ts: number) {
     const d = new Date(ts);
@@ -398,7 +443,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
 
       {/* Tab bar */}
       <div className="flex flex-none border-b">
-        {(["state", "visibility"] as TabView[]).map((t) => (
+        {(["state", "visibility", "auto"] as TabView[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -413,7 +458,14 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            {t === "state" ? "State" : "Visibility"}
+            <span className="inline-flex items-center justify-center gap-1">
+              {t === "state" ? "State" : t === "visibility" ? "Visibility" : "Auto"}
+              {t === "auto" && autoState?.autoStateEnabled ? (
+                <span className="rounded-full bg-navy/10 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-navy">
+                  AUTO
+                </span>
+              ) : null}
+            </span>
           </button>
         ))}
       </div>
@@ -538,6 +590,12 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                 onDeselect={() => setMoodValue(undefined)}
               />
             </div>
+
+            {autoState?.autoStateEnabled && (
+              <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                Energy and Stomach are being auto-estimated in the HUD. Edits here will re-anchor the Auto base.
+              </p>
+            )}
 
             {/* Energy — chips + slider (#5, #6) */}
             <div className="grid gap-1.5">
@@ -709,6 +767,10 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
           </div>
         )}
 
+        {tab === "auto" && (
+          <AutoStateTab token={token} onToast={onToast} />
+        )}
+
         {tab === "visibility" && (
           <div className="grid gap-3 p-4">
             <p className="text-sm text-muted-foreground">Control what Support Crew can see.</p>
@@ -777,11 +839,11 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
               Save State
             </Button>
           </div>
-        ) : (
+        ) : tab === "visibility" ? (
           <Button onClick={handleSaveVisibility} disabled={saving} className="w-full">
             {saving ? "Saving…" : "Save Visibility"}
           </Button>
-        )}
+        ) : null}
       </div>
     </motion.div>
   );
