@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Challenge, HistoryEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import ChallengeCard from "./ChallengeCard";
 import ChallengeProposalForm from "./ChallengeProposalForm";
 import ChallengeDetailSheet from "./ChallengeDetailSheet";
@@ -48,6 +48,7 @@ type Props = {
   pendingOpenDetailChallengeId?: string | null;
   onClearPendingDetail?: () => void;
   onRequestNavigateToVote?: (voteId: string) => void;
+  onOpenLinkedStory?: (event: HistoryEvent) => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -90,6 +91,7 @@ export default function ChallengePanel({
   pendingOpenDetailChallengeId,
   onClearPendingDetail,
   onRequestNavigateToVote,
+  onOpenLinkedStory,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedChallenge, setSelectedChallenge] = useState<SelectedChallenge | null>(null);
@@ -327,6 +329,7 @@ export default function ChallengePanel({
                     : undefined
                 }
                 onRequestNavigateToVote={onRequestNavigateToVote}
+                onOpenLinkedStory={onOpenLinkedStory}
               />
             </SheetBody>
           ) : null}

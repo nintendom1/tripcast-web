@@ -23,6 +23,7 @@ import CreateRouteVoteForm from "./CreateRouteVoteForm";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { InfoTooltip } from "../../components/ui/info-tooltip";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -49,14 +50,12 @@ type View = "list" | "create" | "detail";
 function VoteListCard({
   vote,
   onViewDetail,
-  onCloseVote,
   onCancel,
   onArchive,
   isActing,
 }: {
   vote: RouteVoteListItem;
   onViewDetail: () => void;
-  onCloseVote: () => void;
   onCancel: () => void;
   onArchive: () => void;
   isActing: boolean;
@@ -79,11 +78,6 @@ function VoteListCard({
         <Button size="sm" variant="outline" onClick={onViewDetail} disabled={isActing}>
           Details
         </Button>
-        {status === "active" && (
-          <Button size="sm" variant="outline" onClick={onCloseVote} disabled={isActing}>
-            Close voting
-          </Button>
-        )}
         {(status === "active" || status === "closed") && (
           <Button size="sm" variant="outline" onClick={onCancel} disabled={isActing}>
             Cancel
@@ -107,6 +101,7 @@ function VoteDetailView({
   onRequestFitMap,
   fallbackOrigin,
   onRequestOpenMissionDetail,
+  onCloseVote,
 }: {
   token: string;
   vote: RouteVoteListItem;
@@ -118,6 +113,7 @@ function VoteDetailView({
   onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
   onRequestOpenMissionDetail?: (challengeId: string) => void;
+  onCloseVote: () => Promise<void>;
 }) {
   const detail = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
     token,
@@ -209,6 +205,12 @@ function VoteDetailView({
         <StatusBadge status={detail.effectiveStatus} />
       </div>
 
+      {detail.effectiveStatus === "active" && (
+        <Button size="sm" variant="outline" disabled={isActing} onClick={onCloseVote} className="w-fit">
+          Close voting
+        </Button>
+      )}
+
       <DialogueBox title={detail.title}>
         {detail.description && (
           <p className="text-sm text-muted-foreground mb-3">{detail.description}</p>
@@ -231,6 +233,16 @@ function VoteDetailView({
                     <span className="font-medium text-sm">{option.title}</span>
                     {option.locationLabel && (
                       <span className="block text-xs text-muted-foreground">{option.locationLabel}</span>
+                    )}
+                    {option.description && (
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <span className="line-clamp-1 flex-1">{option.description}</span>
+                        {option.description.length > 60 && (
+                          <InfoTooltip label={option.description}>
+                            {option.description}
+                          </InfoTooltip>
+                        )}
+                      </div>
                     )}
                     {isSuggested && !detail.isTied && (
                       <span className="text-xs text-muted-foreground">(suggested winner)</span>
@@ -520,6 +532,7 @@ export default function RouteVoteProgress({
                 onRequestFitMap={onRequestFitMap}
                 fallbackOrigin={fallbackOrigin}
                 onRequestOpenMissionDetail={onRequestOpenMissionDetail}
+                onCloseVote={() => handleCloseVote(selectedVote._id)}
               />
             </motion.div>
           ) : (
@@ -556,7 +569,6 @@ export default function RouteVoteProgress({
                       setSelectedVoteId(vote._id);
                       setView("detail");
                     }}
-                    onCloseVote={() => handleCloseVote(vote._id)}
                     onCancel={() => handleCancelVote(vote._id)}
                     onArchive={() => handleArchiveVote(vote._id)}
                     isActing={actingVoteId === vote._id}

@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import ChallengePanel from "./ChallengePanel";
+import { tripcastApi } from "../../convex/tripcastApi";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -216,8 +217,10 @@ describe("ChallengePanel Support Crew ownership", () => {
       createdBySessionId: "session-1",
       updatedBySessionId: "session-1",
     };
-    (vi.mocked(convexReact.useQuery) as any).mockImplementation((_ref: unknown, args: unknown) => {
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
       if (args === "skip") return undefined;
+      if (ref === tripcastApi.historyEvents.listHistoryEvents) return [];
+      if (ref === tripcastApi.challenges.getChallenge) return ownChallenge;
       return { mine: [ownChallenge], public: [] };
     });
 

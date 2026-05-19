@@ -9,6 +9,7 @@ import ChallengeDetailSheet from "./ChallengeDetailSheet";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
+  useQuery: vi.fn(),
 }));
 
 const inlineTransaction: TransactionInlineInput = {
@@ -45,6 +46,7 @@ const challenge: Challenge = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(convexReact.useQuery).mockReturnValue(undefined as any);
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
 

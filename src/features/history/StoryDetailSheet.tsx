@@ -1,5 +1,7 @@
 import { useEffect } from "react";
-import { Camera, Target } from "lucide-react";
+import { Camera } from "lucide-react";
+
+import { Button } from "../../components/ui/button";
 
 import type { HistoryEvent } from "../../convex/tripcastApi";
 import { log } from "../../debug/debugLogger";
@@ -33,6 +35,8 @@ type StoryDetailSheetProps = {
   /** Title of the mission the story was filed against, when `event.challengeId`
    *  is set. Parent resolves this from the challenge list. */
   missionTitle?: string;
+  challengeId?: string;
+  onNavigateToMission?: (id: string) => void;
 };
 
 /**
@@ -52,6 +56,8 @@ export default function StoryDetailSheet({
   onClose,
   onLocationFocus,
   missionTitle,
+  challengeId,
+  onNavigateToMission,
 }: StoryDetailSheetProps) {
   useEffect(() => {
     if (event) {
@@ -85,14 +91,31 @@ export default function StoryDetailSheet({
         data-role="story-detail"
       >
         <SheetGrabber />
-        {event ? <StoryBody key={event._id} event={event} missionTitle={missionTitle} /> : null}
+        {event ? (
+          <StoryBody
+            key={event._id}
+            event={event}
+            missionTitle={missionTitle}
+            challengeId={challengeId}
+            onNavigateToMission={onNavigateToMission}
+          />
+        ) : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-function StoryBody({ event, missionTitle }: { event: HistoryEvent; missionTitle?: string }) {
-  const showMissionProvenance = Boolean(event.challengeId);
+function StoryBody({
+  event,
+  missionTitle,
+  challengeId,
+  onNavigateToMission,
+}: {
+  event: HistoryEvent;
+  missionTitle?: string;
+  challengeId?: string;
+  onNavigateToMission?: (id: string) => void;
+}) {
   return (
     <>
       <div className="flex items-start justify-between gap-2 px-5 pt-2">
@@ -117,21 +140,6 @@ function StoryBody({ event, missionTitle }: { event: HistoryEvent; missionTitle?
         className="px-5"
         style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
       >
-        {showMissionProvenance ? (
-          <div
-            className="mb-4 flex items-center gap-2 rounded-xl px-3 py-2 text-[12px] font-semibold text-[var(--ink-2)]"
-            data-testid="story-mission-provenance"
-            style={{
-              background: "color-mix(in oklab, var(--plum) 10%, transparent)",
-              border: "1px solid color-mix(in oklab, var(--plum) 25%, transparent)",
-            }}
-          >
-            <Target className="h-3.5 w-3.5 shrink-0" aria-hidden="true" style={{ color: "var(--plum)" }} />
-            <span className="truncate">
-              From mission{missionTitle ? <> · <span className="text-[var(--ink-1)]">{missionTitle}</span></> : null}
-            </span>
-          </div>
-        ) : null}
         {event.body ? (
           <RevealText
             text={event.body}
@@ -146,6 +154,23 @@ function StoryBody({ event, missionTitle }: { event: HistoryEvent; missionTitle?
             &ldquo;{event.statusNote}&rdquo;
           </blockquote>
         ) : null}
+
+        {challengeId && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mission</p>
+            <p className="text-sm font-medium text-[var(--ink-1)] line-clamp-1">{missionTitle ?? "View mission"}</p>
+            {onNavigateToMission && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onNavigateToMission(challengeId)}
+                className="self-start mt-1"
+              >
+                Open mission
+              </Button>
+            )}
+          </div>
+        )}
       </SheetBody>
     </>
   );

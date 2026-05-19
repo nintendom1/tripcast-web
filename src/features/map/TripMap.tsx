@@ -852,6 +852,18 @@ export default function TripMap({
     setPendingOpenDetailMissionId(challengeId);
   }
 
+  function handleOpenLinkedStory(event: HistoryEvent) {
+    log.logInteraction("panel:navigate", { from: "challenges", to: "story", eventId: event._id });
+    music.sfx("page");
+    setSelectedStoryEvent(event);
+  }
+
+  function handleOpenMissionFromStory(challengeId: string) {
+    log.logInteraction("panel:navigate", { from: "story", to: "challenges", challengeId });
+    setSelectedStoryEvent(null);
+    handleNavigateToMissionDetail(challengeId);
+  }
+
   function handleRequestChallengeCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
@@ -1472,6 +1484,7 @@ export default function TripMap({
           pendingOpenDetailChallengeId={pendingOpenDetailMissionId}
           onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
           onRequestNavigateToVote={handleNavigateToVote}
+          onOpenLinkedStory={handleOpenLinkedStory}
         />
       </FeatureBoundary>
 
@@ -1541,6 +1554,8 @@ export default function TripMap({
             ? (challengesForLookup ?? []).find((c) => c._id === selectedStoryEvent.challengeId)?.title
             : undefined
         }
+        challengeId={selectedStoryEvent?.challengeId ?? undefined}
+        onNavigateToMission={handleOpenMissionFromStory}
       />
 
       {role === "traveler" && (
