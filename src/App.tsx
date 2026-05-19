@@ -25,6 +25,8 @@ import { PendingNotice } from "./components/resilience/PendingNotice";
 import { useDelayedPending } from "./components/resilience/useDelayedPending";
 import { useOnlineStatus } from "./components/resilience/useOnlineStatus";
 import { useMusicSafe } from "./providers/MusicProvider";
+import DebugErrorBoundary from "./debug/DebugErrorBoundary";
+import { log as debugLog } from "./debug/debugLogger";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -61,7 +63,9 @@ export default function App({ convexReady }: AppProps) {
         console.error("Root render failure", error, info);
       }}
     >
-      <ConnectedApp />
+      <DebugErrorBoundary>
+        <ConnectedApp />
+      </DebugErrorBoundary>
     </ErrorBoundary>
   );
 }
@@ -86,6 +90,19 @@ function ConnectedApp() {
   const [sessionRetryNonce, setSessionRetryNonce] = useState(0);
   const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const onError = (e: ErrorEvent) =>
+      debugLog("error", "window", "global:error", { message: e.message, filename: e.filename, line: e.lineno });
+    const onUnhandled = (e: PromiseRejectionEvent) =>
+      debugLog("error", "window", "global:unhandledrejection", { reason: String(e.reason) });
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandled);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandled);
+    };
+  }, []);
 
   const legacySessionCheck = useQuery(
     tripcastApi.auth.currentSession,

@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Clock, Plus, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 export type DockTab = "history" | "challenges" | "votes" | "funds";
 
@@ -42,6 +43,13 @@ export function Dock({
   badges = {},
   className,
 }: DockProps) {
+  const log = useDebugLogger("Dock", "src/features/hud/Dock.tsx");
+
+  function handleSelect(tab: DockTab) {
+    log.logInteraction("tab:select", { tab, previously: active });
+    onSelect(tab);
+  }
+
   return (
     <nav
       aria-label="Map sections"
@@ -55,14 +63,14 @@ export function Dock({
         label="Story"
         icon={<Clock className="h-5 w-5" aria-hidden="true" />}
         badge={badges.history}
-        onClick={() => onSelect("history")}
+        onClick={() => handleSelect("history")}
       />
       <DockButton
         active={active === "challenges"}
         label="Missions"
         icon={<Trophy className="h-5 w-5" aria-hidden="true" />}
         badge={badges.challenges}
-        onClick={() => onSelect("challenges")}
+        onClick={() => handleSelect("challenges")}
       />
 
       {showAdd ? (
@@ -89,7 +97,7 @@ export function Dock({
         icon={<VoteIcon className="h-5 w-5" aria-hidden="true" />}
         badge={badges.votes}
         badgePulsing={badges.votesPulsing}
-        onClick={() => onSelect("votes")}
+        onClick={() => handleSelect("votes")}
       />
 
       {showFunds ? (
@@ -97,7 +105,7 @@ export function Dock({
           active={active === "funds"}
           label="Funds"
           icon={<Wallet className="h-5 w-5" aria-hidden="true" />}
-          onClick={() => onSelect("funds")}
+          onClick={() => handleSelect("funds")}
         />
       ) : null}
     </nav>
