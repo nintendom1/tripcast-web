@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import * as authLib from "./lib/auth";
 import App from "./App";
+import { clearLogs, log, setEnabled, setPreset } from "./debug/debugLogger";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -38,6 +39,8 @@ function setupSessionMocks(role: "traveler" | "support_crew") {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  clearLogs();
 });
 
 describe("App: Options button", () => {
@@ -124,6 +127,24 @@ describe("App: Options sheet — Traveler", () => {
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     await userEvent.click(screen.getByRole("button", { name: /replay welcome tour/i }));
     expect(screen.getByRole("button", { name: /^skip$/i })).toBeInTheDocument();
+  });
+
+  it("keeps Dev Tools fixed size while log entries scroll", async () => {
+    setupSessionMocks("traveler");
+    setEnabled(true);
+    setPreset("interaction-trace");
+    log("info", "Test", "trace:row", "interaction");
+
+    render(<App convexReady={true} />);
+    await userEvent.click(screen.getByRole("button", { name: /options/i }));
+    await userEvent.click(screen.getByRole("button", { name: /dev tools/i }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveClass("h-[88dvh]", "overflow-hidden");
+
+    const logList = screen.getByLabelText(/recent debug log entries/i);
+    expect(logList.parentElement).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+    expect(screen.getByRole("button", { name: /copy debug summary/i })).toBeInTheDocument();
   });
 });
 

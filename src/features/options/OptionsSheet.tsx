@@ -216,7 +216,10 @@ export default function OptionsSheet({
       <Sheet open={open && view !== "bulk-import"} onOpenChange={handleOpenChange}>
         <SheetContent
           side="bottom"
-          className="max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+          className={cn(
+            "max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+            view === "debug-logs" && "h-[88dvh] overflow-hidden",
+          )}
         >
           <SheetGrabber />
           {view === "travel-funds" ? (
@@ -259,7 +262,7 @@ export default function OptionsSheet({
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
             />
           ) : view === "debug-logs" ? (
-            <SheetBody className="overflow-y-auto">
+            <SheetBody className="min-h-0 overflow-hidden p-0">
               <DebugPanel onBack={() => { music.sfx("page"); navigateTo("options"); }} />
             </SheetBody>
           ) : null}
