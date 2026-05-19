@@ -140,10 +140,11 @@ const PRESET_LABELS: Array<{ preset: DebugPreset; label: string }> = [
   { preset: "interaction-trace", label: "Trace" },
 ];
 
-function CategoryOverrides({ onRefresh }: { onRefresh: () => void }) {
+function CategoryOverrides({ disabled, onRefresh }: { disabled: boolean; onRefresh: () => void }) {
   const [, forceRender] = useState(0);
 
   function handlePresetClick(p: DebugPreset) {
+    if (disabled) return;
     setPreset(p);
     // clear all overrides when switching preset so the preset takes effect cleanly
     const overrides = getCategoryOverrides();
@@ -155,6 +156,7 @@ function CategoryOverrides({ onRefresh }: { onRefresh: () => void }) {
   }
 
   function handleCategoryToggle(cat: DebugCategory, checked: boolean) {
+    if (disabled) return;
     setCategoryOverride(cat, checked);
     forceRender((n) => n + 1);
     onRefresh();
@@ -163,7 +165,10 @@ function CategoryOverrides({ onRefresh }: { onRefresh: () => void }) {
   const currentPreset = getPreset();
 
   return (
-    <div className="rounded-xl bg-[var(--bg-card)] px-4 py-3 grid gap-3">
+    <div
+      className={`rounded-xl bg-[var(--bg-card)] px-4 py-3 grid gap-3 ${disabled ? "opacity-60" : ""}`}
+      aria-disabled={disabled}
+    >
       {/* Preset selector */}
       <div>
         <p className="text-xs font-semibold text-[var(--ink-2)] mb-1.5">Verbosity Preset</p>
@@ -172,8 +177,9 @@ function CategoryOverrides({ onRefresh }: { onRefresh: () => void }) {
             <button
               key={preset}
               type="button"
+              disabled={disabled}
               onClick={() => handlePresetClick(preset)}
-              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+              className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${
                 currentPreset === preset
                   ? "bg-[var(--flag)] text-[var(--ink-on-dark)]"
                   : "bg-[var(--bg-surface)] text-[var(--ink-2)] hover:bg-[var(--bg-hover)]"
@@ -202,7 +208,7 @@ function CategoryOverrides({ onRefresh }: { onRefresh: () => void }) {
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={isAlwaysOn}
+                  disabled={disabled || isAlwaysOn}
                   onChange={(e) => handleCategoryToggle(cat, e.target.checked)}
                   className="h-3 w-3 rounded"
                 />
@@ -242,18 +248,21 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
   }
 
   function handleLocationRedactToggle() {
+    if (!enabled) return;
     const next = !locationRedact;
     setLocationRedact(next);
     setLocationRedactState(next);
   }
 
   function handleClear() {
+    if (!enabled) return;
     clearLogs();
     setLogs([]);
     setCopyStatus(null);
   }
 
   async function handleCopyJson() {
+    if (!enabled) return;
     const all = getLogs();
     try {
       await copyToClipboard(JSON.stringify(all, null, 2));
@@ -266,10 +275,12 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
   }
 
   function handleDownloadJson() {
+    if (!enabled) return;
     downloadJson(`tripcast-debug-${getSessionId()}.json`, getLogs());
   }
 
   async function handleCopyDebugSummary() {
+    if (!enabled) return;
     const summary = buildLlmSummary();
     try {
       await copyToClipboard(summary);
@@ -310,6 +321,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
           type="button"
           role="switch"
           aria-checked={enabled}
+          aria-label="Debug logging"
           onClick={handleToggle}
           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
             enabled ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]"
@@ -330,8 +342,10 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
           type="button"
           role="switch"
           aria-checked={locationRedact}
+          aria-label="Redact location in copies"
+          disabled={!enabled}
           onClick={handleLocationRedactToggle}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
             locationRedact ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]"
           }`}
         >
@@ -344,7 +358,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Preset + category overrides */}
-      <CategoryOverrides onRefresh={refresh} />
+      <CategoryOverrides disabled={!enabled} onRefresh={refresh} />
 
       {/* Stats + refresh */}
       <div className="flex items-center justify-between">
@@ -353,8 +367,9 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
         </p>
         <button
           type="button"
+          disabled={!enabled}
           onClick={refresh}
-          className="text-xs font-semibold text-[var(--flag)]"
+          className="text-xs font-semibold text-[var(--flag)] disabled:cursor-not-allowed disabled:text-[var(--ink-3)]"
         >
           Refresh
         </button>
@@ -364,29 +379,33 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
+          disabled={!enabled}
           onClick={handleClear}
-          className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm"
+          className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           Clear logs
         </button>
         <button
           type="button"
+          disabled={!enabled}
           onClick={handleDownloadJson}
-          className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm"
+          className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           Download JSON
         </button>
         <button
           type="button"
+          disabled={!enabled}
           onClick={handleCopyJson}
-          className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm"
+          className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           Copy JSON
         </button>
         <button
           type="button"
+          disabled={!enabled}
           onClick={handleCopyDebugSummary}
-          className="rounded-xl bg-[var(--flag)] py-2.5 text-xs font-semibold text-[var(--ink-on-dark)] shadow-sm"
+          className="rounded-xl bg-[var(--flag)] py-2.5 text-xs font-semibold text-[var(--ink-on-dark)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           Copy Debug Summary
         </button>
