@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
@@ -592,18 +592,21 @@ export default function TripMap({
     placementModeRef.current = isPlacementMode;
   }, [isPlacementMode]);
 
+  const cancelCoordinatePick = useCallback(() => {
+    log.logInteraction("coordinate:pick-mode:cancel");
+    coordinatePickModeRef.current = null;
+    setCoordinatePickMode(null);
+  }, [log]);
+
   // ESC cancels coordinate pick mode
   useEffect(() => {
-    console.log("[TripMap] coordinatePickMode state changed:", coordinatePickMode);
     if (!coordinatePickMode) return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") cancelCoordinatePick();
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  // cancelCoordinatePick is stable (no deps change it); adding coordinatePickMode as dep is sufficient
-
-  }, [coordinatePickMode]);
+  }, [coordinatePickMode, cancelCoordinatePick]);
 
   // Map init
   useEffect(() => {
@@ -834,12 +837,6 @@ export default function TripMap({
     setCoordinatePickMode({ label, callback });
   }
 
-  function cancelCoordinatePick() {
-    log.logInteraction("coordinate:pick-mode:cancel");
-    coordinatePickModeRef.current = null;
-    setCoordinatePickMode(null);
-  }
-
   function handleVoteOverlayChange(
     overlay: RouteVoteMapOverlayType | null,
     optionNumberById?: Record<string, number> | null,
@@ -1053,9 +1050,6 @@ export default function TripMap({
   );
 
   const isPickingCoordinate = coordinatePickMode !== null;
-  useEffect(() => {
-    console.log("[TripMap] isPickingCoordinate computed value:", isPickingCoordinate);
-  }, [isPickingCoordinate]);
 
   const latestCheckpoint = checkpoints.at(-1) ?? null;
   const latestCheckpointLat = latestCheckpoint?.lat;
