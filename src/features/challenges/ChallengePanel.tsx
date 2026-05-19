@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 
@@ -367,8 +367,38 @@ function TravelerListView({
   const [filter, setFilter] = useState<TravelerFilter>("all");
   const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
+  const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const allChallenges = useQuery(tripcastApi.challenges.travelerListChallenges, { token });
   const log = useDebugLogger("ChallengePanel", "src/features/challenges/ChallengePanel.tsx");
+
+  function clearHighlightTimers() {
+    for (const timer of highlightTimersRef.current) {
+      clearTimeout(timer);
+    }
+    highlightTimersRef.current = [];
+  }
+
+  useEffect(() => {
+    return () => {
+      for (const timer of highlightTimersRef.current) {
+        clearTimeout(timer);
+      }
+      highlightTimersRef.current = [];
+    };
+  }, []);
+
+  function queueChallengeHighlight(id: string) {
+    clearHighlightTimers();
+    const scrollTimer = setTimeout(() => {
+      document
+        .querySelector(`[data-challenge-id="${id}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      setHighlightedChallengeId(id);
+      const clearTimer = setTimeout(() => setHighlightedChallengeId(null), 2000);
+      highlightTimersRef.current = [clearTimer];
+    }, 100);
+    highlightTimersRef.current = [scrollTimer];
+  }
 
   useEffect(() => {
     if (!pendingOpenChallengeId || !allChallenges) return;
@@ -378,13 +408,7 @@ function TravelerListView({
         onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
       }
       const id = pendingOpenChallengeId;
-      setTimeout(() => {
-        document
-          .querySelector(`[data-challenge-id="${id}"]`)
-          ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        setHighlightedChallengeId(id);
-        setTimeout(() => setHighlightedChallengeId(null), 2000);
-      }, 100);
+      queueChallengeHighlight(id);
       onClearPendingChallenge?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -624,12 +648,42 @@ function CrewListView({
 }) {
   const [tab, setTab] = useState<CrewTab>("active");
   const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
+  const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const myChallenges = useQuery(tripcastApi.challenges.followerListMyChallenges, { token });
 
   const mine = myChallenges?.mine ?? [];
   const publicChallenges = myChallenges?.public ?? [];
   const mineIds = new Set(mine.map((c) => c._id));
+
+  function clearHighlightTimers() {
+    for (const timer of highlightTimersRef.current) {
+      clearTimeout(timer);
+    }
+    highlightTimersRef.current = [];
+  }
+
+  useEffect(() => {
+    return () => {
+      for (const timer of highlightTimersRef.current) {
+        clearTimeout(timer);
+      }
+      highlightTimersRef.current = [];
+    };
+  }, []);
+
+  function queueChallengeHighlight(id: string) {
+    clearHighlightTimers();
+    const scrollTimer = setTimeout(() => {
+      document
+        .querySelector(`[data-challenge-id="${id}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      setHighlightedChallengeId(id);
+      const clearTimer = setTimeout(() => setHighlightedChallengeId(null), 2000);
+      highlightTimersRef.current = [clearTimer];
+    }, 100);
+    highlightTimersRef.current = [scrollTimer];
+  }
 
   useEffect(() => {
     if (!pendingOpenChallengeId || !myChallenges) return;
@@ -641,13 +695,7 @@ function CrewListView({
         onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
       }
       const id = pendingOpenChallengeId;
-      setTimeout(() => {
-        document
-          .querySelector(`[data-challenge-id="${id}"]`)
-          ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-        setHighlightedChallengeId(id);
-        setTimeout(() => setHighlightedChallengeId(null), 2000);
-      }, 100);
+      queueChallengeHighlight(id);
       onClearPendingChallenge?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
