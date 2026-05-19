@@ -183,4 +183,28 @@ describe("HistorySheet", () => {
     render(<HistorySheet {...defaultProps} />);
     expect(screen.queryByRole("tab", { name: "State" })).not.toBeInTheDocument();
   });
+
+  describe("Traveler role — swipe row actions", () => {
+    const travelerEvent = makeEvent({ _id: "evt1", checkpointId: "cp1", title: "Trail stop" });
+    const travelerProps = { ...defaultProps, role: "traveler" as const, events: [travelerEvent] };
+
+    it("shows the More button on check-in rows that have a checkpointId", () => {
+      render(<HistorySheet {...travelerProps} />);
+      expect(screen.getByRole("button", { name: "Show row actions" })).toBeInTheDocument();
+    });
+
+    it("clicking ... then Edit opens the edit sheet", () => {
+      render(<HistorySheet {...travelerProps} />);
+      fireEvent.click(screen.getByRole("button", { name: "Show row actions" }));
+      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      expect(screen.getByText("Edit check-in")).toBeInTheDocument();
+    });
+
+    it("clicking ... then Delete opens the confirm dialog", () => {
+      render(<HistorySheet {...travelerProps} />);
+      fireEvent.click(screen.getByRole("button", { name: "Show row actions" }));
+      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+      expect(screen.getByText("Delete this check-in?")).toBeInTheDocument();
+    });
+  });
 });
