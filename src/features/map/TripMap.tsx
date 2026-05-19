@@ -430,6 +430,7 @@ export default function TripMap({
   // can reopen ChallengesPanel directly on the originating mission's detail
   // view (the four-button action set the Traveler expects to return to).
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
+  const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
   const canWrite = role === "traveler";
 
   const updateTravelerLocation = useMutation(tripcastApi.travelerLocations.updateTravelerLocation);
@@ -827,6 +828,28 @@ export default function TripMap({
       zoom: Math.max(mapRef.current.getZoom(), 14),
       padding: { top: 60, right: 60, bottom: 320, left: 380 },
     });
+  }
+
+  function handleNavigateToVote(voteId: string) {
+    log.logInteraction("panel:navigate", { from: "challenges", to: "votes", voteId });
+    music.sfx("page");
+    setIsChallengesPanelOpen(false);
+    setIsVotePanelOpen(true);
+    setIsHistoryOpen(false);
+    setIsTravelFundsSheetOpen(false);
+    setPendingOpenVoteId(voteId);
+  }
+
+  function handleNavigateToMissionDetail(challengeId: string) {
+    log.logInteraction("panel:navigate", { from: "votes", to: "challenges", challengeId });
+    music.sfx("page");
+    setIsVotePanelOpen(false);
+    setVoteMapOverlay(null);
+    setVoteOptionNumberById(null);
+    setIsChallengesPanelOpen(true);
+    setIsHistoryOpen(false);
+    setIsTravelFundsSheetOpen(false);
+    setPendingOpenDetailMissionId(challengeId);
   }
 
   function handleRequestChallengeCoordinatePick(
@@ -1308,6 +1331,9 @@ export default function TripMap({
               onRequestFitMap={handleRequestFitMap}
               fallbackOrigin={routeVoteFallbackOrigin}
               isPickingCoordinate={isPickingCoordinate}
+              pendingOpenVoteId={pendingOpenVoteId}
+              onClearPendingVoteId={() => setPendingOpenVoteId(null)}
+              onRequestOpenMissionDetail={handleNavigateToMissionDetail}
             />
           </FeatureBoundary>
       )}
@@ -1445,6 +1471,7 @@ export default function TripMap({
           onCompleteAsStory={handleCompleteAsStory}
           pendingOpenDetailChallengeId={pendingOpenDetailMissionId}
           onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
+          onRequestNavigateToVote={handleNavigateToVote}
         />
       </FeatureBoundary>
 

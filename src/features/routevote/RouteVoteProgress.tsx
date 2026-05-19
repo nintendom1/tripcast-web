@@ -5,7 +5,6 @@ import {
   tripcastApi,
   type RouteVoteMapOverlay,
   type RouteVoteListItem,
-  type ChallengeStatus,
 } from "../../convex/tripcastApi";
 import { cn } from "@/lib/utils";
 import { Button } from "../../components/ui/button";
@@ -40,11 +39,12 @@ type RouteVoteProgressProps = {
   onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
   isPickingCoordinate?: boolean;
+  pendingOpenVoteId?: string | null;
+  onClearPendingVoteId?: () => void;
+  onRequestOpenMissionDetail?: (challengeId: string) => void;
 };
 
 type View = "list" | "create" | "detail";
-
-const CHALLENGE_STATUSES: ChallengeStatus[] = ["planned", "in_progress", "completed", "dropped"];
 
 function VoteListCard({
   vote,
@@ -106,6 +106,7 @@ function VoteDetailView({
   onVoteOverlayChange,
   onRequestFitMap,
   fallbackOrigin,
+  onRequestOpenMissionDetail,
 }: {
   token: string;
   vote: RouteVoteListItem;
@@ -116,6 +117,7 @@ function VoteDetailView({
   ) => void;
   onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
+  onRequestOpenMissionDetail?: (challengeId: string) => void;
 }) {
   const detail = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
     token,
@@ -128,11 +130,9 @@ function VoteDetailView({
 
   const confirmWinner = useMutation(tripcastApi.routeVotes.travelerConfirmRouteVoteWinner);
   const hideComment = useMutation(tripcastApi.routeVotes.travelerHideRouteVoteComment);
-  const updateChallengeStatus = useMutation(tripcastApi.routeVotes.travelerUpdateChallengeStatus);
   const music = useMusicSafe();
 
   const [confirmingOptionId, setConfirmingOptionId] = useState<string | null>(null);
-  const [challengeStatus, setChallengeStatus] = useState<ChallengeStatus | null>(null);
   const [isActing, setIsActing] = useState(false);
 
   useEffect(() => {
@@ -198,22 +198,6 @@ function VoteDetailView({
 
   async function handleHideComment(submissionId: string) {
     await hideComment({ token, submissionId }).catch(() => {});
-  }
-
-  async function handleChallengeStatusUpdate() {
-    const d = detail;
-    if (!d || !d.challenge || !challengeStatus) return;
-    setIsActing(true);
-    try {
-      await updateChallengeStatus({
-        token,
-        challengeId: d.challenge._id,
-        newStatus: challengeStatus,
-      });
-      music.sfx("success");
-    } finally {
-      setIsActing(false);
-    }
   }
 
   return (
@@ -288,39 +272,29 @@ function VoteDetailView({
       </DialogueBox>
 
       {detail.challenge && (
-        <DialogueBox title="Challenge">
-          <div className="flex flex-col gap-2">
+        <DialogueBox title="Mission Created">
+          <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">{detail.challenge.title}</span>
+              <p className="text-sm font-medium text-navy line-clamp-1">
+                {detail.challenge.title}
+              </p>
               <StatusBadge status={detail.challenge.status} />
             </div>
             {detail.challenge.locationLabel && (
-              <span className="text-xs text-muted-foreground">{detail.challenge.locationLabel}</span>
+              <p className="text-xs text-muted-foreground">{detail.challenge.locationLabel}</p>
             )}
-            <div className="flex items-center gap-2">
-              <select
-                className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-sm"
-                value={challengeStatus ?? detail.challenge.status}
-                onChange={(e) => setChallengeStatus(e.target.value as ChallengeStatus)}
-              >
-                {CHALLENGE_STATUSES.map((s) => (
-                  <option key={s} value={s}>
-                    {s.replace("_", " ")}
-                  </option>
-                ))}
-              </select>
+            <p className="text-xs text-muted-foreground">
+              Open Missions to view and edit.
+            </p>
+            {onRequestOpenMissionDetail && (
               <Button
                 size="sm"
-                onClick={handleChallengeStatusUpdate}
-                disabled={
-                  isActing ||
-                  challengeStatus === null ||
-                  challengeStatus === detail.challenge.status
-                }
+                variant="outline"
+                onClick={() => onRequestOpenMissionDetail(detail.challenge!._id)}
               >
-                Update
+                View Mission
               </Button>
-            </div>
+            )}
           </div>
         </DialogueBox>
       )}
@@ -372,6 +346,9 @@ export default function RouteVoteProgress({
   onRequestFitMap,
   fallbackOrigin,
   isPickingCoordinate,
+  pendingOpenVoteId,
+  onClearPendingVoteId,
+  onRequestOpenMissionDetail,
 }: RouteVoteProgressProps) {
   const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -399,6 +376,19 @@ export default function RouteVoteProgress({
     log.logInteraction("coordinate:pick-mode:active", { isPickingCoordinate: !!isPickingCoordinate });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPickingCoordinate]);
+
+  // When parent requests navigation to a specific vote, jump to its detail view.
+  useEffect(() => {
+    if (!pendingOpenVoteId || !votes) return;
+    const target = votes.find((v) => v._id === pendingOpenVoteId);
+    if (target) {
+      log.logUi("action:pending-vote:navigate", { voteId: pendingOpenVoteId });
+      setSelectedVoteId(pendingOpenVoteId);
+      setView("detail");
+      onClearPendingVoteId?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenVoteId, votes]);
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
 
@@ -529,6 +519,7 @@ export default function RouteVoteProgress({
                 onVoteOverlayChange={onVoteOverlayChange}
                 onRequestFitMap={onRequestFitMap}
                 fallbackOrigin={fallbackOrigin}
+                onRequestOpenMissionDetail={onRequestOpenMissionDetail}
               />
             </motion.div>
           ) : (

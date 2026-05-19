@@ -2,13 +2,18 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Challenge, ChallengeStatus, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import TravelFundsInlineSection, {
   type TravelFundsInlineState,
 } from "../travelfunds/TravelFundsInlineSection";
+import RouteVoteSourceCard from "./RouteVoteSourceCard";
+import { useDebugLogger } from "../../debug/useDebugLogger";
+
+// Session-scoped: once dismissed, the start-mission hint stays hidden for the tab session.
+let _missionHintDismissed = false;
 
 const RESPONSE_PRESETS = [
   "Looks good",
@@ -36,6 +41,7 @@ type Props = {
    *  state, opens AddCheckpointSheet, and calls travelerCompleteChallenge
    *  after the resulting check-in lands. */
   onCompleteAsStory?: (challenge: Challenge, transaction?: TransactionInlineInput) => void;
+  onRequestNavigateToVote?: (voteId: string) => void;
 };
 
 function statusLabel(status: string): string {
@@ -65,7 +71,10 @@ export default function ChallengeDetailSheet({
   onRequestCoordinatePick,
   onViewOnMap,
   onCompleteAsStory,
+  onRequestNavigateToVote,
 }: Props) {
+  const log = useDebugLogger("ChallengeDetailSheet", "src/features/challenges/ChallengeDetailSheet.tsx");
+
   // Drop/reject form state
   const [responseNote, setResponseNote] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("");
@@ -82,6 +91,10 @@ export default function ChallengeDetailSheet({
   const [editCost, setEditCost] = useState("");
   const [editDuration, setEditDuration] = useState("");
   const [editEnergy, setEditEnergy] = useState<"" | "low" | "medium" | "high">("");
+  const [editStatus, setEditStatus] = useState<ChallengeStatus>("visible");
+
+  // Progressive disclosure: session-scoped hint dismissal
+  const [hintDismissed, setHintDismissed] = useState(_missionHintDismissed);
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
@@ -95,6 +108,7 @@ export default function ChallengeDetailSheet({
   const complete = useMutation(tripcastApi.challenges.travelerCompleteChallenge);
   const togglePin = useMutation(tripcastApi.challenges.travelerToggleChallengeMapPin);
   const withdraw = useMutation(tripcastApi.challenges.followerWithdrawChallenge);
+  const updateStatus = useMutation(tripcastApi.routeVotes.travelerUpdateChallengeStatus);
 
   if (!challenge) return null;
 
@@ -104,6 +118,7 @@ export default function ChallengeDetailSheet({
   const hasLocation = challenge.lat !== undefined && challenge.lon !== undefined;
 
   function openEditMode() {
+    log.logForm("form:open");
     setEditTitle(challenge!.title);
     setEditDesc(challenge!.description ?? "");
     setEditLocation(challenge!.locationLabel ?? "");
@@ -116,6 +131,7 @@ export default function ChallengeDetailSheet({
         : "",
     );
     setEditEnergy((challenge!.estimatedEnergyImpact as "" | "low" | "medium" | "high") ?? "");
+    setEditStatus(challenge!.status);
     setIsEditing(true);
     setActionError(null);
   }
@@ -132,6 +148,7 @@ export default function ChallengeDetailSheet({
     }
     setIsWorking(true);
     setActionError(null);
+    log.logForm("form:submit");
     try {
       await edit({
         token,
@@ -145,8 +162,15 @@ export default function ChallengeDetailSheet({
         estimatedDurationMinutes: editDuration ? parseInt(editDuration, 10) : undefined,
         estimatedEnergyImpact: editEnergy || undefined,
       });
+      if (editStatus !== challenge.status) {
+        log.logMutation("challenge:status:update", { from: challenge.status, to: editStatus });
+        await updateStatus({ token, challengeId: challenge._id, newStatus: editStatus });
+        log.logMutation("challenge:status:update:success");
+        log.logState("challengeStatus", challenge.status, editStatus);
+      }
       setIsEditing(false);
     } catch (e) {
+      log.error("challenge:edit:error", "mutation", { message: String(e) });
       setActionError(friendlyError(e));
     } finally {
       setIsWorking(false);
@@ -413,6 +437,21 @@ export default function ChallengeDetailSheet({
           </div>
         </div>
 
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Status</label>
+          <select
+            value={editStatus}
+            onChange={(e) => setEditStatus(e.target.value as ChallengeStatus)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="planned">Planned</option>
+            <option value="visible">Visible</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="dropped">Dropped</option>
+          </select>
+        </div>
+
         {actionError && (
           <p className="text-sm text-rose-600" role="alert">{actionError}</p>
         )}
@@ -474,15 +513,14 @@ export default function ChallengeDetailSheet({
         )}
       </div>
 
-      {/* View on map */}
-      {hasLocation && onViewOnMap && (
-        <button
-          type="button"
-          onClick={onViewOnMap}
-          className="self-start text-xs text-navy underline"
-        >
-          View on map
-        </button>
+      {/* Route vote source card — shown when mission originated from a vote */}
+      {challenge.sourceRouteVoteId && (
+        <RouteVoteSourceCard
+          sourceVoteId={challenge.sourceRouteVoteId}
+          sourceOptionId={challenge.sourceRouteVoteOptionId}
+          token={token}
+          onNavigate={onRequestNavigateToVote}
+        />
       )}
 
       {/* Traveler response (preset + note) — visible to both traveler and follower */}
@@ -584,6 +622,22 @@ export default function ChallengeDetailSheet({
         <p className="text-sm text-rose-600" role="alert">{actionError}</p>
       )}
 
+      {/* Progressive hint: edit to start mission */}
+      {isTraveler && (status === "visible" || status === "planned") && !isEditing && !hintDismissed && (
+        <div className="rounded-md bg-blue-50 border border-blue-200 p-3 flex items-start gap-2">
+          <p className="text-xs text-blue-700 flex-1">
+            Edit this mission to set its status to "In Progress" to start it.
+          </p>
+          <button
+            type="button"
+            className="text-xs text-blue-500 underline shrink-0"
+            onClick={() => { _missionHintDismissed = true; setHintDismissed(true); }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Traveler actions (hidden while reject form or delete confirm is open) */}
       {isTraveler && !showRejectForm && !showDeleteConfirm && (
         <div className="flex flex-col gap-2">
@@ -621,15 +675,6 @@ export default function ChallengeDetailSheet({
 
           {(status === "visible" || status === "planned") && (
             <>
-              <Button
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={handleStart}
-                className="bg-amber-500 hover:bg-amber-600 text-white border-amber-500"
-              >
-                Start and set as Current Activity
-              </Button>
               <Button
                 variant="outline"
                 size="sm"

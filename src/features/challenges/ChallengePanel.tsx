@@ -47,6 +47,7 @@ type Props = {
    *  full action set. Parent clears via `onClearPendingDetail` once we land. */
   pendingOpenDetailChallengeId?: string | null;
   onClearPendingDetail?: () => void;
+  onRequestNavigateToVote?: (voteId: string) => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -88,6 +89,7 @@ export default function ChallengePanel({
   onCompleteAsStory,
   pendingOpenDetailChallengeId,
   onClearPendingDetail,
+  onRequestNavigateToVote,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedChallenge, setSelectedChallenge] = useState<SelectedChallenge | null>(null);
@@ -324,6 +326,7 @@ export default function ChallengePanel({
                       }
                     : undefined
                 }
+                onRequestNavigateToVote={onRequestNavigateToVote}
               />
             </SheetBody>
           ) : null}
