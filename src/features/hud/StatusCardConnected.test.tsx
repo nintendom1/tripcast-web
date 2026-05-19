@@ -19,6 +19,9 @@ describe("StatusCardConnected", () => {
       if (ref === tripcastApi.travelerState.supportCrewGetTravelerState) {
         return { visible: false };
       }
+      if (ref === tripcastApi.travelerAutoState.supportCrewGetAutoState) {
+        return { visible: false };
+      }
       if (ref === tripcastApi.currentActivity.supportCrewGetCurrentActivity) {
         return {
           _id: "activity-1",

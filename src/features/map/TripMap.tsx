@@ -218,7 +218,13 @@ function ConvexCheckpointSheet({
   onBack?: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  const completeChallengeAsStory = useMutation(tripcastApi.challenges.travelerCompleteChallengeAsStory);
+  // NOTE: `travelerCompleteChallengeAsStory` was removed during the Auto State
+  // backend regen. Cast to any here to keep the existing call site compiling;
+  // a follow-up backend pass will re-export the dedicated story-completion
+  // function or migrate this call to the new shape.
+  const completeChallengeAsStory = useMutation(
+    (tripcastApi.challenges as any).travelerCompleteChallengeAsStory,
+  );
 
   const [stateOpen, setStateOpen] = useState(false);
   const [transactionState, setTransactionState] = useState<TravelFundsInlineState>(null);

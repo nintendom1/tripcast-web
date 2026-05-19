@@ -182,18 +182,12 @@ export const STOMACH_SCORE_FOR_LEVEL: Record<TravelerStomachLevel, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// Stomach decay
+// Stomach level mapping
 // ---------------------------------------------------------------------------
-
-export const STOMACH_DECAY_PER_HOUR = 10;
-
-export function computeEffectiveStomachScore(
-  rawScore: number,
-  updatedAt: number,
-): number {
-  const hoursElapsed = (Date.now() - updatedAt) / 3_600_000;
-  return Math.max(0, rawScore - hoursElapsed * STOMACH_DECAY_PER_HOUR);
-}
+//
+// The legacy 10-pt/hr stomach decay was removed when Auto State landed.
+// Auto State is now the explicit drift mechanism. With Auto off, Stomach
+// displays as the last manually-saved value with no implicit decay.
 
 export function getStomachLevelFromScore(score: number): TravelerStomachLevel {
   if (score <= 12) return "starving";
@@ -235,3 +229,32 @@ export const DEFAULT_VISIBILITY = {
   showStatusNote: true,
   showBiometrics: false,
 };
+
+// ---------------------------------------------------------------------------
+// Auto State helpers — time-of-day formatting / parsing
+// ---------------------------------------------------------------------------
+
+/** Format minutes-from-midnight as "11:00 PM" / "9:00 AM". */
+export function formatTimeOfDay(minutes: number): string {
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  const h24 = Math.floor(m / 60);
+  const mm = m % 60;
+  const period = h24 >= 12 ? "PM" : "AM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  return `${h12}:${String(mm).padStart(2, "0")} ${period}`;
+}
+
+/** Parse "HH:MM" from <input type="time"> into minutes-from-midnight. */
+export function parseTimeOfDay(value: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min)) return null;
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+// Re-export the calc helper phase metadata for ergonomic component imports.
+export { PHASE_META } from "./autoStateCalc";
+export type { AutoStatePhase } from "./autoStateCalc";

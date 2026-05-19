@@ -3,6 +3,8 @@ import { useQuery } from "convex/react";
 
 import {
   tripcastApi,
+  type AutoState,
+  type AutoStateForCrew,
   type CurrentActivity,
   type Role,
   type TravelerEnergyLevel,
@@ -11,11 +13,11 @@ import {
   type TravelerStressLevel,
 } from "@/convex/tripcastApi";
 import {
-  computeEffectiveStomachScore,
   ENERGY_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
   STRESS_SCORE_FOR_LEVEL,
 } from "@/features/travelstate/travelerStateUtils";
+import { computeAutoState } from "@/features/travelstate/autoStateCalc";
 
 import { StatusCard, type StatusCardMeter } from "./StatusCard";
 
@@ -57,6 +59,90 @@ function resolveScore<TLevel extends string>(
   return fallback;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+/**
+ * Normalizes the role-specific auto-state shape into a uniform record the calc
+ * helper can consume. Returns null when Auto is off / not visible.
+ */
+type NormalizedAuto = {
+  autoStateEnabled: true;
+  autoEnabledAt: number;
+  autoTimeZone: string;
+  autoBaseEnergyScore?: number;
+  autoBaseStomachScore?: number;
+  autoBedtimeMinutes: number;
+  autoWakeTimeMinutes: number;
+  autoEnergyMin: number;
+  autoEnergyMax: number;
+  autoStomachMin: number;
+  autoStomachMax: number;
+  autoEnergySleepDeltaPerTick: number;
+  autoEnergyAwakeDeltaPerTick: number;
+  autoStomachAwakeDeltaPerTick: number;
+  autoStomachNightAboveHungryEveryTicks: number;
+  autoStomachNightAtOrBelowHungryEveryTicks: number;
+};
+
+function normalizeTraveler(auto: AutoState | undefined | null): NormalizedAuto | null {
+  if (!auto || !auto.autoStateEnabled || auto.autoEnabledAt == null) return null;
+  return {
+    autoStateEnabled: true,
+    autoEnabledAt: auto.autoEnabledAt,
+    autoTimeZone: auto.autoTimeZone,
+    autoBaseEnergyScore: auto.autoBaseEnergyScore,
+    autoBaseStomachScore: auto.autoBaseStomachScore,
+    autoBedtimeMinutes: auto.autoBedtimeMinutes,
+    autoWakeTimeMinutes: auto.autoWakeTimeMinutes,
+    autoEnergyMin: auto.autoEnergyMin,
+    autoEnergyMax: auto.autoEnergyMax,
+    autoStomachMin: auto.autoStomachMin,
+    autoStomachMax: auto.autoStomachMax,
+    autoEnergySleepDeltaPerTick: auto.autoEnergySleepDeltaPerTick,
+    autoEnergyAwakeDeltaPerTick: auto.autoEnergyAwakeDeltaPerTick,
+    autoStomachAwakeDeltaPerTick: auto.autoStomachAwakeDeltaPerTick,
+    autoStomachNightAboveHungryEveryTicks: auto.autoStomachNightAboveHungryEveryTicks,
+    autoStomachNightAtOrBelowHungryEveryTicks: auto.autoStomachNightAtOrBelowHungryEveryTicks,
+  };
+}
+
+function normalizeCrew(auto: AutoStateForCrew | undefined | null): NormalizedAuto | null {
+  if (!auto || !("visible" in auto) || !auto.visible) return null;
+  if (!auto.autoStateEnabled) return null;
+  if (auto.autoEnabledAt == null) return null;
+  return {
+    autoStateEnabled: true,
+    autoEnabledAt: auto.autoEnabledAt,
+    autoTimeZone: auto.autoTimeZone,
+    autoBaseEnergyScore: auto.autoBaseEnergyScore,
+    autoBaseStomachScore: auto.autoBaseStomachScore,
+    autoBedtimeMinutes: auto.autoBedtimeMinutes,
+    autoWakeTimeMinutes: auto.autoWakeTimeMinutes,
+    autoEnergyMin: auto.autoEnergyMin,
+    autoEnergyMax: auto.autoEnergyMax,
+    autoStomachMin: auto.autoStomachMin,
+    autoStomachMax: auto.autoStomachMax,
+    autoEnergySleepDeltaPerTick: auto.autoEnergySleepDeltaPerTick,
+    autoEnergyAwakeDeltaPerTick: auto.autoEnergyAwakeDeltaPerTick,
+    autoStomachAwakeDeltaPerTick: auto.autoStomachAwakeDeltaPerTick,
+    autoStomachNightAboveHungryEveryTicks: auto.autoStomachNightAboveHungryEveryTicks,
+    autoStomachNightAtOrBelowHungryEveryTicks: auto.autoStomachNightAtOrBelowHungryEveryTicks,
+  };
+}
+
+function formatBaseSavedAgo(ts: number, now: number): string {
+  const mins = Math.floor(Math.max(0, now - ts) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
+}
+
 /**
  * StatusCard wired to live Convex data — replaces the legacy stacked
  * TravelerStateCard + CurrentActivityCard pair.
@@ -88,11 +174,25 @@ export function StatusCardConnected({
     role === "support_crew" ? { token } : "skip",
   );
 
+  const travelerAutoState = useQuery(
+    tripcastApi.travelerAutoState.travelerGetAutoState,
+    role === "traveler" ? { token } : "skip",
+  );
+  const crewAutoState = useQuery(
+    tripcastApi.travelerAutoState.supportCrewGetAutoState,
+    role === "support_crew" ? { token } : "skip",
+  );
+
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(id);
   }, []);
+
+  const auto = React.useMemo<NormalizedAuto | null>(() => {
+    if (role === "traveler") return normalizeTraveler(travelerAutoState);
+    return normalizeCrew(crewAutoState);
+  }, [role, travelerAutoState, crewAutoState]);
 
   const stateFacts: StateFacts | null = React.useMemo(() => {
     if (role === "traveler") {
@@ -132,25 +232,47 @@ export function StatusCardConnected({
     return null;
   }
 
+  const isAutoEnergyOn = Boolean(auto && typeof auto.autoBaseEnergyScore === "number");
+  const isAutoStomachOn = Boolean(auto && typeof auto.autoBaseStomachScore === "number");
+
+  const autoEnergyResult = isAutoEnergyOn && auto
+    ? computeAutoState({
+        autoTimeZone: auto.autoTimeZone,
+        autoBedtimeMinutes: auto.autoBedtimeMinutes,
+        autoWakeTimeMinutes: auto.autoWakeTimeMinutes,
+        autoEnergyMin: auto.autoEnergyMin,
+        autoEnergyMax: auto.autoEnergyMax,
+        autoStomachMin: auto.autoStomachMin,
+        autoStomachMax: auto.autoStomachMax,
+        autoEnergySleepDeltaPerTick: auto.autoEnergySleepDeltaPerTick,
+        autoEnergyAwakeDeltaPerTick: auto.autoEnergyAwakeDeltaPerTick,
+        autoStomachAwakeDeltaPerTick: auto.autoStomachAwakeDeltaPerTick,
+        autoStomachNightAboveHungryEveryTicks: auto.autoStomachNightAboveHungryEveryTicks,
+        autoStomachNightAtOrBelowHungryEveryTicks: auto.autoStomachNightAtOrBelowHungryEveryTicks,
+        baseEnergy: auto.autoBaseEnergyScore ?? 50,
+        baseStomach: auto.autoBaseStomachScore ?? 50,
+        autoEnabledAt: auto.autoEnabledAt,
+        targetTime: now,
+      })
+    : null;
+
   const meters: StatusCardMeter[] = stateFacts
     ? (() => {
-        const energyValue = resolveScore(
-          stateFacts.energyScore,
-          stateFacts.energyLevel,
-          ENERGY_SCORE_FOR_LEVEL,
-          50,
-        );
-        const stomachScoreRaw = stateFacts.stomachScore;
-        const stomachValue = (() => {
-          if (typeof stomachScoreRaw === "number") {
-            const decayed =
-              typeof stateFacts.updatedAt === "number"
-                ? computeEffectiveStomachScore(stomachScoreRaw, stateFacts.updatedAt)
-                : stomachScoreRaw;
-            return Math.min(150, Math.max(0, decayed));
-          }
-          return resolveScore(undefined, stateFacts.stomachLevel, STOMACH_SCORE_FOR_LEVEL, 50);
-        })();
+        const energyValue = isAutoEnergyOn && autoEnergyResult
+          ? autoEnergyResult.estimatedEnergy
+          : resolveScore(
+              stateFacts.energyScore,
+              stateFacts.energyLevel,
+              ENERGY_SCORE_FOR_LEVEL,
+              50,
+            );
+        const stomachValue = isAutoStomachOn && autoEnergyResult
+          ? autoEnergyResult.estimatedStomach
+          : (() => {
+              const raw = stateFacts.stomachScore;
+              if (typeof raw === "number") return clamp(raw, 0, 150);
+              return resolveScore(undefined, stateFacts.stomachLevel, STOMACH_SCORE_FOR_LEVEL, 50);
+            })();
         const stressValue = resolveScore(
           stateFacts.stressScore,
           stateFacts.stressLevel,
@@ -158,22 +280,36 @@ export function StatusCardConnected({
           50,
         );
         return [
-          { label: "Energy", value: energyValue, max: 100 },
-          { label: "Stomach", value: stomachValue, max: 150 },
+          { label: "Energy", value: energyValue, max: 100, autoChip: isAutoEnergyOn },
+          { label: "Stomach", value: stomachValue, max: 150, autoChip: isAutoStomachOn },
           { label: "Calm", value: Math.max(0, Math.min(100, 100 - stressValue)), max: 100 },
         ];
       })()
     : [];
 
+  // Crew-only: when Auto is on with no active activity, replace the activity-since
+  // slot with the "AUTO EST. · base saved …" label.
+  const crewAutoActive = role === "support_crew" && auto != null;
+  const crewActivityLabelOverride =
+    crewAutoActive && !activity
+      ? `AUTO EST. · base saved ${formatBaseSavedAgo(auto!.autoEnabledAt, now)}`
+      : null;
+
   return (
-    <StatusCard
-      activityLabel={activity ? activity.title : null}
-      activityEmoji={activity?.emoji ?? null}
-      activitySince={activity ? formatElapsed(activity.startedAt, now) : null}
-      meters={meters}
-      interactive={role === "traveler"}
-      onActivate={role === "traveler" ? onOpenState : undefined}
-      className={className}
-    />
+    <div className={className}>
+      <StatusCard
+        activityLabel={activity ? activity.title : crewActivityLabelOverride ?? null}
+        activityEmoji={activity?.emoji ?? null}
+        activitySince={activity ? formatElapsed(activity.startedAt, now) : null}
+        meters={meters}
+        interactive={role === "traveler"}
+        onActivate={role === "traveler" ? onOpenState : undefined}
+      />
+      {crewAutoActive && (isAutoEnergyOn || isAutoStomachOn) ? (
+        <p className="mt-1 text-[10px] text-[var(--ink-3)]">
+          These values are estimated locally from the Traveler's saved State. They may not reflect a manual update.
+        </p>
+      ) : null}
+    </div>
   );
 }

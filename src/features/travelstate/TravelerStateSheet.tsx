@@ -34,6 +34,8 @@ import {
   STOMACH_SCORE_FOR_LEVEL,
   getStomachLevelFromScore,
 } from "./travelerStateUtils";
+import { formatSaveError } from "./formatSaveError";
+import AutoStateTab from "./AutoStateTab";
 
 type TravelerStateSheetProps = {
   token: string;
@@ -41,7 +43,7 @@ type TravelerStateSheetProps = {
   onToast?: (msg: string) => void;
 };
 
-type TabView = "state" | "visibility";
+type TabView = "state" | "visibility" | "auto";
 
 const PANEL_MOTION = {
   initial: { y: "100%" },
@@ -49,17 +51,6 @@ const PANEL_MOTION = {
   exit: { y: "100%" },
   transition: { duration: 0.22, ease: "easeOut" as const },
 };
-
-function formatSaveError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e);
-  if (msg.toLowerCase().includes("too many") || msg.toLowerCase().includes("rate")) {
-    return "Too many updates. Try again in a minute.";
-  }
-  if (msg.toLowerCase().includes("traveler")) {
-    return "Traveler access is required.";
-  }
-  return "Failed to save. Please try again.";
-}
 
 function ChipRow<T extends string>({
   values,
@@ -186,6 +177,7 @@ function ToggleRow({
 
 export default function TravelerStateSheet({ token, onClose, onToast }: TravelerStateSheetProps) {
   const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
+  const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
 
@@ -398,7 +390,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
 
       {/* Tab bar */}
       <div className="flex flex-none border-b">
-        {(["state", "visibility"] as TabView[]).map((t) => (
+        {(["state", "visibility", "auto"] as TabView[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -413,7 +405,14 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                 : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            {t === "state" ? "State" : "Visibility"}
+            <span className="inline-flex items-center justify-center gap-1">
+              {t === "state" ? "State" : t === "visibility" ? "Visibility" : "Auto"}
+              {t === "auto" && autoState?.autoStateEnabled ? (
+                <span className="rounded-full bg-navy/10 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-navy">
+                  AUTO
+                </span>
+              ) : null}
+            </span>
           </button>
         ))}
       </div>
@@ -538,6 +537,12 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
                 onDeselect={() => setMoodValue(undefined)}
               />
             </div>
+
+            {autoState?.autoStateEnabled && (
+              <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                Energy and Stomach are being auto-estimated in the HUD. Edits here will re-anchor the Auto base.
+              </p>
+            )}
 
             {/* Energy — chips + slider (#5, #6) */}
             <div className="grid gap-1.5">
@@ -709,6 +714,10 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
           </div>
         )}
 
+        {tab === "auto" && (
+          <AutoStateTab token={token} onToast={onToast} />
+        )}
+
         {tab === "visibility" && (
           <div className="grid gap-3 p-4">
             <p className="text-sm text-muted-foreground">Control what Support Crew can see.</p>
@@ -777,11 +786,11 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
               Save State
             </Button>
           </div>
-        ) : (
+        ) : tab === "visibility" ? (
           <Button onClick={handleSaveVisibility} disabled={saving} className="w-full">
             {saving ? "Saving…" : "Save Visibility"}
           </Button>
-        )}
+        ) : null}
       </div>
     </motion.div>
   );

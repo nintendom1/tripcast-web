@@ -39,12 +39,18 @@ function setupMocks({
     if (ref === tripcastApi.travelerState.travelerGetState) {
       return { state, visibility };
     }
+    if (ref === tripcastApi.travelerAutoState.travelerGetAutoState) {
+      return null;
+    }
     return undefined;
   });
+  // Order inside TravelerStateSheet: updateState, updateVisibility.
+  // AutoStateTab is not mounted on the default ("state") tab so its mutations
+  // are not part of the call sequence.
   const mutationFns = [updateStateFn, updateVisibilityFn];
   let callCount = 0;
 
-  vi.mocked(convexReact.useMutation).mockImplementation(() => mutationFns[callCount++ % 2] as any);
+  vi.mocked(convexReact.useMutation).mockImplementation(() => mutationFns[callCount++ % mutationFns.length] as any);
   return { updateStateFn, updateVisibilityFn };
 }
 
