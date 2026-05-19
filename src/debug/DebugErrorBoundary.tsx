@@ -23,7 +23,7 @@ export default class DebugErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    logger.error("react:render-error", {
+    logger.error("react:render-error", "error", {
       message: error.message,
       name: error.name,
       stack: error.stack?.slice(0, 400),

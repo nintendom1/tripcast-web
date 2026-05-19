@@ -146,7 +146,7 @@ export default function AddCheckpointSheet({
       onCheckpointCreated?.(checkpointId, prefill);
       onClose();
     } catch (saveError) {
-      log.error("submit:error", { message: saveError instanceof Error ? saveError.message : String(saveError) });
+      log.error("submit:error", "mutation", { message: saveError instanceof Error ? saveError.message : String(saveError) });
       setError(friendlyError(saveError));
     } finally {
       setIsSaving(false);
