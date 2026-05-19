@@ -166,7 +166,7 @@ function VoteDetail({
       log.logInteraction("submit:success", { voteId: vote._id });
       music.sfx("vote");
     } catch (e) {
-      log.error("submit:error", { message: e instanceof Error ? e.message : String(e) });
+      log.error("submit:error", "mutation", { message: e instanceof Error ? e.message : String(e) });
       setError(e instanceof Error ? e.message : "Failed to submit.");
     } finally {
       setIsSubmitting(false);

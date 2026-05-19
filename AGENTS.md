@@ -133,6 +133,19 @@ Now, <describe the new state or outcome>.
 <Commands run, manual checks performed by you and/or a reviewer, or note why testing was not run.>
 ```
 
+## Validation (Required Before Claiming Completion)
+
+Run the full validation suite before reporting a task as done:
+
+```bash
+npm run validate
+```
+
+This runs typecheck → lint → tests in sequence and short-circuits on the first failure.
+Individual scripts are still available: `npm run typecheck`, `npm run lint`, `npm run test`.
+
+**Do not claim a task complete until `npm run validate` passes.**
+
 ## Linting (Rules of Hooks)
 
 Run lint:
@@ -153,7 +166,7 @@ The lint config (`eslint.config.js`) is intentionally narrow — only `react-hoo
 - When the hook's body needs a value that's only well-defined after the early returns (e.g. `activeSessionCheck.role`), derive a nullable form at the top (`const currentRole = activeSessionCheck?.role ?? null`) and put the conditional logic **inside** the effect body, not around the effect call site.
 - For genuinely missing-but-stable deps in `exhaustive-deps`, add a one-line `// eslint-disable-next-line react-hooks/exhaustive-deps` with a comment above explaining why the dep is closure-stable (ref-driven, stable React setter, or stable Convex mutation handle). Don't disable the rule without the rationale.
 
-CI runs `npm run lint` before tests. Local pre-commit isn't enforced, so run it before pushing.
+CI runs `npm run lint` before tests. Run `npm run validate` before pushing — it covers lint, types, and tests in one command.
 
 ## Testing
 

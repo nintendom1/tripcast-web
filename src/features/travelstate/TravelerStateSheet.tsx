@@ -332,7 +332,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
       log.logInteraction("submit:success", { action: "updateState" });
       onClose();
     } catch (e) {
-      log.error("submit:error", { message: e instanceof Error ? e.message : String(e) });
+      log.error("submit:error", "mutation", { message: e instanceof Error ? e.message : String(e) });
       setError(formatSaveError(e));
       setReviewing(false);
     } finally {
