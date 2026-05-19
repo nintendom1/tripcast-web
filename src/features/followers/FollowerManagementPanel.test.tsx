@@ -39,6 +39,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: undefined,
+  });
 });
 
 describe("FollowerManagementPanel", () => {
@@ -176,5 +180,36 @@ describe("FollowerManagementPanel", () => {
       vi.advanceTimersByTime(1000);
     });
     expect(copyButton).toHaveTextContent(/copy link/i);
+  });
+
+  it("shows a manual copy error when reset-link clipboard write is unavailable", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+    const mockValues = [
+      vi.fn().mockResolvedValue(null),
+      vi.fn().mockResolvedValue(null),
+      vi.fn().mockResolvedValue({ resetToken: "reset-tok-abc" }),
+      vi.fn().mockResolvedValue(null),
+    ];
+    let callCount = 0;
+    vi.mocked(convexReact.useMutation).mockImplementation(
+      () => mockValues[callCount++ % mockValues.length] as any,
+    );
+
+    render(<FollowerManagementPanel token="test-token" />);
+    const resetButtons = screen.getAllByRole("button", { name: /issue reset/i });
+    await act(async () => {
+      fireEvent.click(resetButtons[0]);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /copy link/i }));
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/select and copy the reset link manually/i);
   });
 });

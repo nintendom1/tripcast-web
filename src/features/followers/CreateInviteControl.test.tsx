@@ -17,6 +17,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: undefined,
+  });
 });
 
 describe("CreateInviteControl", () => {
@@ -59,5 +63,23 @@ describe("CreateInviteControl", () => {
       vi.advanceTimersByTime(1000);
     });
     expect(copyButton).toHaveTextContent(/copy invite link/i);
+  });
+
+  it("shows a manual copy error when clipboard is unavailable", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+
+    render(<CreateInviteControl token="test-token" />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /create invite link/i }));
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /copy invite link/i }));
+    });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/select and copy the invite link manually/i);
   });
 });
