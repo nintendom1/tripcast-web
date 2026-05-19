@@ -118,6 +118,34 @@ describe("ChallengePanel coordinate picking", () => {
   });
 });
 
+describe("ChallengePanel sheet layout", () => {
+  it("keeps the list body scrollable inside a clipped sheet content area", () => {
+    renderPanel();
+
+    const sheet = document.querySelector('[data-role="missions-sheet"]');
+    expect(sheet).not.toBeNull();
+    expect(
+      Array.from(sheet?.querySelectorAll("div") ?? []).some((el) =>
+        el.className.includes("overflow-hidden"),
+      ),
+    ).toBe(true);
+
+    expect(screen.getByRole("tabpanel")).toHaveClass("min-h-0", "space-y-2");
+  });
+
+  it("keeps the create view in a flexing sheet body", async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole("button", { name: "Create mission" }));
+
+    const titleInput = screen.getByPlaceholderText("Mission title");
+    const createBody = titleInput.closest("div.flex-1");
+
+    expect(createBody).toHaveClass("flex", "min-h-0", "flex-col");
+  });
+});
+
 describe("ChallengePanel Support Crew ownership", () => {
   it("lets Support Crew withdraw a mission opened from Mine even when userId is not available", async () => {
     const user = userEvent.setup();

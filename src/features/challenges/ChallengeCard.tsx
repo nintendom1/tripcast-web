@@ -33,14 +33,14 @@ export default function ChallengeCard({ challenge, isOwn, isHighlighted, onClick
     <button
       type="button"
       data-challenge-id={challenge._id}
-      className={`w-full text-left p-3 rounded-lg border bg-white hover:bg-slate-50 transition-all flex flex-col gap-1.5 ${
+      className={`w-full text-left p-3 pr-10 rounded-lg border bg-white hover:bg-slate-50 transition-all flex flex-col gap-1.5 ${
         isHighlighted ? "border-amber-400 ring-2 ring-amber-300 bg-amber-50" : "border-slate-200"
       }`}
       onClick={onClick}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="text-sm font-medium text-navy line-clamp-2">{challenge.title}</span>
-        <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 ${statusColor}`}>
+      <div className="flex min-w-0 items-start justify-between gap-2">
+        <span className="min-w-0 text-sm font-medium text-navy line-clamp-2">{challenge.title}</span>
+        <span className={`max-w-[48%] truncate text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 ${statusColor}`}>
           {statusLabel}
         </span>
       </div>
