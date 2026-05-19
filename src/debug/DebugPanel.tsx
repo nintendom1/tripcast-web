@@ -295,7 +295,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
   const allLogs = getLogs();
 
   return (
-    <div className="grid gap-5 px-5 pb-6">
+    <div className="flex h-full min-h-0 flex-col gap-5 px-5 pb-6">
       {/* Back header */}
       <div className="flex items-center gap-2 pt-1">
         <button
@@ -416,19 +416,19 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
       ) : null}
 
       {/* Log list */}
-      {logs.length === 0 ? (
-        <p className="text-center text-xs text-[var(--ink-3)]">
-          {enabled ? "No logs yet. Interact with the app to capture events." : "Enable debug logging to start capturing."}
-        </p>
-      ) : (
-        <div className="rounded-xl bg-[var(--bg-card)] px-3">
+      <div className="min-h-0 flex-1 overflow-y-auto rounded-xl bg-[var(--bg-card)] px-3 py-2">
+        {logs.length === 0 ? (
+          <p className="py-4 text-center text-xs text-[var(--ink-3)]">
+            {enabled ? "No logs yet. Interact with the app to capture events." : "Enable debug logging to start capturing."}
+          </p>
+        ) : (
           <ul aria-label="Recent debug log entries">
             {logs.map((entry, i) => (
               <EntryRow key={i} entry={entry} />
             ))}
           </ul>
-        </div>
-      )}
+        )}
+      </div>
 
     </div>
   );
