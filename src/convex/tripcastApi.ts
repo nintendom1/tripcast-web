@@ -354,6 +354,47 @@ export type TravelerStateForCrew =
   | { visible: false; updatedAt: null }
   | ({ visible: true } & Partial<TravelerStateFields> & { updatedAt: number | null });
 
+// ---------------------------------------------------------------------------
+// Auto State types
+// ---------------------------------------------------------------------------
+
+export type AutoStateSettings = {
+  autoBedtimeMinutes: number;
+  autoWakeTimeMinutes: number;
+  autoEnergyMin: number;
+  autoEnergyMax: number;
+  autoStomachMin: number;
+  autoStomachMax: number;
+  autoEnergySleepDeltaPerTick: number;
+  autoEnergyAwakeDeltaPerTick: number;
+  autoStomachAwakeDeltaPerTick: number;
+  autoStomachNightAboveHungryEveryTicks: number;
+  autoStomachNightAtOrBelowHungryEveryTicks: number;
+};
+
+export type AutoState = AutoStateSettings & {
+  autoStateEnabled: boolean;
+  autoEnabledAt?: number;
+  autoTimeZone: string;
+  autoBaseEnergyScore?: number;
+  autoBaseStomachScore?: number;
+  updatedAt: number | null;
+  updatedBySessionId: string | null;
+};
+
+export type AutoStateForCrew =
+  | { visible: false }
+  | { visible: true; autoStateEnabled: false }
+  | (AutoStateSettings & {
+      visible: true;
+      autoStateEnabled: true;
+      autoEnabledAt?: number;
+      autoTimeZone: string;
+      autoBaseEnergyScore?: number;
+      autoBaseStomachScore?: number;
+      updatedAt: number;
+    });
+
 export type UpdateTravelerStateArgs = {
   token: string;
   stateAt?: number;
@@ -1132,6 +1173,43 @@ export const tripcastApi = {
         showSchedulePressure?: boolean;
         showStatusNote?: boolean;
         showBiometrics?: boolean;
+      },
+      null
+    >,
+  },
+  travelerAutoState: {
+    travelerGetAutoState: (anyApi as any).travelerAutoState.travelerGetAutoState as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      AutoState
+    >,
+    supportCrewGetAutoState: (anyApi as any).travelerAutoState.supportCrewGetAutoState as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      AutoStateForCrew
+    >,
+    travelerSetAutoStateEnabled: (anyApi as any).travelerAutoState.travelerSetAutoStateEnabled as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; enabled: boolean; timeZone: string },
+      null
+    >,
+    travelerUpdateAutoStateSettings: (anyApi as any).travelerAutoState.travelerUpdateAutoStateSettings as FunctionReference<
+      "mutation",
+      "public",
+      { token: string } & AutoStateSettings,
+      null
+    >,
+    travelerRebaseAutoStateTimeZone: (anyApi as any).travelerAutoState.travelerRebaseAutoStateTimeZone as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        newTimeZone: string;
+        rebasedEstimatedEnergy: number;
+        rebasedEstimatedStomach: number;
       },
       null
     >,
