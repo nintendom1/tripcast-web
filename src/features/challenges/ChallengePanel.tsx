@@ -10,6 +10,7 @@ import ChallengeDetailSheet from "./ChallengeDetailSheet";
 import {
   Sheet,
   SheetBackButton,
+  SheetBody,
   SheetCloseButton,
   SheetContent,
   SheetGrabber,
@@ -254,7 +255,7 @@ export default function ChallengePanel({
           </div>
         </div>
 
-        <div className="flex flex-1 min-h-0 flex-col">
+        <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
           {viewMode === "list" ? (
             isTraveler ? (
               <TravelerListView
@@ -276,7 +277,7 @@ export default function ChallengePanel({
               />
             )
           ) : viewMode === "create" ? (
-            <div className="overflow-y-auto px-4 py-3">
+            <SheetBody className="flex flex-1 min-h-0 flex-col px-4 pb-4 pt-3">
               {isTraveler ? (
                 <TravelerCreateForm
                   token={token}
@@ -290,9 +291,9 @@ export default function ChallengePanel({
                   onSuccess={() => goToList("success")}
                 />
               )}
-            </div>
+            </SheetBody>
           ) : viewMode === "detail" && selectedChallenge ? (
-            <div className="overflow-y-auto">
+            <SheetBody className="p-0">
               <ChallengeDetailSheet
                 challenge={selectedChallenge.challenge}
                 token={token}
@@ -324,7 +325,7 @@ export default function ChallengePanel({
                     : undefined
                 }
               />
-            </div>
+            </SheetBody>
           ) : null}
         </div>
       </SheetContent>
@@ -397,7 +398,7 @@ function TravelerListView({
 
   return (
     <>
-      <SheetTabs aria-label="Challenge filters" className="mt-3">
+      <SheetTabs aria-label="Challenge filters" className="mt-3 gap-1.5 pb-3">
         {TRAVELER_FILTERS.map((f) => (
           <SheetTab
             key={f.value}
@@ -411,11 +412,11 @@ function TravelerListView({
         ))}
       </SheetTabs>
 
-      <div
+      <SheetBody
         id="challenge-tabpanel"
         role="tabpanel"
         aria-labelledby={`challenge-tab-${filter}`}
-        className="flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-4 pt-3"
+        className="min-h-0 space-y-2 px-4 pb-4 pt-3"
       >
         {allChallenges === undefined ? (
           <PendingNotice label="Loading challenges..." />
@@ -432,7 +433,7 @@ function TravelerListView({
                 onClick={() => onOpenDetail(c)}
               />
             );
-            if (!onRequestDelete) return <span key={c._id}>{card}</span>;
+            if (!onRequestDelete) return <div key={c._id}>{card}</div>;
             return (
               <SwipeRow
                 key={c._id}
@@ -447,7 +448,7 @@ function TravelerListView({
             );
           })
         )}
-      </div>
+      </SheetBody>
     </>
   );
 }
@@ -654,7 +655,7 @@ function CrewListView({
 
   return (
     <>
-      <SheetTabs aria-label="Crew challenge tabs" className="mt-3">
+      <SheetTabs aria-label="Crew challenge tabs" className="mt-3 gap-1.5 pb-3">
         <SheetTab
           id="crew-tab-active"
           aria-controls="crew-tabpanel"
@@ -673,11 +674,11 @@ function CrewListView({
         </SheetTab>
       </SheetTabs>
 
-      <div
+      <SheetBody
         id="crew-tabpanel"
         role="tabpanel"
         aria-labelledby={`crew-tab-${tab}`}
-        className="flex flex-1 min-h-0 flex-col gap-2 overflow-y-auto px-4 pb-4 pt-3"
+        className="min-h-0 space-y-2 px-4 pb-4 pt-3"
       >
         {myChallenges === undefined ? (
           <PendingNotice label="Loading challenges..." />
@@ -688,13 +689,14 @@ function CrewListView({
             </p>
           ) : (
             mine.map((c) => (
-              <ChallengeCard
-                key={c._id}
-                challenge={c}
-                isOwn
-                isHighlighted={c._id === highlightedChallengeId}
-                onClick={() => onOpenDetail(c, true)}
-              />
+              <div key={c._id}>
+                <ChallengeCard
+                  challenge={c}
+                  isOwn
+                  isHighlighted={c._id === highlightedChallengeId}
+                  onClick={() => onOpenDetail(c, true)}
+                />
+              </div>
             ))
           )
         ) : publicChallenges.length === 0 ? (
@@ -703,16 +705,17 @@ function CrewListView({
           </p>
         ) : (
           publicChallenges.map((c) => (
-            <ChallengeCard
-              key={c._id}
-              challenge={c}
-              isOwn={mineIds.has(c._id)}
-              isHighlighted={c._id === highlightedChallengeId}
-              onClick={() => onOpenDetail(c, mineIds.has(c._id))}
-            />
+            <div key={c._id}>
+              <ChallengeCard
+                challenge={c}
+                isOwn={mineIds.has(c._id)}
+                isHighlighted={c._id === highlightedChallengeId}
+                onClick={() => onOpenDetail(c, mineIds.has(c._id))}
+              />
+            </div>
           ))
         )}
-      </div>
+      </SheetBody>
     </>
   );
 }
