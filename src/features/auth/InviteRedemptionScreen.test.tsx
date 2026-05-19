@@ -104,6 +104,19 @@ describe("InviteRedemptionScreen", () => {
     expect(alert).toHaveTextContent(/taken/i);
   });
 
+  it("blocks usernames with spaces before redemption", async () => {
+    const mockRedeem = vi.fn().mockResolvedValue({ token: "new-session-token" });
+    vi.mocked(convexReact.useMutation).mockReturnValue(mockRedeem as any);
+    renderScreen();
+
+    await fillForm({ username: "ali ce" });
+
+    expect(screen.getByText(/letters, numbers, underscores, and hyphens/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^username/i)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("button", { name: /create account/i })).toBeDisabled();
+    expect(mockRedeem).not.toHaveBeenCalled();
+  });
+
   it("calls onBack when Back button is clicked", async () => {
     renderScreen();
     await userEvent.click(screen.getByRole("button", { name: /back/i }));
