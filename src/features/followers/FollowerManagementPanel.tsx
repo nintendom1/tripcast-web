@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi, type FollowerInfo } from "../../convex/tripcastApi";
@@ -29,6 +29,31 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
   const [resetUrl, setResetUrl] = useState<string | null>(null);
   const [resetForUserId, setResetForUserId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copiedTimerRef.current !== null) {
+        clearTimeout(copiedTimerRef.current);
+      }
+    };
+  }, []);
+
+  function clearCopiedTimer() {
+    if (copiedTimerRef.current !== null) {
+      clearTimeout(copiedTimerRef.current);
+      copiedTimerRef.current = null;
+    }
+  }
+
+  function showCopied() {
+    clearCopiedTimer();
+    setCopied(true);
+    copiedTimerRef.current = setTimeout(() => {
+      setCopied(false);
+      copiedTimerRef.current = null;
+    }, 2000);
+  }
 
   async function handleConfirm() {
     if (!confirmAction || isPending) return;
@@ -47,6 +72,7 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
         const url = `${window.location.origin}?reset=${result.resetToken}`;
         setResetUrl(url);
         setResetForUserId(userId);
+        clearCopiedTimer();
         setCopied(false);
       }
       setConfirmAction(null);
@@ -65,8 +91,7 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
   async function handleCopyReset() {
     if (!resetUrl) return;
     await navigator.clipboard.writeText(resetUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    showCopied();
   }
 
   if (followers === undefined) {
@@ -109,6 +134,8 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
               onClick={() => {
                 setResetUrl(null);
                 setResetForUserId(null);
+                clearCopiedTimer();
+                setCopied(false);
               }}
             >
               Dismiss

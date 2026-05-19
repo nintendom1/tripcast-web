@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   isEnabled,
   setEnabled,
@@ -231,6 +231,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
   const [locationRedact, setLocationRedactState] = useState(getLocationRedact);
   const [logs, setLogs] = useState<DebugEntry[]>(() => getLogs().slice(-50).reverse());
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const copyStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refresh = useCallback(() => {
     setLogs(getLogs().slice(-50).reverse());
@@ -240,6 +241,30 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     return subscribe(refresh);
   }, [refresh]);
+
+  useEffect(() => {
+    return () => {
+      if (copyStatusTimerRef.current !== null) {
+        clearTimeout(copyStatusTimerRef.current);
+      }
+    };
+  }, []);
+
+  function clearCopyStatusTimer() {
+    if (copyStatusTimerRef.current !== null) {
+      clearTimeout(copyStatusTimerRef.current);
+      copyStatusTimerRef.current = null;
+    }
+  }
+
+  function showCopyStatus(message: string) {
+    clearCopyStatusTimer();
+    setCopyStatus(message);
+    copyStatusTimerRef.current = setTimeout(() => {
+      setCopyStatus(null);
+      copyStatusTimerRef.current = null;
+    }, 3000);
+  }
 
   function handleToggle() {
     const next = !enabled;
@@ -258,6 +283,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
     if (!enabled) return;
     clearLogs();
     setLogs([]);
+    clearCopyStatusTimer();
     setCopyStatus(null);
   }
 
@@ -266,12 +292,11 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
     const all = getLogs();
     try {
       await copyToClipboard(JSON.stringify(all, null, 2));
-      setCopyStatus("Copied JSON!");
+      showCopyStatus("Copied JSON!");
     } catch {
       downloadJson(`tripcast-debug-${getSessionId()}.json`, all);
-      setCopyStatus("Downloaded JSON (clipboard unavailable)");
+      showCopyStatus("Downloaded JSON (clipboard unavailable)");
     }
-    setTimeout(() => setCopyStatus(null), 3000);
   }
 
   function handleDownloadJson() {
@@ -284,12 +309,11 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
     const summary = buildLlmSummary();
     try {
       await copyToClipboard(summary);
-      setCopyStatus("Copied debug summary!");
+      showCopyStatus("Copied debug summary!");
     } catch {
       downloadJson(`tripcast-debug-summary-${getSessionId()}.md`, summary);
-      setCopyStatus("Downloaded summary (clipboard unavailable)");
+      showCopyStatus("Downloaded summary (clipboard unavailable)");
     }
-    setTimeout(() => setCopyStatus(null), 3000);
   }
 
   const allLogs = getLogs();

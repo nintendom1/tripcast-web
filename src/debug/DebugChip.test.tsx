@@ -1,0 +1,52 @@
+import { act } from "react";
+import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DebugChip } from "./DebugChip";
+import { clearLogs, log, setEnabled, setPreset } from "./debugLogger";
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  localStorage.clear();
+  clearLogs();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("DebugChip", () => {
+  it("hides when debug logging is disabled", () => {
+    setEnabled(false);
+    render(<DebugChip onOpen={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /open debug panel/i })).not.toBeInTheDocument();
+  });
+
+  it("updates the log count when entries arrive", () => {
+    setEnabled(true);
+    setPreset("normal");
+    render(<DebugChip onOpen={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: /open debug panel/i })).toHaveTextContent("0");
+
+    act(() => {
+      log("info", "Test", "action", "ui");
+    });
+
+    expect(screen.getByRole("button", { name: /open debug panel/i })).toHaveTextContent("1");
+  });
+
+  it("clears the blink timer when unmounted", () => {
+    vi.useFakeTimers();
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+    setEnabled(true);
+    setPreset("normal");
+    const { unmount } = render(<DebugChip onOpen={vi.fn()} />);
+
+    act(() => {
+      log("info", "Test", "action", "ui");
+    });
+    unmount();
+
+    expect(clearTimeoutSpy).toHaveBeenCalled();
+  });
+});

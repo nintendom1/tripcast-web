@@ -1,11 +1,16 @@
-import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act } from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DebugPanel from "./DebugPanel";
 import { clearLogs, setEnabled } from "./debugLogger";
 
 beforeEach(() => {
   localStorage.clear();
   clearLogs();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("DebugPanel", () => {
@@ -34,5 +39,42 @@ describe("DebugPanel", () => {
     expect(screen.getByRole("button", { name: /refresh/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /copy debug summary/i })).not.toBeDisabled();
     expect(screen.getByLabelText(/ui/i)).not.toBeDisabled();
+  });
+
+  it("restarts the copy status timer on repeated copies", async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    setEnabled(true);
+    render(<DebugPanel onBack={vi.fn()} />);
+    const copyButton = screen.getByRole("button", { name: /copy debug summary/i });
+
+    await act(async () => {
+      fireEvent.click(copyButton);
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(/copied debug summary/i);
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    await act(async () => {
+      fireEvent.click(copyButton);
+    });
+    expect(writeText).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 });

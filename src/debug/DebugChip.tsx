@@ -9,13 +9,20 @@ export function DebugChip({ onOpen }: { onOpen: () => void }) {
   const blinkTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    return subscribe(() => {
+    const unsubscribe = subscribe(() => {
       setEnabledState(isEnabled());
       setLogCount(getLogs().length);
       setBlink(true);
       if (blinkTimerRef.current !== null) clearTimeout(blinkTimerRef.current);
       blinkTimerRef.current = setTimeout(() => setBlink(false), 500);
     });
+
+    return () => {
+      unsubscribe();
+      if (blinkTimerRef.current !== null) {
+        clearTimeout(blinkTimerRef.current);
+      }
+    };
   }, []);
 
   if (!enabled) return null;
