@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { act } from "react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import FollowerManagementPanel from "./FollowerManagementPanel";
 
@@ -34,6 +35,10 @@ beforeEach(() => {
   vi.mocked(convexReact.useMutation).mockImplementation(
     () => vi.fn().mockResolvedValue(null) as any,
   );
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("FollowerManagementPanel", () => {
@@ -117,5 +122,59 @@ describe("FollowerManagementPanel", () => {
 
     expect(mockReset).toHaveBeenCalledWith({ token: "test-token", userId: "user1" });
     expect(await screen.findByText(/password reset link/i)).toBeInTheDocument();
+  });
+
+  it("restarts the reset link copied state timer on repeated copies", async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    const mockValues = [
+      vi.fn().mockResolvedValue(null),
+      vi.fn().mockResolvedValue(null),
+      vi.fn().mockResolvedValue({ resetToken: "reset-tok-abc" }),
+      vi.fn().mockResolvedValue(null),
+    ];
+    let callCount = 0;
+    vi.mocked(convexReact.useMutation).mockImplementation(
+      () => mockValues[callCount++ % mockValues.length] as any,
+    );
+
+    render(<FollowerManagementPanel token="test-token" />);
+    const resetButtons = screen.getAllByRole("button", { name: /issue reset/i });
+    await act(async () => {
+      fireEvent.click(resetButtons[0]);
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+    });
+
+    const copyButton = screen.getByRole("button", { name: /copy link/i });
+    await act(async () => {
+      fireEvent.click(copyButton);
+    });
+    expect(copyButton).toHaveTextContent(/copied/i);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    await act(async () => {
+      fireEvent.click(copyButton);
+    });
+    expect(writeText).toHaveBeenCalledTimes(2);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(copyButton).toHaveTextContent(/copied/i);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(copyButton).toHaveTextContent(/copy link/i);
   });
 });
