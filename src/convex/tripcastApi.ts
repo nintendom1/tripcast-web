@@ -422,7 +422,7 @@ export type UpdateTravelerStateArgs = {
 };
 
 // ---------------------------------------------------------------------------
-// History types
+// Journal types
 // ---------------------------------------------------------------------------
 
 export type HistoryEventType =

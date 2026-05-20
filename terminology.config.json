@@ -162,6 +162,12 @@
       "path": "**/README.md",
       "lineContains": "terminology baseline",
       "reason": "Terminology docs may refer to lint concepts."
+    },
+    {
+      "ruleId": "journal-history",
+      "path": "**/README.md",
+      "lineContains": "git history",
+      "reason": "Version control history is not the Journal feature."
     }
   ]
 }
