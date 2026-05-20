@@ -18,7 +18,7 @@ import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet, { type OptionsView } from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 import { TopBar } from "./features/hud";
-import CrewLandingTour, { hasSeenCrewTour, resetCrewTourSeen } from "./features/onboarding/CrewLandingTour";
+import FollowerLandingTour, { hasSeenFollowerTour, resetFollowerTourSeen } from "./features/onboarding/FollowerLandingTour";
 import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
 import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
 import { PendingNotice } from "./components/resilience/PendingNotice";
@@ -86,7 +86,7 @@ function ConnectedApp() {
   // Follower first-launch tour visibility — only shown for Follower sessions
   // that haven't already seen it on this browser. Toggled to false on tour
   // completion or skip; localStorage persists the seen flag separately.
-  const [isCrewTourOpen, setIsCrewTourOpen] = useState(false);
+  const [isFollowerTourOpen, setIsFollowerTourOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
   const [sessionRetryNonce, setSessionRetryNonce] = useState(0);
@@ -155,8 +155,8 @@ function ConnectedApp() {
       ? activeSessionCheck.role
       : null;
   useEffect(() => {
-    if (currentRole === "support_crew" && !hasSeenCrewTour()) {
-      setIsCrewTourOpen(true);
+    if (currentRole === "follower" && !hasSeenFollowerTour()) {
+      setIsFollowerTourOpen(true);
     }
   }, [currentRole]);
 
@@ -375,11 +375,11 @@ function ConnectedApp() {
           setIsOptionsOpen(false);
           setView("follower-management");
         }}
-        onReplayCrewTour={() => {
+        onReplayFollowerTour={() => {
           music.sfx("page");
-          resetCrewTourSeen();
+          resetFollowerTourSeen();
           setIsOptionsOpen(false);
-          setIsCrewTourOpen(true);
+          setIsFollowerTourOpen(true);
         }}
         onLoggedOut={handleLoggedOut}
         onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
@@ -418,11 +418,11 @@ function ConnectedApp() {
         </Suspense>
       </ErrorBoundary>
 
-      {isCrewTourOpen ? (
-        <CrewLandingTour
+      {isFollowerTourOpen ? (
+        <FollowerLandingTour
           userHandle={followerHandle ?? "you"}
           travelerName="the Traveler"
-          onDone={() => setIsCrewTourOpen(false)}
+          onDone={() => setIsFollowerTourOpen(false)}
         />
       ) : null}
 

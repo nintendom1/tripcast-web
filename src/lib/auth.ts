@@ -24,7 +24,7 @@ export function getStoredSession(): StoredSession | null {
       "role" in parsed &&
       typeof (parsed as { token: unknown }).token === "string" &&
       ((parsed as { role: unknown }).role === "traveler" ||
-        (parsed as { role: unknown }).role === "support_crew")
+        (parsed as { role: unknown }).role === "follower")
     ) {
       const stored = parsed as Partial<StoredSession>;
       return {

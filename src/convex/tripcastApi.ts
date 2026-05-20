@@ -350,7 +350,7 @@ export type TravelerStateHistoryEntry = TravelerStateFields & {
   associatedCheckpointId?: string;
 };
 
-export type TravelerStateForCrew =
+export type TravelerStateForFollower =
   | { visible: false; updatedAt: null }
   | ({ visible: true } & Partial<TravelerStateFields> & { updatedAt: number | null });
 
@@ -382,7 +382,7 @@ export type AutoState = AutoStateSettings & {
   updatedBySessionId: string | null;
 };
 
-export type AutoStateForCrew =
+export type AutoStateForFollower =
   | { visible: false }
   | { visible: true; autoStateEnabled: false }
   | (AutoStateSettings & {
@@ -491,7 +491,7 @@ export type TravelFundsConfigForTraveler =
       spentUsd: number;
     };
 
-export type TravelFundsSummaryForCrew =
+export type TravelFundsSummaryForFollower =
   | { enabled: false }
   | {
       enabled: true;
@@ -521,14 +521,14 @@ export type Transaction = {
   updatedAt: number;
 };
 
-export type TransactionForCrewSummary = {
+export type TransactionForFollowerSummary = {
   _id: string;
   visibility: "summary_only";
   usdAmount: number;
   occurredAt: number;
 };
 
-export type TransactionForCrewPublic = {
+export type TransactionForFollowerPublic = {
   _id: string;
   _creationTime: number;
   visibility: "public";
@@ -548,7 +548,7 @@ export type TransactionForCrewPublic = {
   updatedAt: number;
 };
 
-export type TransactionForCrew = TransactionForCrewSummary | TransactionForCrewPublic;
+export type TransactionForFollower = TransactionForFollowerSummary | TransactionForFollowerPublic;
 
 export type AddTransactionArgs = {
   token: string;
@@ -1146,7 +1146,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      TravelerStateForCrew
+      TravelerStateForFollower
     >,
     travelerListStateHistory: (anyApi as any).travelerState.travelerListStateHistory as FunctionReference<
       "query",
@@ -1188,7 +1188,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      AutoStateForCrew
+      AutoStateForFollower
     >,
     travelerSetAutoStateEnabled: (anyApi as any).travelerAutoState.travelerSetAutoStateEnabled as FunctionReference<
       "mutation",
@@ -1353,13 +1353,13 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      TravelFundsSummaryForCrew
+      TravelFundsSummaryForFollower
     >,
     followerListVisibleTransactions: (anyApi as any).travelFunds.followerListVisibleTransactions as FunctionReference<
       "query",
       "public",
       { token: string },
-      TransactionForCrew[]
+      TransactionForFollower[]
     >,
     getLinkedCostMap: (anyApi as any).travelFunds.getLinkedCostMap as FunctionReference<
       "query",

@@ -26,7 +26,7 @@ vi.mock("./features/followers/FollowerManagementPanel", () => ({
   default: () => <div data-testid="follower-panel" />,
 }));
 
-function setupSessionMocks(role: "traveler" | "support_crew") {
+function setupSessionMocks(role: "traveler" | "follower") {
   vi.mocked(authLib.getStoredSession).mockReturnValue({
     token: "test-token",
     role,
@@ -149,15 +149,15 @@ describe("App: Options sheet — Traveler", () => {
 });
 
 describe("App: Options sheet — Follower", () => {
-  it("opens the Options sheet for support crew", async () => {
-    setupSessionMocks("support_crew");
+  it("opens the Options sheet for support follower", async () => {
+    setupSessionMocks("follower");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
-  it("does not show Emergency Reset in Options for support crew", async () => {
-    setupSessionMocks("support_crew");
+  it("does not show Emergency Reset in Options for support follower", async () => {
+    setupSessionMocks("follower");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(
@@ -165,22 +165,22 @@ describe("App: Options sheet — Follower", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not show Followers section in Options for support crew", async () => {
-    setupSessionMocks("support_crew");
+  it("does not show Followers section in Options for support follower", async () => {
+    setupSessionMocks("follower");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(screen.queryByText(/danger zone/i)).not.toBeInTheDocument();
   });
 
-  it("does not show traveler-only Bulk Import for support crew", async () => {
-    setupSessionMocks("support_crew");
+  it("does not show traveler-only Bulk Import for support follower", async () => {
+    setupSessionMocks("follower");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(screen.queryByRole("button", { name: /bulk import/i })).not.toBeInTheDocument();
   });
 
-  it("shows Sign out in Options for support crew", async () => {
-    setupSessionMocks("support_crew");
+  it("shows Sign out in Options for support follower", async () => {
+    setupSessionMocks("follower");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(screen.getByRole("button", { name: /sign out/i })).toBeInTheDocument();
@@ -214,8 +214,8 @@ describe("App: Manage Followers navigation", () => {
     expect(screen.getByRole("heading", { name: /manage followers/i })).toBeInTheDocument();
   });
 
-  it("Manage Followers button is not present in Options for support crew", async () => {
-    setupSessionMocks("support_crew");
+  it("Manage Followers button is not present in Options for support follower", async () => {
+    setupSessionMocks("follower");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(screen.queryByRole("button", { name: /manage followers/i })).not.toBeInTheDocument();

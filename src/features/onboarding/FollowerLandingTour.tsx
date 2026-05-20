@@ -8,9 +8,9 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { PixelChar } from "./PixelChar";
 import { SpeechBubble } from "./SpeechBubble";
 
-const STORAGE_KEY = "tripcast.crewTourSeen";
+const STORAGE_KEY = "tripcast.followerTourSeen";
 
-export interface CrewLandingTourProps {
+export interface FollowerLandingTourProps {
   /** Username/handle the Follower signed in with. Renders into the welcome bubble. */
   userHandle?: string;
   /** Traveler's display name. Renders into copy where it's natural ("follow Yumi's trip"). */
@@ -42,7 +42,7 @@ function buildPanels(userHandle: string, travelerName: string): Panel[] {
     {
       kicker: "What this is",
       headline: "A live trip, not social media.",
-      bubble: `${travelerName} is the only one out there. You and the rest of the crew are the audience — tap in when you want.`,
+      bubble: `${travelerName} is the only one out there. You and the rest of the follower are the audience — tap in when you want.`,
       cta: "Got it",
     },
     {
@@ -78,11 +78,11 @@ function buildPanels(userHandle: string, travelerName: string): Panel[] {
  * speaking each panel's bubble; the user advances via the primary CTA at
  * the bottom and can skip from the top-right.
  */
-export default function CrewLandingTour({
+export default function FollowerLandingTour({
   userHandle = "you",
   travelerName = "the Traveler",
   onDone,
-}: CrewLandingTourProps) {
+}: FollowerLandingTourProps) {
   const panels = React.useMemo(
     () => buildPanels(userHandle, travelerName),
     [userHandle, travelerName],
@@ -200,7 +200,7 @@ export default function CrewLandingTour({
 }
 
 /** Read-only check for the tour-seen flag. Used by the App to gate first-launch. */
-export function hasSeenCrewTour(): boolean {
+export function hasSeenFollowerTour(): boolean {
   try {
     return window.localStorage.getItem(STORAGE_KEY) === "1";
   } catch {
@@ -209,7 +209,7 @@ export function hasSeenCrewTour(): boolean {
 }
 
 /** Force-clear the seen flag so the tour shows again. Used by "Replay tour" in Options. */
-export function resetCrewTourSeen(): void {
+export function resetFollowerTourSeen(): void {
   try {
     window.localStorage.removeItem(STORAGE_KEY);
   } catch {

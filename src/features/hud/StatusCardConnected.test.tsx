@@ -16,13 +16,13 @@ beforeEach(() => {
 describe("StatusCardConnected", () => {
   it("does not render placeholder state meters for Followers when state is hidden", () => {
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
-      if (ref === tripcastApi.travelerState.supportCrewGetTravelerState) {
+      if (ref === tripcastApi.travelerState.followerGetTravelerState) {
         return { visible: false };
       }
-      if (ref === tripcastApi.travelerAutoState.supportCrewGetAutoState) {
+      if (ref === tripcastApi.travelerAutoState.followerGetAutoState) {
         return { visible: false };
       }
-      if (ref === tripcastApi.currentActivity.supportCrewGetCurrentActivity) {
+      if (ref === tripcastApi.currentActivity.followerGetCurrentActivity) {
         return {
           _id: "activity-1",
           _creationTime: 1,
@@ -38,7 +38,7 @@ describe("StatusCardConnected", () => {
       return undefined;
     });
 
-    render(<StatusCardConnected token="token" role="support_crew" onOpenState={vi.fn()} />);
+    render(<StatusCardConnected token="token" role="follower" onOpenState={vi.fn()} />);
 
     expect(screen.getByText("Museum")).toBeInTheDocument();
     expect(screen.queryByText("Energy")).not.toBeInTheDocument();

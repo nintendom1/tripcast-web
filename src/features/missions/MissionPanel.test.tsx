@@ -210,7 +210,7 @@ describe("MissionPanel Follower ownership", () => {
       _creationTime: 1,
       title: "My mission",
       status: "proposed",
-      source: "support_crew",
+      source: "follower",
       proposedByUserId: "account-user-1",
       createdAt: 1,
       updatedAt: 1,
@@ -219,12 +219,12 @@ describe("MissionPanel Follower ownership", () => {
     };
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (ref === tripcastApi.historyEvents.listHistoryEvents) return [];
+      if (ref === tripcastApi.journalEvents.listJournalEvents) return [];
       if (ref === tripcastApi.missions.getMission) return ownMission;
       return { mine: [ownMission], public: [] };
     });
 
-    renderPanel({ role: "support_crew" });
+    renderPanel({ role: "follower" });
 
     await user.click(screen.getByRole("tab", { name: /Mine/ }));
     await user.click(screen.getByText("My mission"));

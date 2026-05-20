@@ -51,10 +51,10 @@ type OptionsSheetProps = {
   onOpenChange: (open: boolean) => void;
   defaultView?: OptionsView;
   session: StoredSession;
-  role: "traveler" | "support_crew";
+  role: "traveler" | "follower";
   onSignOut: () => void;
   onManageFollowers: () => void;
-  onReplayCrewTour: () => void;
+  onReplayFollowerTour: () => void;
   onLoggedOut: () => void;
   onLocationDataCleared: () => void;
   onTripDataDeleted: () => void;
@@ -163,7 +163,7 @@ export default function OptionsSheet({
   role,
   onSignOut,
   onManageFollowers,
-  onReplayCrewTour,
+  onReplayFollowerTour,
   onLoggedOut,
   onLocationDataCleared,
   onTripDataDeleted,
@@ -256,7 +256,7 @@ export default function OptionsSheet({
               session={session}
               onSignOut={handleSignOut}
               onManageFollowers={onManageFollowers}
-              onReplayCrewTour={onReplayCrewTour}
+              onReplayFollowerTour={onReplayFollowerTour}
               onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
@@ -292,17 +292,17 @@ function OptionsHome({
   session,
   onSignOut,
   onManageFollowers,
-  onReplayCrewTour,
+  onReplayFollowerTour,
   onTravelFunds,
   onBulkImport,
   onEmergencyReset,
   onDebugLogs,
 }: {
-  role: "traveler" | "support_crew";
+  role: "traveler" | "follower";
   session: StoredSession;
   onSignOut: () => void;
   onManageFollowers: () => void;
-  onReplayCrewTour: () => void;
+  onReplayFollowerTour: () => void;
   onTravelFunds: () => void;
   onDebugLogs: () => void;
   onBulkImport: () => void;
@@ -346,12 +346,12 @@ function OptionsHome({
           </OptionsSection>
 
           <OptionsSection label="Tour">
-            <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the Follower tour" onClick={onReplayCrewTour} />
+            <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the Follower tour" onClick={onReplayFollowerTour} />
           </OptionsSection>
         </>
       ) : (
         <OptionsSection label="Trip">
-          <OptionsRow icon={Play} title="Replay welcome tour" detail="See the pixel guide again" onClick={onReplayCrewTour} />
+          <OptionsRow icon={Play} title="Replay welcome tour" detail="See the pixel guide again" onClick={onReplayFollowerTour} />
         </OptionsSection>
       )}
 
@@ -369,7 +369,7 @@ function OptionsHome({
   );
 }
 
-function OptionsHomeHeader({ role }: { role: "traveler" | "support_crew" }) {
+function OptionsHomeHeader({ role }: { role: "traveler" | "follower" }) {
   return (
     <div className="flex items-start justify-between gap-2 px-5 pt-2">
       <div className="flex min-w-0 flex-col gap-1.5">

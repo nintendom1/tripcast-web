@@ -98,7 +98,7 @@ vi.mock("../routevote/RouteVoteProgress", () => ({
   default: () => null,
 }));
 
-vi.mock("../journal/HistorySheet", () => ({
+vi.mock("../journal/JournalSheet", () => ({
   default: () => <div data-testid="journal-sheet" />,
 }));
 
@@ -207,7 +207,7 @@ describe("TripMap location marker", () => {
       ],
     });
 
-    const { rerender } = render(<TripMap token="test-token" role="support_crew" />);
+    const { rerender } = render(<TripMap token="test-token" role="follower" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Votes" }));
 
@@ -216,7 +216,7 @@ describe("TripMap location marker", () => {
     });
     const firstFallbackOrigin = routeVotePanelProps.at(-1)?.fallbackOrigin;
 
-    rerender(<TripMap token="test-token" role="support_crew" />);
+    rerender(<TripMap token="test-token" role="follower" />);
 
     await waitFor(() => {
       expect(routeVotePanelProps.at(-1)?.fallbackOrigin).toBe(firstFallbackOrigin);
@@ -228,7 +228,7 @@ describe("TripMap location marker", () => {
       travelerLocation: { lat: 47.61, lon: -122.33, isSharing: true },
     });
 
-    render(<TripMap token="test-token" role="support_crew" />);
+    render(<TripMap token="test-token" role="follower" />);
 
     await waitFor(() => {
       expect(getTravelerMarker()).toHaveClass("traveler-location-marker--pulsing");

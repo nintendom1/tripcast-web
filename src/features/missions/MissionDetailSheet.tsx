@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Mission, MissionStatus, HistoryEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Mission, MissionStatus, JournalEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -40,7 +40,7 @@ type Props = {
    *  after the resulting story lands. */
   onCompleteAsStory?: (Mission: Mission, transaction?: TransactionInlineInput) => void;
   onRequestNavigateToVote?: (voteId: string) => void;
-  onOpenLinkedStory?: (event: HistoryEvent) => void;
+  onOpenLinkedStory?: (event: JournalEvent) => void;
 };
 
 function statusLabel(status: string): string {
@@ -126,9 +126,9 @@ export default function MissionDetailSheet({
   );
 
   // Linked story detection — Convex deduplicates with TripMap's existing subscription.
-  const allHistoryEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
-  const linkedStory = allHistoryEvents.find(
-    (e) => e.type === "check_in" && e.missionId === c?._id,
+  const allJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
+  const linkedStory = allJournalEvents.find(
+    (e) => e.type === "story" && e.missionId === c?._id,
   ) ?? null;
 
   if (!c) return null;
@@ -903,7 +903,7 @@ export default function MissionDetailSheet({
         </div>
       )}
 
-      {/* Support crew: withdraw own proposed Mission */}
+      {/* Support follower: withdraw own proposed Mission */}
       {!isTraveler && isOwn && status === "proposed" && (
         <Button
           variant="outline"

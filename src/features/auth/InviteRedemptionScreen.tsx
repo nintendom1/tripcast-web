@@ -82,7 +82,7 @@ export default function InviteRedemptionScreen({
       });
       onSignIn({
         token: result.token,
-        role: "support_crew",
+        role: "follower",
         sessionType: "follower",
         username: normalizedUsername,
       });

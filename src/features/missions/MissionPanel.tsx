@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Mission, HistoryEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Mission, JournalEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import MissionCard from "./MissionCard";
 import MissionProposalForm from "./MissionProposalForm";
 import MissionDetailSheet from "./MissionDetailSheet";
@@ -49,7 +49,7 @@ type Props = {
   pendingOpenDetailMissionId?: string | null;
   onClearPendingDetail?: () => void;
   onRequestNavigateToVote?: (voteId: string) => void;
-  onOpenLinkedStory?: (event: HistoryEvent) => void;
+  onOpenLinkedStory?: (event: JournalEvent) => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -66,10 +66,10 @@ const TRAVELER_FILTERS: { value: TravelerFilter; label: string }[] = [
   { value: "dropped", label: "Dropped" },
 ];
 
-const TITLE_BY_VIEW: Record<ViewMode, { traveler: string; crew: string }> = {
-  list: { traveler: TERMS.missions, crew: TERMS.missions },
-  create: { traveler: `New ${TERMS.mission.toLowerCase()}`, crew: `Propose ${TERMS.mission.toLowerCase()}` },
-  detail: { traveler: TERMS.mission, crew: TERMS.mission },
+const TITLE_BY_VIEW: Record<ViewMode, { traveler: string; follower: string }> = {
+  list: { traveler: TERMS.missions, follower: TERMS.missions },
+  create: { traveler: `New ${TERMS.mission.toLowerCase()}`, follower: `Propose ${TERMS.mission.toLowerCase()}` },
+  detail: { traveler: TERMS.mission, follower: TERMS.mission },
 };
 
 // ---------------------------------------------------------------------------
@@ -211,7 +211,7 @@ export default function MissionPanel({
   }
 
   const isTraveler = role === "traveler";
-  const headerTitle = isTraveler ? TITLE_BY_VIEW[viewMode].traveler : TITLE_BY_VIEW[viewMode].crew;
+  const headerTitle = isTraveler ? TITLE_BY_VIEW[viewMode].traveler : TITLE_BY_VIEW[viewMode].follower;
   const showBack = viewMode !== "list";
 
   return (
@@ -272,7 +272,7 @@ export default function MissionPanel({
                 onRequestDelete={(c) => setPendingDelete(c)}
               />
             ) : (
-              <CrewListView
+              <FollowerListView
                 token={token}
                 userId={userId}
                 pendingOpenMissionId={pendingOpenMissionId}
@@ -637,9 +637,9 @@ function TravelerCreateForm({
 // Follower list view - tabs + MissionCard list
 // ---------------------------------------------------------------------------
 
-type CrewTab = "mine" | "active";
+type FollowerTab = "mine" | "active";
 
-function CrewListView({
+function FollowerListView({
   token,
   pendingOpenMissionId,
   onClearPendingMission,
@@ -653,7 +653,7 @@ function CrewListView({
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
 }) {
-  const [tab, setTab] = useState<CrewTab>("active");
+  const [tab, setTab] = useState<FollowerTab>("active");
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
@@ -712,16 +712,16 @@ function CrewListView({
     <>
       <SheetTabs aria-label="Follower mission tabs" className="mt-3 gap-1.5 pb-3">
         <SheetTab
-          id="crew-tab-active"
-          aria-controls="crew-tabpanel"
+          id="follower-tab-active"
+          aria-controls="follower-tabpanel"
           active={tab === "active"}
           onClick={() => setTab("active")}
         >
           Traveler's board
         </SheetTab>
         <SheetTab
-          id="crew-tab-mine"
-          aria-controls="crew-tabpanel"
+          id="follower-tab-mine"
+          aria-controls="follower-tabpanel"
           active={tab === "mine"}
           onClick={() => setTab("mine")}
         >
@@ -730,9 +730,9 @@ function CrewListView({
       </SheetTabs>
 
       <SheetBody
-        id="crew-tabpanel"
+        id="follower-tabpanel"
         role="tabpanel"
-        aria-labelledby={`crew-tab-${tab}`}
+        aria-labelledby={`follower-tab-${tab}`}
         className="min-h-0 space-y-2 px-4 pb-4 pt-3"
       >
         {myMissions === undefined ? (

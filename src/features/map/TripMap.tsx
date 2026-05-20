@@ -450,7 +450,7 @@ export default function TripMap({
     tripcastApi.missions.travelerListMissions,
     role === "traveler" ? { token } : "skip",
   );
-  const crewMissions = useQuery(
+  const followerMissions = useQuery(
     tripcastApi.missions.followerListMissions,
     role === "follower" ? { token } : "skip",
   );
@@ -458,7 +458,7 @@ export default function TripMap({
     role === "traveler"
       ? (allMissionsForBadge ?? []).filter((c) => c.status === "proposed").length
       : 0;
-  const missionsForLookup = role === "traveler" ? allMissionsForBadge : crewMissions;
+  const missionsForLookup = role === "traveler" ? allMissionsForBadge : followerMissions;
 
   const voteAlert = useQuery(tripcastApi.routeVotes.getActiveRouteVoteAlert, { token });
   const hasUnseenVote = voteAlert?.hasUnseen ?? false;
@@ -1280,7 +1280,7 @@ export default function TripMap({
 
       {/* Vote panels — hidden (not unmounted) during coordinate pick to preserve form state */}
       <AnimatePresence>
-        {role === "support_crew" && isVotePanelOpen && (
+        {role === "follower" && isVotePanelOpen && (
           <FeatureBoundary
             resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
@@ -1294,7 +1294,7 @@ export default function TripMap({
             fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
           >
             <RouteVotePanel
-              key="crew-vote-panel"
+              key="follower-vote-panel"
               token={token}
               onClose={() => {
                 music.sfx("close");

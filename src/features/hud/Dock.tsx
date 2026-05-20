@@ -31,7 +31,7 @@ export interface DockProps {
  *
  * The center FAB is the entry point for adding (Traveler) or proposing (Follower
  * route votes) — its behavior is owned by the parent. Pulsing vote badge signals an
- * active vote that the crew has not yet seen.
+ * active vote that the follower has not yet seen.
  */
 export function Dock({
   active,

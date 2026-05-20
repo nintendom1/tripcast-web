@@ -5,7 +5,7 @@ import {
   tripcastApi,
   type Role,
   type TravelFundsConfigForTraveler,
-  type TravelFundsSummaryForCrew,
+  type TravelFundsSummaryForFollower,
 } from "../../convex/tripcastApi";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import type { AudioScenario } from "./engine";
@@ -39,7 +39,7 @@ export function deriveTripAudioScenario({
 }
 
 function isOverBudget(
-  funds: TravelFundsConfigForTraveler | TravelFundsSummaryForCrew | undefined,
+  funds: TravelFundsConfigForTraveler | TravelFundsSummaryForFollower | undefined,
 ) {
   return funds?.enabled === true && funds.remainingUsd < 0;
 }
@@ -57,20 +57,20 @@ export function useTripAudioScenario({
     tripcastApi.travelFunds.travelerGetConfig,
     role === "traveler" ? { token } : "skip",
   );
-  const crewFunds = useQuery(
-    tripcastApi.travelFunds.supportCrewGetFundsSummary,
-    role === "support_crew" ? { token } : "skip",
+  const followerFunds = useQuery(
+    tripcastApi.travelFunds.followerGetFundsSummary,
+    role === "follower" ? { token } : "skip",
   );
 
   const scenario = useMemo(
     () =>
       deriveTripAudioScenario({
         storyOpen,
-        overBudget: isOverBudget(role === "traveler" ? travelerFunds : crewFunds),
+        overBudget: isOverBudget(role === "traveler" ? travelerFunds : followerFunds),
         voteActive,
         missionActive,
       }),
-    [missionActive, crewFunds, role, storyOpen, travelerFunds, voteActive],
+    [missionActive, followerFunds, role, storyOpen, travelerFunds, voteActive],
   );
 
   useEffect(() => {

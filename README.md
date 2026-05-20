@@ -60,13 +60,13 @@ If `VITE_CONVEX_URL` is stored as a GitHub Environment variable, the workflow jo
 
 ## Auth Flow
 
-Sessions are role-gated. A token is stored in `localStorage` after login. Every mutation and query passes `token` explicitly — there is no cookie-based auth. Roles are `"traveler"` (full write access, emergency reset) or `"support_crew"` (read + vote access only).
+Sessions are role-gated. A token is stored in `localStorage` after login. Every mutation and query passes `token` explicitly — there is no cookie-based auth. Roles are `"traveler"` (full write access, emergency reset) or `"follower"` (read + vote access only).
 
 ## Features
 
 ### Route Vote
 
-`src/features/routevote/` — the traveler proposes destination options and support crew votes. The traveler sees live results; support crew results visibility depends on the vote's `resultsVisibility` setting. When the backend returns `null` for a detail query (vote was deleted), the UI shows a deleted-vote recovery screen with a "Back to votes" button.
+`src/features/routevote/` — the traveler proposes destination options and support follower votes. The traveler sees live results; support follower results visibility depends on the vote's `resultsVisibility` setting. When the backend returns `null` for a detail query (vote was deleted), the UI shows a deleted-vote recovery screen with a "Back to votes" button.
 
 ### Travel Funds
 
@@ -175,7 +175,7 @@ Logs live in `localStorage` (`tripcast.debug.logs`) and never leave the browser 
 
 ## Secret Scanning
 
-This repo runs Gitleaks in GitHub Actions on pushes, pull requests, and manual workflow runs. The workflow checks full git history and redacts detected secret values from logs.
+This repo runs Gitleaks in GitHub Actions on pushes, pull requests, and manual workflow runs. The workflow checks the full git commit graph and redacts detected secret values from logs.
 
 Install Gitleaks locally and make scanning part of the normal commit workflow:
 

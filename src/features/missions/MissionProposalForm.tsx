@@ -32,7 +32,7 @@ export default function MissionProposalForm({ token, onSuccess, onRequestCoordin
   const [error, setError] = useState<string | null>(null);
   const [showNoLocationConfirm, setShowNoLocationConfirm] = useState(false);
 
-  const settings = useQuery(tripcastApi.missionSettings.supportCrewGetMissionSettings, { token });
+  const settings = useQuery(tripcastApi.missionSettings.followerGetMissionSettings, { token });
   const propose = useMutation(tripcastApi.missions.followerProposeMission);
 
   function reset() {

@@ -207,7 +207,7 @@ export default function AddCheckpointSheet({
             <Textarea
               maxLength={1000}
               onChange={(e) => setNote(e.target.value)}
-              placeholder={isFromMission ? "Tell the crew what happened…" : undefined}
+              placeholder={isFromMission ? "Tell the follower what happened…" : undefined}
               rows={isFromMission ? 5 : 3}
               value={note}
             />
