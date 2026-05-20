@@ -194,6 +194,7 @@ function ToggleRow({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
           checked ? "bg-navy" : "bg-muted"
@@ -244,6 +245,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
 
   // Visibility form
   const [showTravelerState, setShowTravelerState] = useState(DEFAULT_VISIBILITY.showTravelerState);
+  const [showTravelerClock, setShowTravelerClock] = useState(DEFAULT_VISIBILITY.showTravelerClock);
   const [showMood, setShowMood] = useState(DEFAULT_VISIBILITY.showMood);
   const [showEnergy, setShowEnergy] = useState(DEFAULT_VISIBILITY.showEnergy);
   const [showStomach, setShowStomach] = useState(DEFAULT_VISIBILITY.showStomach);
@@ -303,6 +305,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
     }
     if (visibility && visibility.updatedAt !== null) {
       setShowTravelerState(visibility.showTravelerState);
+      setShowTravelerClock(visibility.showTravelerClock ?? DEFAULT_VISIBILITY.showTravelerClock);
       setShowMood(visibility.showMood);
       setShowEnergy(visibility.showEnergy);
       setShowStomach(visibility.showStomach);
@@ -394,6 +397,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
       await updateVisibility({
         token,
         showTravelerState,
+        showTravelerClock,
         showMood,
         showEnergy,
         showStomach,
@@ -781,6 +785,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
             <div className="grid gap-2 pl-2">
               {[
                 { label: "Mood", checked: showMood, setter: setShowMood },
+                { label: "Clock", checked: showTravelerClock, setter: setShowTravelerClock },
                 { label: "Energy", checked: showEnergy, setter: setShowEnergy },
                 { label: "Stomach", checked: showStomach, setter: setShowStomach },
                 { label: "Stress", checked: showStress, setter: setShowStress },

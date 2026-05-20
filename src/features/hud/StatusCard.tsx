@@ -29,6 +29,7 @@ export interface StatusCardProps {
   activityLabel?: string | null;
   activityEmoji?: string | null;
   activitySince?: string | null;
+  clockLabel?: string | null;
   meters: StatusCardMeter[];
   /** Show the chevron + treat the card as a button (Traveler taps to open State editor). */
   interactive?: boolean;
@@ -49,6 +50,7 @@ export function StatusCard({
   activityLabel,
   activityEmoji,
   activitySince,
+  clockLabel,
   meters,
   interactive = false,
   onActivate,
@@ -73,10 +75,19 @@ export function StatusCard({
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <div className="flex items-center gap-1 truncate text-[13px] font-semibold text-[var(--ink-1)]">
-          <span className="truncate">{activityLabel ?? "Idle"}</span>
-          {activitySince ? (
-            <span className="font-normal text-[var(--ink-3)]"> · {activitySince}</span>
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1 truncate text-[13px] font-semibold text-[var(--ink-1)]">
+            <span className="truncate">{activityLabel ?? "Idle"}</span>
+            {activitySince ? (
+              <span className="min-w-0 truncate font-normal text-[var(--ink-3)]">
+                · {activitySince}
+              </span>
+            ) : null}
+          </div>
+          {clockLabel ? (
+            <span className="shrink-0 font-[var(--font-mono)] text-[10px] font-semibold text-[var(--ink-3)]">
+              {clockLabel}
+            </span>
           ) : null}
         </div>
 
@@ -88,12 +99,12 @@ export function StatusCard({
               const tier = tierFor((meter.value / max) * 100);
               return (
                 <div key={meter.label} className="flex min-w-0 flex-col gap-1">
-                  <div className="flex items-center gap-1 font-[var(--font-mono)] text-[9px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-3)]">
-                    <span>{meter.label}</span>
+                  <div className="flex min-h-[22px] flex-wrap content-start items-start gap-x-1 gap-y-0.5 font-[var(--font-mono)] text-[9px] font-semibold uppercase leading-[1.05] tracking-[0.08em] text-[var(--ink-3)]">
+                    <span className="min-w-0 truncate">{meter.label}</span>
                     {meter.autoChip ? (
                       <span
                         aria-label={TERMS.autoEstimated}
-                        className="rounded-full bg-navy/10 px-1 py-px text-[8px] font-bold uppercase tracking-wider text-navy"
+                        className="rounded-full bg-navy/10 px-1 py-px text-[7px] font-bold uppercase leading-none tracking-normal text-navy"
                       >
                         {TERMS.autoEstimated}
                       </span>

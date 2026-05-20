@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 
 import {
   tripcastApi,
@@ -114,6 +114,7 @@ function normalizeFollower(auto: AutoStateForFollower | undefined | null): Norma
   if (!auto || !("visible" in auto) || !auto.visible) return null;
   if (!auto.autoStateEnabled) return null;
   if (auto.autoEnabledAt == null) return null;
+  if (typeof auto.autoTimeZone !== "string") return null;
   return {
     autoStateEnabled: true,
     autoEnabledAt: auto.autoEnabledAt,
@@ -132,6 +133,32 @@ function normalizeFollower(auto: AutoStateForFollower | undefined | null): Norma
     autoStomachNightAboveHungryEveryTicks: auto.autoStomachNightAboveHungryEveryTicks,
     autoStomachNightAtOrBelowHungryEveryTicks: auto.autoStomachNightAtOrBelowHungryEveryTicks,
   };
+}
+
+function formatTravelerClock(now: number, timeZone: string): string | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).formatToParts(new Date(now));
+    const hour = parts.find((part) => part.type === "hour")?.value;
+    const minute = parts.find((part) => part.type === "minute")?.value;
+    const dayPeriod = parts.find((part) => part.type === "dayPeriod")?.value;
+    if (!hour || !minute || !dayPeriod) return null;
+    return `${hour}:${minute} ${dayPeriod.toUpperCase()}`;
+  } catch {
+    return null;
+  }
+}
+
+function detectBrowserTimeZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
 }
 
 function formatBaseSavedAgo(ts: number, now: number): string {
@@ -182,6 +209,16 @@ export function StatusCardConnected({
     tripcastApi.travelerAutoState.followerGetAutoState,
     role === "follower" ? { token } : "skip",
   );
+  const travelerPreferences = useQuery(
+    tripcastApi.travelerPreferences.travelerGetPreferences,
+    role === "traveler" ? { token } : "skip",
+  );
+  const followerPreferences = useQuery(
+    tripcastApi.travelerPreferences.followerGetPreferences,
+    role === "follower" ? { token } : "skip",
+  );
+  const ensureTimeZone = useMutation(tripcastApi.travelerPreferences.travelerEnsureTimeZone);
+  const ensureAttemptedRef = React.useRef<string | null>(null);
 
   const [now, setNow] = React.useState(() => Date.now());
   React.useEffect(() => {
@@ -189,10 +226,38 @@ export function StatusCardConnected({
     return () => clearInterval(id);
   }, []);
 
+  const detectedTimeZone = React.useMemo(() => detectBrowserTimeZone(), []);
+
+  React.useEffect(() => {
+    if (role !== "traveler") return;
+    if (!detectedTimeZone || travelerPreferences === undefined) return;
+    if (travelerPreferences.travelerTimeZone) return;
+
+    const attemptKey = `${token}:${detectedTimeZone}`;
+    if (ensureAttemptedRef.current === attemptKey) return;
+    ensureAttemptedRef.current = attemptKey;
+    ensureTimeZone({ token, timeZone: detectedTimeZone, source: "device" }).catch(() => {
+      ensureAttemptedRef.current = null;
+    });
+  }, [detectedTimeZone, ensureTimeZone, role, token, travelerPreferences]);
+
   const auto = React.useMemo<NormalizedAuto | null>(() => {
     if (role === "traveler") return normalizeTraveler(travelerAutoState);
     return normalizeFollower(followerAutoState);
   }, [role, travelerAutoState, followerAutoState]);
+
+  const clockTimeZone =
+    role === "traveler"
+      ? travelerPreferences && travelerPreferences.travelerTimeZone
+        ? travelerPreferences.travelerTimeZone
+        : null
+      : followerPreferences &&
+          "visible" in followerPreferences &&
+          followerPreferences.visible &&
+          typeof followerPreferences.travelerTimeZone === "string"
+        ? followerPreferences.travelerTimeZone
+        : null;
+  const clockLabel = clockTimeZone ? formatTravelerClock(now, clockTimeZone) : null;
 
   const stateFacts: StateFacts | null = React.useMemo(() => {
     if (role === "traveler") {
@@ -301,6 +366,7 @@ export function StatusCardConnected({
         activityLabel={activity ? activity.title : followerActivityLabelOverride ?? null}
         activityEmoji={activity?.emoji ?? null}
         activitySince={activity ? formatElapsed(activity.startedAt, now) : null}
+        clockLabel={clockLabel}
         meters={meters}
         interactive={role === "traveler"}
         onActivate={role === "traveler" ? onOpenState : undefined}

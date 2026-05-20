@@ -453,7 +453,7 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
             onClick={handleRebase}
             className="w-full"
           >
-            {rebasing ? "Rebasing…" : `Rebase ${TERMS.autoState} to local time`}
+            {rebasing ? "Rebasing…" : `Rebase ${TERMS.autoState} to ${detectedTz}`}
           </Button>
         </div>
       )}
