@@ -62,8 +62,7 @@ export default function TravelFundsInlineSection({
   const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
   // Auto-expand when the parent provided meaningful prefill data — the user is
   // confirming a budgeted amount, not creating a transaction from scratch.
-  const hasMeaningfulPrefill =
-    prefill?.localAmount !== undefined || Boolean(prefill?.title);
+  const hasMeaningfulPrefill = prefill?.localAmount !== undefined;
   const [open, setOpen] = useState<boolean>(hasMeaningfulPrefill);
 
   const initialCurrency = prefill?.currencyCode ?? "USD";

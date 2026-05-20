@@ -12,8 +12,6 @@ import TravelFundsInlineSection, {
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 
-// Session-scoped: once dismissed, the start-mission hint stays hidden for the tab session.
-let _missionHintDismissed = false;
 
 const RESPONSE_PRESETS = [
   "Looks good",
@@ -82,6 +80,7 @@ export default function ChallengeDetailSheet({
   const [selectedPreset, setSelectedPreset] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showMarkInProgressConfirm, setShowMarkInProgressConfirm] = useState(false);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -94,9 +93,6 @@ export default function ChallengeDetailSheet({
   const [editDuration, setEditDuration] = useState("");
   const [editEnergy, setEditEnergy] = useState<"" | "low" | "medium" | "high">("");
   const [editStatus, setEditStatus] = useState<ChallengeStatus>("visible");
-
-  // Progressive disclosure: session-scoped hint dismissal
-  const [hintDismissed, setHintDismissed] = useState(_missionHintDismissed);
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
@@ -111,6 +107,7 @@ export default function ChallengeDetailSheet({
   const togglePin = useMutation(tripcastApi.challenges.travelerToggleChallengeMapPin);
   const withdraw = useMutation(tripcastApi.challenges.followerWithdrawChallenge);
   const updateStatus = useMutation(tripcastApi.routeVotes.travelerUpdateChallengeStatus);
+  const setCurrentActivity = useMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
 
   // Live challenge subscription — keeps the detail view in sync after edits.
   const liveChallenge = useQuery(
@@ -118,6 +115,15 @@ export default function ChallengeDetailSheet({
     challenge ? { token, challengeId: challenge._id } : "skip",
   );
   const c = liveChallenge ?? challenge;
+
+  const currentActivity = useQuery(
+    tripcastApi.currentActivity.travelerGetCurrentActivity,
+    role === "traveler" ? { token } : "skip",
+  );
+  const inProgressChallenges = useQuery(
+    tripcastApi.challenges.travelerListChallenges,
+    role === "traveler" ? { token, status: "in_progress" } : "skip",
+  );
 
   // Linked story detection — Convex deduplicates with TripMap's existing subscription.
   const allHistoryEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
@@ -131,6 +137,7 @@ export default function ChallengeDetailSheet({
   const canAct = !isWorking;
   const status = c.status;
   const hasLocation = c.lat !== undefined && c.lon !== undefined;
+  const conflictingMission = (inProgressChallenges ?? []).find((ch) => ch._id !== c._id) ?? null;
 
   function openEditMode() {
     log.logForm("form:open");
@@ -304,6 +311,38 @@ export default function ChallengeDetailSheet({
     const transaction =
       completionTxState && "value" in completionTxState ? completionTxState.value : undefined;
     onCompleteAsStory(challenge, transaction);
+  }
+
+  async function handleMarkInProgress() {
+    setShowMarkInProgressConfirm(false);
+    setIsWorking(true);
+    setActionError(null);
+    try {
+      await start({ token, challengeId: c!._id });
+    } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function handleSetCurrentActivity() {
+    setIsWorking(true);
+    setActionError(null);
+    try {
+      await setCurrentActivity({
+        token,
+        title: c!.title,
+        linkedChallengeId: c!._id,
+        locationLabel: c!.locationLabel,
+        lat: c!.lat,
+        lon: c!.lon,
+      });
+    } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      setIsWorking(false);
+    }
   }
 
   async function handleTogglePin() {
@@ -672,22 +711,6 @@ export default function ChallengeDetailSheet({
         <p className="text-sm text-rose-600" role="alert">{actionError}</p>
       )}
 
-      {/* Progressive hint: edit to start mission */}
-      {isTraveler && (status === "visible" || status === "planned") && !isEditing && !hintDismissed && (
-        <div className="rounded-md bg-blue-50 border border-blue-200 p-3 flex items-start gap-2">
-          <p className="text-xs text-blue-700 flex-1">
-            Edit this mission to set its status to "In Progress" to start it.
-          </p>
-          <button
-            type="button"
-            className="text-xs text-blue-500 underline shrink-0"
-            onClick={() => { _missionHintDismissed = true; setHintDismissed(true); }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
-
       {/* Traveler actions (hidden while reject form or delete confirm is open) */}
       {isTraveler && !showRejectForm && !showDeleteConfirm && (
         <div className="flex flex-col gap-2">
@@ -695,6 +718,14 @@ export default function ChallengeDetailSheet({
             <>
               <Button size="sm" type="button" disabled={!canAct} onClick={handleAccept}>
                 Accept and publish
+              </Button>
+              <Button
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
+              >
+                Mark &lsquo;In Progress&rsquo;
               </Button>
               <Button
                 variant="outline"
@@ -723,8 +754,37 @@ export default function ChallengeDetailSheet({
             </>
           )}
 
+          {showMarkInProgressConfirm && conflictingMission && (
+            <div className="flex flex-col gap-3 border border-amber-200 rounded-lg p-3 bg-amber-50">
+              <p className="text-sm text-amber-800">
+                &ldquo;{conflictingMission.title}&rdquo; is currently in progress. Starting this mission will drop it.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => setShowMarkInProgressConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button size="sm" type="button" disabled={!canAct} onClick={handleMarkInProgress}>
+                  Proceed
+                </Button>
+              </div>
+            </div>
+          )}
+
           {(status === "visible" || status === "planned") && (
             <>
+              <Button
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
+              >
+                Mark &lsquo;In Progress&rsquo;
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -763,6 +823,17 @@ export default function ChallengeDetailSheet({
 
           {status === "in_progress" && (
             <>
+              {currentActivity?.linkedChallengeId !== c._id && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  disabled={!canAct}
+                  onClick={handleSetCurrentActivity}
+                >
+                  Set Current Activity to This Mission
+                </Button>
+              )}
               <p className="text-xs text-muted-foreground">
                 Completing this challenge will mark the linked Current Activity as done and open the Check-in form.
               </p>

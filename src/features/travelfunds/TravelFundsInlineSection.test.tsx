@@ -75,11 +75,11 @@ describe("TravelFundsInlineSection — auto-expand", () => {
     );
   });
 
-  it("auto-expands when prefill has a title", () => {
+  it("does not auto-expand when prefill has only a title (no amount)", () => {
     renderSection({ prefill: { title: "Onsen" } });
     expect(screen.getByRole("button", { name: /Travel Funds/ })).toHaveAttribute(
       "aria-expanded",
-      "true",
+      "false",
     );
   });
 

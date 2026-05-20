@@ -115,9 +115,9 @@ function CheckpointMarkers({
     if (!map) return;
 
     markersRef.current.forEach((m) => m.remove());
-    markersRef.current = checkpoints.map((checkpoint) => {
+    markersRef.current = checkpoints.filter((cp) => cp.lat !== undefined && cp.lon !== undefined).map((checkpoint) => {
       const marker = new maplibregl.Marker({ color: "#d92332" })
-        .setLngLat([checkpoint.lon, checkpoint.lat])
+        .setLngLat([checkpoint.lon!, checkpoint.lat!])
         .addTo(map);
 
       const el = marker.getElement();
@@ -257,6 +257,9 @@ function ConvexCheckpointSheet({
         ? transactionState.value
         : prefill?.transaction;
     if (prefill?.challengeId && prefill.completeChallenge !== false) {
+      if (args.lat === undefined || args.lon === undefined) {
+        throw new Error("A map location is required to complete as story.");
+      }
       return completeChallengeAsStory({
         token,
         challengeId: prefill.challengeId,
@@ -1051,8 +1054,8 @@ export default function TripMap({
     }
 
     const lastCheckpoint = checkpoints[checkpoints.length - 1];
-    if (lastCheckpoint) {
-      centerMapOnCoordinate(lastCheckpoint);
+    if (lastCheckpoint?.lat !== undefined && lastCheckpoint.lon !== undefined) {
+      centerMapOnCoordinate(lastCheckpoint as { lat: number; lon: number });
       return;
     }
 

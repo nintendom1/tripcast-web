@@ -4,6 +4,7 @@ import {
   Camera,
   ChevronRight,
   MapPin,
+  Plus,
   Sparkles,
   Trophy,
   Vote as VoteIcon,
@@ -23,6 +24,9 @@ import {
   SheetTabs,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import { SwipeRow } from "../../components/ui/SwipeRow";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { cn } from "@/lib/utils";
@@ -163,9 +167,16 @@ export default function HistorySheet({
   const [pendingDelete, setPendingDelete] = useState<HistoryEvent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [editingEvent, setEditingEvent] = useState<HistoryEvent | null>(null);
+  const [viewMode, setViewMode] = useState<"list" | "create">("list");
+  const [storyTitle, setStoryTitle] = useState("");
+  const [storyBody, setStoryBody] = useState("");
+  const [storyLocation, setStoryLocation] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
+  const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const music = useMusicSafe();
   const log = useDebugLogger("HistorySheet", "src/features/history/HistorySheet.tsx");
 
@@ -206,6 +217,29 @@ export default function HistorySheet({
     }
   }
 
+  async function handleCreateStory() {
+    setIsCreating(true);
+    setCreateError(null);
+    try {
+      await addCheckpoint({
+        token,
+        title: storyTitle.trim() || undefined,
+        note: storyBody.trim() || undefined,
+        locationLabel: storyLocation.trim() || undefined,
+        showInStory: true,
+        source: "inline_form",
+      });
+      setStoryTitle("");
+      setStoryBody("");
+      setStoryLocation("");
+      setViewMode("list");
+    } catch (e) {
+      setCreateError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
   return (
     <>
     <Sheet
@@ -230,12 +264,64 @@ export default function HistorySheet({
           <div className="flex flex-col gap-1">
             <SheetKicker dotColor="var(--flag)">Journal</SheetKicker>
             <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              Trip story
+              {viewMode === "create" ? "New story entry" : "Trip story"}
             </SheetTitle>
           </div>
-          <SheetCloseButton aria-label="Close history" />
+          <div className="flex items-center gap-2">
+            {isTraveler && viewMode === "list" && (
+              <Button
+                size="sm"
+                type="button"
+                className="rounded-full"
+                onClick={() => { setCreateError(null); setViewMode("create"); }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New
+              </Button>
+            )}
+            <SheetCloseButton aria-label="Close history" />
+          </div>
         </div>
 
+        {viewMode === "create" ? (
+          <SheetBody style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
+            <div className="flex flex-col gap-3 p-1">
+              <Input
+                placeholder="Story title (optional)"
+                value={storyTitle}
+                onChange={(e) => setStoryTitle(e.target.value)}
+                maxLength={120}
+              />
+              <Textarea
+                placeholder="What happened?"
+                value={storyBody}
+                onChange={(e) => setStoryBody(e.target.value)}
+                rows={4}
+                maxLength={1000}
+              />
+              <Input
+                placeholder="Location (optional)"
+                value={storyLocation}
+                onChange={(e) => setStoryLocation(e.target.value)}
+                maxLength={120}
+              />
+              {createError && (
+                <p className="text-sm text-rose-600" role="alert">{createError}</p>
+              )}
+              <Button type="button" disabled={isCreating} onClick={handleCreateStory}>
+                {isCreating ? "Saving…" : "Add to Journal"}
+              </Button>
+              <button
+                type="button"
+                className="text-sm text-center text-[var(--ink-3)] underline"
+                onClick={() => setViewMode("list")}
+              >
+                Cancel
+              </button>
+            </div>
+          </SheetBody>
+        ) : (
+          <>
         <SheetTabs aria-label="History filters" className="mt-3">
           {FILTER_TABS.map((tab) => (
             <SheetTab
@@ -311,6 +397,8 @@ export default function HistorySheet({
             </ol>
           )}
         </SheetBody>
+          </>
+        )}
       </SheetContent>
     </Sheet>
 
