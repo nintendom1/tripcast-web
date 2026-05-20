@@ -40,7 +40,7 @@ describe("CheckInDetailSheet", () => {
     expect(screen.getByRole("heading", { name: "Capitol Hill" })).toBeInTheDocument();
   });
 
-  it("falls back to 'Check-in' heading when title is absent", () => {
+  it("falls back to 'Story' heading when title is absent", () => {
     render(
       <CheckInDetailSheet
         event={makeEvent({ title: undefined })}
@@ -48,7 +48,7 @@ describe("CheckInDetailSheet", () => {
         onLocationFocus={vi.fn()}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Check-in" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Story" })).toBeInTheDocument();
   });
 
   it("shows locationLabel when present", () => {
@@ -81,7 +81,7 @@ describe("CheckInDetailSheet", () => {
         onLocationFocus={vi.fn()}
       />,
     );
-    expect(screen.getByText(/state at check-in/i)).toBeInTheDocument();
+    expect(screen.getByText(/state at this story/i)).toBeInTheDocument();
   });
 
   it("does not show state section when no state fields", () => {
@@ -92,7 +92,7 @@ describe("CheckInDetailSheet", () => {
         onLocationFocus={vi.fn()}
       />,
     );
-    expect(screen.queryByText(/state at check-in/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/state at this story/i)).not.toBeInTheDocument();
   });
 
   it("shows statusNote in state section", () => {

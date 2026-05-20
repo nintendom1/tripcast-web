@@ -98,7 +98,7 @@ vi.mock("../routevote/RouteVoteProgress", () => ({
   default: () => null,
 }));
 
-vi.mock("../history/HistorySheet", () => ({
+vi.mock("../journal/HistorySheet", () => ({
   default: () => <div data-testid="journal-sheet" />,
 }));
 

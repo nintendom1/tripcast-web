@@ -287,7 +287,7 @@ export function StatusCardConnected({
       })()
     : [];
 
-  // Crew-only: when Auto is on with no active activity, replace the activity-since
+  // Follower-only: when Auto is on with no active activity, replace the activity-since
   // slot with the "AUTO EST. · base saved …" label.
   const crewAutoActive = role === "support_crew" && auto != null;
   const crewActivityLabelOverride =

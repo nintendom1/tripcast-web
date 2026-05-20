@@ -46,10 +46,10 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
-import HistorySheet from "../history/HistorySheet";
-import CheckInDetailSheet from "../history/CheckInDetailSheet";
-import StoryDetailSheet from "../history/StoryDetailSheet";
-import { useHistoryUnread } from "../history/useHistoryUnread";
+import HistorySheet from "../journal/HistorySheet";
+import CheckInDetailSheet from "../journal/CheckInDetailSheet";
+import StoryDetailSheet from "../journal/StoryDetailSheet";
+import { useHistoryUnread } from "../journal/useHistoryUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
@@ -482,13 +482,13 @@ export default function TripMap({
 
   function openHistory() {
     if (isHistoryOpen) {
-      log.logInteraction("panel:close", { panel: "history" });
+      log.logInteraction("panel:close", { panel: "journal" });
       music.sfx("close");
       setIsHistoryOpen(false);
       return;
     }
-    log.logInteraction("panel:open", { panel: "history" });
-    performance.mark("tripcast:debug:history:open");
+    log.logInteraction("panel:open", { panel: "journal" });
+    performance.mark("tripcast:debug:journal:open");
     music.sfx("open");
     setIsHistoryOpen(true);
     setIsMissionsPanelOpen(false);
@@ -890,7 +890,7 @@ export default function TripMap({
   // handleCheckpointCreated + activityToComplete state) was removed when the
   // CurrentActivityCard came out with the legacy chrome. The Mission
   // Complete-as-Story flow below (Part 8) replaces it for the mission case;
-  // an explicit "complete this freeform activity as a check-in" flow can be
+  // an explicit "complete this freeform activity as a Story" flow can be
   // re-added in a later pass if the SetActivitySheet refresh wants it.
 
   function handleCompleteAsStory(Mission: {
@@ -980,13 +980,13 @@ export default function TripMap({
     });
   }
 
-  // Panel-aware focus: positions the pin in the visible map above the history sheet.
-  // The history sheet is max-h-[50dvh], so apply matching bottom padding so the pin
+  // Panel-aware focus: positions the pin in the visible map above the journal sheet.
+  // The journal sheet is max-h-[50dvh], so apply matching bottom padding so the pin
   // lands in the vertical center of the exposed map area rather than behind the panel.
   function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
-    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "history:location-focus" });
+    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "journal:location-focus" });
     const mapHeight = map.getContainer().clientHeight;
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
@@ -1009,7 +1009,7 @@ export default function TripMap({
     const cardsBottom = cardsRect ? cardsRect.bottom : 0;
 
     // Measure actual rendered sheet height; fall back to 50% of mapHeight if not mounted yet.
-    const sheetEl = document.querySelector('[data-role="check-in-detail"]') as HTMLElement | null;
+    const sheetEl = document.querySelector('[data-role="checkin-detail"]') as HTMLElement | null;
     const rawSheetHeight = sheetEl?.offsetHeight ?? 0;
     const sheetHeight = rawSheetHeight > 0 ? rawSheetHeight : Math.round(mapHeight * 0.50);
 

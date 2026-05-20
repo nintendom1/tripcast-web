@@ -42,7 +42,7 @@ export interface StatusCardProps {
  *
  * A single compact card surfaces the active activity (icon + label + relative time)
  * and three mini-meters (Energy / Stomach / Calm). Tap opens the full state editor
- * — Traveler mode only; for Support Crew the card is non-interactive and the
+ * — Traveler mode only; for Followers the card is non-interactive and the
  * chevron is hidden.
  */
 export function StatusCard({

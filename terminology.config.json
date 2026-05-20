@@ -165,9 +165,26 @@
     },
     {
       "ruleId": "journal-history",
-      "path": "**/README.md",
+      "path": "README.md",
       "lineContains": "git history",
       "reason": "Version control history is not the Journal feature."
+    },
+    {
+      "ruleId": "journal-history",
+      "path": "../tripcast-backend/README.md",
+      "lineContains": "git history",
+      "reason": "Version control history is not the Journal feature."
+    },
+    {
+      "ruleId": "journal-history",
+      "path": "src/App.tsx",
+      "lineContains": "history.replaceState",
+      "reason": "Browser Web API history.replaceState is not the Journal feature."
+    },
+    {
+      "ruleId": "map-marker-user-copy",
+      "path": "src/styles.css",
+      "reason": "CSS implementation classes for MapLibre marker elements."
     }
   ]
 }

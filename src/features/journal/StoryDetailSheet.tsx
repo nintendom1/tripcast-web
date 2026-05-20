@@ -42,10 +42,10 @@ type StoryDetailSheetProps = {
 /**
  * StoryDetailSheet — immersive view for story-level check-ins.
  *
- * Renders the check-in body with a letter-by-letter reveal driven by
+ * Renders the Story body with a letter-by-letter reveal driven by
  * `ReadingSpeedProvider` (no-op when the user has chosen "instant"). The sheet
  * takes more vertical space than `CheckInDetailSheet` — story posts are the
- * narrative payoff of a check-in and deserve room to breathe.
+ * narrative payoff of a Story and deserve room to breathe.
  *
  * Inline image blocks are deliberately out of scope for this part — they
  * require a `blocks` schema addition in `tripcast-backend` that is bundled
@@ -125,7 +125,7 @@ function StoryBody({
             Story · {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </SheetKicker>
           <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold leading-tight tracking-tight text-[var(--ink-1)]">
-            {event.title ?? "Check-in"}
+            {event.title ?? "Story"}
           </SheetTitle>
           {event.locationLabel ? (
             <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">

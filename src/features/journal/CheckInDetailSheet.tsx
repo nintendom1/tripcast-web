@@ -122,7 +122,7 @@ function CheckInDetail({
             {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </p>
           <SheetTitle className="text-base font-bold text-navy truncate">
-            {event.title ?? "Check-in"}
+            {event.title ?? "Story"}
           </SheetTitle>
           {event.locationLabel && (
             <p className="text-xs text-muted-foreground">{event.locationLabel}</p>
@@ -149,7 +149,7 @@ function CheckInDetail({
         {hasState && (
           <div className="rounded-md border bg-muted/20 px-3 py-3 grid gap-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              State at check-in
+              State at this story
             </p>
 
             {event.moodValue && (
@@ -230,7 +230,7 @@ export default function CheckInDetailSheet({
         side="bottom"
         showBackdrop={false}
         className="z-[11] shadow-2xl max-h-[50dvh]"
-        data-role="check-in-detail"
+        data-role="checkin-detail"
       >
         {event ? (
           <CheckInDetail key={event._id} event={event} onClose={onClose} />

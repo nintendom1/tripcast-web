@@ -83,7 +83,7 @@ function ConnectedApp() {
   const [optionsDefaultView, setOptionsDefaultView] = useState<OptionsView>("options");
   const [view, setView] = useState<"map" | "follower-management">("map");
   const music = useMusicSafe();
-  // Crew first-launch tour visibility — only shown for Support Crew sessions
+  // Follower first-launch tour visibility — only shown for Follower sessions
   // that haven't already seen it on this browser. Toggled to false on tour
   // completion or skip; localStorage persists the seen flag separately.
   const [isCrewTourOpen, setIsCrewTourOpen] = useState(false);
@@ -144,7 +144,7 @@ function ConnectedApp() {
     };
   }, []);
 
-  // First-launch tour for Support Crew. Derives the role from the session
+  // First-launch tour for Followers. Derives the role from the session
   // check (which may be undefined/null while it resolves) so this hook lives
   // at the top of the function alongside the others — moving it below the
   // early-return branches below would change the hook count between renders

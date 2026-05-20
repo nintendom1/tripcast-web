@@ -29,8 +29,8 @@ export interface DockProps {
  * Bottom Dock replaces the legacy bottom-left + bottom-right FAB clusters with
  * a single nav strip: Story · Missions · [+] · Votes · Funds.
  *
- * The center FAB is the entry point for adding (Traveler) or proposing (Support
- * Crew) — its behavior is owned by the parent. Pulsing vote badge signals an
+ * The center FAB is the entry point for adding (Traveler) or proposing (Follower
+ * route votes) — its behavior is owned by the parent. Pulsing vote badge signals an
  * active vote that the crew has not yet seen.
  */
 export function Dock({

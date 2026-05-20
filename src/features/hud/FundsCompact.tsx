@@ -16,7 +16,7 @@ export interface FundsCompactProps {
  *
  * Replaces the legacy TravelFundsCard's full-width meter. Tap opens the full
  * Funds sheet (Part 7); without an `onClick` the chip is non-interactive
- * (Support Crew see-only).
+ * (Follower see-only).
  */
 export function FundsCompact({
   remainingUsd,

@@ -55,7 +55,7 @@ const DEFAULT_TRAVELER_ITEMS: FanAction[] = [
  * FanMenu — quick-action stack above the Dock's center "+" for Traveler.
  *
  * Opens as a vertical column anchored to the FAB; backdrop dismisses without
- * triggering a pick. Support Crew skip the fan entirely and route "+" straight
+ * triggering a pick. Followers skip the fan entirely and route "+" straight
  * to "Propose Mission" — they should not see this component.
  */
 export function FanMenu({

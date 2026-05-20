@@ -17,7 +17,7 @@ import {
 import { useMusicSafe } from "../../providers/MusicProvider";
 
 export interface EditCheckpointSheetProps {
-  /** The check-in history event to edit. `null` closes the sheet. */
+  /** The Story event to edit. `null` closes the sheet. */
   event: HistoryEvent | null;
   token: string;
   onClose: () => void;
@@ -29,19 +29,19 @@ function friendlyError(error: unknown): string {
     return "Too many edits in a short window. Try again in a minute.";
   }
   if (message.toLowerCase().includes("not found")) {
-    return "This check-in no longer exists.";
+    return "This Story no longer exists.";
   }
   return message || "Unable to save changes.";
 }
 
 /**
- * Edit a previously saved check-in. Reads title / note / locationLabel /
- * showInStory off the history event and patches them via
+ * Edit a previously saved Story. Reads title / note / locationLabel /
+ * showInStory off the event and patches them via
  * `tripcastApi.checkpoints.updateCheckpoint`. Lat / lon / source stay
  * immutable — the underlying backend mutation rejects those args.
  *
  * The sheet auto-resets its form fields each time `event` changes (open
- * with a different check-in → state seeds from the new row).
+ * with a different Story → state seeds from the new row).
  */
 export default function EditCheckpointSheet({ event, token, onClose }: EditCheckpointSheetProps) {
   const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
@@ -104,9 +104,9 @@ export default function EditCheckpointSheet({ event, token, onClose }: EditCheck
         <SheetGrabber />
         <div className="flex items-start justify-between gap-2 px-4 pt-2">
           <div className="flex min-w-0 flex-col gap-1">
-            <SheetKicker dotColor="var(--amber)">Edit · Check-in</SheetKicker>
+            <SheetKicker dotColor="var(--amber)">Edit · Story</SheetKicker>
             <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              Edit check-in
+              Edit Story
             </SheetTitle>
           </div>
           <SheetCloseButton aria-label="Close edit form" />

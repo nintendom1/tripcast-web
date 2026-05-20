@@ -14,7 +14,7 @@ export interface FundsCompactConnectedProps {
 
 /**
  * Funds chip wired to live Convex data — Traveler hits travelerGetConfig,
- * Support Crew hits supportCrewGetFundsSummary. When funds aren't enabled the
+ * Follower hits supportCrewGetFundsSummary. When funds aren't enabled the
  * chip hides entirely; the StatusCard handles the empty-state messaging.
  */
 export function FundsCompactConnected({

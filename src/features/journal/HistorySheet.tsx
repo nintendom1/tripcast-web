@@ -105,8 +105,8 @@ type EventVisual = {
 function visualForEvent(type: HistoryEventType, storyLevel: HistoryStoryLevel): EventVisual {
   if (type === "check_in") {
     return storyLevel === "story"
-      ? { Icon: Camera, tint: "var(--amber)", kicker: "Story · Check-in" }
-      : { Icon: MapPin, tint: "var(--ink-1)", kicker: "Check-in" };
+      ? { Icon: Camera, tint: "var(--amber)", kicker: "Story" }
+      : { Icon: MapPin, tint: "var(--ink-1)", kicker: "Story" };
   }
   if (type.startsWith("mission_")) {
     return { Icon: Trophy, tint: "var(--plum)", kicker: "Mission" };
@@ -144,7 +144,7 @@ function formatDate(ts: number): string {
 type HistorySheetProps = {
   events: HistoryEvent[];
   token: string;
-  /** Role gates the edit/delete swipe actions on check-in rows — Traveler only. */
+  /** Role gates the edit/delete swipe actions on Story rows — Traveler only. */
   role?: Role;
   onClose: () => void;
   onCheckInSelect: (event: HistoryEvent) => void;
@@ -179,7 +179,7 @@ export default function HistorySheet({
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const music = useMusicSafe();
-  const log = useDebugLogger("HistorySheet", "src/features/history/HistorySheet.tsx");
+  const log = useDebugLogger("HistorySheet", "src/features/journal/HistorySheet.tsx");
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
@@ -327,8 +327,8 @@ export default function HistorySheet({
           {FILTER_TABS.map((tab) => (
             <SheetTab
               key={tab.id}
-              id={`history-tab-${tab.id}`}
-              aria-controls="history-tabpanel"
+              id={`journal-tab-${tab.id}`}
+              aria-controls="journal-tabpanel"
               active={activeTab === tab.id}
               onClick={() => {
                 log.logInteraction("filter:change", { from: activeTab, to: tab.id });
@@ -342,9 +342,9 @@ export default function HistorySheet({
         </SheetTabs>
 
         <SheetBody
-          id="history-tabpanel"
+          id="journal-tabpanel"
           role="tabpanel"
-          aria-labelledby={`history-tab-${activeTab}`}
+          aria-labelledby={`journal-tab-${activeTab}`}
           style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >
           {filtered.length === 0 ? (

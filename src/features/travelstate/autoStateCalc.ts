@@ -2,7 +2,7 @@
 // Auto State calculation helper
 //
 // Pure, deterministic, integer-only. No React, no Convex. Shared by Traveler
-// and Support Crew clients. Phase windows are computed against the Traveler's
+// and Follower clients. Phase windows are computed against the Traveler's
 // stored IANA timezone — never the viewer's browser tz — so every viewer sees
 // the same phase progression regardless of where they are physically.
 // ---------------------------------------------------------------------------

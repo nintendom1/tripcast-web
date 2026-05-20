@@ -11,7 +11,7 @@ import { SpeechBubble } from "./SpeechBubble";
 const STORAGE_KEY = "tripcast.crewTourSeen";
 
 export interface CrewLandingTourProps {
-  /** Username/handle the Support Crew signed in with. Renders into the welcome bubble. */
+  /** Username/handle the Follower signed in with. Renders into the welcome bubble. */
   userHandle?: string;
   /** Traveler's display name. Renders into copy where it's natural ("follow Yumi's trip"). */
   travelerName?: string;
@@ -73,7 +73,7 @@ function buildPanels(userHandle: string, travelerName: string): Panel[] {
 }
 
 /**
- * Support Crew first-launch tour. Shows once per browser per crew member
+ * Follower first-launch tour. Shows once per browser per follower
  * unless replayed from Options. The pixel character idles + bobs while
  * speaking each panel's bubble; the user advances via the primary CTA at
  * the bottom and can skip from the top-right.

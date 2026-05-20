@@ -148,7 +148,7 @@ describe("App: Options sheet — Traveler", () => {
   });
 });
 
-describe("App: Options sheet — Support Crew", () => {
+describe("App: Options sheet — Follower", () => {
   it("opens the Options sheet for support crew", async () => {
     setupSessionMocks("support_crew");
     render(<App convexReady={true} />);

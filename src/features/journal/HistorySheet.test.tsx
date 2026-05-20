@@ -77,7 +77,7 @@ describe("HistorySheet", () => {
     expect(screen.getByText("Activity Vote")).toBeInTheDocument();
   });
 
-  it("clicking a story-level check-in routes to onStorySelect, not onCheckInSelect", () => {
+  it("clicking a story-level Story event routes to onStorySelect, not onCheckInSelect", () => {
     const onStorySelect = vi.fn();
     const onCheckInSelect = vi.fn();
     const event = makeEvent({ _id: "a", storyLevel: "story", title: "My Story Pin" });
@@ -94,7 +94,7 @@ describe("HistorySheet", () => {
     expect(onCheckInSelect).not.toHaveBeenCalled();
   });
 
-  it("clicking an activity-level check-in routes to onCheckInSelect", () => {
+  it("clicking an activity-level Story event routes to onCheckInSelect", () => {
     const onStorySelect = vi.fn();
     const onCheckInSelect = vi.fn();
     const event = makeEvent({ _id: "a", storyLevel: "activity", title: "Quick Stop" });
@@ -243,7 +243,7 @@ describe("HistorySheet", () => {
     const travelerEvent = makeEvent({ _id: "evt1", checkpointId: "cp1", title: "Trail stop" });
     const travelerProps = { ...defaultProps, role: "traveler" as const, events: [travelerEvent] };
 
-    it("shows the More button on check-in rows that have a checkpointId", () => {
+    it("shows the More button on Story rows that have a checkpointId", () => {
       render(<HistorySheet {...travelerProps} />);
       expect(screen.getByRole("button", { name: "Show row actions" })).toBeInTheDocument();
     });
@@ -252,7 +252,7 @@ describe("HistorySheet", () => {
       render(<HistorySheet {...travelerProps} />);
       fireEvent.click(screen.getByRole("button", { name: "Show row actions" }));
       fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-      expect(screen.getByText("Edit check-in")).toBeInTheDocument();
+      expect(screen.getByText("Edit Story")).toBeInTheDocument();
     });
 
     it("clicking ... then Delete opens the confirm dialog", () => {

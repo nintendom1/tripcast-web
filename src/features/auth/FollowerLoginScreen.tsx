@@ -64,7 +64,7 @@ export default function FollowerLoginScreen({
 
   return (
     <AuthShell
-      kicker="Support Crew"
+      kicker="Follower"
       subtitle="Sign in to follow this trip."
       footer={
         <button

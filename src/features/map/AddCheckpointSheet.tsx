@@ -26,7 +26,7 @@ export type SelectedCoordinate = {
  * Prefill payload for `AddCheckpointSheet`.
  *
  * `missionId` is forwarded straight into `addCheckpoint` so the row + its
- * history event are linked to the mission atomically. The parent (TripMap)
+ * journal event are linked to the mission atomically. The parent (TripMap)
  * also reads it back from `onCheckpointCreated` to fire
  * `travelerCompleteMission`, which is what flips the mission to
  * "completed" and closes the Vote → Mission → Story loop.
@@ -91,7 +91,7 @@ export default function AddCheckpointSheet({
 
   const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
   const isFromMission = Boolean(prefill?.missionId);
-  const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Check-in");
+  const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Story");
   const titleText = isFromMission ? "Complete as story" : "Add pin";
   const showBackAffordance = isFromMission && Boolean(onBack);
 
@@ -175,7 +175,7 @@ export default function AddCheckpointSheet({
               {titleText}
             </SheetTitle>
           </div>
-          <SheetCloseButton aria-label="Close check-in form" />
+          <SheetCloseButton aria-label="Close story form" />
         </div>
 
         <form

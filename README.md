@@ -84,7 +84,7 @@ The Add/Edit Transaction form uses **"Local currency per 1 USD"** for the exchan
 
 `src/features/privacy/EmergencyResetSheet.tsx` — traveler-only sheet with one grouped destructive action:
 
-- **Delete Shared Trip Data** — removes checkpoints, live location, route votes, traveler state, current activity, and history in one backend request
+- **Delete Shared Trip Data** — removes checkpoints, live location, route votes, traveler state, current activity, and journal in one backend request
 - **Log Everyone Off Too** — optional checkbox that invalidates all active sessions in the same reset request
 
 The reset requires an in-UI confirmation tap. On success, the sheet closes and the app shows a status toast over the map. Rate-limit errors surface as an alert.

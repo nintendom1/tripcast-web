@@ -14,7 +14,7 @@ beforeEach(() => {
 });
 
 describe("StatusCardConnected", () => {
-  it("does not render placeholder state meters for Support Crew when state is hidden", () => {
+  it("does not render placeholder state meters for Followers when state is hidden", () => {
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
       if (ref === tripcastApi.travelerState.supportCrewGetTravelerState) {
         return { visible: false };
