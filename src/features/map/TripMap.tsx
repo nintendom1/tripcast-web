@@ -542,7 +542,7 @@ export default function TripMap({
   }
 
   const activeDockTab: DockTab | null = isHistoryOpen
-    ? "history"
+    ? "journal"
     : isMissionsPanelOpen
       ? "missions"
       : isVotePanelOpen
@@ -553,7 +553,7 @@ export default function TripMap({
 
   function handleDockSelect(tab: DockTab) {
     setFanOpen(false);
-    if (tab === "history") openHistory();
+    if (tab === "journal") openHistory();
     else if (tab === "missions") openMissions();
     else if (tab === "votes") openVotes();
     else if (tab === "funds") openFunds();
@@ -1250,7 +1250,7 @@ export default function TripMap({
           addLabel={role === "traveler" ? "Add" : `Propose ${TERMS.mission.toLowerCase()}`}
           showFunds={role === "traveler"}
           badges={{
-            history: unreadCount,
+            journal: unreadCount,
             missions: missionBadgeCount,
             votes: hasUnseenVote ? 1 : 0,
             votesPulsing: hasUnseenVote,

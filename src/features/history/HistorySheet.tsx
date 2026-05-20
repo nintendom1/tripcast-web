@@ -59,11 +59,11 @@ const EMPTY_COPY: Record<FilterTab, string> = {
 function filterEvents(events: HistoryEvent[], tab: FilterTab): HistoryEvent[] {
   switch (tab) {
     case "story": {
-      // Story tab = narrative content the reader wants to read: check-ins
+      // Story tab = narrative content the reader wants to read: Stories
       // (story-level) and mission completions that don't already have a
-      // paired story-level check-in pointing at the same mission. The
+      // paired story-level Story pointing at the same mission. The
       // Complete-as-Story flow lands BOTH a `check_in` (with `missionId`)
-      // and a `mission_completed` event; the check-in is the canonical
+      // and a `mission_completed` event; the Story is the canonical
       // narrative row and the mission_completed row is the auto-emitted
       // status announcement, so we hide it. The backend also tags
       // `route_vote_resolved` + `mission_planned` as storyLevel "story"

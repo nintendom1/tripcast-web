@@ -4,10 +4,10 @@ import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { LABELS } from "../../copy/terminology";
 
-export type DockTab = "history" | "missions" | "votes" | "funds";
+export type DockTab = "journal" | "missions" | "votes" | "funds";
 
 export interface DockBadges {
-  history?: number;
+  journal?: number;
   missions?: number;
   votes?: number;
   votesPulsing?: boolean;
@@ -60,11 +60,11 @@ export function Dock({
       )}
     >
       <DockButton
-        active={active === "history"}
+        active={active === "journal"}
         label={LABELS.dock.journal}
         icon={<Clock className="h-5 w-5" aria-hidden="true" />}
-        badge={badges.history}
-        onClick={() => handleSelect("history")}
+        badge={badges.journal}
+        onClick={() => handleSelect("journal")}
       />
       <DockButton
         active={active === "missions"}

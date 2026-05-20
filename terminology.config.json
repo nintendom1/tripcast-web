@@ -159,16 +159,6 @@
     },
     {
       "ruleId": "*",
-      "path": "../tripcast-backend/convex/missions.ts",
-      "reason": "Mission API aliases point at legacy challenge functions during compatibility migration."
-    },
-    {
-      "ruleId": "*",
-      "path": "../tripcast-backend/convex/missionSettings.ts",
-      "reason": "Mission settings aliases point at legacy challenge settings during compatibility migration."
-    },
-    {
-      "ruleId": "*",
       "path": "**/README.md",
       "lineContains": "terminology baseline",
       "reason": "Terminology docs may refer to lint concepts."

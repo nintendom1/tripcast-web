@@ -19,7 +19,7 @@ export type Checkpoint = {
   lat?: number;
   lon?: number;
   source: CheckpointSource;
-  /** Optional link to the mission a check-in narrates (Complete-as-story flow). */
+  /** Optional link to the mission a Story narrates (Complete-as-story flow). */
   missionId?: string;
   createdAt: number;
   updatedAt: number;
@@ -34,8 +34,8 @@ export type AddCheckpointArgs = {
   lat?: number;
   lon?: number;
   source: CheckpointSource;
-  // Optional link back to the mission this check-in narrates. Persisted on
-  // the checkpoint and threaded into the emitted check_in history event so
+  // Optional link back to the mission a Story narrates. Persisted on
+  // the checkpoint and threaded into the emitted check_in event so
   // the Story tab can fold the paired mission_completed row.
   missionId?: string;
   // Optional inline state snapshot (atomic with checkpoint save)
@@ -103,11 +103,6 @@ export type MissionSource = "route_vote" | "follower" | "traveler";
 export type MissionModerationMode = "manual_review" | "auto_publish";
 
 export type MissionRateLimitPreset = "off" | "per_second" | "per_minute" | "per_hour" | "per_day";
-
-export type MissionStatus = MissionStatus;
-export type MissionSource = MissionSource;
-export type MissionModerationMode = MissionModerationMode;
-export type MissionRateLimitPreset = MissionRateLimitPreset;
 
 export type TravelerLocation = {
   lat: number;
@@ -251,10 +246,6 @@ export type MissionContentArgs = {
   estimatedDurationMinutes?: number;
   estimatedEnergyImpact?: EnergyImpact;
 };
-
-export type Mission = Mission;
-export type MissionSettings = MissionSettings;
-export type MissionContentArgs = MissionContentArgs;
 
 // ---------------------------------------------------------------------------
 // Current Activity types
@@ -952,12 +943,6 @@ export const tripcastApi = {
       { token: string; missionId: string; newStatus: MissionStatus },
       null
     >,
-    travelerUpdateMissionStatus: (anyApi as any).routeVotes.travelerUpdateMissionStatus as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string; newStatus: MissionStatus },
-      null
-    >,
     markRouteVoteSeen: (anyApi as any).routeVotes.markRouteVoteSeen as FunctionReference<
       "mutation",
       "public",
@@ -1013,12 +998,6 @@ export const tripcastApi = {
       { token: string },
       Mission[]
     >,
-    travelerListPlannedMissions: (anyApi as any).routeVotes.travelerListPlannedMissions as FunctionReference<
-      "query",
-      "public",
-      { token: string },
-      Mission[]
-    >,
   },
   missions: {
     followerProposeMission: (anyApi as any).missions.followerProposeMission as FunctionReference<
@@ -1126,134 +1105,6 @@ export const tripcastApi = {
       "public",
       { token: string },
       Mission[]
-    >,
-  },
-  missions: {
-    followerProposeMission: (anyApi as any).missions.followerProposeMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string } & MissionContentArgs,
-      { missionId: string; autoPublished: boolean }
-    >,
-    followerWithdrawMission: (anyApi as any).missions.followerWithdrawMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string },
-      null
-    >,
-    travelerCreateMission: (anyApi as any).missions.travelerCreateMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string } & MissionContentArgs,
-      string
-    >,
-    travelerEditMission: (anyApi as any).missions.travelerEditMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string } & MissionContentArgs,
-      null
-    >,
-    travelerAcceptMission: (anyApi as any).missions.travelerAcceptMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string; responseNote?: string; responsePreset?: string },
-      null
-    >,
-    travelerDropMission: (anyApi as any).missions.travelerDropMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string; responseNote?: string; responsePreset?: string; silent?: boolean },
-      null
-    >,
-    travelerDeleteMission: (anyApi as any).missions.travelerDeleteMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string },
-      null
-    >,
-    travelerStartMission: (anyApi as any).missions.travelerStartMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string },
-      null
-    >,
-    travelerCompleteMission: (anyApi as any).missions.travelerCompleteMission as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string; transaction?: TransactionInlineInput },
-      null
-    >,
-    travelerCompleteMissionAsStory: (anyApi as any).missions.travelerCompleteMissionAsStory as FunctionReference<
-      "mutation",
-      "public",
-      {
-        token: string;
-        missionId: string;
-        title?: string;
-        note?: string;
-        locationLabel?: string;
-        lat: number;
-        lon: number;
-        source: CheckpointSource;
-        transaction?: TransactionInlineInput;
-      },
-      string
-    >,
-    travelerToggleMissionMapPin: (anyApi as any).missions.travelerToggleMissionMapPin as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; missionId: string; hidden: boolean },
-      null
-    >,
-    travelerListMissions: (anyApi as any).missions.travelerListMissions as FunctionReference<
-      "query",
-      "public",
-      { token: string; status?: MissionStatus },
-      Mission[]
-    >,
-    supportCrewListMissions: (anyApi as any).missions.supportCrewListMissions as FunctionReference<
-      "query",
-      "public",
-      { token: string },
-      Mission[]
-    >,
-    followerListMyMissions: (anyApi as any).missions.followerListMyMissions as FunctionReference<
-      "query",
-      "public",
-      { token: string },
-      { mine: Mission[]; public: Mission[] }
-    >,
-    getMission: (anyApi as any).missions.getMission as FunctionReference<
-      "query",
-      "public",
-      { token: string; missionId: string },
-      Mission | null
-    >,
-    listMissionMapPins: (anyApi as any).missions.listMissionMapPins as FunctionReference<
-      "query",
-      "public",
-      { token: string },
-      Mission[]
-    >,
-  },
-  missionSettings: {
-    travelerGetMissionSettings: (anyApi as any).missionSettings.travelerGetMissionSettings as FunctionReference<
-      "query",
-      "public",
-      { token: string },
-      MissionSettings
-    >,
-    supportCrewGetMissionSettings: (anyApi as any).missionSettings.supportCrewGetMissionSettings as FunctionReference<
-      "query",
-      "public",
-      { token: string },
-      { moderationMode: MissionModerationMode }
-    >,
-    travelerUpdateMissionSettings: (anyApi as any).missionSettings.travelerUpdateMissionSettings as FunctionReference<
-      "mutation",
-      "public",
-      { token: string; moderationMode?: MissionModerationMode; rateLimitPreset?: MissionRateLimitPreset },
-      null
     >,
   },
   missionSettings: {
