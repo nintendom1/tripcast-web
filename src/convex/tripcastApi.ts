@@ -7,7 +7,7 @@ import type { FunctionReference } from "convex/server";
 
 export type Role = "traveler" | "support_crew";
 
-export type CheckpointSource = "right_click" | "tap_add_mode" | "long_press" | "current_activity";
+export type CheckpointSource = "right_click" | "tap_add_mode" | "long_press" | "current_activity" | "inline_form";
 
 export type Checkpoint = {
   _id: string;
@@ -16,8 +16,8 @@ export type Checkpoint = {
   note?: string;
   locationLabel?: string;
   showInStory?: boolean;
-  lat: number;
-  lon: number;
+  lat?: number;
+  lon?: number;
   source: CheckpointSource;
   /** Optional link to the challenge a check-in narrates (Complete-as-story flow). */
   challengeId?: string;
@@ -31,8 +31,8 @@ export type AddCheckpointArgs = {
   note?: string;
   locationLabel?: string;
   showInStory?: boolean;
-  lat: number;
-  lon: number;
+  lat?: number;
+  lon?: number;
   source: CheckpointSource;
   // Optional link back to the challenge this check-in narrates. Persisted on
   // the checkpoint and threaded into the emitted check_in history event so

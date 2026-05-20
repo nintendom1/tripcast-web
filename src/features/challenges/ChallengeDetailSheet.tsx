@@ -1,14 +1,17 @@
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Challenge, ChallengeStatus, HistoryEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import TravelFundsInlineSection, {
   type TravelFundsInlineState,
 } from "../travelfunds/TravelFundsInlineSection";
+import RouteVoteSourceCard from "./RouteVoteSourceCard";
+import { useDebugLogger } from "../../debug/useDebugLogger";
+
 
 const RESPONSE_PRESETS = [
   "Looks good",
@@ -36,6 +39,8 @@ type Props = {
    *  state, opens AddCheckpointSheet, and calls travelerCompleteChallenge
    *  after the resulting check-in lands. */
   onCompleteAsStory?: (challenge: Challenge, transaction?: TransactionInlineInput) => void;
+  onRequestNavigateToVote?: (voteId: string) => void;
+  onOpenLinkedStory?: (event: HistoryEvent) => void;
 };
 
 function statusLabel(status: string): string {
@@ -65,12 +70,17 @@ export default function ChallengeDetailSheet({
   onRequestCoordinatePick,
   onViewOnMap,
   onCompleteAsStory,
+  onRequestNavigateToVote,
+  onOpenLinkedStory,
 }: Props) {
+  const log = useDebugLogger("ChallengeDetailSheet", "src/features/challenges/ChallengeDetailSheet.tsx");
+
   // Drop/reject form state
   const [responseNote, setResponseNote] = useState("");
   const [selectedPreset, setSelectedPreset] = useState("");
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showMarkInProgressConfirm, setShowMarkInProgressConfirm] = useState(false);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -82,6 +92,7 @@ export default function ChallengeDetailSheet({
   const [editCost, setEditCost] = useState("");
   const [editDuration, setEditDuration] = useState("");
   const [editEnergy, setEditEnergy] = useState<"" | "low" | "medium" | "high">("");
+  const [editStatus, setEditStatus] = useState<ChallengeStatus>("visible");
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
@@ -95,27 +106,54 @@ export default function ChallengeDetailSheet({
   const complete = useMutation(tripcastApi.challenges.travelerCompleteChallenge);
   const togglePin = useMutation(tripcastApi.challenges.travelerToggleChallengeMapPin);
   const withdraw = useMutation(tripcastApi.challenges.followerWithdrawChallenge);
+  const updateStatus = useMutation(tripcastApi.routeVotes.travelerUpdateChallengeStatus);
+  const setCurrentActivity = useMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
 
-  if (!challenge) return null;
+  // Live challenge subscription — keeps the detail view in sync after edits.
+  const liveChallenge = useQuery(
+    tripcastApi.challenges.getChallenge,
+    challenge ? { token, challengeId: challenge._id } : "skip",
+  );
+  const c = liveChallenge ?? challenge;
+
+  const currentActivity = useQuery(
+    tripcastApi.currentActivity.travelerGetCurrentActivity,
+    role === "traveler" ? { token } : "skip",
+  );
+  const inProgressChallenges = useQuery(
+    tripcastApi.challenges.travelerListChallenges,
+    role === "traveler" ? { token, status: "in_progress" } : "skip",
+  );
+
+  // Linked story detection — Convex deduplicates with TripMap's existing subscription.
+  const allHistoryEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
+  const linkedStory = allHistoryEvents.find(
+    (e) => e.type === "check_in" && e.challengeId === c?._id,
+  ) ?? null;
+
+  if (!c) return null;
 
   const isTraveler = role === "traveler";
   const canAct = !isWorking;
-  const status = challenge.status;
-  const hasLocation = challenge.lat !== undefined && challenge.lon !== undefined;
+  const status = c.status;
+  const hasLocation = c.lat !== undefined && c.lon !== undefined;
+  const conflictingMission = (inProgressChallenges ?? []).find((ch) => ch._id !== c._id) ?? null;
 
   function openEditMode() {
-    setEditTitle(challenge!.title);
-    setEditDesc(challenge!.description ?? "");
-    setEditLocation(challenge!.locationLabel ?? "");
-    setEditLat(challenge!.lat);
-    setEditLon(challenge!.lon);
-    setEditCost(challenge!.estimatedCostUsd !== undefined ? String(challenge!.estimatedCostUsd) : "");
+    log.logForm("form:open");
+    setEditTitle(c!.title);
+    setEditDesc(c!.description ?? "");
+    setEditLocation(c!.locationLabel ?? "");
+    setEditLat(c!.lat);
+    setEditLon(c!.lon);
+    setEditCost(c!.estimatedCostUsd !== undefined ? String(c!.estimatedCostUsd) : "");
     setEditDuration(
-      challenge!.estimatedDurationMinutes !== undefined
-        ? String(challenge!.estimatedDurationMinutes)
+      c!.estimatedDurationMinutes !== undefined
+        ? String(c!.estimatedDurationMinutes)
         : "",
     );
-    setEditEnergy((challenge!.estimatedEnergyImpact as "" | "low" | "medium" | "high") ?? "");
+    setEditEnergy((c!.estimatedEnergyImpact as "" | "low" | "medium" | "high") ?? "");
+    setEditStatus(c!.status);
     setIsEditing(true);
     setActionError(null);
   }
@@ -126,16 +164,17 @@ export default function ChallengeDetailSheet({
   }
 
   async function handleSaveEdit() {
-    if (!challenge || !editTitle.trim()) {
+    if (!c || !editTitle.trim()) {
       setActionError("Title is required.");
       return;
     }
     setIsWorking(true);
     setActionError(null);
+    log.logForm("form:submit");
     try {
       await edit({
         token,
-        challengeId: challenge._id,
+        challengeId: c!._id,
         title: editTitle,
         description: editDesc.trim() || undefined,
         locationLabel: editLocation.trim() || undefined,
@@ -145,8 +184,15 @@ export default function ChallengeDetailSheet({
         estimatedDurationMinutes: editDuration ? parseInt(editDuration, 10) : undefined,
         estimatedEnergyImpact: editEnergy || undefined,
       });
+      if (editStatus !== c!.status) {
+        log.logMutation("challenge:status:update", { from: c!.status, to: editStatus });
+        await updateStatus({ token, challengeId: c!._id, newStatus: editStatus });
+        log.logMutation("challenge:status:update:success");
+        log.logState("challengeStatus", c!.status, editStatus);
+      }
       setIsEditing(false);
     } catch (e) {
+      log.error("challenge:edit:error", "mutation", { message: String(e) });
       setActionError(friendlyError(e));
     } finally {
       setIsWorking(false);
@@ -265,6 +311,38 @@ export default function ChallengeDetailSheet({
     const transaction =
       completionTxState && "value" in completionTxState ? completionTxState.value : undefined;
     onCompleteAsStory(challenge, transaction);
+  }
+
+  async function handleMarkInProgress() {
+    setShowMarkInProgressConfirm(false);
+    setIsWorking(true);
+    setActionError(null);
+    try {
+      await start({ token, challengeId: c!._id });
+    } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function handleSetCurrentActivity() {
+    setIsWorking(true);
+    setActionError(null);
+    try {
+      await setCurrentActivity({
+        token,
+        title: c!.title,
+        linkedChallengeId: c!._id,
+        locationLabel: c!.locationLabel,
+        lat: c!.lat,
+        lon: c!.lon,
+      });
+    } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      setIsWorking(false);
+    }
   }
 
   async function handleTogglePin() {
@@ -413,6 +491,21 @@ export default function ChallengeDetailSheet({
           </div>
         </div>
 
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-muted-foreground">Status</label>
+          <select
+            value={editStatus}
+            onChange={(e) => setEditStatus(e.target.value as ChallengeStatus)}
+            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="planned">Planned</option>
+            <option value="visible">Visible</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="dropped">Dropped</option>
+          </select>
+        </div>
+
         {actionError && (
           <p className="text-sm text-rose-600" role="alert">{actionError}</p>
         )}
@@ -453,49 +546,83 @@ export default function ChallengeDetailSheet({
 
       {/* Content */}
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-base font-semibold text-navy">{challenge.title}</h2>
-        {challenge.description && (
-          <p className="text-sm text-muted-foreground">{challenge.description}</p>
+        <h2 className="text-base font-semibold text-navy">{c.title}</h2>
+        {c.description && (
+          <p className="text-sm text-muted-foreground">{c.description}</p>
         )}
       </div>
+
+      {/* Add a story — top placement for completed missions without a linked story yet */}
+      {isTraveler && status === "completed" && onCompleteAsStory && !linkedStory && (
+        <Button
+          size="sm"
+          type="button"
+          disabled={!canAct}
+          onClick={handleCompleteAsStory}
+          className="border-[var(--plum)] text-white w-fit"
+          style={{ background: "var(--plum)" }}
+        >
+          Add a story
+        </Button>
+      )}
 
       {/* Meta */}
       <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-        {challenge.locationLabel && <span>📍 {challenge.locationLabel}</span>}
+        {c.locationLabel && <span>📍 {c.locationLabel}</span>}
         {!hasLocation && <span className="text-xs italic">No map location (text-only challenge)</span>}
-        {challenge.estimatedDurationMinutes && (
-          <span>⏱ Est. {challenge.estimatedDurationMinutes} min</span>
+        {c.estimatedDurationMinutes && (
+          <span>⏱ Est. {c.estimatedDurationMinutes} min</span>
         )}
-        {challenge.estimatedCostUsd !== undefined && (
-          <span>💰 Est. ${challenge.estimatedCostUsd.toFixed(2)} USD</span>
+        {c.estimatedCostUsd !== undefined && (
+          <span>💰 Est. ${c.estimatedCostUsd.toFixed(2)} USD</span>
         )}
-        {challenge.estimatedEnergyImpact && (
-          <span>⚡ Energy: {challenge.estimatedEnergyImpact}</span>
+        {c.estimatedEnergyImpact && (
+          <span>⚡ Energy: {c.estimatedEnergyImpact}</span>
         )}
       </div>
 
-      {/* View on map */}
-      {hasLocation && onViewOnMap && (
-        <button
-          type="button"
-          onClick={onViewOnMap}
-          className="self-start text-xs text-navy underline"
-        >
-          View on map
-        </button>
+      {/* Route vote source card — shown when mission originated from a vote */}
+      {c.sourceRouteVoteId && (
+        <RouteVoteSourceCard
+          sourceVoteId={c.sourceRouteVoteId}
+          sourceOptionId={c.sourceRouteVoteOptionId}
+          token={token}
+          onNavigate={onRequestNavigateToVote}
+        />
+      )}
+
+      {/* Linked story card — shown when a story has been filed against this mission */}
+      {isTraveler && linkedStory && (
+        <div className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-2">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Linked story</p>
+          <p className="text-sm font-medium text-navy line-clamp-1">{linkedStory.title ?? "Story"}</p>
+          <p className="text-xs text-muted-foreground">
+            {new Date(linkedStory.occurredAt).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+          </p>
+          {onOpenLinkedStory && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start"
+              onClick={() => { log.logUi("action:view-linked-story"); onOpenLinkedStory(linkedStory); }}
+            >
+              View story
+            </Button>
+          )}
+        </div>
       )}
 
       {/* Traveler response (preset + note) — visible to both traveler and follower */}
-      {(challenge.travelerResponsePreset || challenge.travelerResponseNote) && !challenge.silentDrop && (
+      {(c.travelerResponsePreset || c.travelerResponseNote) && !c.silentDrop && (
         <div className="rounded-md bg-slate-50 border border-slate-200 p-3 flex flex-col gap-1.5">
           <p className="text-xs font-medium text-muted-foreground">Traveler's response</p>
-          {challenge.travelerResponsePreset && (
+          {c.travelerResponsePreset && (
             <span className="self-start px-2.5 py-0.5 text-xs rounded-full bg-navy/10 text-navy font-medium">
-              {challenge.travelerResponsePreset}
+              {c.travelerResponsePreset}
             </span>
           )}
-          {challenge.travelerResponseNote && (
-            <p className="text-sm text-foreground">{challenge.travelerResponseNote}</p>
+          {c.travelerResponseNote && (
+            <p className="text-sm text-foreground">{c.travelerResponseNote}</p>
           )}
         </div>
       )}
@@ -593,6 +720,14 @@ export default function ChallengeDetailSheet({
                 Accept and publish
               </Button>
               <Button
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
+              >
+                Mark &lsquo;In Progress&rsquo;
+              </Button>
+              <Button
                 variant="outline"
                 size="sm"
                 type="button"
@@ -619,16 +754,36 @@ export default function ChallengeDetailSheet({
             </>
           )}
 
+          {showMarkInProgressConfirm && conflictingMission && (
+            <div className="flex flex-col gap-3 border border-amber-200 rounded-lg p-3 bg-amber-50">
+              <p className="text-sm text-amber-800">
+                &ldquo;{conflictingMission.title}&rdquo; is currently in progress. Starting this mission will drop it.
+              </p>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => setShowMarkInProgressConfirm(false)}
+                >
+                  Cancel
+                </Button>
+                <Button size="sm" type="button" disabled={!canAct} onClick={handleMarkInProgress}>
+                  Proceed
+                </Button>
+              </div>
+            </div>
+          )}
+
           {(status === "visible" || status === "planned") && (
             <>
               <Button
                 size="sm"
                 type="button"
                 disabled={!canAct}
-                onClick={handleStart}
-                className="bg-amber-500 hover:bg-amber-600 text-white border-amber-500"
+                onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
               >
-                Start and set as Current Activity
+                Mark &lsquo;In Progress&rsquo;
               </Button>
               <Button
                 variant="outline"
@@ -637,7 +792,7 @@ export default function ChallengeDetailSheet({
                 disabled={!canAct}
                 onClick={handleTogglePin}
               >
-                {challenge.mapHidden ? "Show on map" : "Hide from map"}
+                {c.mapHidden ? "Show on map" : "Hide from map"}
               </Button>
               <Button
                 variant="outline"
@@ -668,6 +823,17 @@ export default function ChallengeDetailSheet({
 
           {status === "in_progress" && (
             <>
+              {currentActivity?.linkedChallengeId !== c._id && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  disabled={!canAct}
+                  onClick={handleSetCurrentActivity}
+                >
+                  Set Current Activity to This Mission
+                </Button>
+              )}
               <p className="text-xs text-muted-foreground">
                 Completing this challenge will mark the linked Current Activity as done and open the Check-in form.
               </p>
@@ -675,10 +841,10 @@ export default function ChallengeDetailSheet({
                 <TravelFundsInlineSection
                   token={token}
                   prefill={{
-                    title: challenge.title,
-                    ...(challenge.estimatedCostUsd !== undefined
+                    title: c.title,
+                    ...(c.estimatedCostUsd !== undefined
                       ? {
-                          localAmount: challenge.estimatedCostUsd,
+                          localAmount: c.estimatedCostUsd,
                           currencyCode: "USD",
                           localCurrencyPerUsd: 1,
                         }
@@ -734,25 +900,6 @@ export default function ChallengeDetailSheet({
               </Button>
             </>
           )}
-        </div>
-      )}
-
-      {/* Traveler: add a story to a completed mission (no status change) */}
-      {isTraveler && status === "completed" && onCompleteAsStory && (
-        <div className="mt-2 flex flex-col gap-2 border-t border-slate-100 pt-3">
-          <p className="text-xs text-muted-foreground">
-            Got a story to add for how this mission went? It'll land in the journal linked to this entry.
-          </p>
-          <Button
-            size="sm"
-            type="button"
-            disabled={!canAct}
-            onClick={handleCompleteAsStory}
-            className="border-[var(--plum)] text-white w-fit"
-            style={{ background: "var(--plum)" }}
-          >
-            Add a story
-          </Button>
         </div>
       )}
 
