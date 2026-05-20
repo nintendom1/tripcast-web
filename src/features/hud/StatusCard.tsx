@@ -1,6 +1,7 @@
 import * as React from "react";
 import { ChevronRight, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TERMS } from "../../copy/terminology";
 
 export type Tier = "good" | "warn" | "bad";
 
@@ -91,10 +92,10 @@ export function StatusCard({
                     <span>{meter.label}</span>
                     {meter.autoChip ? (
                       <span
-                        aria-label="Auto-estimated"
+                        aria-label={TERMS.autoEstimated}
                         className="rounded-full bg-navy/10 px-1 py-px text-[8px] font-bold uppercase tracking-wider text-navy"
                       >
-                        AUTO
+                        {TERMS.autoEstimated}
                       </span>
                     ) : null}
                   </div>

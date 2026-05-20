@@ -75,7 +75,7 @@ vi.mock("./RouteVoteMapOverlay", () => ({
   default: () => null,
 }));
 
-vi.mock("./ChallengeMarkers", () => ({
+vi.mock("./MissionMarkers", () => ({
   default: () => null,
 }));
 
@@ -99,7 +99,7 @@ vi.mock("../routevote/RouteVoteProgress", () => ({
 }));
 
 vi.mock("../history/HistorySheet", () => ({
-  default: () => <div data-testid="history-sheet" />,
+  default: () => <div data-testid="journal-sheet" />,
 }));
 
 vi.mock("../travelfunds/TravelFundsSheet", () => ({
@@ -128,6 +128,16 @@ function setupQueries({
       return travelerLocation;
     }
     if (query === tripcastApi.routeVotes.travelerListRouteVotes) return [];
+    if (query === tripcastApi.travelFunds.travelerGetConfig) {
+      return {
+        enabled: true,
+        featureEnabled: true,
+        startingBudgetUsd: 100,
+        remainingUsd: 75,
+        spentUsd: 25,
+        budgetLabel: undefined,
+      };
+    }
     return null;
   });
 }
@@ -173,12 +183,12 @@ describe("TripMap location marker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Funds" }));
     expect(await screen.findByTestId("funds-sheet")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Story" }));
+    fireEvent.click(screen.getByRole("button", { name: "Journal" }));
 
     await waitFor(() => {
       expect(screen.queryByTestId("funds-sheet")).not.toBeInTheDocument();
     });
-    expect(screen.getByTestId("history-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("journal-sheet")).toBeInTheDocument();
   });
 
   it("keeps the route vote fallback origin stable across follower rerenders", async () => {

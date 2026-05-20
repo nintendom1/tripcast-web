@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, ChallengeStatus, HistoryEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Mission, MissionStatus, HistoryEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -25,20 +25,20 @@ const RESPONSE_PRESETS = [
 ];
 
 type Props = {
-  challenge: Challenge | null;
+  Mission: Mission | null;
   token: string;
   role: Role;
   isOwn?: boolean;
   onClose: () => void;
-  onStartChallenge?: () => void;
+  onStartMission?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   onViewOnMap?: () => void;
   /** Mission Complete-as-Story branch — when provided and the mission is
    *  in-progress, a "Complete as story" button appears alongside the existing
-   *  "Complete Challenge" action. The parent (TripMap) owns the story-prefill
-   *  state, opens AddCheckpointSheet, and calls travelerCompleteChallenge
-   *  after the resulting check-in lands. */
-  onCompleteAsStory?: (challenge: Challenge, transaction?: TransactionInlineInput) => void;
+   *  "Complete Mission" action. The parent (TripMap) owns the story-prefill
+   *  state, opens AddCheckpointSheet, and calls travelerCompleteMission
+   *  after the resulting story lands. */
+  onCompleteAsStory?: (Mission: Mission, transaction?: TransactionInlineInput) => void;
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: HistoryEvent) => void;
 };
@@ -60,20 +60,20 @@ function friendlyError(e: unknown): string {
   return msg || "Something went wrong.";
 }
 
-export default function ChallengeDetailSheet({
-  challenge,
+export default function MissionDetailSheet({
+  Mission,
   token,
   role,
   isOwn,
   onClose,
-  onStartChallenge,
+  onStartMission,
   onRequestCoordinatePick,
   onViewOnMap,
   onCompleteAsStory,
   onRequestNavigateToVote,
   onOpenLinkedStory,
 }: Props) {
-  const log = useDebugLogger("ChallengeDetailSheet", "src/features/challenges/ChallengeDetailSheet.tsx");
+  const log = useDebugLogger("MissionDetailSheet", "src/features/missions/MissionDetailSheet.tsx");
 
   // Drop/reject form state
   const [responseNote, setResponseNote] = useState("");
@@ -92,43 +92,43 @@ export default function ChallengeDetailSheet({
   const [editCost, setEditCost] = useState("");
   const [editDuration, setEditDuration] = useState("");
   const [editEnergy, setEditEnergy] = useState<"" | "low" | "medium" | "high">("");
-  const [editStatus, setEditStatus] = useState<ChallengeStatus>("visible");
+  const [editStatus, setEditStatus] = useState<MissionStatus>("visible");
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [completionTxState, setCompletionTxState] = useState<TravelFundsInlineState>(null);
 
-  const accept = useMutation(tripcastApi.challenges.travelerAcceptChallenge);
-  const drop = useMutation(tripcastApi.challenges.travelerDropChallenge);
-  const deleteSilently = useMutation(tripcastApi.challenges.travelerDeleteChallenge);
-  const edit = useMutation(tripcastApi.challenges.travelerEditChallenge);
-  const start = useMutation(tripcastApi.challenges.travelerStartChallenge);
-  const complete = useMutation(tripcastApi.challenges.travelerCompleteChallenge);
-  const togglePin = useMutation(tripcastApi.challenges.travelerToggleChallengeMapPin);
-  const withdraw = useMutation(tripcastApi.challenges.followerWithdrawChallenge);
-  const updateStatus = useMutation(tripcastApi.routeVotes.travelerUpdateChallengeStatus);
+  const accept = useMutation(tripcastApi.missions.travelerAcceptMission);
+  const drop = useMutation(tripcastApi.missions.travelerDropMission);
+  const deleteSilently = useMutation(tripcastApi.missions.travelerDeleteMission);
+  const edit = useMutation(tripcastApi.missions.travelerEditMission);
+  const start = useMutation(tripcastApi.missions.travelerStartMission);
+  const complete = useMutation(tripcastApi.missions.travelerCompleteMission);
+  const togglePin = useMutation(tripcastApi.missions.travelerToggleMissionMapPin);
+  const withdraw = useMutation(tripcastApi.missions.followerWithdrawMission);
+  const updateStatus = useMutation(tripcastApi.routeVotes.travelerUpdateMissionStatus);
   const setCurrentActivity = useMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
 
-  // Live challenge subscription — keeps the detail view in sync after edits.
-  const liveChallenge = useQuery(
-    tripcastApi.challenges.getChallenge,
-    challenge ? { token, challengeId: challenge._id } : "skip",
+  // Live Mission subscription — keeps the detail view in sync after edits.
+  const liveMission = useQuery(
+    tripcastApi.missions.getMission,
+    Mission ? { token, missionId: Mission._id } : "skip",
   );
-  const c = liveChallenge ?? challenge;
+  const c = liveMission ?? Mission;
 
   const currentActivity = useQuery(
     tripcastApi.currentActivity.travelerGetCurrentActivity,
     role === "traveler" ? { token } : "skip",
   );
-  const inProgressChallenges = useQuery(
-    tripcastApi.challenges.travelerListChallenges,
+  const inProgressMissions = useQuery(
+    tripcastApi.missions.travelerListMissions,
     role === "traveler" ? { token, status: "in_progress" } : "skip",
   );
 
   // Linked story detection — Convex deduplicates with TripMap's existing subscription.
   const allHistoryEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
   const linkedStory = allHistoryEvents.find(
-    (e) => e.type === "check_in" && e.challengeId === c?._id,
+    (e) => e.type === "check_in" && e.missionId === c?._id,
   ) ?? null;
 
   if (!c) return null;
@@ -137,7 +137,7 @@ export default function ChallengeDetailSheet({
   const canAct = !isWorking;
   const status = c.status;
   const hasLocation = c.lat !== undefined && c.lon !== undefined;
-  const conflictingMission = (inProgressChallenges ?? []).find((ch) => ch._id !== c._id) ?? null;
+  const conflictingMission = (inProgressMissions ?? []).find((ch) => ch._id !== c._id) ?? null;
 
   function openEditMode() {
     log.logForm("form:open");
@@ -174,7 +174,7 @@ export default function ChallengeDetailSheet({
     try {
       await edit({
         token,
-        challengeId: c!._id,
+        missionId: c!._id,
         title: editTitle,
         description: editDesc.trim() || undefined,
         locationLabel: editLocation.trim() || undefined,
@@ -185,14 +185,14 @@ export default function ChallengeDetailSheet({
         estimatedEnergyImpact: editEnergy || undefined,
       });
       if (editStatus !== c!.status) {
-        log.logMutation("challenge:status:update", { from: c!.status, to: editStatus });
-        await updateStatus({ token, challengeId: c!._id, newStatus: editStatus });
-        log.logMutation("challenge:status:update:success");
-        log.logState("challengeStatus", c!.status, editStatus);
+        log.logMutation("Mission:status:update", { from: c!.status, to: editStatus });
+        await updateStatus({ token, missionId: c!._id, newStatus: editStatus });
+        log.logMutation("Mission:status:update:success");
+        log.logState("MissionStatus", c!.status, editStatus);
       }
       setIsEditing(false);
     } catch (e) {
-      log.error("challenge:edit:error", "mutation", { message: String(e) });
+      log.error("Mission:edit:error", "mutation", { message: String(e) });
       setActionError(friendlyError(e));
     } finally {
       setIsWorking(false);
@@ -207,13 +207,13 @@ export default function ChallengeDetailSheet({
   }
 
   async function handleAccept() {
-    if (!challenge) return;
+    if (!Mission) return;
     setIsWorking(true);
     setActionError(null);
     try {
       await accept({
         token,
-        challengeId: challenge._id,
+        missionId: Mission._id,
         responseNote: responseNote || undefined,
         responsePreset: selectedPreset || undefined,
       });
@@ -226,13 +226,13 @@ export default function ChallengeDetailSheet({
   }
 
   async function handleReject() {
-    if (!challenge) return;
+    if (!Mission) return;
     setIsWorking(true);
     setActionError(null);
     try {
       await drop({
         token,
-        challengeId: challenge._id,
+        missionId: Mission._id,
         responseNote: responseNote || undefined,
         responsePreset: selectedPreset || undefined,
       });
@@ -245,11 +245,11 @@ export default function ChallengeDetailSheet({
   }
 
   async function handleDeleteSilently() {
-    if (!challenge) return;
+    if (!Mission) return;
     setIsWorking(true);
     setActionError(null);
     try {
-      await deleteSilently({ token, challengeId: challenge._id });
+      await deleteSilently({ token, missionId: Mission._id });
       onClose();
     } catch (e) {
       setActionError(friendlyError(e));
@@ -259,12 +259,12 @@ export default function ChallengeDetailSheet({
   }
 
   async function handleStart() {
-    if (!challenge) return;
+    if (!Mission) return;
     setIsWorking(true);
     setActionError(null);
     try {
-      await start({ token, challengeId: challenge._id });
-      onStartChallenge?.();
+      await start({ token, missionId: Mission._id });
+      onStartMission?.();
       onClose();
     } catch (e) {
       setActionError(friendlyError(e));
@@ -274,7 +274,7 @@ export default function ChallengeDetailSheet({
   }
 
   async function handleComplete() {
-    if (!challenge) return;
+    if (!Mission) return;
     // Block save when the inline Travel Funds section is open with
     // partial/invalid data — surface the error rather than silently dropping
     // the transaction.
@@ -291,7 +291,7 @@ export default function ChallengeDetailSheet({
     try {
       await complete({
         token,
-        challengeId: challenge._id,
+        missionId: Mission._id,
         transaction: inlineTransaction,
       });
       onClose();
@@ -303,14 +303,14 @@ export default function ChallengeDetailSheet({
   }
 
   function handleCompleteAsStory() {
-    if (!challenge || !onCompleteAsStory) return;
+    if (!Mission || !onCompleteAsStory) return;
     if (completionTxState && "error" in completionTxState) {
       setActionError(completionTxState.error);
       return;
     }
     const transaction =
       completionTxState && "value" in completionTxState ? completionTxState.value : undefined;
-    onCompleteAsStory(challenge, transaction);
+    onCompleteAsStory(Mission, transaction);
   }
 
   async function handleMarkInProgress() {
@@ -318,7 +318,7 @@ export default function ChallengeDetailSheet({
     setIsWorking(true);
     setActionError(null);
     try {
-      await start({ token, challengeId: c!._id });
+      await start({ token, missionId: c!._id });
     } catch (e) {
       setActionError(friendlyError(e));
     } finally {
@@ -333,7 +333,7 @@ export default function ChallengeDetailSheet({
       await setCurrentActivity({
         token,
         title: c!.title,
-        linkedChallengeId: c!._id,
+        linkedMissionId: c!._id,
         locationLabel: c!.locationLabel,
         lat: c!.lat,
         lon: c!.lon,
@@ -346,11 +346,11 @@ export default function ChallengeDetailSheet({
   }
 
   async function handleTogglePin() {
-    if (!challenge) return;
+    if (!Mission) return;
     setIsWorking(true);
     setActionError(null);
     try {
-      await togglePin({ token, challengeId: challenge._id, hidden: !challenge.mapHidden });
+      await togglePin({ token, missionId: Mission._id, hidden: !Mission.mapHidden });
     } catch (e) {
       setActionError(friendlyError(e));
     } finally {
@@ -359,11 +359,11 @@ export default function ChallengeDetailSheet({
   }
 
   async function handleWithdraw() {
-    if (!challenge) return;
+    if (!Mission) return;
     setIsWorking(true);
     setActionError(null);
     try {
-      await withdraw({ token, challengeId: challenge._id });
+      await withdraw({ token, missionId: Mission._id });
       onClose();
     } catch (e) {
       setActionError(friendlyError(e));
@@ -380,7 +380,7 @@ export default function ChallengeDetailSheet({
     return (
       <div className="flex flex-col gap-4 p-4 pt-0">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-navy">Edit Challenge</span>
+          <span className="text-sm font-semibold text-navy">Edit Mission</span>
           <button
             type="button"
             className="text-xs text-muted-foreground underline"
@@ -390,13 +390,13 @@ export default function ChallengeDetailSheet({
           </button>
         </div>
         <p className="text-xs text-muted-foreground">
-          The follower will see the edits to the challenge.
+          The follower will see the edits to the Mission.
         </p>
 
         <div className="flex flex-col gap-1">
           <label className="text-xs font-medium text-muted-foreground">Title</label>
           <Input
-            placeholder="Challenge title"
+            placeholder="Mission title"
             value={editTitle}
             onChange={(e) => setEditTitle(e.target.value)}
             maxLength={200}
@@ -495,7 +495,7 @@ export default function ChallengeDetailSheet({
           <label className="text-xs font-medium text-muted-foreground">Status</label>
           <select
             value={editStatus}
-            onChange={(e) => setEditStatus(e.target.value as ChallengeStatus)}
+            onChange={(e) => setEditStatus(e.target.value as MissionStatus)}
             className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           >
             <option value="planned">Planned</option>
@@ -569,7 +569,7 @@ export default function ChallengeDetailSheet({
       {/* Meta */}
       <div className="flex flex-col gap-1 text-sm text-muted-foreground">
         {c.locationLabel && <span>📍 {c.locationLabel}</span>}
-        {!hasLocation && <span className="text-xs italic">No map location (text-only challenge)</span>}
+        {!hasLocation && <span className="text-xs italic">No map location (text-only Mission)</span>}
         {c.estimatedDurationMinutes && (
           <span>⏱ Est. {c.estimatedDurationMinutes} min</span>
         )}
@@ -683,7 +683,7 @@ export default function ChallengeDetailSheet({
       {isTraveler && showDeleteConfirm && (
         <div className="flex flex-col gap-3 border border-rose-200 rounded-lg p-3 bg-rose-50">
           <p className="text-sm text-rose-800">
-            This permanently deletes the challenge — the proposer will no longer see it. Are you sure?
+            This permanently deletes the Mission — the proposer will no longer see it. Are you sure?
           </p>
           <div className="flex gap-2">
             <Button
@@ -823,7 +823,7 @@ export default function ChallengeDetailSheet({
 
           {status === "in_progress" && (
             <>
-              {currentActivity?.linkedChallengeId !== c._id && (
+              {currentActivity?.linkedMissionId !== c._id && (
                 <Button
                   size="sm"
                   variant="outline"
@@ -835,7 +835,7 @@ export default function ChallengeDetailSheet({
                 </Button>
               )}
               <p className="text-xs text-muted-foreground">
-                Completing this challenge will mark the linked Current Activity as done and open the Check-in form.
+                Completing this Mission will mark the linked Current Activity as done and open the Story form.
               </p>
               {isTraveler && (
                 <TravelFundsInlineSection
@@ -872,7 +872,7 @@ export default function ChallengeDetailSheet({
                 onClick={handleComplete}
                 className="bg-green-600 hover:bg-green-700 text-white border-green-600"
               >
-                {onCompleteAsStory ? "Mark complete (no story)" : "Complete Challenge"}
+                {onCompleteAsStory ? "Mark complete (no story)" : "Complete Mission"}
               </Button>
               <Button
                 variant="outline"
@@ -903,7 +903,7 @@ export default function ChallengeDetailSheet({
         </div>
       )}
 
-      {/* Support crew: withdraw own proposed challenge */}
+      {/* Support crew: withdraw own proposed Mission */}
       {!isTraveler && isOwn && status === "proposed" && (
         <Button
           variant="outline"

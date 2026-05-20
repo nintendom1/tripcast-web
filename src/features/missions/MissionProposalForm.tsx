@@ -14,12 +14,12 @@ type Props = {
 
 function friendlyError(error: unknown): string {
   const msg = error instanceof Error ? error.message : String(error);
-  if (msg.includes("Too many Challenges")) return "Too many Challenges submitted too quickly. Try again soon.";
-  if (msg.includes("Trip challenge limit")) return "Trip challenge limit reached for today.";
-  return msg || "Unable to submit challenge.";
+  if (msg.includes("Too many Missions")) return "Too many Missions submitted too quickly. Try again soon.";
+  if (msg.includes("Trip mission limit")) return "Trip mission limit reached for today.";
+  return msg || "Unable to submit mission.";
 }
 
-export default function ChallengeProposalForm({ token, onSuccess, onRequestCoordinatePick }: Props) {
+export default function MissionProposalForm({ token, onSuccess, onRequestCoordinatePick }: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
@@ -32,8 +32,8 @@ export default function ChallengeProposalForm({ token, onSuccess, onRequestCoord
   const [error, setError] = useState<string | null>(null);
   const [showNoLocationConfirm, setShowNoLocationConfirm] = useState(false);
 
-  const settings = useQuery(tripcastApi.challengeSettings.supportCrewGetChallengeSettings, { token });
-  const propose = useMutation(tripcastApi.challenges.followerProposeChallenge);
+  const settings = useQuery(tripcastApi.missionSettings.supportCrewGetMissionSettings, { token });
+  const propose = useMutation(tripcastApi.missions.followerProposeMission);
 
   function reset() {
     setTitle("");
@@ -123,11 +123,11 @@ export default function ChallengeProposalForm({ token, onSuccess, onRequestCoord
   return (
     <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground" htmlFor="challenge-title">
-          Challenge title <span aria-hidden>*</span>
+        <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-title">
+          Mission title <span aria-hidden>*</span>
         </label>
         <Input
-          id="challenge-title"
+          id="Mission-title"
           placeholder="e.g. Try the local street food"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -137,12 +137,12 @@ export default function ChallengeProposalForm({ token, onSuccess, onRequestCoord
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground" htmlFor="challenge-desc">
+        <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-desc">
           Notes (optional)
         </label>
         <Textarea
-          id="challenge-desc"
-          placeholder="Any details about this challenge…"
+          id="Mission-desc"
+          placeholder="Any details about this mission..."
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={2}
@@ -151,11 +151,11 @@ export default function ChallengeProposalForm({ token, onSuccess, onRequestCoord
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground" htmlFor="challenge-location">
+        <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-location">
           Location (optional)
         </label>
         <Input
-          id="challenge-location"
+          id="Mission-location"
           placeholder="e.g. Night Market, Chiang Mai"
           value={locationLabel}
           onChange={(e) => setLocationLabel(e.target.value)}
@@ -188,11 +188,11 @@ export default function ChallengeProposalForm({ token, onSuccess, onRequestCoord
 
       <div className="flex gap-3">
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-medium text-muted-foreground" htmlFor="challenge-cost">
+          <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-cost">
             Est. cost (USD, optional)
           </label>
           <Input
-            id="challenge-cost"
+            id="Mission-cost"
             type="number"
             step="0.01"
             placeholder="0.00"
@@ -201,11 +201,11 @@ export default function ChallengeProposalForm({ token, onSuccess, onRequestCoord
           />
         </div>
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-medium text-muted-foreground" htmlFor="challenge-duration">
+          <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-duration">
             Est. duration (min, optional)
           </label>
           <Input
-            id="challenge-duration"
+            id="Mission-duration"
             type="number"
             min="1"
             step="1"
@@ -246,12 +246,12 @@ export default function ChallengeProposalForm({ token, onSuccess, onRequestCoord
 
       {settings?.moderationMode === "manual_review" && (
         <p className="text-xs text-muted-foreground">
-          Your challenge will be sent to the Traveler for review before it appears to others.
+          Your mission will be sent to the Traveler for review before it appears to others.
         </p>
       )}
 
       <Button type="submit" size="sm" disabled={isSaving || !title.trim()}>
-        {isSaving ? "Submitting…" : "Propose Challenge"}
+        {isSaving ? "Submitting…" : "Propose Mission"}
       </Button>
     </form>
   );

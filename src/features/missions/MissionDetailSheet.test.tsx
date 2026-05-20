@@ -4,9 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
-import type { Challenge, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Mission, TransactionInlineInput } from "../../convex/tripcastApi";
 import { tripcastApi } from "../../convex/tripcastApi";
-import ChallengeDetailSheet from "./ChallengeDetailSheet";
+import MissionDetailSheet from "./MissionDetailSheet";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -36,8 +36,8 @@ vi.mock("../travelfunds/TravelFundsInlineSection", () => ({
   },
 }));
 
-const challenge: Challenge = {
-  _id: "challenge-1",
+const Mission: Mission = {
+  _id: "Mission-1",
   title: "Mission",
   status: "in_progress",
   source: "traveler",
@@ -51,62 +51,62 @@ beforeEach(() => {
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
 
-describe("ChallengeDetailSheet — Mark In Progress button", () => {
+describe("MissionDetailSheet — Mark In Progress button", () => {
   it.each(["proposed", "visible", "planned"] as const)(
     'shows "Mark In Progress" for %s missions (traveler)',
     (status) => {
-      const ch: Challenge = { _id: "ch-1", title: "Mission", status, source: "follower", createdAt: 1, updatedAt: 1 };
-      render(<ChallengeDetailSheet challenge={ch} token="t" role="traveler" onClose={vi.fn()} />);
+      const ch: Mission = { _id: "ch-1", title: "Mission", status, source: "follower", createdAt: 1, updatedAt: 1 };
+      render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
       expect(screen.getByRole("button", { name: /Mark.*In Progress/i })).toBeInTheDocument();
     },
   );
 
   it("shows amber conflict prompt when another mission is already in progress", async () => {
     const user = userEvent.setup();
-    const ch: Challenge = { _id: "ch-1", title: "Mission", status: "proposed", source: "follower", createdAt: 1, updatedAt: 1 };
-    const other: Challenge = { _id: "ch-2", title: "Blocking Mission", status: "in_progress", source: "traveler", createdAt: 1, updatedAt: 1 };
+    const ch: Mission = { _id: "ch-1", title: "Mission", status: "proposed", source: "follower", createdAt: 1, updatedAt: 1 };
+    const other: Mission = { _id: "ch-2", title: "Blocking Mission", status: "in_progress", source: "traveler", createdAt: 1, updatedAt: 1 };
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (ref === tripcastApi.challenges.travelerListChallenges) return [other];
+      if (ref === tripcastApi.missions.travelerListMissions) return [other];
       return undefined;
     });
-    render(<ChallengeDetailSheet challenge={ch} token="t" role="traveler" onClose={vi.fn()} />);
+    render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: /Mark.*In Progress/i }));
     expect(screen.getByText(/Blocking Mission/)).toBeInTheDocument();
   });
 });
 
-describe("ChallengeDetailSheet — Set Current Activity button", () => {
-  const ch: Challenge = { _id: "ch-1", title: "Active Mission", status: "in_progress", source: "traveler", createdAt: 1, updatedAt: 1 };
+describe("MissionDetailSheet — Set Current Activity button", () => {
+  const ch: Mission = { _id: "ch-1", title: "Active Mission", status: "in_progress", source: "traveler", createdAt: 1, updatedAt: 1 };
 
   it("shows button when current activity is not linked to this mission", () => {
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) return { linkedChallengeId: "other-ch" };
+      if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) return { linkedMissionId: "other-ch" };
       return undefined;
     });
-    render(<ChallengeDetailSheet challenge={ch} token="t" role="traveler" onClose={vi.fn()} />);
+    render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
     expect(screen.getByRole("button", { name: "Set Current Activity to This Mission" })).toBeInTheDocument();
   });
 
   it("hides button when current activity is already linked to this mission", () => {
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) return { linkedChallengeId: "ch-1" };
+      if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) return { linkedMissionId: "ch-1" };
       return undefined;
     });
-    render(<ChallengeDetailSheet challenge={ch} token="t" role="traveler" onClose={vi.fn()} />);
+    render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Set Current Activity to This Mission" })).not.toBeInTheDocument();
   });
 });
 
-describe("ChallengeDetailSheet", () => {
+describe("MissionDetailSheet", () => {
   it("passes inline Travel Funds data into Complete as story", async () => {
     const onCompleteAsStory = vi.fn();
 
     render(
-      <ChallengeDetailSheet
-        challenge={challenge}
+      <MissionDetailSheet
+        Mission={Mission}
         token="token"
         role="traveler"
         onClose={vi.fn()}
@@ -116,6 +116,6 @@ describe("ChallengeDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Complete as story" }));
 
-    expect(onCompleteAsStory).toHaveBeenCalledWith(challenge, inlineTransaction);
+    expect(onCompleteAsStory).toHaveBeenCalledWith(Mission, inlineTransaction);
   });
 });

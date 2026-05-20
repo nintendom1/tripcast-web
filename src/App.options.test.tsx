@@ -129,7 +129,7 @@ describe("App: Options sheet — Traveler", () => {
     expect(screen.getByRole("button", { name: /^skip$/i })).toBeInTheDocument();
   });
 
-  it("keeps Dev Tools fixed size while log entries scroll", async () => {
+  it("keeps Debug Log fixed size while log entries scroll", async () => {
     setupSessionMocks("traveler");
     setEnabled(true);
     setPreset("interaction-trace");
@@ -137,7 +137,7 @@ describe("App: Options sheet — Traveler", () => {
 
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
-    await userEvent.click(screen.getByRole("button", { name: /dev tools/i }));
+    await userEvent.click(screen.getByRole("button", { name: /debug log/i }));
 
     const dialog = screen.getByRole("dialog");
     expect(dialog).toHaveClass("h-[88dvh]", "overflow-hidden");

@@ -19,8 +19,8 @@ export type Checkpoint = {
   lat?: number;
   lon?: number;
   source: CheckpointSource;
-  /** Optional link to the challenge a check-in narrates (Complete-as-story flow). */
-  challengeId?: string;
+  /** Optional link to the mission a check-in narrates (Complete-as-story flow). */
+  missionId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -34,10 +34,10 @@ export type AddCheckpointArgs = {
   lat?: number;
   lon?: number;
   source: CheckpointSource;
-  // Optional link back to the challenge this check-in narrates. Persisted on
+  // Optional link back to the mission this check-in narrates. Persisted on
   // the checkpoint and threaded into the emitted check_in history event so
-  // the Story tab can fold the paired challenge_completed row.
-  challengeId?: string;
+  // the Story tab can fold the paired mission_completed row.
+  missionId?: string;
   // Optional inline state snapshot (atomic with checkpoint save)
   moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
@@ -50,7 +50,7 @@ export type AddCheckpointArgs = {
   statusNote?: string;
   // Optional inline Travel Funds transaction (atomic with checkpoint save).
   // Linked IDs are filled server-side: checkpointId from the new checkpoint,
-  // and challengeId/activityId from the active current activity when available.
+  // and missionId/activityId from the active current activity when available.
   transaction?: TransactionInlineInput;
 };
 
@@ -90,7 +90,7 @@ export type EnergyImpact = "low" | "medium" | "high";
 
 export type CommentVisibility = "public" | "traveler_only";
 
-export type ChallengeStatus =
+export type MissionStatus =
   | "proposed"
   | "visible"
   | "planned"
@@ -98,11 +98,16 @@ export type ChallengeStatus =
   | "completed"
   | "dropped";
 
-export type ChallengeSource = "route_vote" | "follower" | "traveler";
+export type MissionSource = "route_vote" | "follower" | "traveler";
 
-export type ChallengeModerationMode = "manual_review" | "auto_publish";
+export type MissionModerationMode = "manual_review" | "auto_publish";
 
-export type ChallengeRateLimitPreset = "off" | "per_second" | "per_minute" | "per_hour" | "per_day";
+export type MissionRateLimitPreset = "off" | "per_second" | "per_minute" | "per_hour" | "per_day";
+
+export type MissionStatus = MissionStatus;
+export type MissionSource = MissionSource;
+export type MissionModerationMode = MissionModerationMode;
+export type MissionRateLimitPreset = MissionRateLimitPreset;
 
 export type TravelerLocation = {
   lat: number;
@@ -151,7 +156,7 @@ export type RouteVoteListItem = {
   createdAt: number;
   updatedAt: number;
   confirmedWinningOptionId?: string;
-  resultingChallengeId?: string;
+  resultingMissionId?: string;
   options: RouteVoteOption[];
   optionVoteCounts: Record<string, number>;
   suggestedWinnerId: string | null;
@@ -165,7 +170,7 @@ export type RouteVoteDetail = RouteVoteListItem & {
   cancelledAt?: number;
   archivedAt?: number;
   submissions: RouteVoteSubmission[];
-  challenge?: Challenge;
+  mission?: Mission;
 };
 
 export type VisibleRouteVote = {
@@ -203,12 +208,12 @@ export type RouteVoteMapOverlay = {
   }>;
 };
 
-export type Challenge = {
+export type Mission = {
   _id: string;
   title: string;
   description?: string;
-  status: ChallengeStatus;
-  source: ChallengeSource;
+  status: MissionStatus;
+  source: MissionSource;
   sourceRouteVoteId?: string;
   sourceRouteVoteOptionId?: string;
   proposedBySessionId?: string;
@@ -231,12 +236,12 @@ export type Challenge = {
   updatedAt: number;
 };
 
-export type ChallengeSettings = {
-  moderationMode: ChallengeModerationMode;
-  rateLimitPreset: ChallengeRateLimitPreset;
+export type MissionSettings = {
+  moderationMode: MissionModerationMode;
+  rateLimitPreset: MissionRateLimitPreset;
 };
 
-export type ChallengeContentArgs = {
+export type MissionContentArgs = {
   title: string;
   description?: string;
   locationLabel?: string;
@@ -246,6 +251,10 @@ export type ChallengeContentArgs = {
   estimatedDurationMinutes?: number;
   estimatedEnergyImpact?: EnergyImpact;
 };
+
+export type Mission = Mission;
+export type MissionSettings = MissionSettings;
+export type MissionContentArgs = MissionContentArgs;
 
 // ---------------------------------------------------------------------------
 // Current Activity types
@@ -264,7 +273,7 @@ export type CurrentActivity = {
   startedAt: number;
   completedAt?: number;
   droppedAt?: number;
-  linkedChallengeId?: string;
+  linkedMissionId?: string;
   completedCheckpointId?: string;
   createdAt: number;
   updatedAt: number;
@@ -427,12 +436,12 @@ export type UpdateTravelerStateArgs = {
 
 export type HistoryEventType =
   | "check_in"
-  | "challenge_proposed"
-  | "challenge_visible"
-  | "challenge_planned"
-  | "challenge_in_progress"
-  | "challenge_completed"
-  | "challenge_dropped"
+  | "mission_proposed"
+  | "mission_visible"
+  | "mission_planned"
+  | "mission_in_progress"
+  | "mission_completed"
+  | "mission_dropped"
   | "route_vote_opened"
   | "route_vote_closed"
   | "route_vote_resolved"
@@ -454,7 +463,7 @@ export type HistoryEvent = {
   lon?: number;
   checkpointId?: string;
   routeVoteId?: string;
-  challengeId?: string;
+  missionId?: string;
   // State snapshot (check_in events only)
   moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
@@ -514,7 +523,7 @@ export type Transaction = {
   countsTowardMeter: boolean;
   visibility: TransactionVisibility;
   linkedActivityId?: string;
-  linkedChallengeId?: string;
+  linkedMissionId?: string;
   linkedCheckpointId?: string;
   occurredAt: number;
   createdAt: number;
@@ -541,7 +550,7 @@ export type TransactionForCrewPublic = {
   usdAmount: number;
   countsTowardMeter: boolean;
   linkedActivityId?: string;
-  linkedChallengeId?: string;
+  linkedMissionId?: string;
   linkedCheckpointId?: string;
   occurredAt: number;
   createdAt: number;
@@ -561,7 +570,7 @@ export type AddTransactionArgs = {
   countsTowardMeter: boolean;
   visibility: TransactionVisibility;
   linkedActivityId?: string;
-  linkedChallengeId?: string;
+  linkedMissionId?: string;
   linkedCheckpointId?: string;
   occurredAt?: number;
 };
@@ -578,7 +587,7 @@ export type UpdateTransactionArgs = {
   countsTowardMeter?: boolean;
   visibility?: TransactionVisibility;
   linkedActivityId?: string;
-  linkedChallengeId?: string;
+  linkedMissionId?: string;
   linkedCheckpointId?: string;
   occurredAt?: number;
 };
@@ -590,7 +599,7 @@ export type UpdateTravelFundsConfigArgs = {
   budgetLabel?: string;
 };
 
-// Inline transaction payload attached to addCheckpoint / travelerCompleteChallenge.
+// Inline transaction payload attached to addCheckpoint / travelerCompleteMission.
 // Linked IDs are filled in server-side based on the calling mutation's context.
 export type TransactionInlineInput = {
   title: string;
@@ -605,7 +614,7 @@ export type TransactionInlineInput = {
 };
 
 export type LinkedCostMap = {
-  byChallengeId: Record<string, number>;
+  byMissionId: Record<string, number>;
   byCheckpointId: Record<string, number>;
 };
 
@@ -613,7 +622,7 @@ export type LinkedCostMap = {
 // Bulk Import types
 // ---------------------------------------------------------------------------
 
-export type BulkImportKind = "checkin" | "story" | "transaction" | "challenge" | "route_vote";
+export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote";
 export type BulkImportTimestamp = number | string;
 
 export type BulkImportRouteVoteOption = {
@@ -664,13 +673,13 @@ export type BulkImportEntry =
       when?: BulkImportTimestamp;
     }
   | {
-      kind: "challenge";
+      kind: "mission";
       ref?: string;
       timeZone?: string;
       title: string;
       description?: string;
       note?: string;
-      status?: ChallengeStatus;
+      status?: MissionStatus;
       locationLabel?: string;
       loc?: string;
       lat?: number;
@@ -694,7 +703,7 @@ export type BulkImportEntry =
       resultsVisibility?: ResultsVisibility;
       options: BulkImportRouteVoteOption[];
       confirmedWinningOptionRef?: string;
-      resultingChallengeRef?: string;
+      resultingMissionRef?: string;
       occurredAt?: BulkImportTimestamp;
       when?: BulkImportTimestamp;
     };
@@ -709,7 +718,7 @@ export type BulkImportPayload =
 export type BulkImportCounts = {
   checkins: number;
   transactions: number;
-  challenges: number;
+  missions: number;
   routeVotes: number;
 };
 
@@ -937,10 +946,16 @@ export const tripcastApi = {
       { token: string; submissionId: string },
       null
     >,
-    travelerUpdateChallengeStatus: (anyApi as any).routeVotes.travelerUpdateChallengeStatus as FunctionReference<
+    travelerUpdateMissionStatus: (anyApi as any).routeVotes.travelerUpdateMissionStatus as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string; newStatus: ChallengeStatus },
+      { token: string; missionId: string; newStatus: MissionStatus },
+      null
+    >,
+    travelerUpdateMissionStatus: (anyApi as any).routeVotes.travelerUpdateMissionStatus as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string; newStatus: MissionStatus },
       null
     >,
     markRouteVoteSeen: (anyApi as any).routeVotes.markRouteVoteSeen as FunctionReference<
@@ -992,74 +1007,80 @@ export const tripcastApi = {
       { token: string; routeVoteId: string },
       RouteVoteMapOverlay
     >,
-    travelerListPlannedChallenges: (anyApi as any).routeVotes.travelerListPlannedChallenges as FunctionReference<
+    travelerListPlannedMissions: (anyApi as any).routeVotes.travelerListPlannedMissions as FunctionReference<
       "query",
       "public",
       { token: string },
-      Challenge[]
+      Mission[]
+    >,
+    travelerListPlannedMissions: (anyApi as any).routeVotes.travelerListPlannedMissions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Mission[]
     >,
   },
-  challenges: {
-    followerProposeChallenge: (anyApi as any).challenges.followerProposeChallenge as FunctionReference<
+  missions: {
+    followerProposeMission: (anyApi as any).missions.followerProposeMission as FunctionReference<
       "mutation",
       "public",
-      { token: string } & ChallengeContentArgs,
-      { challengeId: string; autoPublished: boolean }
+      { token: string } & MissionContentArgs,
+      { missionId: string; autoPublished: boolean }
     >,
-    followerWithdrawChallenge: (anyApi as any).challenges.followerWithdrawChallenge as FunctionReference<
+    followerWithdrawMission: (anyApi as any).missions.followerWithdrawMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string },
+      { token: string; missionId: string },
       null
     >,
-    travelerCreateChallenge: (anyApi as any).challenges.travelerCreateChallenge as FunctionReference<
+    travelerCreateMission: (anyApi as any).missions.travelerCreateMission as FunctionReference<
       "mutation",
       "public",
-      { token: string } & ChallengeContentArgs,
+      { token: string } & MissionContentArgs,
       string
     >,
-    travelerEditChallenge: (anyApi as any).challenges.travelerEditChallenge as FunctionReference<
+    travelerEditMission: (anyApi as any).missions.travelerEditMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string } & ChallengeContentArgs,
+      { token: string; missionId: string } & MissionContentArgs,
       null
     >,
-    travelerAcceptChallenge: (anyApi as any).challenges.travelerAcceptChallenge as FunctionReference<
+    travelerAcceptMission: (anyApi as any).missions.travelerAcceptMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string; responseNote?: string; responsePreset?: string },
+      { token: string; missionId: string; responseNote?: string; responsePreset?: string },
       null
     >,
-    travelerDropChallenge: (anyApi as any).challenges.travelerDropChallenge as FunctionReference<
+    travelerDropMission: (anyApi as any).missions.travelerDropMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string; responseNote?: string; responsePreset?: string; silent?: boolean },
+      { token: string; missionId: string; responseNote?: string; responsePreset?: string; silent?: boolean },
       null
     >,
-    travelerDeleteChallenge: (anyApi as any).challenges.travelerDeleteChallenge as FunctionReference<
+    travelerDeleteMission: (anyApi as any).missions.travelerDeleteMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string },
+      { token: string; missionId: string },
       null
     >,
-    travelerStartChallenge: (anyApi as any).challenges.travelerStartChallenge as FunctionReference<
+    travelerStartMission: (anyApi as any).missions.travelerStartMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string },
+      { token: string; missionId: string },
       null
     >,
-    travelerCompleteChallenge: (anyApi as any).challenges.travelerCompleteChallenge as FunctionReference<
+    travelerCompleteMission: (anyApi as any).missions.travelerCompleteMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string; transaction?: TransactionInlineInput },
+      { token: string; missionId: string; transaction?: TransactionInlineInput },
       null
     >,
-    travelerCompleteChallengeAsStory: (anyApi as any).challenges.travelerCompleteChallengeAsStory as FunctionReference<
+    travelerCompleteMissionAsStory: (anyApi as any).missions.travelerCompleteMissionAsStory as FunctionReference<
       "mutation",
       "public",
       {
         token: string;
-        challengeId: string;
+        missionId: string;
         title?: string;
         note?: string;
         locationLabel?: string;
@@ -1070,65 +1091,193 @@ export const tripcastApi = {
       },
       string
     >,
-    travelerToggleChallengeMapPin: (anyApi as any).challenges.travelerToggleChallengeMapPin as FunctionReference<
+    travelerToggleMissionMapPin: (anyApi as any).missions.travelerToggleMissionMapPin as FunctionReference<
       "mutation",
       "public",
-      { token: string; challengeId: string; hidden: boolean },
+      { token: string; missionId: string; hidden: boolean },
       null
     >,
-    travelerListChallenges: (anyApi as any).challenges.travelerListChallenges as FunctionReference<
+    travelerListMissions: (anyApi as any).missions.travelerListMissions as FunctionReference<
       "query",
       "public",
-      { token: string; status?: ChallengeStatus },
-      Challenge[]
+      { token: string; status?: MissionStatus },
+      Mission[]
     >,
-    supportCrewListChallenges: (anyApi as any).challenges.supportCrewListChallenges as FunctionReference<
+    supportCrewListMissions: (anyApi as any).missions.supportCrewListMissions as FunctionReference<
       "query",
       "public",
       { token: string },
-      Challenge[]
+      Mission[]
     >,
-    followerListMyChallenges: (anyApi as any).challenges.followerListMyChallenges as FunctionReference<
+    followerListMyMissions: (anyApi as any).missions.followerListMyMissions as FunctionReference<
       "query",
       "public",
       { token: string },
-      { mine: Challenge[]; public: Challenge[] }
+      { mine: Mission[]; public: Mission[] }
     >,
-    getChallenge: (anyApi as any).challenges.getChallenge as FunctionReference<
+    getMission: (anyApi as any).missions.getMission as FunctionReference<
       "query",
       "public",
-      { token: string; challengeId: string },
-      Challenge | null
+      { token: string; missionId: string },
+      Mission | null
     >,
-    listChallengeMapPins: (anyApi as any).challenges.listChallengeMapPins as FunctionReference<
+    listMissionMapPins: (anyApi as any).missions.listMissionMapPins as FunctionReference<
       "query",
       "public",
       { token: string },
-      Challenge[]
+      Mission[]
     >,
   },
-  challengeSettings: {
-    travelerGetChallengeSettings: (anyApi as any).challengeSettings.travelerGetChallengeSettings as FunctionReference<
-      "query",
-      "public",
-      { token: string },
-      ChallengeSettings
-    >,
-    supportCrewGetChallengeSettings: (anyApi as any).challengeSettings.supportCrewGetChallengeSettings as FunctionReference<
-      "query",
-      "public",
-      { token: string },
-      { moderationMode: ChallengeModerationMode }
-    >,
-    travelerUpdateChallengeSettings: (anyApi as any).challengeSettings.travelerUpdateChallengeSettings as FunctionReference<
+  missions: {
+    followerProposeMission: (anyApi as any).missions.followerProposeMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; moderationMode?: ChallengeModerationMode; rateLimitPreset?: ChallengeRateLimitPreset },
+      { token: string } & MissionContentArgs,
+      { missionId: string; autoPublished: boolean }
+    >,
+    followerWithdrawMission: (anyApi as any).missions.followerWithdrawMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string },
+      null
+    >,
+    travelerCreateMission: (anyApi as any).missions.travelerCreateMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string } & MissionContentArgs,
+      string
+    >,
+    travelerEditMission: (anyApi as any).missions.travelerEditMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string } & MissionContentArgs,
+      null
+    >,
+    travelerAcceptMission: (anyApi as any).missions.travelerAcceptMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string; responseNote?: string; responsePreset?: string },
+      null
+    >,
+    travelerDropMission: (anyApi as any).missions.travelerDropMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string; responseNote?: string; responsePreset?: string; silent?: boolean },
+      null
+    >,
+    travelerDeleteMission: (anyApi as any).missions.travelerDeleteMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string },
+      null
+    >,
+    travelerStartMission: (anyApi as any).missions.travelerStartMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string },
+      null
+    >,
+    travelerCompleteMission: (anyApi as any).missions.travelerCompleteMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string; transaction?: TransactionInlineInput },
+      null
+    >,
+    travelerCompleteMissionAsStory: (anyApi as any).missions.travelerCompleteMissionAsStory as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        missionId: string;
+        title?: string;
+        note?: string;
+        locationLabel?: string;
+        lat: number;
+        lon: number;
+        source: CheckpointSource;
+        transaction?: TransactionInlineInput;
+      },
+      string
+    >,
+    travelerToggleMissionMapPin: (anyApi as any).missions.travelerToggleMissionMapPin as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; missionId: string; hidden: boolean },
+      null
+    >,
+    travelerListMissions: (anyApi as any).missions.travelerListMissions as FunctionReference<
+      "query",
+      "public",
+      { token: string; status?: MissionStatus },
+      Mission[]
+    >,
+    supportCrewListMissions: (anyApi as any).missions.supportCrewListMissions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Mission[]
+    >,
+    followerListMyMissions: (anyApi as any).missions.followerListMyMissions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { mine: Mission[]; public: Mission[] }
+    >,
+    getMission: (anyApi as any).missions.getMission as FunctionReference<
+      "query",
+      "public",
+      { token: string; missionId: string },
+      Mission | null
+    >,
+    listMissionMapPins: (anyApi as any).missions.listMissionMapPins as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Mission[]
+    >,
+  },
+  missionSettings: {
+    travelerGetMissionSettings: (anyApi as any).missionSettings.travelerGetMissionSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      MissionSettings
+    >,
+    supportCrewGetMissionSettings: (anyApi as any).missionSettings.supportCrewGetMissionSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { moderationMode: MissionModerationMode }
+    >,
+    travelerUpdateMissionSettings: (anyApi as any).missionSettings.travelerUpdateMissionSettings as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; moderationMode?: MissionModerationMode; rateLimitPreset?: MissionRateLimitPreset },
+      null
+    >,
+  },
+  missionSettings: {
+    travelerGetMissionSettings: (anyApi as any).missionSettings.travelerGetMissionSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      MissionSettings
+    >,
+    supportCrewGetMissionSettings: (anyApi as any).missionSettings.supportCrewGetMissionSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { moderationMode: MissionModerationMode }
+    >,
+    travelerUpdateMissionSettings: (anyApi as any).missionSettings.travelerUpdateMissionSettings as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; moderationMode?: MissionModerationMode; rateLimitPreset?: MissionRateLimitPreset },
       null
     >,
   },
   currentActivity: {
-    travelerSetCurrentActivity: (anyApi as any).currentActivity.travelerSetCurrentActivity as FunctionReference<"mutation", "public", { token: string; title: string; emoji?: string; note?: string; locationLabel?: string; lat?: number; lon?: number; linkedChallengeId?: string }, string>,
+    travelerSetCurrentActivity: (anyApi as any).currentActivity.travelerSetCurrentActivity as FunctionReference<"mutation", "public", { token: string; title: string; emoji?: string; note?: string; locationLabel?: string; lat?: number; lon?: number; linkedMissionId?: string }, string>,
     travelerDropCurrentActivity: (anyApi as any).currentActivity.travelerDropCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string }, null>,
     travelerCompleteCurrentActivity: (anyApi as any).currentActivity.travelerCompleteCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string; checkpointId: string }, null>,
     travelerGetCurrentActivity: (anyApi as any).currentActivity.travelerGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,

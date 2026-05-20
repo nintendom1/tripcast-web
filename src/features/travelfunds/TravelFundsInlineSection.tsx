@@ -49,7 +49,7 @@ type TravelFundsInlineSectionProps = {
 
 /**
  * Collapsable "Travel Funds" section embedded in completion flows (check-in
- * form and challenge-completion form). Mirrors the existing "Also Update
+ * form and mission-completion form). Mirrors the existing "Also Update
  * Traveler State" pattern: a header that toggles open, then a compact set of
  * transaction fields. The section is intentionally optional — collapsed means
  * "no transaction".

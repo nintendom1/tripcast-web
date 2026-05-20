@@ -3,6 +3,7 @@ import { Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import type { Role } from "@/convex/tripcastApi";
+import { TERMS } from "../../copy/terminology";
 
 export interface TopBarProps {
   role: Role;
@@ -19,7 +20,7 @@ export interface TopBarProps {
  */
 export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
   const isTraveler = role === "traveler";
-  const roleLabel = isTraveler ? "Traveler" : "Support Crew";
+  const roleLabel = isTraveler ? TERMS.traveler : TERMS.follower;
 
   return (
     <header

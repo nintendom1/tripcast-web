@@ -3,10 +3,10 @@ import { useMutation, useQuery } from "convex/react";
 import { Plus } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, HistoryEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
-import ChallengeCard from "./ChallengeCard";
-import ChallengeProposalForm from "./ChallengeProposalForm";
-import ChallengeDetailSheet from "./ChallengeDetailSheet";
+import type { Mission, HistoryEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import MissionCard from "./MissionCard";
+import MissionProposalForm from "./MissionProposalForm";
+import MissionDetailSheet from "./MissionDetailSheet";
 import {
   Sheet,
   SheetBackButton,
@@ -26,6 +26,7 @@ import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { TERMS } from "../../copy/terminology";
 
 type Props = {
   open: boolean;
@@ -34,25 +35,25 @@ type Props = {
   sessionId?: string;
   userId?: string;
   onClose: () => void;
-  onStartChallenge?: () => void;
+  onStartMission?: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   isPickingCoordinate?: boolean;
-  pendingOpenChallengeId?: string | null;
-  onClearPendingChallenge?: () => void;
-  onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
-  onCompleteAsStory?: (challenge: Challenge, transaction?: TransactionInlineInput) => void;
+  pendingOpenMissionId?: string | null;
+  onClearPendingMission?: () => void;
+  onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
+  onCompleteAsStory?: (Mission: Mission, transaction?: TransactionInlineInput) => void;
   /** When set + the panel is open, navigate straight to the matching mission's
    *  detail view rather than the list. Used by the Complete-as-Story → Back
    *  flow so dismissing the story form returns the Traveler to the mission's
    *  full action set. Parent clears via `onClearPendingDetail` once we land. */
-  pendingOpenDetailChallengeId?: string | null;
+  pendingOpenDetailMissionId?: string | null;
   onClearPendingDetail?: () => void;
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: HistoryEvent) => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
-type SelectedChallenge = { challenge: Challenge; isOwn: boolean };
+type SelectedMission = { Mission: Mission; isOwn: boolean };
 
 type TravelerFilter = "all" | "proposed" | "visible" | "in_progress" | "completed" | "dropped";
 
@@ -66,50 +67,50 @@ const TRAVELER_FILTERS: { value: TravelerFilter; label: string }[] = [
 ];
 
 const TITLE_BY_VIEW: Record<ViewMode, { traveler: string; crew: string }> = {
-  list: { traveler: "Missions", crew: "Missions" },
-  create: { traveler: "New mission", crew: "Propose mission" },
-  detail: { traveler: "Mission", crew: "Mission" },
+  list: { traveler: TERMS.missions, crew: TERMS.missions },
+  create: { traveler: `New ${TERMS.mission.toLowerCase()}`, crew: `Propose ${TERMS.mission.toLowerCase()}` },
+  detail: { traveler: TERMS.mission, crew: TERMS.mission },
 };
 
 // ---------------------------------------------------------------------------
 // Main panel — owns the internal list / create / detail nav stack
 // ---------------------------------------------------------------------------
 
-export default function ChallengePanel({
+export default function MissionPanel({
   open,
   token,
   role,
   userId,
   onClose,
-  onStartChallenge,
+  onStartMission,
   onRequestCoordinatePick,
   isPickingCoordinate,
-  pendingOpenChallengeId,
-  onClearPendingChallenge,
-  onRequestNavigateToChallenge,
+  pendingOpenMissionId,
+  onClearPendingMission,
+  onRequestNavigateToMission,
   onCompleteAsStory,
-  pendingOpenDetailChallengeId,
+  pendingOpenDetailMissionId,
   onClearPendingDetail,
   onRequestNavigateToVote,
   onOpenLinkedStory,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [selectedChallenge, setSelectedChallenge] = useState<SelectedChallenge | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<Challenge | null>(null);
+  const [selectedMission, setSelectedMission] = useState<SelectedMission | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Mission | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const music = useMusicSafe();
-  const log = useDebugLogger("ChallengePanel", "src/features/challenges/ChallengePanel.tsx");
-  const deleteChallenge = useMutation(tripcastApi.challenges.travelerDeleteChallenge);
+  const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
+  const deleteMission = useMutation(tripcastApi.missions.travelerDeleteMission);
 
   async function handleConfirmDelete() {
     if (!pendingDelete || isDeleting) return;
     setIsDeleting(true);
     try {
-      await deleteChallenge({ token, challengeId: pendingDelete._id });
+      await deleteMission({ token, missionId: pendingDelete._id });
       music.sfx("success");
       setPendingDelete(null);
     } catch {
-      // Mutation already shows the user-friendly error inline via ChallengeDetailSheet
+      // Mutation already shows the user-friendly error inline via MissionDetailSheet
       // when they get there; here we just close the confirm and trust the data
       // subscription to either reflect the delete or keep the row.
       setPendingDelete(null);
@@ -122,84 +123,84 @@ export default function ChallengePanel({
   useEffect(() => {
     if (!open) {
       setViewMode("list");
-      setSelectedChallenge(null);
+      setSelectedMission(null);
     }
   }, [open]);
 
-  // Pin-driven navigation: the parent passes a challenge id to focus on; we
+  // Pin-driven navigation: the parent passes a Mission id to focus on; we
   // always return the panel to its list view (and trust the parent to recenter
   // the map) so the user can see the row highlight rather than the detail.
   useEffect(() => {
-    if (!pendingOpenChallengeId) return;
+    if (!pendingOpenMissionId) return;
     setViewMode("list");
-    setSelectedChallenge(null);
-  }, [pendingOpenChallengeId]);
+    setSelectedMission(null);
+  }, [pendingOpenMissionId]);
 
   // Back-from-story navigation: the parent (TripMap) sets this when the
   // Traveler hits "← Back" inside AddCheckpointSheet's mission-completion
-  // mode. We look up the challenge by id and drop the user straight back on
+  // mode. We look up the Mission by id and drop the user straight back on
   // the same mission's detail view so the four-button action set is visible.
-  const pendingDetailChallenge = useQuery(
-    tripcastApi.challenges.getChallenge,
-    pendingOpenDetailChallengeId && open
-      ? { token, challengeId: pendingOpenDetailChallengeId }
+  const pendingDetailMission = useQuery(
+    tripcastApi.missions.getMission,
+    pendingOpenDetailMissionId && open
+      ? { token, missionId: pendingOpenDetailMissionId }
       : "skip",
   );
 
   useEffect(() => {
-    if (!open || !pendingOpenDetailChallengeId) return;
-    if (pendingDetailChallenge === undefined) return; // still loading
-    if (pendingDetailChallenge === null) {
-      // Challenge was deleted while the user was writing the story — fall back
+    if (!open || !pendingOpenDetailMissionId) return;
+    if (pendingDetailMission === undefined) return; // still loading
+    if (pendingDetailMission === null) {
+      // Mission was deleted while the user was writing the story — fall back
       // to the list view and clear the pending id so we don't loop.
       onClearPendingDetail?.();
       setViewMode("list");
-      setSelectedChallenge(null);
+      setSelectedMission(null);
       return;
     }
-    setSelectedChallenge({
-      challenge: pendingDetailChallenge,
-      isOwn: role === "traveler" || Boolean(pendingDetailChallenge.proposedByUserId === userId),
+    setSelectedMission({
+      Mission: pendingDetailMission,
+      isOwn: role === "traveler" || Boolean(pendingDetailMission.proposedByUserId === userId),
     });
     setViewMode("detail");
     onClearPendingDetail?.();
-    // pendingDetailChallenge / onClearPendingDetail are stable enough for the
+    // pendingDetailMission / onClearPendingDetail are stable enough for the
     // one-shot navigation behavior we want here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pendingOpenDetailChallengeId, pendingDetailChallenge]);
+  }, [open, pendingOpenDetailMissionId, pendingDetailMission]);
 
   // Entering the detail view auto-focuses the map on the mission's coordinates
   // — same UX as opening a story. The explicit "View on map" link in the
   // detail body remains useful for re-centering after the user has panned away.
   useEffect(() => {
-    if (viewMode !== "detail" || !selectedChallenge) return;
-    if (selectedChallenge.challenge.lat === undefined || selectedChallenge.challenge.lon === undefined) return;
-    onRequestNavigateToChallenge?.({
-      lat: selectedChallenge.challenge.lat,
-      lon: selectedChallenge.challenge.lon,
+    if (viewMode !== "detail" || !selectedMission) return;
+    if (selectedMission.Mission.lat === undefined || selectedMission.Mission.lon === undefined) return;
+    onRequestNavigateToMission?.({
+      lat: selectedMission.Mission.lat,
+      lon: selectedMission.Mission.lon,
     });
-    // onRequestNavigateToChallenge is stable enough for our purposes
+    // onRequestNavigateToMission is stable enough for our purposes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, selectedChallenge?.challenge._id]);
+  }, [viewMode, selectedMission?.Mission._id]);
 
   function goToList(sound: "page" | "success" | null = "page") {
     log.logInteraction("view:change", { from: viewMode, to: "list" });
     if (sound) music.sfx(sound);
     setViewMode("list");
-    setSelectedChallenge(null);
+    setSelectedMission(null);
   }
 
   function goToCreate() {
     log.logInteraction("view:change", { from: viewMode, to: "create" });
     music.sfx("page");
-    setSelectedChallenge(null);
+    setSelectedMission(null);
     setViewMode("create");
   }
 
-  function goToDetail(challenge: Challenge, isOwn = role === "traveler") {
-    log.logInteraction("view:change", { from: viewMode, to: "detail", challengeId: challenge._id, status: challenge.status });
+  function goToDetail(Mission: Mission, isOwn = role === "traveler") {
+    log.logInteraction("view:change", { from: viewMode, to: "detail", missionId: Mission._id, status: Mission.status });
     music.sfx("page");
-    setSelectedChallenge({ challenge, isOwn });
+    setSelectedMission({ Mission, isOwn });
     setViewMode("detail");
   }
 
@@ -236,7 +237,7 @@ export default function ChallengePanel({
               <SheetBackButton aria-label="Back to missions list" onClick={() => goToList()} />
             ) : null}
             <div className="flex min-w-0 flex-col gap-1">
-              <SheetKicker dotColor="var(--plum)">Missions</SheetKicker>
+              <SheetKicker dotColor="var(--plum)">{TERMS.missions}</SheetKicker>
               <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
                 {headerTitle}
               </SheetTitle>
@@ -248,14 +249,14 @@ export default function ChallengePanel({
                 size="sm"
                 type="button"
                 onClick={goToCreate}
-                aria-label={isTraveler ? "Create mission" : "Propose mission"}
+                aria-label={isTraveler ? `Create ${TERMS.mission.toLowerCase()}` : `Propose ${TERMS.mission.toLowerCase()}`}
                 className="rounded-full"
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 {isTraveler ? "New" : "Propose"}
               </Button>
             ) : null}
-            <SheetCloseButton aria-label="Close challenges panel" />
+            <SheetCloseButton aria-label="Close missions panel" />
           </div>
         </div>
 
@@ -264,9 +265,9 @@ export default function ChallengePanel({
             isTraveler ? (
               <TravelerListView
                 token={token}
-                pendingOpenChallengeId={pendingOpenChallengeId}
-                onClearPendingChallenge={onClearPendingChallenge}
-                onRequestNavigateToChallenge={onRequestNavigateToChallenge}
+                pendingOpenMissionId={pendingOpenMissionId}
+                onClearPendingMission={onClearPendingMission}
+                onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
                 onRequestDelete={(c) => setPendingDelete(c)}
               />
@@ -274,9 +275,9 @@ export default function ChallengePanel({
               <CrewListView
                 token={token}
                 userId={userId}
-                pendingOpenChallengeId={pendingOpenChallengeId}
-                onClearPendingChallenge={onClearPendingChallenge}
-                onRequestNavigateToChallenge={onRequestNavigateToChallenge}
+                pendingOpenMissionId={pendingOpenMissionId}
+                onClearPendingMission={onClearPendingMission}
+                onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
               />
             )
@@ -289,40 +290,40 @@ export default function ChallengePanel({
                   onSuccess={() => goToList("success")}
                 />
               ) : (
-                <ChallengeProposalForm
+                <MissionProposalForm
                   token={token}
                   onRequestCoordinatePick={onRequestCoordinatePick}
                   onSuccess={() => goToList("success")}
                 />
               )}
             </SheetBody>
-          ) : viewMode === "detail" && selectedChallenge ? (
+          ) : viewMode === "detail" && selectedMission ? (
             <SheetBody className="p-0">
-              <ChallengeDetailSheet
-                challenge={selectedChallenge.challenge}
+              <MissionDetailSheet
+                Mission={selectedMission.Mission}
                 token={token}
                 role={role}
-                isOwn={selectedChallenge.isOwn}
+                isOwn={selectedMission.isOwn}
                 onClose={() => goToList()}
-                onStartChallenge={() => {
-                  onStartChallenge?.();
+                onStartMission={() => {
+                  onStartMission?.();
                   goToList(null);
                 }}
                 onRequestCoordinatePick={onRequestCoordinatePick}
                 onCompleteAsStory={
                   onCompleteAsStory
-                    ? (challenge, transaction) => {
-                        onCompleteAsStory(challenge, transaction);
+                    ? (Mission, transaction) => {
+                        onCompleteAsStory(Mission, transaction);
                         goToList(null);
                       }
                     : undefined
                 }
                 onViewOnMap={
-                  selectedChallenge.challenge.lat !== undefined && selectedChallenge.challenge.lon !== undefined
+                  selectedMission.Mission.lat !== undefined && selectedMission.Mission.lon !== undefined
                     ? () => {
-                        const { lat, lon } = selectedChallenge.challenge;
+                        const { lat, lon } = selectedMission.Mission;
                         if (lat !== undefined && lon !== undefined) {
-                          onRequestNavigateToChallenge?.({ lat, lon });
+                          onRequestNavigateToMission?.({ lat, lon });
                         }
                         goToList("page");
                       }
@@ -352,30 +353,30 @@ export default function ChallengePanel({
 }
 
 // ---------------------------------------------------------------------------
-// Traveler list view — tabs + ChallengeCard list
+// Traveler list view — tabs + MissionCard list
 // ---------------------------------------------------------------------------
 
 function TravelerListView({
   token,
-  pendingOpenChallengeId,
-  onClearPendingChallenge,
-  onRequestNavigateToChallenge,
+  pendingOpenMissionId,
+  onClearPendingMission,
+  onRequestNavigateToMission,
   onOpenDetail,
   onRequestDelete,
 }: {
   token: string;
-  pendingOpenChallengeId?: string | null;
-  onClearPendingChallenge?: () => void;
-  onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
-  onOpenDetail: (c: Challenge, isOwn?: boolean) => void;
-  onRequestDelete?: (c: Challenge) => void;
+  pendingOpenMissionId?: string | null;
+  onClearPendingMission?: () => void;
+  onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
+  onOpenDetail: (c: Mission, isOwn?: boolean) => void;
+  onRequestDelete?: (c: Mission) => void;
 }) {
   const [filter, setFilter] = useState<TravelerFilter>("all");
-  const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
+  const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
-  const allChallenges = useQuery(tripcastApi.challenges.travelerListChallenges, { token });
-  const log = useDebugLogger("ChallengePanel", "src/features/challenges/ChallengePanel.tsx");
+  const allMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   function clearHighlightTimers() {
     for (const timer of highlightTimersRef.current) {
@@ -393,34 +394,34 @@ function TravelerListView({
     };
   }, []);
 
-  function queueChallengeHighlight(id: string) {
+  function queueMissionHighlight(id: string) {
     clearHighlightTimers();
     const scrollTimer = setTimeout(() => {
       document
-        .querySelector(`[data-challenge-id="${id}"]`)
+        .querySelector(`[data-mission-id="${id}"]`)
         ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      setHighlightedChallengeId(id);
-      const clearTimer = setTimeout(() => setHighlightedChallengeId(null), 2000);
+      setHighlightedMissionId(id);
+      const clearTimer = setTimeout(() => setHighlightedMissionId(null), 2000);
       highlightTimersRef.current = [clearTimer];
     }, 100);
     highlightTimersRef.current = [scrollTimer];
   }
 
   useEffect(() => {
-    if (!pendingOpenChallengeId || !allChallenges) return;
-    const challenge = allChallenges.find((c) => c._id === pendingOpenChallengeId);
-    if (challenge) {
-      if (challenge.lat !== undefined && challenge.lon !== undefined) {
-        onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
+    if (!pendingOpenMissionId || !allMissions) return;
+    const Mission = allMissions.find((c) => c._id === pendingOpenMissionId);
+    if (Mission) {
+      if (Mission.lat !== undefined && Mission.lon !== undefined) {
+        onRequestNavigateToMission?.({ lat: Mission.lat, lon: Mission.lon });
       }
-      const id = pendingOpenChallengeId;
-      queueChallengeHighlight(id);
-      onClearPendingChallenge?.();
+      const id = pendingOpenMissionId;
+      queueMissionHighlight(id);
+      onClearPendingMission?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOpenChallengeId, allChallenges]);
+  }, [pendingOpenMissionId, allMissions]);
 
-  const filtered = allChallenges?.filter((c) => {
+  const filtered = allMissions?.filter((c) => {
     if (filter === "all") return true;
     if (filter === "visible") return c.status === "visible" || c.status === "planned";
     return c.status === filter;
@@ -428,12 +429,12 @@ function TravelerListView({
 
   return (
     <>
-      <SheetTabs aria-label="Challenge filters" className="mt-3 gap-1.5 pb-3">
+      <SheetTabs aria-label="Mission filters" className="mt-3 gap-1.5 pb-3">
         {TRAVELER_FILTERS.map((f) => (
           <SheetTab
             key={f.value}
-            id={`challenge-tab-${f.value}`}
-            aria-controls="challenge-tabpanel"
+            id={`Mission-tab-${f.value}`}
+            aria-controls="Mission-tabpanel"
             active={filter === f.value}
             onClick={() => { log.logInteraction("filter:change", { from: filter, to: f.value }); setFilter(f.value); }}
           >
@@ -443,13 +444,13 @@ function TravelerListView({
       </SheetTabs>
 
       <SheetBody
-        id="challenge-tabpanel"
+        id="Mission-tabpanel"
         role="tabpanel"
-        aria-labelledby={`challenge-tab-${filter}`}
+        aria-labelledby={`Mission-tab-${filter}`}
         className="min-h-0 space-y-2 px-4 pb-4 pt-3"
       >
-        {allChallenges === undefined ? (
-          <PendingNotice label="Loading challenges..." />
+        {allMissions === undefined ? (
+          <PendingNotice label="Loading missions..." />
         ) : filtered.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--ink-3)]">
             {filter === "all" ? "No missions yet." : `No ${filter.replace(/_/g, " ")} missions.`}
@@ -457,9 +458,9 @@ function TravelerListView({
         ) : (
           filtered.map((c) => {
             const card = (
-              <ChallengeCard
-                challenge={c}
-                isHighlighted={c._id === highlightedChallengeId}
+              <MissionCard
+                Mission={c}
+                isHighlighted={c._id === highlightedMissionId}
                 onClick={() => onOpenDetail(c)}
               />
             );
@@ -506,7 +507,7 @@ function TravelerCreateForm({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const create = useMutation(tripcastApi.challenges.travelerCreateChallenge);
+  const create = useMutation(tripcastApi.missions.travelerCreateMission);
 
   function handlePickOnMap() {
     onRequestCoordinatePick?.((coord) => {
@@ -633,33 +634,33 @@ function TravelerCreateForm({
 }
 
 // ---------------------------------------------------------------------------
-// Crew list view — tabs + ChallengeCard list
+// Follower list view - tabs + MissionCard list
 // ---------------------------------------------------------------------------
 
 type CrewTab = "mine" | "active";
 
 function CrewListView({
   token,
-  pendingOpenChallengeId,
-  onClearPendingChallenge,
-  onRequestNavigateToChallenge,
+  pendingOpenMissionId,
+  onClearPendingMission,
+  onRequestNavigateToMission,
   onOpenDetail,
 }: {
   token: string;
   userId?: string;
-  pendingOpenChallengeId?: string | null;
-  onClearPendingChallenge?: () => void;
-  onRequestNavigateToChallenge?: (coord: { lat: number; lon: number }) => void;
-  onOpenDetail: (c: Challenge, isOwn?: boolean) => void;
+  pendingOpenMissionId?: string | null;
+  onClearPendingMission?: () => void;
+  onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
+  onOpenDetail: (c: Mission, isOwn?: boolean) => void;
 }) {
   const [tab, setTab] = useState<CrewTab>("active");
-  const [highlightedChallengeId, setHighlightedChallengeId] = useState<string | null>(null);
+  const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
-  const myChallenges = useQuery(tripcastApi.challenges.followerListMyChallenges, { token });
+  const myMissions = useQuery(tripcastApi.missions.followerListMyMissions, { token });
 
-  const mine = myChallenges?.mine ?? [];
-  const publicChallenges = myChallenges?.public ?? [];
+  const mine = myMissions?.mine ?? [];
+  const publicMissions = myMissions?.public ?? [];
   const mineIds = new Set(mine.map((c) => c._id));
 
   function clearHighlightTimers() {
@@ -678,38 +679,38 @@ function CrewListView({
     };
   }, []);
 
-  function queueChallengeHighlight(id: string) {
+  function queueMissionHighlight(id: string) {
     clearHighlightTimers();
     const scrollTimer = setTimeout(() => {
       document
-        .querySelector(`[data-challenge-id="${id}"]`)
+        .querySelector(`[data-mission-id="${id}"]`)
         ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      setHighlightedChallengeId(id);
-      const clearTimer = setTimeout(() => setHighlightedChallengeId(null), 2000);
+      setHighlightedMissionId(id);
+      const clearTimer = setTimeout(() => setHighlightedMissionId(null), 2000);
       highlightTimersRef.current = [clearTimer];
     }, 100);
     highlightTimersRef.current = [scrollTimer];
   }
 
   useEffect(() => {
-    if (!pendingOpenChallengeId || !myChallenges) return;
-    const challenge =
-      mine.find((c) => c._id === pendingOpenChallengeId) ??
-      publicChallenges.find((c) => c._id === pendingOpenChallengeId);
-    if (challenge) {
-      if (challenge.lat !== undefined && challenge.lon !== undefined) {
-        onRequestNavigateToChallenge?.({ lat: challenge.lat, lon: challenge.lon });
+    if (!pendingOpenMissionId || !myMissions) return;
+    const Mission =
+      mine.find((c) => c._id === pendingOpenMissionId) ??
+      publicMissions.find((c) => c._id === pendingOpenMissionId);
+    if (Mission) {
+      if (Mission.lat !== undefined && Mission.lon !== undefined) {
+        onRequestNavigateToMission?.({ lat: Mission.lat, lon: Mission.lon });
       }
-      const id = pendingOpenChallengeId;
-      queueChallengeHighlight(id);
-      onClearPendingChallenge?.();
+      const id = pendingOpenMissionId;
+      queueMissionHighlight(id);
+      onClearPendingMission?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOpenChallengeId, myChallenges]);
+  }, [pendingOpenMissionId, myMissions]);
 
   return (
     <>
-      <SheetTabs aria-label="Crew challenge tabs" className="mt-3 gap-1.5 pb-3">
+      <SheetTabs aria-label="Follower mission tabs" className="mt-3 gap-1.5 pb-3">
         <SheetTab
           id="crew-tab-active"
           aria-controls="crew-tabpanel"
@@ -734,8 +735,8 @@ function CrewListView({
         aria-labelledby={`crew-tab-${tab}`}
         className="min-h-0 space-y-2 px-4 pb-4 pt-3"
       >
-        {myChallenges === undefined ? (
-          <PendingNotice label="Loading challenges..." />
+        {myMissions === undefined ? (
+          <PendingNotice label="Loading missions..." />
         ) : tab === "mine" ? (
           mine.length === 0 ? (
             <p className="py-6 text-center text-sm text-[var(--ink-3)]">
@@ -744,26 +745,26 @@ function CrewListView({
           ) : (
             mine.map((c) => (
               <div key={c._id}>
-                <ChallengeCard
-                  challenge={c}
+                <MissionCard
+                  Mission={c}
                   isOwn
-                  isHighlighted={c._id === highlightedChallengeId}
+                  isHighlighted={c._id === highlightedMissionId}
                   onClick={() => onOpenDetail(c, true)}
                 />
               </div>
             ))
           )
-        ) : publicChallenges.length === 0 ? (
+        ) : publicMissions.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--ink-3)]">
             No active missions right now.
           </p>
         ) : (
-          publicChallenges.map((c) => (
+          publicMissions.map((c) => (
             <div key={c._id}>
-              <ChallengeCard
-                challenge={c}
+              <MissionCard
+                Mission={c}
                 isOwn={mineIds.has(c._id)}
-                isHighlighted={c._id === highlightedChallengeId}
+                isHighlighted={c._id === highlightedMissionId}
                 onClick={() => onOpenDetail(c, mineIds.has(c._id))}
               />
             </div>

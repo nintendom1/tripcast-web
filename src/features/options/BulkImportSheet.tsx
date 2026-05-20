@@ -71,7 +71,7 @@ const SAMPLE_JSON = `{
       ]
     },
     {
-      "kind": "challenge",
+      "kind": "mission",
       "ref": "mission:bainbridge-ferry",
       "timeZone": "America/Los_Angeles",
       "occurredAt": "2026-05-15",
@@ -216,7 +216,7 @@ export default function BulkImportSheet({
             <>
               <p className="text-sm leading-relaxed text-[var(--ink-2)]">
                 Paste a JSON array or {"{ timeZone, entries }"} object with up to 50 entries.
-                Supported kinds are checkin, story, transaction, challenge, and route vote.
+                Supported kinds are checkin, story, transaction, mission, and route vote.
                 Timestamps can be epoch milliseconds, ISO strings with an offset, or YYYY-MM-DD dates.
               </p>
               <textarea
@@ -319,7 +319,7 @@ export default function BulkImportSheet({
                 </p>
                 <p className="mt-1 text-sm text-[var(--ink-2)]">
                   {result.counts.checkins} check-ins, {result.counts.transactions} transactions,{" "}
-                  {result.counts.challenges} missions, {result.counts.routeVotes} route votes.
+                  {result.counts.missions} missions, {result.counts.routeVotes} route votes.
                 </p>
               </div>
               <Button
@@ -361,7 +361,7 @@ function PreviewSummary({ preview }: { preview: BulkImportPreview | undefined })
       {[
         ["Pins", preview.counts.checkins],
         ["Funds", preview.counts.transactions],
-        ["Missions", preview.counts.challenges],
+        ["Missions", preview.counts.missions],
         ["Votes", preview.counts.routeVotes],
       ].map(([label, value]) => (
         <div key={label} className={cn("rounded-xl bg-[var(--bg-card)] p-3 text-center shadow-sm")}>

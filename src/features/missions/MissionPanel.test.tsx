@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
-import ChallengePanel from "./ChallengePanel";
+import MissionPanel from "./MissionPanel";
 import { tripcastApi } from "../../convex/tripcastApi";
 
 vi.mock("convex/react", () => ({
@@ -69,7 +69,7 @@ vi.mock("../../components/ui/sheet", () => ({
   ),
 }));
 
-function renderPanel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = {}) {
+function renderPanel(overrides: Partial<Parameters<typeof MissionPanel>[0]> = {}) {
   const props = {
     open: true,
     token: "test-token",
@@ -78,7 +78,7 @@ function renderPanel(overrides: Partial<Parameters<typeof ChallengePanel>[0]> = 
     ...overrides,
   };
 
-  render(<ChallengePanel {...props} />);
+  render(<MissionPanel {...props} />);
   return props;
 }
 
@@ -94,8 +94,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("ChallengePanel coordinate picking", () => {
-  it("ignores sheet close requests while the map is collecting a challenge coordinate", async () => {
+describe("MissionPanel coordinate picking", () => {
+  it("ignores sheet close requests while the map is collecting a Mission coordinate", async () => {
     const user = userEvent.setup();
     const { onClose } = renderPanel({ isPickingCoordinate: true });
 
@@ -124,7 +124,7 @@ describe("ChallengePanel coordinate picking", () => {
   });
 });
 
-describe("ChallengePanel sheet layout", () => {
+describe("MissionPanel sheet layout", () => {
   it("keeps the list body scrollable inside a clipped sheet content area", () => {
     renderPanel();
 
@@ -152,13 +152,13 @@ describe("ChallengePanel sheet layout", () => {
   });
 });
 
-describe("ChallengePanel pending mission highlight", () => {
+describe("MissionPanel pending mission highlight", () => {
   it("scrolls to the pending traveler mission and clears its highlight", () => {
     vi.useFakeTimers();
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
-    const challenge = {
-      _id: "challenge-1",
+    const Mission = {
+      _id: "Mission-1",
       _creationTime: 1,
       title: "Pinned mission",
       status: "visible",
@@ -170,23 +170,23 @@ describe("ChallengePanel pending mission highlight", () => {
       lat: 47.6,
       lon: -122.3,
     };
-    const challenges = [challenge];
+    const Missions = [Mission];
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((_ref: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      return challenges;
+      return Missions;
     });
-    const onClearPendingChallenge = vi.fn();
-    const onRequestNavigateToChallenge = vi.fn();
+    const onClearPendingMission = vi.fn();
+    const onRequestNavigateToMission = vi.fn();
 
     renderPanel({
-      pendingOpenChallengeId: "challenge-1",
-      onClearPendingChallenge,
-      onRequestNavigateToChallenge,
+      pendingOpenMissionId: "Mission-1",
+      onClearPendingMission,
+      onRequestNavigateToMission,
     });
-    const getCard = () => document.querySelector('[data-challenge-id="challenge-1"]');
+    const getCard = () => document.querySelector('[data-mission-id="Mission-1"]');
 
-    expect(onRequestNavigateToChallenge).toHaveBeenCalledWith({ lat: 47.6, lon: -122.3 });
-    expect(onClearPendingChallenge).toHaveBeenCalledTimes(1);
+    expect(onRequestNavigateToMission).toHaveBeenCalledWith({ lat: 47.6, lon: -122.3 });
+    expect(onClearPendingMission).toHaveBeenCalledTimes(1);
     expect(getCard()).not.toHaveClass("ring-2");
 
     act(() => {
@@ -202,11 +202,11 @@ describe("ChallengePanel pending mission highlight", () => {
   });
 });
 
-describe("ChallengePanel Support Crew ownership", () => {
-  it("lets Support Crew withdraw a mission opened from Mine even when userId is not available", async () => {
+describe("MissionPanel Follower ownership", () => {
+  it("lets a Follower withdraw a mission opened from Mine even when userId is not available", async () => {
     const user = userEvent.setup();
-    const ownChallenge = {
-      _id: "challenge-1",
+    const ownMission = {
+      _id: "Mission-1",
       _creationTime: 1,
       title: "My mission",
       status: "proposed",
@@ -220,8 +220,8 @@ describe("ChallengePanel Support Crew ownership", () => {
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (ref === tripcastApi.historyEvents.listHistoryEvents) return [];
-      if (ref === tripcastApi.challenges.getChallenge) return ownChallenge;
-      return { mine: [ownChallenge], public: [] };
+      if (ref === tripcastApi.missions.getMission) return ownMission;
+      return { mine: [ownMission], public: [] };
     });
 
     renderPanel({ role: "support_crew" });

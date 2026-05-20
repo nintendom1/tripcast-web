@@ -25,16 +25,16 @@ export const CATEGORY_OPTIONS: { value: TransactionCategory; label: string; emoj
 ];
 
 export const VISIBILITY_OPTIONS: { value: TransactionVisibility; label: string; desc: string }[] = [
-  { value: "public", label: "Public", desc: "Support Crew sees full details." },
+  { value: "public", label: "Public", desc: "Followers see full details." },
   {
     value: "summary_only",
     label: "Summary only",
-    desc: "Support Crew sees the USD amount but no title or category.",
+    desc: "Followers see the USD amount but no title or category.",
   },
   {
     value: "private",
     label: "Private",
-    desc: "Support Crew sees no details; meter still updates if counted.",
+    desc: "Followers see no details; meter still updates if counted.",
   },
 ];
 

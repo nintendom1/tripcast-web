@@ -21,8 +21,8 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
-  ChallengeModerationMode,
-  ChallengeRateLimitPreset,
+  MissionModerationMode,
+  MissionRateLimitPreset,
 } from "../../convex/tripcastApi";
 import type { ReadingSpeed } from "../../providers/ReadingSpeedProvider";
 import {
@@ -44,6 +44,7 @@ import CreateInviteControl from "../followers/CreateInviteControl";
 import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import BulkImportSheet from "./BulkImportSheet";
+import { TERMS } from "../../copy/terminology";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -62,12 +63,12 @@ type OptionsSheetProps = {
 
 export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "bulk-import" | "debug-logs";
 
-const MODERATION_OPTIONS: { value: ChallengeModerationMode; label: string; desc: string }[] = [
+const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
-  { value: "auto_publish", label: "Auto-publish", desc: "Support Crew proposals appear immediately." },
+  { value: "auto_publish", label: "Auto-publish", desc: "Follower proposals appear immediately." },
 ];
 
-const RATE_LIMIT_OPTIONS: { value: ChallengeRateLimitPreset; label: string }[] = [
+const RATE_LIMIT_OPTIONS: { value: MissionRateLimitPreset; label: string }[] = [
   { value: "off", label: "No per-follower limit" },
   { value: "per_second", label: "1 per second" },
   { value: "per_minute", label: "1 per minute" },
@@ -83,15 +84,15 @@ const SOUNDTRACK_OPTIONS = [
   { value: "cafe", label: "Cafe" },
   { value: "story", label: "Story" },
   { value: "vote", label: "Vote" },
-  { value: "challenge", label: "Mission" },
+  { value: "mission", label: "Mission" },
 ] as const;
 
-function ChallengeSettingsSection({ token }: { token: string }) {
-  const settings = useQuery(tripcastApi.challengeSettings.travelerGetChallengeSettings, { token });
-  const updateSettings = useMutation(tripcastApi.challengeSettings.travelerUpdateChallengeSettings);
+function MissionSettingsSection({ token }: { token: string }) {
+  const settings = useQuery(tripcastApi.missionSettings.travelerGetMissionSettings, { token });
+  const updateSettings = useMutation(tripcastApi.missionSettings.travelerUpdateMissionSettings);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleModerationChange(mode: ChallengeModerationMode) {
+  async function handleModerationChange(mode: MissionModerationMode) {
     setError(null);
     try {
       await updateSettings({ token, moderationMode: mode });
@@ -100,7 +101,7 @@ function ChallengeSettingsSection({ token }: { token: string }) {
     }
   }
 
-  async function handleRateLimitChange(preset: ChallengeRateLimitPreset) {
+  async function handleRateLimitChange(preset: MissionRateLimitPreset) {
     setError(null);
     try {
       await updateSettings({ token, rateLimitPreset: preset });
@@ -113,7 +114,7 @@ function ChallengeSettingsSection({ token }: { token: string }) {
   const currentPreset = settings?.rateLimitPreset ?? "per_second";
 
   return (
-    <OptionsSection label="Missions">
+    <OptionsSection label={TERMS.missions}>
       <div className="grid gap-2 rounded-xl bg-[var(--bg-card)] p-3">
         <p className="text-sm font-semibold text-[var(--ink-1)]">Proposal moderation</p>
         {MODERATION_OPTIONS.map((opt) => (
@@ -139,7 +140,7 @@ function ChallengeSettingsSection({ token }: { token: string }) {
         Per-follower proposal rate limit
         <select
           value={currentPreset}
-          onChange={(e) => handleRateLimitChange(e.target.value as ChallengeRateLimitPreset)}
+          onChange={(e) => handleRateLimitChange(e.target.value as MissionRateLimitPreset)}
           className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
         >
           {RATE_LIMIT_OPTIONS.map((opt) => (
@@ -225,7 +226,7 @@ export default function OptionsSheet({
           {view === "travel-funds" ? (
             <SubViewHeader
               kicker="Traveler"
-              title="Travel Funds"
+              title={TERMS.travelFunds}
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
           ) : view === "emergency-reset" ? (
@@ -323,7 +324,7 @@ function OptionsHome({
 
       {role === "traveler" ? (
         <>
-          <OptionsSection label="Followers">
+        <OptionsSection label="Followers">
             <div className="rounded-xl bg-[var(--bg-card)] p-3">
               <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
                 <UserPlus className="h-4 w-4" aria-hidden />
@@ -331,21 +332,21 @@ function OptionsHome({
               </p>
               <CreateInviteControl token={session.token} />
             </div>
-            <OptionsRow icon={Users} title="Manage Followers" detail="Active and pending crew" onClick={onManageFollowers} />
+            <OptionsRow icon={Users} title={TERMS.manageFollowers} detail="Active and pending followers" onClick={onManageFollowers} />
           </OptionsSection>
 
-          <OptionsSection label="Travel Funds">
-            <OptionsRow icon={Wallet} title="Manage Travel Funds" detail="Budget, pace, and transactions" onClick={onTravelFunds} />
+          <OptionsSection label={TERMS.travelFunds}>
+            <OptionsRow icon={Wallet} title={`Manage ${TERMS.travelFunds}`} detail="Budget, pace, and transactions" onClick={onTravelFunds} />
           </OptionsSection>
 
-          <ChallengeSettingsSection token={session.token} />
+          <MissionSettingsSection token={session.token} />
 
           <OptionsSection label="Data / Dev">
             <OptionsRow icon={Database} title="Bulk Import" detail="Paste JSON to batch-add pins, funds, missions, and votes" onClick={onBulkImport} />
           </OptionsSection>
 
           <OptionsSection label="Tour">
-            <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the Support Crew tour" onClick={onReplayCrewTour} />
+            <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the Follower tour" onClick={onReplayCrewTour} />
           </OptionsSection>
         </>
       ) : (
@@ -355,12 +356,12 @@ function OptionsHome({
       )}
 
       <OptionsSection label="Developer">
-        <OptionsRow icon={Bug} title="Dev Tools" detail="Debug logging and session log export" onClick={onDebugLogs} />
+        <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
       </OptionsSection>
 
       {role === "traveler" ? (
-        <OptionsSection label="Danger Zone">
-          <OptionsRow icon={ShieldAlert} title="Emergency Reset" detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
+        <OptionsSection label={TERMS.dangerZone}>
+          <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
         </OptionsSection>
       ) : null}
 
@@ -373,10 +374,10 @@ function OptionsHomeHeader({ role }: { role: "traveler" | "support_crew" }) {
     <div className="flex items-start justify-between gap-2 px-5 pt-2">
       <div className="flex min-w-0 flex-col gap-1.5">
         <SheetKicker dotColor={role === "traveler" ? "var(--flag)" : "var(--teal)"}>
-          {role === "traveler" ? "Traveler" : "Support Crew"}
+          {role === "traveler" ? TERMS.traveler : TERMS.follower}
         </SheetKicker>
         <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
-          Options
+          {TERMS.options}
         </SheetTitle>
       </div>
       <SheetCloseButton aria-label="Close options" />

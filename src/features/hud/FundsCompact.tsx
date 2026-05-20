@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { TERMS } from "../../copy/terminology";
 
 export interface FundsCompactProps {
   remainingUsd: number;
@@ -93,7 +94,7 @@ export function FundsCompact({
     className,
   );
 
-  const resolvedAriaLabel = ariaLabel ?? `Travel funds. ${amountText} ${captionText.toLowerCase()}.`;
+  const resolvedAriaLabel = ariaLabel ?? `${TERMS.funds}. ${amountText} ${captionText.toLowerCase()}.`;
 
   if (onClick) {
     return (

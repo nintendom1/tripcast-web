@@ -89,7 +89,7 @@ describe("HistorySheet", () => {
         onStorySelect={onStorySelect}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /check-in: my story pin/i }));
+    fireEvent.click(screen.getByRole("button", { name: /check in: my story pin/i }));
     expect(onStorySelect).toHaveBeenCalledWith(event);
     expect(onCheckInSelect).not.toHaveBeenCalled();
   });
@@ -108,15 +108,15 @@ describe("HistorySheet", () => {
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "All" }));
-    fireEvent.click(screen.getByRole("button", { name: /check-in: quick stop/i }));
+    fireEvent.click(screen.getByRole("button", { name: /check in: quick stop/i }));
     expect(onCheckInSelect).toHaveBeenCalledWith(event);
     expect(onStorySelect).not.toHaveBeenCalled();
   });
 
-  it("check-in row renders with check-in aria-label", () => {
+  it("Story row renders with Check In aria-label", () => {
     const events = [makeEvent({ moodValue: "good" })];
     render(<HistorySheet {...defaultProps} events={events} />);
-    expect(screen.getByRole("button", { name: /check-in:/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /check in:/i })).toBeInTheDocument();
   });
 
   it("clicking a non-checkin row with lat/lon calls onLocationFocus", () => {
@@ -139,7 +139,7 @@ describe("HistorySheet", () => {
     expect(onLocationFocus).toHaveBeenCalledWith({ lat: 47.6, lon: -122.3 });
   });
 
-  it("Story tab excludes route_vote_resolved and challenge_planned auto-events", () => {
+  it("Story tab excludes route_vote_resolved and mission_planned auto-events", () => {
     const events = [
       makeEvent({ _id: "a", storyLevel: "story", title: "Real Story Pin" }),
       makeEvent({
@@ -150,7 +150,7 @@ describe("HistorySheet", () => {
       }),
       makeEvent({
         _id: "c",
-        type: "challenge_planned",
+        type: "mission_planned",
         storyLevel: "story",
         title: "Planned Mission",
       }),
@@ -161,11 +161,11 @@ describe("HistorySheet", () => {
     expect(screen.queryByText("Planned Mission")).not.toBeInTheDocument();
   });
 
-  it("Story tab includes challenge_completed entries", () => {
+  it("Story tab includes mission_completed entries", () => {
     const events = [
       makeEvent({
         _id: "c",
-        type: "challenge_completed",
+        type: "mission_completed",
         storyLevel: "story",
         title: "Mission Wrapped",
       }),
@@ -177,7 +177,7 @@ describe("HistorySheet", () => {
   it("onClose is called when close button is clicked", () => {
     const onClose = vi.fn();
     render(<HistorySheet {...defaultProps} onClose={onClose} />);
-    fireEvent.click(screen.getByRole("button", { name: "Close history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close journal" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
@@ -259,7 +259,7 @@ describe("HistorySheet", () => {
       render(<HistorySheet {...travelerProps} />);
       fireEvent.click(screen.getByRole("button", { name: "Show row actions" }));
       fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-      expect(screen.getByText("Delete this check-in?")).toBeInTheDocument();
+      expect(screen.getByText("Delete this Story?")).toBeInTheDocument();
     });
   });
 });

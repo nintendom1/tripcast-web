@@ -32,10 +32,10 @@ type StoryDetailSheetProps = {
   event: HistoryEvent | null;
   onClose: () => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
-  /** Title of the mission the story was filed against, when `event.challengeId`
-   *  is set. Parent resolves this from the challenge list. */
+  /** Title of the mission the story was filed against, when `event.missionId`
+   *  is set. Parent resolves this from the mission list. */
   missionTitle?: string;
-  challengeId?: string;
+  missionId?: string;
   onNavigateToMission?: (id: string) => void;
 };
 
@@ -56,7 +56,7 @@ export default function StoryDetailSheet({
   onClose,
   onLocationFocus,
   missionTitle,
-  challengeId,
+  missionId,
   onNavigateToMission,
 }: StoryDetailSheetProps) {
   useEffect(() => {
@@ -96,7 +96,7 @@ export default function StoryDetailSheet({
             key={event._id}
             event={event}
             missionTitle={missionTitle}
-            challengeId={challengeId}
+            missionId={missionId}
             onNavigateToMission={onNavigateToMission}
           />
         ) : null}
@@ -108,12 +108,12 @@ export default function StoryDetailSheet({
 function StoryBody({
   event,
   missionTitle,
-  challengeId,
+  missionId,
   onNavigateToMission,
 }: {
   event: HistoryEvent;
   missionTitle?: string;
-  challengeId?: string;
+  missionId?: string;
   onNavigateToMission?: (id: string) => void;
 }) {
   return (
@@ -155,7 +155,7 @@ function StoryBody({
           </blockquote>
         ) : null}
 
-        {challengeId && (
+        {missionId && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-1">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mission</p>
             <p className="text-sm font-medium text-[var(--ink-1)] line-clamp-1">{missionTitle ?? "View mission"}</p>
@@ -163,7 +163,7 @@ function StoryBody({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onNavigateToMission(challengeId)}
+                onClick={() => onNavigateToMission(missionId)}
                 className="self-start mt-1"
               >
                 Open mission

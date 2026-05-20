@@ -14,7 +14,7 @@ type ScenarioInput = {
   storyOpen: boolean;
   overBudget: boolean;
   voteActive: boolean;
-  challengeActive: boolean;
+  missionActive: boolean;
 };
 
 type UseTripAudioScenarioArgs = {
@@ -22,19 +22,19 @@ type UseTripAudioScenarioArgs = {
   role: Role;
   storyOpen: boolean;
   voteActive: boolean;
-  challengeActive: boolean;
+  missionActive: boolean;
 };
 
 export function deriveTripAudioScenario({
   storyOpen,
   overBudget,
   voteActive,
-  challengeActive,
+  missionActive,
 }: ScenarioInput): AudioScenario {
   if (storyOpen) return "story";
   if (overBudget) return "overBudget";
   if (voteActive) return "voteActive";
-  if (challengeActive) return "challengeActive";
+  if (missionActive) return "missionActive";
   return "idle";
 }
 
@@ -49,7 +49,7 @@ export function useTripAudioScenario({
   role,
   storyOpen,
   voteActive,
-  challengeActive,
+  missionActive,
 }: UseTripAudioScenarioArgs) {
   const music = useMusicSafe();
   const lastScenarioRef = useRef<AudioScenario | null>(null);
@@ -68,9 +68,9 @@ export function useTripAudioScenario({
         storyOpen,
         overBudget: isOverBudget(role === "traveler" ? travelerFunds : crewFunds),
         voteActive,
-        challengeActive,
+        missionActive,
       }),
-    [challengeActive, crewFunds, role, storyOpen, travelerFunds, voteActive],
+    [missionActive, crewFunds, role, storyOpen, travelerFunds, voteActive],
   );
 
   useEffect(() => {

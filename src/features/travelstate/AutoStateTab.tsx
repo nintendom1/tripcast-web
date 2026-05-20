@@ -21,6 +21,7 @@ import {
   getEnergyLevelFromScore,
   getStomachLevelFromScore,
 } from "./travelerStateUtils";
+import { TERMS } from "../../copy/terminology";
 
 interface AutoStateTabProps {
   token: string;
@@ -403,7 +404,7 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
     <div className="grid gap-5 p-4">
       {/* Toggle */}
       <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2.5">
-        <span className="text-sm font-medium">Auto State</span>
+        <span className="text-sm font-medium">{TERMS.autoState}</span>
         <button
           type="button"
           role="switch"
@@ -452,7 +453,7 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
             onClick={handleRebase}
             className="w-full"
           >
-            {rebasing ? "Rebasing…" : "Rebase Auto State to local time"}
+            {rebasing ? "Rebasing…" : `Rebase ${TERMS.autoState} to local time`}
           </Button>
         </div>
       )}
@@ -460,7 +461,7 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
       {enabled && enabledAt != null && (
         <div className="grid gap-1.5 rounded-md border bg-background p-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            AUTO base
+            {TERMS.autoEstimated} base
           </div>
           <div className="flex items-center gap-2 text-sm">
             <span>Energy: {baseEnergy ?? "—"}</span>

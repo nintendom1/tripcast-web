@@ -3,8 +3,9 @@ import { useEffect } from "react";
 import { MapPin, Sparkles, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { TERMS } from "../../copy/terminology";
 
-export type FanAction = "checkin" | "activity" | "transaction" | "challenge" | "vote";
+export type FanAction = "checkin" | "activity" | "transaction" | "mission" | "vote";
 
 export interface FanMenuProps {
   open: boolean;
@@ -16,7 +17,7 @@ export interface FanMenuProps {
 
 const ITEM_CONFIG: Record<FanAction, { label: string; icon: React.ReactNode; color: string }> = {
   checkin: {
-    label: "Check-in / Story",
+    label: `${TERMS.checkIn} / ${TERMS.story}`,
     icon: <MapPin className="h-4 w-4" aria-hidden="true" />,
     color: "var(--flag)",
   },
@@ -30,13 +31,13 @@ const ITEM_CONFIG: Record<FanAction, { label: string; icon: React.ReactNode; col
     icon: <Wallet className="h-4 w-4" aria-hidden="true" />,
     color: "var(--green)",
   },
-  challenge: {
-    label: "Create Mission",
+  mission: {
+    label: `Create ${TERMS.mission}`,
     icon: <Trophy className="h-4 w-4" aria-hidden="true" />,
     color: "var(--plum)",
   },
   vote: {
-    label: "Create Route Vote",
+    label: `Create ${TERMS.routeVote}`,
     icon: <VoteIcon className="h-4 w-4" aria-hidden="true" />,
     color: "var(--teal)",
   },
@@ -46,7 +47,7 @@ const DEFAULT_TRAVELER_ITEMS: FanAction[] = [
   "checkin",
   "activity",
   "transaction",
-  "challenge",
+  "mission",
   "vote",
 ];
 

@@ -13,7 +13,7 @@ vi.mock("convex/react", () => ({
 const validPreview = {
   valid: true,
   maxEntries: 50,
-  counts: { checkins: 1, transactions: 1, challenges: 0, routeVotes: 0 },
+  counts: { checkins: 1, transactions: 1, missions: 0, routeVotes: 0 },
   rows: [
     { index: 0, kind: "story", ref: "story:one", title: "Story one", links: [] },
     { index: 1, kind: "transaction", ref: "tx:one", title: "Coffee", detail: "USD 4", links: ["Links to story:one"] },
@@ -28,7 +28,7 @@ beforeEach(() => {
   });
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue({
     imported: 2,
-    counts: { checkins: 1, transactions: 1, challenges: 0, routeVotes: 0 },
+    counts: { checkins: 1, transactions: 1, missions: 0, routeVotes: 0 },
     idsByRef: { "story:one": "a", "tx:one": "b" },
   }) as any);
 });
@@ -51,7 +51,7 @@ describe("BulkImportSheet", () => {
     const onImported = vi.fn();
     const commit = vi.fn().mockResolvedValue({
       imported: 2,
-      counts: { checkins: 1, transactions: 1, challenges: 0, routeVotes: 0 },
+      counts: { checkins: 1, transactions: 1, missions: 0, routeVotes: 0 },
       idsByRef: { "story:one": "a", "tx:one": "b" },
     });
     vi.mocked(convexReact.useMutation).mockReturnValue(commit as any);

@@ -38,6 +38,7 @@ import {
 import { formatSaveError } from "./formatSaveError";
 import AutoStateTab from "./AutoStateTab";
 import { computeAutoState } from "./autoStateCalc";
+import { TERMS } from "../../copy/terminology";
 
 type TravelerStateSheetProps = {
   token: string;
@@ -424,7 +425,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
           <span className="text-xl" aria-hidden="true">
             {stateEmoji}
           </span>
-          <h2 className="text-sm font-bold">Traveler State</h2>
+          <h2 className="text-sm font-bold">{TERMS.travelerState}</h2>
           {lastUpdated && (
             <span className="text-xs text-muted-foreground" suppressHydrationWarning>
               · {formatRelativeTime(lastUpdated)}
@@ -459,7 +460,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
             }`}
           >
             <span className="inline-flex items-center justify-center gap-1">
-              {t === "state" ? "State" : t === "visibility" ? "Visibility" : "Auto"}
+              {t === "state" ? TERMS.state : t === "visibility" ? "Visibility" : TERMS.autoState}
               {t === "auto" && autoState?.autoStateEnabled ? (
                 <span className="rounded-full bg-navy/10 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-navy">
                   AUTO
@@ -773,7 +774,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
 
         {tab === "visibility" && (
           <div className="grid gap-3 p-4">
-            <p className="text-sm text-muted-foreground">Control what Support Crew can see.</p>
+            <p className="text-sm text-muted-foreground">Control what Followers can see.</p>
 
             <ToggleRow label="Show Traveler State" checked={showTravelerState} onChange={setShowTravelerState} />
 

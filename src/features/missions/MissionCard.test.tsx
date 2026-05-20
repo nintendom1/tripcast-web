@@ -1,11 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import type { Challenge } from "../../convex/tripcastApi";
-import ChallengeCard from "./ChallengeCard";
+import type { Mission } from "../../convex/tripcastApi";
+import MissionCard from "./MissionCard";
 
-function makeChallenge(overrides: Partial<Challenge> = {}): Challenge {
+function makeMission(overrides: Partial<Mission> = {}): Mission {
   return {
-    _id: "challenge-1",
+    _id: "Mission-1",
     _creationTime: 1,
     title: "Try a tiny neighborhood bakery with a surprisingly long name",
     status: "in_progress",
@@ -15,12 +15,12 @@ function makeChallenge(overrides: Partial<Challenge> = {}): Challenge {
     createdBySessionId: "session-1",
     updatedBySessionId: "session-1",
     ...overrides,
-  } as Challenge;
+  } as Mission;
 }
 
-describe("ChallengeCard", () => {
+describe("MissionCard", () => {
   it("reserves space for swipe actions and truncates the status pill", () => {
-    render(<ChallengeCard challenge={makeChallenge()} />);
+    render(<MissionCard Mission={makeMission()} />);
 
     expect(screen.getByRole("button")).toHaveClass("pr-10");
     expect(screen.getByText("Try a tiny neighborhood bakery with a surprisingly long name"))

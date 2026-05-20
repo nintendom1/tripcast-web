@@ -1,0 +1,177 @@
+{
+  "scanRoots": [
+    "src",
+    "README.md",
+    "package.json",
+    "../tripcast-backend/convex",
+    "../tripcast-backend/scripts",
+    "../tripcast-backend/README.md",
+    "../tripcast-backend/package.json"
+  ],
+  "exclude": [
+    "**/.git/**",
+    "**/.github/**",
+    "**/.convex/**",
+    "**/.agents/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/generated/**",
+    "**/_generated/**",
+    "**/*.map",
+    "**/*.lock"
+  ],
+  "rules": [
+    {
+      "id": "people-support-crew",
+      "term": "Support Crew",
+      "replacement": "Follower",
+      "category": "People",
+      "reason": "Use Follower for the person following a trip.",
+      "pattern": "\\bSupport Crew\\b"
+    },
+    {
+      "id": "people-crew",
+      "term": "Crew",
+      "replacement": "Follower",
+      "category": "People",
+      "reason": "Drop Crew and Support Crew in user-facing terminology.",
+      "pattern": "\\bCrew\\b"
+    },
+    {
+      "id": "mission-challenges-title",
+      "term": "Challenges",
+      "replacement": "Missions",
+      "category": "Missions",
+      "reason": "Mission replaces Challenge.",
+      "pattern": "\\bChallenges\\b"
+    },
+    {
+      "id": "mission-challenge-title",
+      "term": "Challenge",
+      "replacement": "Mission",
+      "category": "Missions",
+      "reason": "Mission replaces Challenge.",
+      "pattern": "\\bChallenge\\b"
+    },
+    {
+      "id": "mission-challenges",
+      "term": "challenges",
+      "replacement": "missions",
+      "category": "Missions",
+      "reason": "Mission replaces challenge.",
+      "pattern": "\\bchallenges\\b"
+    },
+    {
+      "id": "mission-challenge",
+      "term": "challenge",
+      "replacement": "mission",
+      "category": "Missions",
+      "reason": "Mission replaces challenge.",
+      "pattern": "\\bchallenge\\b"
+    },
+    {
+      "id": "journal-history-title",
+      "term": "History",
+      "replacement": "Journal",
+      "category": "Journal / Stories",
+      "reason": "Journal is the main trip story/history section.",
+      "pattern": "\\bHistory\\b"
+    },
+    {
+      "id": "journal-history",
+      "term": "history",
+      "replacement": "journal",
+      "category": "Journal / Stories",
+      "reason": "Journal is the product feature name for trip story/history.",
+      "pattern": "\\bhistory\\b"
+    },
+    {
+      "id": "story-check-in-item-title",
+      "term": "Check-in",
+      "replacement": "Story",
+      "category": "Journal / Stories",
+      "reason": "Use Story for completed narrative content items; Check In remains the action.",
+      "pattern": "\\bCheck-in\\b"
+    },
+    {
+      "id": "story-check-in-item",
+      "term": "check-in",
+      "replacement": "Story",
+      "category": "Journal / Stories",
+      "reason": "Use Story for completed narrative content items; Check In remains the action.",
+      "pattern": "\\bcheck-in\\b"
+    },
+    {
+      "id": "map-marker-user-copy",
+      "term": "marker",
+      "replacement": "Pin",
+      "category": "Map",
+      "reason": "Use Pin in user-facing copy; keep marker only for MapLibre implementation details.",
+      "pattern": "\\bmarker\\b"
+    },
+    {
+      "id": "map-map-marker-user-copy",
+      "term": "map marker",
+      "replacement": "Pin",
+      "category": "Map",
+      "reason": "Use Pin in user-facing map copy.",
+      "pattern": "\\bmap marker\\b"
+    },
+    {
+      "id": "options-debug-mode",
+      "term": "Debug Mode",
+      "replacement": "Debug Log",
+      "category": "Options / Debug",
+      "reason": "Debug Log is the debug/logging tool name.",
+      "pattern": "\\bDebug Mode\\b"
+    },
+    {
+      "id": "options-logging-mode",
+      "term": "Logging Mode",
+      "replacement": "Debug Log",
+      "category": "Options / Debug",
+      "reason": "Debug Log is the debug/logging tool name.",
+      "pattern": "\\bLogging Mode\\b"
+    }
+  ],
+  "allowlist": [
+    {
+      "ruleId": "map-marker-user-copy",
+      "path": "src/features/map/**",
+      "reason": "Map implementation code may use MapLibre marker terminology."
+    },
+    {
+      "ruleId": "map-map-marker-user-copy",
+      "path": "src/features/map/**",
+      "reason": "Map implementation code may use MapLibre marker terminology."
+    },
+    {
+      "ruleId": "map-marker-user-copy",
+      "path": "../tripcast-backend/convex/**",
+      "reason": "Backend fields may use implementation names until schema migrations are sliced."
+    },
+    {
+      "ruleId": "map-marker-user-copy",
+      "path": "../tripcast-backend/scripts/**",
+      "reason": "Generated API export mirrors backend implementation names."
+    },
+    {
+      "ruleId": "*",
+      "path": "../tripcast-backend/convex/missions.ts",
+      "reason": "Mission API aliases point at legacy challenge functions during compatibility migration."
+    },
+    {
+      "ruleId": "*",
+      "path": "../tripcast-backend/convex/missionSettings.ts",
+      "reason": "Mission settings aliases point at legacy challenge settings during compatibility migration."
+    },
+    {
+      "ruleId": "*",
+      "path": "**/README.md",
+      "lineContains": "terminology baseline",
+      "reason": "Terminology docs may refer to lint concepts."
+    }
+  ]
+}

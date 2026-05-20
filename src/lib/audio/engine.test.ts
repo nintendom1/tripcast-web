@@ -101,7 +101,7 @@ describe("audio engine", () => {
   it.each([
     ["idle", "auto", "idle"],
     ["voteActive", "auto", "vote"],
-    ["challengeActive", "auto", "challenge"],
+    ["missionActive", "auto", "mission"],
     ["overBudget", "auto", "overBudget"],
     ["story", "auto", "story"],
     ["voteActive", "cafe", "cafe"],
@@ -140,13 +140,13 @@ describe("deriveTripAudioScenario", () => {
       storyOpen: false,
       overBudget: false,
       voteActive: false,
-      challengeActive: false,
+      missionActive: false,
     };
 
     expect(deriveTripAudioScenario(input)).toBe<AudioScenario>("idle");
-    expect(deriveTripAudioScenario({ ...input, challengeActive: true })).toBe("challengeActive");
+    expect(deriveTripAudioScenario({ ...input, missionActive: true })).toBe("missionActive");
     expect(
-      deriveTripAudioScenario({ ...input, challengeActive: true, voteActive: true }),
+      deriveTripAudioScenario({ ...input, missionActive: true, voteActive: true }),
     ).toBe("voteActive");
     expect(
       deriveTripAudioScenario({ ...input, overBudget: true, voteActive: true }),
