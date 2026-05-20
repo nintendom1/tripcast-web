@@ -4,6 +4,7 @@ import {
   BookOpen,
   Bug,
   ChevronRight,
+  Clock,
   Database,
   LogOut,
   Play,
@@ -86,6 +87,81 @@ const SOUNDTRACK_OPTIONS = [
   { value: "vote", label: "Vote" },
   { value: "mission", label: "Mission" },
 ] as const;
+
+function detectBrowserTimeZone(): string | null {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  } catch {
+    return null;
+  }
+}
+
+function TravelerTimezoneSection({ token }: { token: string }) {
+  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, {
+    token,
+  });
+  const setTimeZone = useMutation(tripcastApi.travelerPreferences.travelerSetTimeZone);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const detectedTimeZone = detectBrowserTimeZone();
+  const savedTimeZone = preferences?.travelerTimeZone ?? null;
+  const timeZoneMismatch = Boolean(
+    savedTimeZone && detectedTimeZone && savedTimeZone !== detectedTimeZone,
+  );
+
+  async function handleSetTimeZone() {
+    if (!detectedTimeZone || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await setTimeZone({
+        token,
+        timeZone: detectedTimeZone,
+        source: "device",
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <OptionsSection label="Traveler Timezone">
+      <div className="grid gap-3 rounded-xl bg-[var(--bg-card)] p-3">
+        <div className="flex items-start gap-3">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-2)]">
+            <Clock className="h-4 w-4" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-[var(--ink-1)]">Traveler timezone</p>
+            <p className="text-xs text-[var(--ink-3)]">
+              Based on this device's timezone settings.
+            </p>
+            <div className="mt-2 grid gap-1 text-xs text-[var(--ink-3)]">
+              <span>Saved: {savedTimeZone ?? "Not set yet"}</span>
+              {detectedTimeZone ? <span>This device: {detectedTimeZone}</span> : null}
+            </div>
+          </div>
+        </div>
+
+        {timeZoneMismatch && detectedTimeZone ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving}
+            onClick={handleSetTimeZone}
+            className="w-full"
+          >
+            {saving ? "Saving..." : `Set timezone to ${detectedTimeZone}`}
+          </Button>
+        ) : null}
+
+        {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+      </div>
+    </OptionsSection>
+  );
+}
 
 function MissionSettingsSection({ token }: { token: string }) {
   const settings = useQuery(tripcastApi.missionSettings.travelerGetMissionSettings, { token });
@@ -334,6 +410,8 @@ function OptionsHome({
             </div>
             <OptionsRow icon={Users} title={TERMS.manageFollowers} detail="Active and pending followers" onClick={onManageFollowers} />
           </OptionsSection>
+
+          <TravelerTimezoneSection token={session.token} />
 
           <OptionsSection label={TERMS.travelFunds}>
             <OptionsRow icon={Wallet} title={`Manage ${TERMS.travelFunds}`} detail="Budget, pace, and transactions" onClick={onTravelFunds} />

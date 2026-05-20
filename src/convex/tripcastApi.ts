@@ -333,6 +333,7 @@ export type TravelerState = TravelerStateFields & {
 
 export type TravelerStateVisibility = {
   showTravelerState: boolean;
+  showTravelerClock: boolean;
   showMood: boolean;
   showEnergy: boolean;
   showStomach: boolean;
@@ -384,16 +385,27 @@ export type AutoState = AutoStateSettings & {
 
 export type AutoStateForFollower =
   | { visible: false }
-  | { visible: true; autoStateEnabled: false }
+  | { visible: true; autoStateEnabled: false; autoTimeZone?: string }
   | (AutoStateSettings & {
       visible: true;
       autoStateEnabled: true;
       autoEnabledAt?: number;
-      autoTimeZone: string;
+      autoTimeZone?: string;
       autoBaseEnergyScore?: number;
       autoBaseStomachScore?: number;
       updatedAt: number;
     });
+
+export type TravelerPreferences = {
+  travelerTimeZone?: string;
+  travelerTimeZoneSource?: "device" | "manual";
+  travelerTimeZoneUpdatedAt?: number;
+  updatedAt: number | null;
+};
+
+export type TravelerPreferencesForFollower =
+  | { visible: false }
+  | { visible: true; travelerTimeZone?: string };
 
 export type UpdateTravelerStateArgs = {
   token: string;
@@ -1166,6 +1178,7 @@ export const tripcastApi = {
       {
         token: string;
         showTravelerState?: boolean;
+        showTravelerClock?: boolean;
         showMood?: boolean;
         showEnergy?: boolean;
         showStomach?: boolean;
@@ -1212,6 +1225,32 @@ export const tripcastApi = {
         rebasedEstimatedStomach: number;
       },
       null
+    >,
+  },
+  travelerPreferences: {
+    travelerGetPreferences: (anyApi as any).travelerPreferences.travelerGetPreferences as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TravelerPreferences
+    >,
+    followerGetPreferences: (anyApi as any).travelerPreferences.followerGetPreferences as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TravelerPreferencesForFollower
+    >,
+    travelerSetTimeZone: (anyApi as any).travelerPreferences.travelerSetTimeZone as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; timeZone: string; source?: "device" | "manual" },
+      null
+    >,
+    travelerEnsureTimeZone: (anyApi as any).travelerPreferences.travelerEnsureTimeZone as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; timeZone: string; source?: "device" | "manual" },
+      { updated: boolean }
     >,
   },
   journalEvents: {

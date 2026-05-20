@@ -267,6 +267,7 @@ describe("TravelerStateSheet — Visibility tab", () => {
     await userEvent.click(screen.getByRole("button", { name: "Visibility" }));
     expect(screen.getByText("Show Traveler State")).toBeInTheDocument();
     expect(screen.getByText("Mood")).toBeInTheDocument();
+    expect(screen.getByText("Clock")).toBeInTheDocument();
     expect(screen.getByText("Biometrics")).toBeInTheDocument();
   });
 
@@ -279,7 +280,7 @@ describe("TravelerStateSheet — Visibility tab", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save Visibility" }));
     await waitFor(() => {
       expect(updateVisibilityFn).toHaveBeenCalledWith(
-        expect.objectContaining({ token: "test-token" }),
+        expect.objectContaining({ token: "test-token", showTravelerClock: true }),
       );
     });
     expect(onToast).toHaveBeenCalledWith("Visibility saved.");
@@ -296,4 +297,18 @@ describe("TravelerStateSheet — Visibility tab", () => {
       expect(screen.getByRole("alert")).toHaveTextContent("Traveler access is required");
     });
   });
+
+  it("saves Clock visibility when toggled off", async () => {
+    const { updateVisibilityFn } = setupMocks();
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Visibility" }));
+    await userEvent.click(screen.getByRole("switch", { name: "Clock" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save Visibility" }));
+    await waitFor(() => {
+      expect(updateVisibilityFn).toHaveBeenCalledWith(
+        expect.objectContaining({ showTravelerClock: false }),
+      );
+    });
+  });
+
 });

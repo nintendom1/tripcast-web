@@ -221,6 +221,7 @@ export function formatRelativeTime(ts: number): string {
 
 export const DEFAULT_VISIBILITY = {
   showTravelerState: true,
+  showTravelerClock: true,
   showMood: true,
   showEnergy: true,
   showStomach: true,
