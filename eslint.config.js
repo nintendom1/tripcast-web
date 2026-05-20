@@ -31,7 +31,7 @@ export default tseslint.config(
     rules: {
       // Catches conditional hooks: hooks called after early returns, inside
       // conditionals, or inside loops. This is what would have flagged the
-      // App.tsx ConnectedApp crew-tour effect bug at commit 704fcb8 before
+      // App.tsx ConnectedApp follower-tour effect bug at commit 704fcb8 before
       // it shipped.
       "react-hooks/rules-of-hooks": "error",
       // Surface stale-closure footguns as warnings, not errors. The codebase

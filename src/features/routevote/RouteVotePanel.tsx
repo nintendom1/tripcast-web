@@ -26,6 +26,7 @@ import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteU
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { TERMS } from "../../copy/terminology";
 
 type RouteVotePanelProps = {
   token: string;
@@ -317,7 +318,7 @@ export default function RouteVotePanel({
   }
 
   const showBack = Boolean(selectedVote);
-  const headerTitle = selectedVote ? "Vote" : "Route votes";
+  const headerTitle = selectedVote ? TERMS.routeVote : TERMS.votes;
 
   return (
     <Sheet
@@ -341,13 +342,13 @@ export default function RouteVotePanel({
               <SheetBackButton aria-label="Back to votes list" onClick={handleBack} />
             ) : null}
             <div className="flex min-w-0 flex-col gap-1">
-              <SheetKicker dotColor="var(--flag)">Voting</SheetKicker>
+              <SheetKicker dotColor="var(--flag)">{TERMS.votes}</SheetKicker>
               <SheetTitle className="truncate font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
                 {selectedVote ? selectedVote.title : headerTitle}
               </SheetTitle>
             </div>
           </div>
-          <SheetCloseButton aria-label="Close votes panel" />
+          <SheetCloseButton aria-label={`Close ${TERMS.votes.toLowerCase()} panel`} />
         </div>
 
         <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 pb-4 pt-3">

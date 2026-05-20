@@ -20,7 +20,7 @@ describe("stored auth session", () => {
   it("round-trips a follower session", () => {
     const session: StoredSession = {
       token: "session-token",
-      role: "support_crew",
+      role: "follower",
       sessionType: "follower",
       displayName: "Alice",
       username: "alice",

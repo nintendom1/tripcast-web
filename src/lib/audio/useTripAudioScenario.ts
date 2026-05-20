@@ -5,7 +5,7 @@ import {
   tripcastApi,
   type Role,
   type TravelFundsConfigForTraveler,
-  type TravelFundsSummaryForCrew,
+  type TravelFundsSummaryForFollower,
 } from "../../convex/tripcastApi";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import type { AudioScenario } from "./engine";
@@ -14,7 +14,7 @@ type ScenarioInput = {
   storyOpen: boolean;
   overBudget: boolean;
   voteActive: boolean;
-  challengeActive: boolean;
+  missionActive: boolean;
 };
 
 type UseTripAudioScenarioArgs = {
@@ -22,24 +22,24 @@ type UseTripAudioScenarioArgs = {
   role: Role;
   storyOpen: boolean;
   voteActive: boolean;
-  challengeActive: boolean;
+  missionActive: boolean;
 };
 
 export function deriveTripAudioScenario({
   storyOpen,
   overBudget,
   voteActive,
-  challengeActive,
+  missionActive,
 }: ScenarioInput): AudioScenario {
   if (storyOpen) return "story";
   if (overBudget) return "overBudget";
   if (voteActive) return "voteActive";
-  if (challengeActive) return "challengeActive";
+  if (missionActive) return "missionActive";
   return "idle";
 }
 
 function isOverBudget(
-  funds: TravelFundsConfigForTraveler | TravelFundsSummaryForCrew | undefined,
+  funds: TravelFundsConfigForTraveler | TravelFundsSummaryForFollower | undefined,
 ) {
   return funds?.enabled === true && funds.remainingUsd < 0;
 }
@@ -49,7 +49,7 @@ export function useTripAudioScenario({
   role,
   storyOpen,
   voteActive,
-  challengeActive,
+  missionActive,
 }: UseTripAudioScenarioArgs) {
   const music = useMusicSafe();
   const lastScenarioRef = useRef<AudioScenario | null>(null);
@@ -57,20 +57,20 @@ export function useTripAudioScenario({
     tripcastApi.travelFunds.travelerGetConfig,
     role === "traveler" ? { token } : "skip",
   );
-  const crewFunds = useQuery(
-    tripcastApi.travelFunds.supportCrewGetFundsSummary,
-    role === "support_crew" ? { token } : "skip",
+  const followerFunds = useQuery(
+    tripcastApi.travelFunds.followerGetFundsSummary,
+    role === "follower" ? { token } : "skip",
   );
 
   const scenario = useMemo(
     () =>
       deriveTripAudioScenario({
         storyOpen,
-        overBudget: isOverBudget(role === "traveler" ? travelerFunds : crewFunds),
+        overBudget: isOverBudget(role === "traveler" ? travelerFunds : followerFunds),
         voteActive,
-        challengeActive,
+        missionActive,
       }),
-    [challengeActive, crewFunds, role, storyOpen, travelerFunds, voteActive],
+    [missionActive, followerFunds, role, storyOpen, travelerFunds, voteActive],
   );
 
   useEffect(() => {

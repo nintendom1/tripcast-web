@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 import StoryDetailSheet from "./StoryDetailSheet";
 import { ReadingSpeedProvider } from "../../providers/ReadingSpeedProvider";
-import type { HistoryEvent } from "../../convex/tripcastApi";
+import type { JournalEvent } from "../../convex/tripcastApi";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -15,12 +15,12 @@ vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-function makeStoryEvent(overrides: Partial<HistoryEvent> = {}): HistoryEvent {
+function makeStoryEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
   return {
     _id: "story-1",
     _creationTime: 1000,
-    type: "check_in",
-    storyLevel: "story",
+    type: "story",
+    narrativeLevel: "narrative",
     occurredAt: Date.UTC(2026, 4, 16, 14, 32),
     createdAt: Date.now(),
     title: "% Arabica",

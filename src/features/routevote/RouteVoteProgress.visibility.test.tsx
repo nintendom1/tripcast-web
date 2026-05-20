@@ -183,6 +183,6 @@ describe("RouteVoteProgress: Visibility during coordinate pick", () => {
     renderProgress(true);
 
     // The title text should still be in the DOM (even if invisible)
-    expect(screen.getByText("Manage Votes")).toBeInTheDocument();
+    expect(screen.getByText("Votes")).toBeInTheDocument();
   });
 });

@@ -1,7 +1,7 @@
-import type { Challenge } from "../../convex/tripcastApi";
+import type { Mission } from "../../convex/tripcastApi";
 
 type Props = {
-  challenge: Challenge;
+  Mission: Mission;
   isOwn?: boolean;
   isHighlighted?: boolean;
   onClick?: () => void;
@@ -25,44 +25,44 @@ const STATUS_COLORS: Record<string, string> = {
   dropped: "bg-slate-100 text-slate-500",
 };
 
-export default function ChallengeCard({ challenge, isOwn, isHighlighted, onClick }: Props) {
-  const statusLabel = STATUS_LABELS[challenge.status] ?? challenge.status;
-  const statusColor = STATUS_COLORS[challenge.status] ?? "bg-slate-100 text-slate-600";
+export default function MissionCard({ Mission, isOwn, isHighlighted, onClick }: Props) {
+  const statusLabel = STATUS_LABELS[Mission.status] ?? Mission.status;
+  const statusColor = STATUS_COLORS[Mission.status] ?? "bg-slate-100 text-slate-600";
 
   return (
     <button
       type="button"
-      data-challenge-id={challenge._id}
+      data-mission-id={Mission._id}
       className={`w-full text-left p-3 pr-10 rounded-lg border bg-white hover:bg-slate-50 transition-all flex flex-col gap-1.5 ${
         isHighlighted ? "border-amber-400 ring-2 ring-amber-300 bg-amber-50" : "border-slate-200"
       }`}
       onClick={onClick}
     >
       <div className="flex min-w-0 items-start justify-between gap-2">
-        <span className="min-w-0 text-sm font-medium text-navy line-clamp-2">{challenge.title}</span>
+        <span className="min-w-0 text-sm font-medium text-navy line-clamp-2">{Mission.title}</span>
         <span className={`max-w-[48%] truncate text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 ${statusColor}`}>
           {statusLabel}
         </span>
       </div>
 
-      {challenge.description && (
-        <p className="text-xs text-muted-foreground line-clamp-1">{challenge.description}</p>
+      {Mission.description && (
+        <p className="text-xs text-muted-foreground line-clamp-1">{Mission.description}</p>
       )}
 
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-        {challenge.locationLabel && (
-          <span>📍 {challenge.locationLabel}</span>
+        {Mission.locationLabel && (
+          <span>📍 {Mission.locationLabel}</span>
         )}
-        {challenge.estimatedDurationMinutes && (
-          <span>⏱ {challenge.estimatedDurationMinutes} min</span>
+        {Mission.estimatedDurationMinutes && (
+          <span>⏱ {Mission.estimatedDurationMinutes} min</span>
         )}
-        {challenge.estimatedCostUsd !== undefined && (
-          <span>💰 ${challenge.estimatedCostUsd.toFixed(0)}</span>
+        {Mission.estimatedCostUsd !== undefined && (
+          <span>💰 ${Mission.estimatedCostUsd.toFixed(0)}</span>
         )}
-        {challenge.estimatedEnergyImpact && (
-          <span>⚡ {challenge.estimatedEnergyImpact} energy</span>
+        {Mission.estimatedEnergyImpact && (
+          <span>⚡ {Mission.estimatedEnergyImpact} energy</span>
         )}
-        {isOwn && challenge.status === "proposed" && (
+        {isOwn && Mission.status === "proposed" && (
           <span className="text-slate-400 italic">Awaiting review</span>
         )}
       </div>

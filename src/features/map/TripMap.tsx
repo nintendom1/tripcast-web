@@ -8,7 +8,7 @@ import {
   tripcastApi,
   type AddCheckpointArgs,
   type Checkpoint,
-  type HistoryEvent,
+  type JournalEvent,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
 } from "../../convex/tripcastApi";
@@ -17,8 +17,8 @@ import AddCheckpointSheet, {
   type SelectedCoordinate,
 } from "./AddCheckpointSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
-import ChallengeMarkers from "./ChallengeMarkers";
-import ChallengePanel from "../challenges/ChallengePanel";
+import MissionMarkers from "./MissionMarkers";
+import MissionPanel from "../missions/MissionPanel";
 import RouteVotePanel from "../routevote/RouteVotePanel";
 import RouteVoteProgress from "../routevote/RouteVoteProgress";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
@@ -46,10 +46,9 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
-import HistorySheet from "../history/HistorySheet";
-import CheckInDetailSheet from "../history/CheckInDetailSheet";
-import StoryDetailSheet from "../history/StoryDetailSheet";
-import { useHistoryUnread } from "../history/useHistoryUnread";
+import JournalSheet from "../journal/JournalSheet";
+import StoryDetailSheet from "../journal/StoryDetailSheet";
+import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
@@ -72,6 +71,7 @@ import {
   STOMACH_SCORE_FOR_LEVEL,
 } from "../travelstate/travelerStateUtils";
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
+import { TERMS } from "../../copy/terminology";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const OPEN_FREE_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
@@ -218,8 +218,8 @@ function ConvexCheckpointSheet({
   onBack?: () => void;
 }) {
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  const completeChallengeAsStory = useMutation(
-    tripcastApi.challenges.travelerCompleteChallengeAsStory,
+  const completeMissionAsStory = useMutation(
+    tripcastApi.missions.travelerCompleteMissionAsStory,
   );
 
   const [stateOpen, setStateOpen] = useState(false);
@@ -256,13 +256,13 @@ function ConvexCheckpointSheet({
       transactionState && "value" in transactionState
         ? transactionState.value
         : prefill?.transaction;
-    if (prefill?.challengeId && prefill.completeChallenge !== false) {
+    if (prefill?.missionId && prefill.completeMission !== false) {
       if (args.lat === undefined || args.lon === undefined) {
         throw new Error("A map location is required to complete as story.");
       }
-      return completeChallengeAsStory({
+      return completeMissionAsStory({
         token,
-        challengeId: prefill.challengeId,
+        missionId: prefill.missionId,
         title: args.title,
         note: args.note,
         locationLabel: args.locationLabel,
@@ -415,22 +415,20 @@ export default function TripMap({
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
-  const [selectedStoryEvent, setSelectedStoryEvent] = useState<HistoryEvent | null>(null);
-  const [checkInOpenedFromHistory, setCheckInOpenedFromHistory] = useState(false);
-  const [storyOpenedFromHistory, setStoryOpenedFromHistory] = useState(false);
+  const [isJournalOpen, setIsJournalOpen] = useState(false);
+  const [selectedStoryEvent, setSelectedStoryEvent] = useState<JournalEvent | null>(null);
+  const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
-  const [isChallengesPanelOpen, setIsChallengesPanelOpen] = useState(false);
-  const [pendingOpenChallengeId, setPendingOpenChallengeId] = useState<string | null>(null);
+  const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
+  const [pendingOpenMissionId, setPendingOpenMissionId] = useState<string | null>(null);
   // Mission Complete-as-Story flow: when the Traveler picks the "Complete as story"
   // branch in a mission detail, this prefill seeds AddCheckpointSheet with the
-  // mission's title/location and carries the challengeId through so we can call
-  // `travelerCompleteChallenge` after the resulting check-in lands.
+  // mission's title/location and carries the missionId through so we can call
+  // `travelerCompleteMission` after the resulting story lands.
   const [storyPrefill, setStoryPrefill] = useState<CheckpointPrefill | null>(null);
   // Set alongside `storyPrefill` so hitting "← Back" inside the story sheet
-  // can reopen ChallengesPanel directly on the originating mission's detail
+  // can reopen MissionsPanel directly on the originating mission's detail
   // view (the four-button action set the Traveler expects to return to).
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
@@ -445,22 +443,22 @@ export default function TripMap({
     token,
   });
 
-  const historyEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
-  const { unreadCount, markAllRead } = useHistoryUnread(historyEvents);
+  const journalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
+  const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
 
-  const allChallengesForBadge = useQuery(
-    tripcastApi.challenges.travelerListChallenges,
+  const allMissionsForBadge = useQuery(
+    tripcastApi.missions.travelerListMissions,
     role === "traveler" ? { token } : "skip",
   );
-  const crewChallenges = useQuery(
-    tripcastApi.challenges.supportCrewListChallenges,
-    role === "support_crew" ? { token } : "skip",
+  const followerMissions = useQuery(
+    tripcastApi.missions.followerListMissions,
+    role === "follower" ? { token } : "skip",
   );
-  const challengeBadgeCount =
+  const missionBadgeCount =
     role === "traveler"
-      ? (allChallengesForBadge ?? []).filter((c) => c.status === "proposed").length
+      ? (allMissionsForBadge ?? []).filter((c) => c.status === "proposed").length
       : 0;
-  const challengesForLookup = role === "traveler" ? allChallengesForBadge : crewChallenges;
+  const missionsForLookup = role === "traveler" ? allMissionsForBadge : followerMissions;
 
   const voteAlert = useQuery(tripcastApi.routeVotes.getActiveRouteVoteAlert, { token });
   const hasUnseenVote = voteAlert?.hasUnseen ?? false;
@@ -472,40 +470,40 @@ export default function TripMap({
     role,
     storyOpen: selectedStoryEvent !== null || storyPrefill !== null,
     voteActive: isVotePanelOpen || hasUnseenVote,
-    challengeActive: isChallengesPanelOpen || isSetActivityOpen || challengeBadgeCount > 0,
+    missionActive: isMissionsPanelOpen || isSetActivityOpen || missionBadgeCount > 0,
   });
 
   useEffect(() => {
     musicRef.current = music;
   }, [music]);
 
-  function openHistory() {
-    if (isHistoryOpen) {
-      log.logInteraction("panel:close", { panel: "history" });
+  function openJournal() {
+    if (isJournalOpen) {
+      log.logInteraction("panel:close", { panel: "journal" });
       music.sfx("close");
-      setIsHistoryOpen(false);
+      setIsJournalOpen(false);
       return;
     }
-    log.logInteraction("panel:open", { panel: "history" });
-    performance.mark("tripcast:debug:history:open");
+    log.logInteraction("panel:open", { panel: "journal" });
+    performance.mark("tripcast:debug:journal:open");
     music.sfx("open");
-    setIsHistoryOpen(true);
-    setIsChallengesPanelOpen(false);
+    setIsJournalOpen(true);
+    setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
   }
-  function openChallenges() {
-    if (isChallengesPanelOpen) {
-      log.logInteraction("panel:close", { panel: "challenges" });
+  function openMissions() {
+    if (isMissionsPanelOpen) {
+      log.logInteraction("panel:close", { panel: "Missions" });
       music.sfx("close");
-      setIsChallengesPanelOpen(false);
+      setIsMissionsPanelOpen(false);
       return;
     }
-    log.logInteraction("panel:open", { panel: "challenges" });
-    performance.mark("tripcast:debug:challenges:open");
+    log.logInteraction("panel:open", { panel: "Missions" });
+    performance.mark("tripcast:debug:Missions:open");
     music.sfx("open");
-    setIsChallengesPanelOpen(true);
-    setIsHistoryOpen(false);
+    setIsMissionsPanelOpen(true);
+    setIsJournalOpen(false);
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
   }
@@ -520,8 +518,8 @@ export default function TripMap({
     performance.mark("tripcast:debug:votes:open");
     music.sfx("open");
     setIsVotePanelOpen(true);
-    setIsHistoryOpen(false);
-    setIsChallengesPanelOpen(false);
+    setIsJournalOpen(false);
+    setIsMissionsPanelOpen(false);
     setIsTravelFundsSheetOpen(false);
   }
   function openFunds() {
@@ -535,15 +533,15 @@ export default function TripMap({
     performance.mark("tripcast:debug:funds:open");
     music.sfx("open");
     setIsTravelFundsSheetOpen(true);
-    setIsHistoryOpen(false);
-    setIsChallengesPanelOpen(false);
+    setIsJournalOpen(false);
+    setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(false);
   }
 
-  const activeDockTab: DockTab | null = isHistoryOpen
-    ? "history"
-    : isChallengesPanelOpen
-      ? "challenges"
+  const activeDockTab: DockTab | null = isJournalOpen
+    ? "journal"
+    : isMissionsPanelOpen
+      ? "missions"
       : isVotePanelOpen
         ? "votes"
         : isTravelFundsSheetOpen
@@ -552,15 +550,15 @@ export default function TripMap({
 
   function handleDockSelect(tab: DockTab) {
     setFanOpen(false);
-    if (tab === "history") openHistory();
-    else if (tab === "challenges") openChallenges();
+    if (tab === "journal") openJournal();
+    else if (tab === "missions") openMissions();
     else if (tab === "votes") openVotes();
     else if (tab === "funds") openFunds();
   }
 
   function handleDockAdd() {
-    if (role === "support_crew") {
-      openChallenges();
+    if (role === "follower") {
+      openMissions();
       return;
     }
     music.sfx("tap");
@@ -584,8 +582,8 @@ export default function TripMap({
       case "transaction":
         openFunds();
         break;
-      case "challenge":
-        openChallenges();
+      case "mission":
+        openMissions();
         break;
       case "vote":
         openVotes();
@@ -759,8 +757,7 @@ export default function TripMap({
     setVoteOptionNumberById(null);
     setCoordinatePickMode(null);
     coordinatePickModeRef.current = null;
-    setIsHistoryOpen(false);
-    setSelectedCheckInEvent(null);
+    setIsJournalOpen(false);
     setSelectedStoryEvent(null);
   }, [tripDataResetNonce]);
 
@@ -821,9 +818,9 @@ export default function TripMap({
     setCoordinatePickMode({ label, callback });
   }
 
-  function handleNavigateToChallenge(coord: { lat: number; lon: number }) {
+  function handleNavigateToMission(coord: { lat: number; lon: number }) {
     if (!mapRef.current) return;
-    log.logInteraction("map:camera:move", { lat: coord.lat, lon: coord.lon, trigger: "challenge:location-focus" });
+    log.logInteraction("map:camera:move", { lat: coord.lat, lon: coord.lon, trigger: "Mission:location-focus" });
     // Offset the target so it appears in the visible area to the right of the
     // 320px panel and above the bottom detail sheet (~300px).
     mapRef.current.flyTo({
@@ -834,45 +831,45 @@ export default function TripMap({
   }
 
   function handleNavigateToVote(voteId: string) {
-    log.logInteraction("panel:navigate", { from: "challenges", to: "votes", voteId });
+    log.logInteraction("panel:navigate", { from: "Missions", to: "votes", voteId });
     music.sfx("page");
-    setIsChallengesPanelOpen(false);
+    setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(true);
-    setIsHistoryOpen(false);
+    setIsJournalOpen(false);
     setIsTravelFundsSheetOpen(false);
     setPendingOpenVoteId(voteId);
   }
 
-  function handleNavigateToMissionDetail(challengeId: string) {
-    log.logInteraction("panel:navigate", { from: "votes", to: "challenges", challengeId });
+  function handleNavigateToMissionDetail(missionId: string) {
+    log.logInteraction("panel:navigate", { from: "votes", to: "Missions", missionId });
     music.sfx("page");
     setIsVotePanelOpen(false);
     setVoteMapOverlay(null);
     setVoteOptionNumberById(null);
-    setIsChallengesPanelOpen(true);
-    setIsHistoryOpen(false);
+    setIsMissionsPanelOpen(true);
+    setIsJournalOpen(false);
     setIsTravelFundsSheetOpen(false);
-    setPendingOpenDetailMissionId(challengeId);
+    setPendingOpenDetailMissionId(missionId);
   }
 
-  function handleOpenLinkedStory(event: HistoryEvent) {
-    log.logInteraction("panel:navigate", { from: "challenges", to: "story", eventId: event._id });
+  function handleOpenLinkedStory(event: JournalEvent) {
+    log.logInteraction("panel:navigate", { from: "Missions", to: "story", eventId: event._id });
     music.sfx("page");
     setSelectedStoryEvent(event);
   }
 
-  function handleOpenMissionFromStory(challengeId: string) {
-    log.logInteraction("panel:navigate", { from: "story", to: "challenges", challengeId });
+  function handleOpenMissionFromStory(missionId: string) {
+    log.logInteraction("panel:navigate", { from: "story", to: "Missions", missionId });
     setSelectedStoryEvent(null);
-    handleNavigateToMissionDetail(challengeId);
+    handleNavigateToMissionDetail(missionId);
   }
 
-  function handleRequestChallengeCoordinatePick(
+  function handleRequestMissionCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
-    log.logInteraction("coordinate:pick-mode:enter", { source: "challenge" });
+    log.logInteraction("coordinate:pick-mode:enter", { source: "Mission" });
     music.sfx("page");
-    const label = "the challenge location";
+    const label = "the mission location";
     coordinatePickModeRef.current = { label, callback };
     setCoordinatePickMode({ label, callback });
   }
@@ -889,10 +886,10 @@ export default function TripMap({
   // handleCheckpointCreated + activityToComplete state) was removed when the
   // CurrentActivityCard came out with the legacy chrome. The Mission
   // Complete-as-Story flow below (Part 8) replaces it for the mission case;
-  // an explicit "complete this freeform activity as a check-in" flow can be
+  // an explicit "complete this freeform activity as a Story" flow can be
   // re-added in a later pass if the SetActivitySheet refresh wants it.
 
-  function handleCompleteAsStory(challenge: {
+  function handleCompleteAsStory(Mission: {
     _id: string;
     status?: string;
     title?: string;
@@ -902,23 +899,23 @@ export default function TripMap({
     lon?: number;
   }, transaction?: import("../../convex/tripcastApi").TransactionInlineInput) {
     music.sfx("page");
-    setIsChallengesPanelOpen(false);
+    setIsMissionsPanelOpen(false);
     setStoryPrefill({
-      challengeId: challenge._id,
-      completeChallenge: challenge.status === "in_progress",
-      title: challenge.title,
-      note: challenge.description,
-      locationLabel: challenge.locationLabel,
+      missionId: Mission._id,
+      completeMission: Mission.status === "in_progress",
+      title: Mission.title,
+      note: Mission.description,
+      locationLabel: Mission.locationLabel,
       transaction,
       kickerLabel: "Story · Mission completion",
     });
     // Remember which mission to land on if the Traveler backs out of the story
-    // form — the ChallengePanel re-opens directly on this detail view.
-    setPendingOpenDetailMissionId(challenge._id);
-    if (challenge.lat !== undefined && challenge.lon !== undefined) {
+    // form — the MissionPanel re-opens directly on this detail view.
+    setPendingOpenDetailMissionId(Mission._id);
+    if (Mission.lat !== undefined && Mission.lon !== undefined) {
       setSelectedCoordinate({
-        lat: challenge.lat,
-        lon: challenge.lon,
+        lat: Mission.lat,
+        lon: Mission.lon,
         source: "current_activity",
       });
     } else {
@@ -933,21 +930,21 @@ export default function TripMap({
     music.sfx("page");
     // "← Back" inside AddCheckpointSheet's mission-completion mode: dismiss
     // the story form (clears prefill + coordinate), then re-open the missions
-    // panel; ChallengePanel reads `pendingOpenDetailMissionId` and lands on
+    // panel; MissionPanel reads `pendingOpenDetailMissionId` and lands on
     // the originating mission's detail view (the full four-button set).
     setStoryPrefill(null);
     setSelectedCoordinate(null);
     setIsPlacementMode(false);
-    setIsChallengesPanelOpen(true);
+    setIsMissionsPanelOpen(true);
   }
 
   function handleStoryCheckpointCreated(_id: string, prefill?: CheckpointPrefill) {
     setStoryPrefill(null);
     setPendingOpenDetailMissionId(null);
-    if (prefill?.completeChallenge) {
+    if (prefill?.completeMission) {
       music.sfx("success");
       showToast("Mission completed.");
-    } else if (prefill?.challengeId) {
+    } else if (prefill?.missionId) {
       music.sfx("success");
       showToast("Story added to mission.");
     }
@@ -970,7 +967,7 @@ export default function TripMap({
     const map = mapRef.current;
     if (!map) return;
     log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "center:location" });
-    // Reset any persistent padding set by handleNavigateToChallenge before easing
+    // Reset any persistent padding set by handleNavigateToMission before easing
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
       zoom: Math.max(map.getZoom(), 14),
@@ -979,13 +976,13 @@ export default function TripMap({
     });
   }
 
-  // Panel-aware focus: positions the pin in the visible map above the history sheet.
-  // The history sheet is max-h-[50dvh], so apply matching bottom padding so the pin
+  // Panel-aware focus: positions the pin in the visible map above the journal sheet.
+  // The journal sheet is max-h-[50dvh], so apply matching bottom padding so the pin
   // lands in the vertical center of the exposed map area rather than behind the panel.
   function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
-    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "history:location-focus" });
+    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "journal:location-focus" });
     const mapHeight = map.getContainer().clientHeight;
     map.easeTo({
       center: [coordinate.lon, coordinate.lat],
@@ -995,10 +992,10 @@ export default function TripMap({
     });
   }
 
-  function handleCheckInDetailLocationFocus(coordinate: { lat: number; lon: number }) {
+  function handleStoryDetailLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
-    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "checkin-detail:location-focus" });
+    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "story-detail:location-focus" });
     const mapContainer = map.getContainer();
     const mapHeight = mapContainer.clientHeight;
     const mapWidth = mapContainer.clientWidth;
@@ -1008,7 +1005,7 @@ export default function TripMap({
     const cardsBottom = cardsRect ? cardsRect.bottom : 0;
 
     // Measure actual rendered sheet height; fall back to 50% of mapHeight if not mounted yet.
-    const sheetEl = document.querySelector('[data-role="check-in-detail"]') as HTMLElement | null;
+    const sheetEl = document.querySelector('[data-role="story-detail"]') as HTMLElement | null;
     const rawSheetHeight = sheetEl?.offsetHeight ?? 0;
     const sheetHeight = rawSheetHeight > 0 ? rawSheetHeight : Math.round(mapHeight * 0.50);
 
@@ -1119,17 +1116,11 @@ export default function TripMap({
         checkpoints={checkpoints}
         onCheckpointClick={(checkpoint) => {
           if (isPlacementMode || coordinatePickMode) return;
-          const event = historyEvents.find((e) => e.checkpointId === checkpoint._id);
+          const event = journalEvents.find((e) => e.checkpointId === checkpoint._id);
           if (!event) return;
-          if (event.storyLevel === "story") {
-            music.sfx("page");
-            setStoryOpenedFromHistory(false);
-            setSelectedStoryEvent(event);
-          } else {
-            music.sfx("page");
-            setCheckInOpenedFromHistory(false);
-            setSelectedCheckInEvent(event);
-          }
+          music.sfx("page");
+          setStoryOpenedFromJournal(false);
+          setSelectedStoryEvent(event);
         }}
       />
       <TravelerLocationMarker
@@ -1150,14 +1141,14 @@ export default function TripMap({
         fallbackOrigin={routeVoteFallbackOrigin}
         optionNumberById={voteOptionNumberById}
       />
-      <ChallengeMarkers
+      <MissionMarkers
         map={mapInstance}
         token={token}
         role={role}
-        onChallengeClick={(id) => {
+        onMissionClick={(id) => {
           music.sfx("open");
-          setIsChallengesPanelOpen(true);
-          setPendingOpenChallengeId(id);
+          setIsMissionsPanelOpen(true);
+          setPendingOpenMissionId(id);
         }}
       />
 
@@ -1246,11 +1237,11 @@ export default function TripMap({
           onSelect={handleDockSelect}
           onAdd={handleDockAdd}
           fanOpen={fanOpen}
-          addLabel={role === "traveler" ? "Add" : "Propose mission"}
+          addLabel={role === "traveler" ? "Add" : `Propose ${TERMS.mission.toLowerCase()}`}
           showFunds={role === "traveler"}
           badges={{
-            history: unreadCount,
-            challenges: challengeBadgeCount,
+            journal: unreadCount,
+            missions: missionBadgeCount,
             votes: hasUnseenVote ? 1 : 0,
             votesPulsing: hasUnseenVote,
           }}
@@ -1283,13 +1274,13 @@ export default function TripMap({
           prefill={storyPrefill ?? undefined}
           transactionPrefill={storyPrefill?.transaction}
           onCheckpointCreated={handleStoryCheckpointCreated}
-          onBack={storyPrefill?.challengeId ? handleBackFromStory : undefined}
+          onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
         />
       )}
 
       {/* Vote panels — hidden (not unmounted) during coordinate pick to preserve form state */}
       <AnimatePresence>
-        {role === "support_crew" && isVotePanelOpen && (
+        {role === "follower" && isVotePanelOpen && (
           <FeatureBoundary
             resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
@@ -1303,7 +1294,7 @@ export default function TripMap({
             fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
           >
             <RouteVotePanel
-              key="crew-vote-panel"
+              key="follower-vote-panel"
               token={token}
               onClose={() => {
                 music.sfx("close");
@@ -1435,12 +1426,12 @@ export default function TripMap({
           <SheetGrabber />
           <div className="flex items-start justify-between gap-2 px-4 pt-2">
             <div className="flex min-w-0 flex-col gap-1">
-              <SheetKicker dotColor="var(--green)">Wallet</SheetKicker>
+              <SheetKicker dotColor="var(--green)">{TERMS.funds}</SheetKicker>
               <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-                Travel funds
+                {TERMS.travelFunds}
               </SheetTitle>
             </div>
-            <SheetCloseButton aria-label="Close travel funds" />
+            <SheetCloseButton aria-label={`Close ${TERMS.travelFunds.toLowerCase()}`} />
           </div>
           <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 pb-4 pt-3">
             {role === "traveler" && isTravelFundsSheetOpen && (
@@ -1457,34 +1448,34 @@ export default function TripMap({
       </Sheet>
 
       <FeatureBoundary
-        resetKeys={[isChallengesPanelOpen, token, role]}
+        resetKeys={[isMissionsPanelOpen, token, role]}
         onClose={() => {
           music.sfx("close");
-          setIsChallengesPanelOpen(false);
+          setIsMissionsPanelOpen(false);
         }}
-        title="Challenges hit a problem."
-        message="Try again, or close challenges and reopen them."
+        title="Missions hit a problem."
+        message="Try again, or close missions and reopen them."
         fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
       >
-        <ChallengePanel
-          open={isChallengesPanelOpen}
+        <MissionPanel
+          open={isMissionsPanelOpen}
           token={token}
           role={role}
           onClose={() => {
             music.sfx("close");
-            setIsChallengesPanelOpen(false);
+            setIsMissionsPanelOpen(false);
           }}
-          onStartChallenge={() => {
+          onStartMission={() => {
             music.sfx("success");
-            setIsChallengesPanelOpen(false);
+            setIsMissionsPanelOpen(false);
           }}
-          onRequestCoordinatePick={handleRequestChallengeCoordinatePick}
+          onRequestCoordinatePick={handleRequestMissionCoordinatePick}
           isPickingCoordinate={isPickingCoordinate}
-          pendingOpenChallengeId={pendingOpenChallengeId}
-          onClearPendingChallenge={() => setPendingOpenChallengeId(null)}
-          onRequestNavigateToChallenge={handleNavigateToChallenge}
+          pendingOpenMissionId={pendingOpenMissionId}
+          onClearPendingMission={() => setPendingOpenMissionId(null)}
+          onRequestNavigateToMission={handleNavigateToMission}
           onCompleteAsStory={handleCompleteAsStory}
-          pendingOpenDetailChallengeId={pendingOpenDetailMissionId}
+          pendingOpenDetailMissionId={pendingOpenDetailMissionId}
           onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
           onRequestNavigateToVote={handleNavigateToVote}
           onOpenLinkedStory={handleOpenLinkedStory}
@@ -1492,35 +1483,29 @@ export default function TripMap({
       </FeatureBoundary>
 
       <AnimatePresence>
-        {isHistoryOpen && (
+        {isJournalOpen && (
           <FeatureBoundary
-            resetKeys={[isHistoryOpen, historyEvents.length]}
+            resetKeys={[isJournalOpen, journalEvents.length]}
             onClose={() => {
               music.sfx("close");
-              setIsHistoryOpen(false);
+              setIsJournalOpen(false);
             }}
-            title="History hit a problem."
-            message="Try again, or close history and reopen it."
+            title="Journal hit a problem."
+            message="Try again, or close journal and reopen it."
             fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
           >
-            <HistorySheet
-              events={historyEvents}
+            <JournalSheet
+              events={journalEvents}
               token={token}
               role={role}
               onClose={() => {
                 music.sfx("close");
-                setIsHistoryOpen(false);
-              }}
-              onCheckInSelect={(event) => {
-                music.sfx("page");
-                setIsHistoryOpen(false);
-                setCheckInOpenedFromHistory(true);
-                setSelectedCheckInEvent(event);
+                setIsJournalOpen(false);
               }}
               onStorySelect={(event) => {
                 music.sfx("page");
-                setIsHistoryOpen(false);
-                setStoryOpenedFromHistory(true);
+                setIsJournalOpen(false);
+                setStoryOpenedFromJournal(true);
                 setSelectedStoryEvent(event);
               }}
               onLocationFocus={handleHistoryLocationFocus}
@@ -1530,34 +1515,22 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      <CheckInDetailSheet
-        event={selectedCheckInEvent}
-        onClose={() => {
-          music.sfx(checkInOpenedFromHistory ? "page" : "close");
-          const returnToHistory = checkInOpenedFromHistory;
-          setSelectedCheckInEvent(null);
-          setCheckInOpenedFromHistory(false);
-          if (returnToHistory) setIsHistoryOpen(true);
-        }}
-        onLocationFocus={handleCheckInDetailLocationFocus}
-      />
-
       <StoryDetailSheet
         event={selectedStoryEvent}
         onClose={() => {
-          music.sfx(storyOpenedFromHistory ? "page" : "close");
-          const returnToHistory = storyOpenedFromHistory;
+          music.sfx(storyOpenedFromJournal ? "page" : "close");
+          const returnToJournal = storyOpenedFromJournal;
           setSelectedStoryEvent(null);
-          setStoryOpenedFromHistory(false);
-          if (returnToHistory) setIsHistoryOpen(true);
+          setStoryOpenedFromJournal(false);
+          if (returnToJournal) setIsJournalOpen(true);
         }}
-        onLocationFocus={handleCheckInDetailLocationFocus}
+        onLocationFocus={handleStoryDetailLocationFocus}
         missionTitle={
-          selectedStoryEvent?.challengeId
-            ? (challengesForLookup ?? []).find((c) => c._id === selectedStoryEvent.challengeId)?.title
+          selectedStoryEvent?.missionId
+            ? (missionsForLookup ?? []).find((c) => c._id === selectedStoryEvent.missionId)?.title
             : undefined
         }
-        challengeId={selectedStoryEvent?.challengeId ?? undefined}
+        missionId={selectedStoryEvent?.missionId ?? undefined}
         onNavigateToMission={handleOpenMissionFromStory}
       />
 

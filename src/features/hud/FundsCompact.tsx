@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { TERMS } from "../../copy/terminology";
 
 export interface FundsCompactProps {
   remainingUsd: number;
@@ -15,7 +16,7 @@ export interface FundsCompactProps {
  *
  * Replaces the legacy TravelFundsCard's full-width meter. Tap opens the full
  * Funds sheet (Part 7); without an `onClick` the chip is non-interactive
- * (Support Crew see-only).
+ * (Follower see-only).
  */
 export function FundsCompact({
   remainingUsd,
@@ -93,7 +94,7 @@ export function FundsCompact({
     className,
   );
 
-  const resolvedAriaLabel = ariaLabel ?? `Travel funds. ${amountText} ${captionText.toLowerCase()}.`;
+  const resolvedAriaLabel = ariaLabel ?? `${TERMS.funds}. ${amountText} ${captionText.toLowerCase()}.`;
 
   if (onClick) {
     return (

@@ -19,6 +19,7 @@ import {
   type DebugCategory,
   type DebugPreset,
 } from "./debugLogger";
+import { TERMS } from "../copy/terminology";
 
 // ---------------------------------------------------------------------------
 // Clipboard helpers
@@ -336,7 +337,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
           ← Back
         </button>
         <span className="flex-1 font-[var(--font-display)] text-xl font-extrabold text-[var(--ink-1)]">
-          Dev Tools
+          {TERMS.debugLog}
         </span>
       </div>
 

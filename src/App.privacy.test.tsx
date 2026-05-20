@@ -22,7 +22,7 @@ vi.mock("./features/map/TripMap", () => ({
   default: () => <div data-testid="trip-map" />,
 }));
 
-function setupSessionMocks(role: "traveler" | "support_crew") {
+function setupSessionMocks(role: "traveler" | "follower") {
   vi.mocked(authLib.getStoredSession).mockReturnValue({
     token: "test-token",
     role,

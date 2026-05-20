@@ -11,6 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { TERMS } from "../../copy/terminology";
 
 type EmergencyResetSheetProps = {
   open: boolean;
@@ -143,7 +144,7 @@ export function EmergencyResetContent({
   return (
     <>
         <SheetHeader>
-          <SheetTitle>Emergency Reset</SheetTitle>
+          <SheetTitle>{TERMS.emergencyReset}</SheetTitle>
           <SheetDescription>
             Traveler-only privacy controls.
           </SheetDescription>
@@ -165,7 +166,7 @@ export function EmergencyResetContent({
                 <h3 className="text-sm font-semibold">Emergency Reset</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
                   This will delete shared trip data, including checkpoints, live location,
-                  route votes, traveler state, current activity, and history.
+                  route votes, traveler state, current activity, and journal entries.
                 </p>
                 {includeAuthSessions ? (
                   <p className="mt-2 text-sm text-muted-foreground">
@@ -221,7 +222,7 @@ export function EmergencyResetContent({
                   <h3 className="text-sm font-semibold">Delete Shared Trip Data</h3>
                   <p className="text-sm text-muted-foreground">
                     Remove checkpoints, live location, route votes, traveler state,
-                    current activity, and history in one reset request. Sessions are
+                    current activity, and journal entries in one reset request. Sessions are
                     only revoked when selected below.
                   </p>
                 </div>

@@ -1,0 +1,5 @@
+{
+  "generatedAt": "2026-05-20T04:06:46.907Z",
+  "note": "Existing terminology debt allowed by npm run lint:terms. Remove entries as slices are cleaned.",
+  "findings": []
+}

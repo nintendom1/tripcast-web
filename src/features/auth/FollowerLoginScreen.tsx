@@ -51,7 +51,7 @@ export default function FollowerLoginScreen({
       const result = await signIn({ username: username.trim(), password, rememberMe });
       onSignIn({
         token: result.token,
-        role: "support_crew",
+        role: "follower",
         sessionType: "follower",
         username: username.trim(),
       });
@@ -64,7 +64,7 @@ export default function FollowerLoginScreen({
 
   return (
     <AuthShell
-      kicker="Support Crew"
+      kicker="Follower"
       subtitle="Sign in to follow this trip."
       footer={
         <button

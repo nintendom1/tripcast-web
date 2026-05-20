@@ -14,8 +14,8 @@
 export type PinKind =
   | "checkin"
   | "story"
-  | "challenge"
-  | "challengeProgress"
+  | "mission"
+  | "missionProgress"
   | "vote"
   | "current";
 
@@ -26,8 +26,8 @@ export type PinKind =
 export const PIN_COLORS: Record<PinKind, string> = {
   checkin: "var(--ink-1)",
   story: "var(--amber)",
-  challenge: "var(--plum)",
-  challengeProgress: "var(--flag)",
+  mission: "var(--plum)",
+  missionProgress: "var(--flag)",
   vote: "var(--teal)",
   current: "var(--flag)",
 };

@@ -2,12 +2,13 @@ import * as React from "react";
 import { Clock, Plus, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { LABELS } from "../../copy/terminology";
 
-export type DockTab = "history" | "challenges" | "votes" | "funds";
+export type DockTab = "journal" | "missions" | "votes" | "funds";
 
 export interface DockBadges {
-  history?: number;
-  challenges?: number;
+  journal?: number;
+  missions?: number;
   votes?: number;
   votesPulsing?: boolean;
 }
@@ -28,9 +29,9 @@ export interface DockProps {
  * Bottom Dock replaces the legacy bottom-left + bottom-right FAB clusters with
  * a single nav strip: Story · Missions · [+] · Votes · Funds.
  *
- * The center FAB is the entry point for adding (Traveler) or proposing (Support
- * Crew) — its behavior is owned by the parent. Pulsing vote badge signals an
- * active vote that the crew has not yet seen.
+ * The center FAB is the entry point for adding (Traveler) or proposing (Follower
+ * route votes) — its behavior is owned by the parent. Pulsing vote badge signals an
+ * active vote that the follower has not yet seen.
  */
 export function Dock({
   active,
@@ -59,18 +60,18 @@ export function Dock({
       )}
     >
       <DockButton
-        active={active === "history"}
-        label="Story"
+        active={active === "journal"}
+        label={LABELS.dock.journal}
         icon={<Clock className="h-5 w-5" aria-hidden="true" />}
-        badge={badges.history}
-        onClick={() => handleSelect("history")}
+        badge={badges.journal}
+        onClick={() => handleSelect("journal")}
       />
       <DockButton
-        active={active === "challenges"}
-        label="Missions"
+        active={active === "missions"}
+        label={LABELS.dock.missions}
         icon={<Trophy className="h-5 w-5" aria-hidden="true" />}
-        badge={badges.challenges}
-        onClick={() => handleSelect("challenges")}
+        badge={badges.missions}
+        onClick={() => handleSelect("missions")}
       />
 
       {showAdd ? (
@@ -93,7 +94,7 @@ export function Dock({
 
       <DockButton
         active={active === "votes"}
-        label="Votes"
+        label={LABELS.dock.votes}
         icon={<VoteIcon className="h-5 w-5" aria-hidden="true" />}
         badge={badges.votes}
         badgePulsing={badges.votesPulsing}
@@ -103,7 +104,7 @@ export function Dock({
       {showFunds ? (
         <DockButton
           active={active === "funds"}
-          label="Funds"
+          label={LABELS.dock.funds}
           icon={<Wallet className="h-5 w-5" aria-hidden="true" />}
           onClick={() => handleSelect("funds")}
         />

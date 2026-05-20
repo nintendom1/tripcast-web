@@ -8,6 +8,7 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { haversineDistanceMiles } from "../../lib/routeVoteUtils";
+import { TERMS } from "../../copy/terminology";
 
 type OptionFormValue = {
   title: string;
@@ -315,7 +316,7 @@ export default function CreateRouteVoteForm({
 
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
-      <DialogueBox title="Propose a Route">
+      <DialogueBox title={`Propose a ${TERMS.routeVote}`}>
         <div className="flex flex-col gap-4 mt-2">
           <label className="flex flex-col gap-1 text-sm font-medium">
             Title
@@ -423,7 +424,7 @@ export default function CreateRouteVoteForm({
           Cancel
         </Button>
         <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting ? "Proposing…" : "Propose Route"}
+          {isSubmitting ? "Proposing…" : `Propose ${TERMS.routeVote}`}
         </Button>
       </div>
     </form>

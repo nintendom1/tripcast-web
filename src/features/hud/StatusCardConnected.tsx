@@ -4,11 +4,11 @@ import { useQuery } from "convex/react";
 import {
   tripcastApi,
   type AutoState,
-  type AutoStateForCrew,
+  type AutoStateForFollower,
   type CurrentActivity,
   type Role,
   type TravelerEnergyLevel,
-  type TravelerStateForCrew,
+  type TravelerStateForFollower,
   type TravelerStomachLevel,
   type TravelerStressLevel,
 } from "@/convex/tripcastApi";
@@ -110,7 +110,7 @@ function normalizeTraveler(auto: AutoState | undefined | null): NormalizedAuto |
   };
 }
 
-function normalizeCrew(auto: AutoStateForCrew | undefined | null): NormalizedAuto | null {
+function normalizeFollower(auto: AutoStateForFollower | undefined | null): NormalizedAuto | null {
   if (!auto || !("visible" in auto) || !auto.visible) return null;
   if (!auto.autoStateEnabled) return null;
   if (auto.autoEnabledAt == null) return null;
@@ -160,27 +160,27 @@ export function StatusCardConnected({
     tripcastApi.travelerState.travelerGetState,
     role === "traveler" ? { token } : "skip",
   );
-  const crewState = useQuery(
-    tripcastApi.travelerState.supportCrewGetTravelerState,
-    role === "support_crew" ? { token } : "skip",
+  const followerState = useQuery(
+    tripcastApi.travelerState.followerGetTravelerState,
+    role === "follower" ? { token } : "skip",
   );
 
   const travelerActivity = useQuery(
     tripcastApi.currentActivity.travelerGetCurrentActivity,
     role === "traveler" ? { token } : "skip",
   );
-  const crewActivity = useQuery(
-    tripcastApi.currentActivity.supportCrewGetCurrentActivity,
-    role === "support_crew" ? { token } : "skip",
+  const followerActivity = useQuery(
+    tripcastApi.currentActivity.followerGetCurrentActivity,
+    role === "follower" ? { token } : "skip",
   );
 
   const travelerAutoState = useQuery(
     tripcastApi.travelerAutoState.travelerGetAutoState,
     role === "traveler" ? { token } : "skip",
   );
-  const crewAutoState = useQuery(
-    tripcastApi.travelerAutoState.supportCrewGetAutoState,
-    role === "support_crew" ? { token } : "skip",
+  const followerAutoState = useQuery(
+    tripcastApi.travelerAutoState.followerGetAutoState,
+    role === "follower" ? { token } : "skip",
   );
 
   const [now, setNow] = React.useState(() => Date.now());
@@ -191,8 +191,8 @@ export function StatusCardConnected({
 
   const auto = React.useMemo<NormalizedAuto | null>(() => {
     if (role === "traveler") return normalizeTraveler(travelerAutoState);
-    return normalizeCrew(crewAutoState);
-  }, [role, travelerAutoState, crewAutoState]);
+    return normalizeFollower(followerAutoState);
+  }, [role, travelerAutoState, followerAutoState]);
 
   const stateFacts: StateFacts | null = React.useMemo(() => {
     if (role === "traveler") {
@@ -208,26 +208,26 @@ export function StatusCardConnected({
         updatedAt: s.updatedAt,
       };
     }
-    const crew = crewState as TravelerStateForCrew | null | undefined;
-    if (!crew || !crew.visible) return null;
+    const follower = followerState as TravelerStateForFollower | null | undefined;
+    if (!follower || !follower.visible) return null;
     return {
-      energyLevel: crew.energyLevel,
-      energyScore: crew.energyScore,
-      stomachLevel: crew.stomachLevel,
-      stomachScore: crew.stomachScore,
-      stressLevel: crew.stressLevel,
-      stressScore: crew.stressScore,
-      updatedAt: crew.updatedAt,
+      energyLevel: follower.energyLevel,
+      energyScore: follower.energyScore,
+      stomachLevel: follower.stomachLevel,
+      stomachScore: follower.stomachScore,
+      stressLevel: follower.stressLevel,
+      stressScore: follower.stressScore,
+      updatedAt: follower.updatedAt,
     };
-  }, [role, travelerState, crewState]);
+  }, [role, travelerState, followerState]);
 
   const activity: CurrentActivity | null = role === "traveler"
     ? (travelerActivity ?? null)
-    : (crewActivity ?? null);
+    : (followerActivity ?? null);
 
   if (
     (role === "traveler" && travelerState === undefined && travelerActivity === undefined) ||
-    (role === "support_crew" && crewState === undefined && crewActivity === undefined)
+    (role === "follower" && followerState === undefined && followerActivity === undefined)
   ) {
     return null;
   }
@@ -287,25 +287,25 @@ export function StatusCardConnected({
       })()
     : [];
 
-  // Crew-only: when Auto is on with no active activity, replace the activity-since
+  // Follower-only: when Auto is on with no active activity, replace the activity-since
   // slot with the "AUTO EST. · base saved …" label.
-  const crewAutoActive = role === "support_crew" && auto != null;
-  const crewActivityLabelOverride =
-    crewAutoActive && !activity
+  const followerAutoActive = role === "follower" && auto != null;
+  const followerActivityLabelOverride =
+    followerAutoActive && !activity
       ? `AUTO EST. · base saved ${formatBaseSavedAgo(auto!.autoEnabledAt, now)}`
       : null;
 
   return (
     <div className={className}>
       <StatusCard
-        activityLabel={activity ? activity.title : crewActivityLabelOverride ?? null}
+        activityLabel={activity ? activity.title : followerActivityLabelOverride ?? null}
         activityEmoji={activity?.emoji ?? null}
         activitySince={activity ? formatElapsed(activity.startedAt, now) : null}
         meters={meters}
         interactive={role === "traveler"}
         onActivate={role === "traveler" ? onOpenState : undefined}
       />
-      {crewAutoActive && (isAutoEnergyOn || isAutoStomachOn) ? (
+      {followerAutoActive && (isAutoEnergyOn || isAutoStomachOn) ? (
         <p className="mt-1 text-[10px] text-[var(--ink-3)]">
           These values are estimated locally from the Traveler's saved State. They may not reflect a manual update.
         </p>

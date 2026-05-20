@@ -13,6 +13,7 @@ import { formatLocal, formatUsd, getCategoryEmoji, getCategoryLabel } from "./cu
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { TERMS } from "../../copy/terminology";
 
 type TravelFundsSheetProps = {
   token: string;
@@ -22,10 +23,10 @@ type TravelFundsSheetProps = {
 type View = "summary" | "add" | "edit" | "settings";
 
 const VIEW_TITLES: Record<View, string> = {
-  summary: "Travel funds",
+  summary: TERMS.travelFunds,
   add: "Add spending",
   edit: "Edit transaction",
-  settings: "Funds settings",
+  settings: `${TERMS.funds} settings`,
 };
 
 export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetProps) {

@@ -55,7 +55,7 @@ describe("FollowerLoginScreen", () => {
       rememberMe: false,
     });
     expect(mockOnSignIn).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "tok-123", role: "support_crew", sessionType: "follower" }),
+      expect.objectContaining({ token: "tok-123", role: "follower", sessionType: "follower" }),
     );
   });
 

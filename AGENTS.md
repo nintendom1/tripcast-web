@@ -12,7 +12,7 @@ Rules here encode **specific failure modes that have already occurred** — in p
 ## Feature Branch Policy
 
 - **Never work directly on `main`.** Always create a feature branch before making changes.
-- Name feature branches with hyphens only — no slashes. Examples: `feat-challenge-lifecycle`, `fix-map-markers`, `chore-update-deps`.
+- Name feature branches with hyphens only — no slashes. Examples: `feat-mission-lifecycle`, `fix-map-markers`, `chore-update-deps`.
 - If you find yourself on `main` at the start of a task, create a feature branch first via `git checkout -b <branch-name>`.
 
 ## Planning Mode Behavior
@@ -128,7 +128,7 @@ Now, <describe the new state or outcome>.
 ```
   Apply these rules when writing the Before/After:
   1. **Cover the full scope.** For a PR, the Before/After must mention every major feature or fix on the branch — not just the most recent commits. Omitting a feature is a deficiency.
-  2. **Name affected roles explicitly.** This app has two distinct roles: Traveler and Support Crew. When a change affects either role's experience, name the role and describe what they gain or lose. Do not write in a role-neutral voice if the feature is role-specific.
+  2. **Name affected roles explicitly.** This app has two distinct roles: Traveler and Follower. When a change affects either role's experience, name the role and describe what they gain or lose. Do not write in a role-neutral voice if the feature is role-specific.
   3. **Lead with the most impactful perspective.** Put the primary beneficiary — the role whose experience changes most — first in the Before/After. Secondary roles follow.
   4. **Write a unified narrative, not a list.** The Before/After paragraph should read as a story about what users could and couldn't do, not as a bullet summary of technical changes. Reserve bullets for the Summary section.
 - PR title uses the same style. PR body template:
@@ -170,7 +170,7 @@ The lint config (`eslint.config.js`) is intentionally narrow — only `react-hoo
 
 **Every hook call must be reachable on every render of a component.** In practice that means:
 
-- Put all `useState` / `useEffect` / `useQuery` / `useMutation` / `useMemo` / `useRef` / `useContext` (and project-specific custom hooks like `useHistoryUnread`, `useReadingSpeed`, `useMusic`, `useDelayedPending`, `useOnlineStatus`) at the **top of the function body**, before any `if (…) return …` early-return branches.
+- Put all `useState` / `useEffect` / `useQuery` / `useMutation` / `useMemo` / `useRef` / `useContext` (and project-specific custom hooks like `useJournalUnread`, `useReadingSpeed`, `useMusic`, `useDelayedPending`, `useOnlineStatus`) at the **top of the function body**, before any `if (…) return …` early-return branches.
 - A new hook added below an early return changes the hook count between renders that fire the early return vs. renders that fall through. React throws `"Rendered more hooks than during the previous render"` — the root `ErrorBoundary` in `App.tsx` catches it and the user sees the fullscreen error fallback instead of the app. This bug class shipped once during the UX rework (commit `704fcb8` → fix `39468ef`) and is exactly what the lint rule now blocks.
 - When the hook's body needs a value that's only well-defined after the early returns (e.g. `activeSessionCheck.role`), derive a nullable form at the top (`const currentRole = activeSessionCheck?.role ?? null`) and put the conditional logic **inside** the effect body, not around the effect call site.
 - For genuinely missing-but-stable deps in `exhaustive-deps`, add a one-line `// eslint-disable-next-line react-hooks/exhaustive-deps` with a comment above explaining why the dep is closure-stable (ref-driven, stable React setter, or stable Convex mutation handle). Don't disable the rule without the rationale.
@@ -197,18 +197,18 @@ When adding new component tests:
 - Use the shared Base UI-backed sheet primitives in `src/components/ui/sheet.tsx` for sheet, dialog, drawer, and panel overlays. Do not introduce ad hoc `motion.div`/absolute-positioned overlays for these flows unless the UI is a transient non-dialog element such as a toast or map placement banner.
 - Let Base UI own dialog semantics, focus handling, escape/outside close behavior, and portal structure. Use `framer-motion` only when extra motion is needed on top of an accessible primitive.
 - Map-adjacent bottom panels that should not dim or block the map should still use `Sheet`/`SheetContent` with `modal={false}` and `showBackdrop={false}`. Modal flows such as Options and Emergency Reset should keep the default backdrop/modal behavior.
-- History events are fetched in `TripMap.tsx`, not inside `HistorySheet` — one Convex subscription drives both the sheet and the unread badge. Do not move the query into the sheet.
-- `CheckInDetailSheet` auto-focuses the map on mount via `useEffect` when `lat`/`lon` are present.
-- Checkpoint `lat`/`lon` are optional (`lat?: number`, `lon?: number` in `tripcastApi.ts`). The HistorySheet inline create flow (`source: "inline_form"`) produces locationless checkpoints. Map code that renders checkpoint markers must filter to `cp.lat !== undefined && cp.lon !== undefined` before accessing the values or calling `setLngLat` — assuming all checkpoints have coordinates causes a TS error at the `setLngLat` call site and would silently skip rendering or crash the markers effect.
-- Unread history state is tracked in `localStorage` under the key `tripcast.historyLastReadAt` (`src/features/history/useHistoryUnread.ts`).
+- Journal events are fetched in `TripMap.tsx`, not inside `JournalSheet` — one Convex subscription drives both the sheet and the unread badge. Do not move the query into the sheet.
+- `StoryDetailSheet` auto-focuses the map on mount via `useEffect` when `lat`/`lon` are present.
+- Checkpoint `lat`/`lon` are optional (`lat?: number`, `lon?: number` in `tripcastApi.ts`). The JournalSheet inline create flow (`source: "inline_form"`) produces locationless checkpoints. Map code that renders checkpoint markers must filter to `cp.lat !== undefined && cp.lon !== undefined` before accessing the values or calling `setLngLat` — assuming all checkpoints have coordinates causes a TS error at the `setLngLat` call site and would silently skip rendering or crash the markers effect.
+- Unread journal state is tracked in `localStorage` under the key `tripcast.journalLastReadAt` (`src/features/journal/useJournalUnread.ts`).
 - `TravelerStateCard` and `CurrentActivityCard` share a positioning wrapper in `TripMap.tsx` (`absolute top-5 left-5 z-[2] flex flex-col gap-2`). Neither card carries its own absolute positioning. `TravelFundsCard` mounts as the third sibling in the same wrapper.
-- Travel Funds management (`src/features/travelfunds/TravelFundsSheet.tsx`) is Traveler-only. Both the Options entry ("Manage Travel Funds") and the map card's "Manage" button render the same `TravelFundsSheet` content. Support Crew sees the meter card only — no management UI.
+- Travel Funds management (`src/features/travelfunds/TravelFundsSheet.tsx`) is Traveler-only. Both the Options entry ("Manage Travel Funds") and the map card's "Manage" button render the same `TravelFundsSheet` content. Follower sees the meter card only — no management UI.
 - The Add/Edit Transaction form's exchange-rate field uses **"Local currency per 1 USD"** (spec Option B): `usdAmount = localAmount / localCurrencyPerUsd`. For `USD` the rate is forced to `1` server-side. The per-transaction rate and computed USD value are frozen at write time — later rate edits do not affect existing transactions.
-- `src/features/travelfunds/TravelFundsInlineSection.tsx` is the collapsable cost-entry section embedded in completion forms (the check-in form via `TripMap`'s `AddCheckpointSheet` next to "Also Update Traveler State", and `ChallengeDetailSheet`'s in-progress complete action). It serializes to a `TransactionInlineInput | null` via its `onChange` prop. The parent passes the value as the optional `transaction` arg on `addCheckpoint` / `travelerCompleteChallenge` / `travelerCompleteChallengeAsStory` so the transaction lands atomically with the parent record. Server fills `linkedCheckpointId` / `linkedChallengeId` / `linkedActivityId` — the client never sends them in the inline path. For challenges with `estimatedCostUsd`, the section pre-fills `currencyCode = "USD"`, `localCurrencyPerUsd = 1`, `localAmount = estimatedCostUsd` to make confirming the budgeted amount a one-tap action. **Auto-open rule (known failure mode):** the section auto-opens only when `prefill.localAmount` is defined — a title-only prefill leaves it collapsed. A previous version opened on `prefill.title` too; because all missions have titles, this caused the validation error "Transaction amount is required" to surface immediately on every mission completion attempt, silently blocking both "Complete as story" and "Mark complete (no story)" even when the user never intended to log a cost. Do not reintroduce auto-open on title.
-- `HistorySheet` requires a `token` prop. It subscribes to `tripcastApi.travelFunds.getLinkedCostMap` and threads per-event `actualCostUsd` into each `StoryRailItem` (matched by `event.challengeId` for `challenge_completed`, by `event.checkpointId` for `check_in`). Support Crew sees the public-only aggregate (server enforces); private/summary_only rows still affect the global meter but never the per-card "Actual cost".
-- Bulk Import is Traveler-only from Options -> Data / Dev (`src/features/options/BulkImportSheet.tsx`). It uses `tripcastApi.bulkImport.previewBulkImport` for backend-owned validation and `tripcastApi.bulkImport.travelerBulkImport` for commit; keep the paste -> preview -> commit flow so invalid rows never write partial data. The backend accepts either a raw entries array or `{ timeZone, entries }`, up to 50 entries, timestamp numbers/strings, and `ref` links between check-ins/stories, transactions, route votes/options, and challenges. Date-only timestamps use midnight in the selected IANA timezone. Image-block story import is not implemented in the backend yet.
-- Traveler State Auto mode (`src/features/travelstate/AutoStateTab.tsx`, `autoStateCalc.ts`) replaces the legacy frontend-only 10pt/hr stomach decay (now removed). When Auto is OFF, Energy and Stomach show last-saved values with no implicit drift. When ON, the persisted `travelerAutoState` row + the pure integer-tick calc helper estimate Energy/Stomach locally; nothing is auto-written to Convex on a timer. Opening `TravelerStateSheet` preloads Energy/Stomach from the current auto estimate so manual edits start from the values shown in the HUD. The calc helper takes the Traveler's stored IANA timezone — Support Crew computes the same phases regardless of their browser tz. Saving manual State while Auto is on re-anchors the Auto base atomically server-side from the edited/current values.
-- Music uses the Web Audio-only engine in `src/lib/audio/engine.ts`; do not add bundled audio files or token-based providers. Components should call `useMusicSafe().sfx(...)` for local interaction sounds. Use `open` / `close` for sheet visibility, `page` for internal panel navigation, `pin` for map placement or saved pins, `vote` after a successful Support Crew vote, `success` after successful writes, `tap` for lightweight toggles, and `toast` from central toast helpers. Scenario selection for the map belongs in `src/lib/audio/useTripAudioScenario.ts`, with priority `story > overBudget > voteActive > challengeActive > idle`; keep new scenario logic there instead of scattering `setScenario` calls.
+- `src/features/travelfunds/TravelFundsInlineSection.tsx` is the collapsable cost-entry section embedded in completion forms (the check-in form via `TripMap`'s `AddCheckpointSheet` next to "Also Update Traveler State", and `MissionDetailSheet`'s in-progress complete action). It serializes to a `TransactionInlineInput | null` via its `onChange` prop. The parent passes the value as the optional `transaction` arg on `addCheckpoint` / `travelerCompleteMission` / `travelerCompleteMissionAsStory` so the transaction lands atomically with the parent record. Server fills `linkedCheckpointId` / `linkedMissionId` / `linkedActivityId` — the client never sends them in the inline path. For missions with `estimatedCostUsd`, the section pre-fills `currencyCode = "USD"`, `localCurrencyPerUsd = 1`, `localAmount = estimatedCostUsd` to make confirming the budgeted amount a one-tap action. **Auto-open rule (known failure mode):** the section auto-opens only when `prefill.localAmount` is defined — a title-only prefill leaves it collapsed. A previous version opened on `prefill.title` too; because all missions have titles, this caused the validation error "Transaction amount is required" to surface immediately on every mission completion attempt, silently blocking both "Complete as story" and "Mark complete (no story)" even when the user never intended to log a cost. Do not reintroduce auto-open on title.
+- `JournalSheet` requires a `token` prop. It subscribes to `tripcastApi.travelFunds.getLinkedCostMap` and threads per-event `actualCostUsd` into each `StoryRailItem` (matched by `event.missionId` for `mission_completed`, by `event.checkpointId` for `check_in`). Followers see the public-only aggregate (server enforces); private/summary_only rows still affect the global meter but never the per-card "Actual cost".
+- Bulk Import is Traveler-only from Options -> Data / Dev (`src/features/options/BulkImportSheet.tsx`). It uses `tripcastApi.bulkImport.previewBulkImport` for backend-owned validation and `tripcastApi.bulkImport.travelerBulkImport` for commit; keep the paste -> preview -> commit flow so invalid rows never write partial data. The backend accepts either a raw entries array or `{ timeZone, entries }`, up to 50 entries, timestamp numbers/strings, and `ref` links between Stories/check-ins, transactions, route votes/options, and missions. Date-only timestamps use midnight in the selected IANA timezone. Image-block story import is not implemented in the backend yet.
+- Traveler State Auto mode (`src/features/travelstate/AutoStateTab.tsx`, `autoStateCalc.ts`) replaces the legacy frontend-only 10pt/hr stomach decay (now removed). When Auto is OFF, Energy and Stomach show last-saved values with no implicit drift. When ON, the persisted `travelerAutoState` row + the pure integer-tick calc helper estimate Energy/Stomach locally; nothing is auto-written to Convex on a timer. Opening `TravelerStateSheet` preloads Energy/Stomach from the current auto estimate so manual edits start from the values shown in the HUD. The calc helper takes the Traveler's stored IANA timezone — Followers compute the same phases regardless of their browser tz. Saving manual State while Auto is on re-anchors the Auto base atomically server-side from the edited/current values.
+- Music uses the Web Audio-only engine in `src/lib/audio/engine.ts`; do not add bundled audio files or token-based providers. Components should call `useMusicSafe().sfx(...)` for local interaction sounds. Use `open` / `close` for sheet visibility, `page` for internal panel navigation, `pin` for map placement or saved pins, `vote` after a successful Follower vote, `success` after successful writes, `tap` for lightweight toggles, and `toast` from central toast helpers. Scenario selection for the map belongs in `src/lib/audio/useTripAudioScenario.ts`, with priority `story > overBudget > voteActive > missionActive > idle`; keep new scenario logic there instead of scattering `setScenario` calls.
 
 ## Coordinate-Pick UX Pattern
 
@@ -219,7 +219,7 @@ Forms that let users tap the map to set a coordinate use a panel-hide approach s
 3. **If the form is NOT inside a `Sheet`:** wrap the triggering element in `<div className={isPickingCoordinate ? "invisible pointer-events-none" : undefined}>`. The panel stays **mounted** (preserving form state) but becomes invisible and non-interactive.
 4. Always wire the coordinate callback into the form's setter — do NOT close and reopen the panel/sheet; that would lose form state.
 
-`ChallengePanel` (Sheet-based) and `RouteVoteProgress` are the two reference implementations.
+`MissionPanel` (Sheet-based) and `RouteVoteProgress` are the two reference implementations.
 
 ## Mobile UX Principles
 
@@ -244,7 +244,7 @@ Map controls live in a single horizontal Dock at the bottom plus two corner util
 | Map utility | `bottom-[88px] right-3` | `MapCenterButton` (recenter on traveler / last check-in) |
 | Bottom Dock | `inset-x-3 bottom-3` | `Dock` (Story · Missions · `+` · Votes · Funds) |
 
-The Dock is the single nav surface. Its center `+` is a FAB: Traveler opens `FanMenu` (Check-in / Activity / Transaction / Challenge / Vote); Support Crew goes straight to "Propose Mission" (no fan).
+The Dock is the single nav surface. Its center `+` is a FAB: Traveler opens `FanMenu` (Check-in / Activity / Transaction / Mission / Vote); Followers go straight to "Propose Mission" (no fan).
 
 Touch targets in the Dock are 44 × 44 px or larger; the FAB is 48 × 48 px and bleeds slightly above the dock baseline. Live the design tokens in `src/styles.css` (`--dock-h`, `--shadow-fab`, `--flag`) — do not hardcode colors at use sites.
 
@@ -252,7 +252,7 @@ When adding a new HUD or Dock control: extend the component in `src/features/hud
 
 ### All secondary panels are bottom sheets
 
-Map-adjacent panels (History, Challenges, Route Votes) use `<Sheet side="bottom" modal={false} showBackdrop={false}>`. Never use a left/right sidebar or a `motion.div` with horizontal `x` animation — these temporarily extend document width during the spring, causing the mobile scroll regression.
+Map-adjacent panels (Journal, Missions, Route Votes) use `<Sheet side="bottom" modal={false} showBackdrop={false}>`. Never use a left/right sidebar or a `motion.div` with horizontal `x` animation — these temporarily extend document width during the spring, causing the mobile scroll regression.
 
 `SheetContent side="bottom"` has `max-h-[85dvh] inset-x-0 bottom-0 rounded-t-xl` built in (`src/components/ui/sheet.tsx`).
 
@@ -260,13 +260,13 @@ Modal flows (Options, Emergency Reset) keep the default backdrop/modal behavior.
 
 ### Mutual panel exclusion
 
-At most one bottom sheet (History, Challenges, Votes, Funds) may be open at a time. The Dock's `onSelect` callback funnels into the existing `open<Panel>` helpers, which use named functions — not raw `setState` on the button `onClick` — to enforce exclusion:
+At most one bottom sheet (Journal, Missions, Votes, Funds) may be open at a time. The Dock's `onSelect` callback funnels into the existing `open<Panel>` helpers, which use named functions — not raw `setState` on the button `onClick` — to enforce exclusion:
 
 ```typescript
 function openHistory() {
   if (isHistoryOpen) { setIsHistoryOpen(false); return; }
   setIsHistoryOpen(true);
-  setIsChallengesPanelOpen(false);
+  setIsMissionsPanelOpen(false);
   setIsVotePanelOpen(false);
 }
 ```
@@ -277,7 +277,7 @@ When adding a new panel: write an `open<Panel>` helper, call `set<ExistingPanel>
 
 ### Toast positioning must clear the Dock
 
-The toast lives at `bottom-[112px]` so it sits above the Dock (~76 px tall) plus the bottom gutter. Role no longer matters — the Dock is the same height for Traveler and Support Crew. Update the constant if the Dock height changes.
+The toast lives at `bottom-[112px]` so it sits above the Dock (~76 px tall) plus the bottom gutter. Role no longer matters — the Dock is the same height for Traveler and Follower. Update the constant if the Dock height changes.
 
 ### MapLibre measurement gotchas
 

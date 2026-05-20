@@ -56,7 +56,7 @@ describe("CreateRouteVoteForm", () => {
     expect(getCloseInput()).toHaveValue("2026-05-13T11:00");
 
     await fillRequiredOptions();
-    await userEvent.click(screen.getByRole("button", { name: "Propose Route" }));
+    await userEvent.click(screen.getByRole("button", { name: "Propose Route Vote" }));
 
     await waitFor(() => {
       expect(createVote).toHaveBeenCalledWith(
@@ -75,7 +75,7 @@ describe("CreateRouteVoteForm", () => {
 
     await userEvent.clear(screen.getByLabelText("Title"));
     await fillRequiredOptions();
-    await userEvent.click(screen.getByRole("button", { name: "Propose Route" }));
+    await userEvent.click(screen.getByRole("button", { name: "Propose Route Vote" }));
 
     await waitFor(() => {
       expect(createVote).toHaveBeenCalledWith(
@@ -91,7 +91,7 @@ describe("CreateRouteVoteForm", () => {
     expect(getCloseInput()).toHaveValue("2026-05-16T10:00");
 
     await fillRequiredOptions();
-    await userEvent.click(screen.getByRole("button", { name: "Propose Route" }));
+    await userEvent.click(screen.getByRole("button", { name: "Propose Route Vote" }));
 
     await waitFor(() => {
       expect(createVote).toHaveBeenCalledWith(

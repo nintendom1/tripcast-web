@@ -1,15 +1,23 @@
 import { useEffect } from "react";
+import { Camera } from "lucide-react";
 import { X } from "lucide-react";
 
-import type { HistoryEvent } from "../../convex/tripcastApi";
-import { log } from "../../debug/debugLogger";
+import { Button } from "../../components/ui/button";
 import { StatBar } from "../../components/rpg/StatBar";
+
+import type { JournalEvent } from "../../convex/tripcastApi";
+import { log } from "../../debug/debugLogger";
 import {
   Sheet,
+  SheetBody,
+  SheetCloseButton,
   SheetContent,
+  SheetGrabber,
   SheetHeader,
+  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { RevealText } from "../../components/ui/RevealText";
 import {
   MOOD_LABELS,
   ENERGY_LABELS,
@@ -93,17 +101,157 @@ function StomachBarRow({ level }: { level: string }) {
   );
 }
 
-type CheckInDetailSheetProps = {
-  event: HistoryEvent | null;
+type StoryDetailSheetProps = {
+  event: JournalEvent | null;
   onClose: () => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
+  /** Title of the mission the story was filed against, when `event.missionId`
+   *  is set. Parent resolves this from the mission list. */
+  missionTitle?: string;
+  missionId?: string;
+  onNavigateToMission?: (id: string) => void;
 };
 
-function CheckInDetail({
+export default function StoryDetailSheet({
+  event,
+  onClose,
+  onLocationFocus,
+  missionTitle,
+  missionId,
+  onNavigateToMission,
+}: StoryDetailSheetProps) {
+  useEffect(() => {
+    if (event) {
+      log("info", "StoryDetailSheet", "sheet:open", "ui", {
+        checkpointId: event.checkpointId,
+        narrativeLevel: event.narrativeLevel,
+      });
+    }
+  }, [event]);
+
+  useEffect(() => {
+    if (event?.lat !== undefined && event?.lon !== undefined) {
+      onLocationFocus({ lat: event.lat, lon: event.lon });
+    }
+    // Focus map when story opens; onLocationFocus is stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event?._id]);
+
+  const isNarrative = event?.narrativeLevel === "narrative";
+
+  return (
+    <Sheet
+      open={Boolean(event)}
+      modal={false}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        side="bottom"
+        showBackdrop={false}
+        className={
+          isNarrative
+            ? "z-[11] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+            : "z-[11] shadow-2xl max-h-[50dvh]"
+        }
+        data-role="story-detail"
+      >
+        {isNarrative ? <SheetGrabber /> : null}
+        {event ? (
+          isNarrative ? (
+            <NarrativeBody
+              key={event._id}
+              event={event}
+              missionTitle={missionTitle}
+              missionId={missionId}
+              onNavigateToMission={onNavigateToMission}
+            />
+          ) : (
+            <ActivityBody key={event._id} event={event} onClose={onClose} />
+          )
+        ) : null}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function NarrativeBody({
+  event,
+  missionTitle,
+  missionId,
+  onNavigateToMission,
+}: {
+  event: JournalEvent;
+  missionTitle?: string;
+  missionId?: string;
+  onNavigateToMission?: (id: string) => void;
+}) {
+  return (
+    <>
+      <div className="flex items-start justify-between gap-2 px-5 pt-2">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <SheetKicker dotColor="var(--amber)">
+            <Camera className="h-3 w-3" aria-hidden="true" />
+            Story · {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
+          </SheetKicker>
+          <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold leading-tight tracking-tight text-[var(--ink-1)]">
+            {event.title ?? "Story"}
+          </SheetTitle>
+          {event.locationLabel ? (
+            <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+              {event.locationLabel}
+            </p>
+          ) : null}
+        </div>
+        <SheetCloseButton aria-label="Close story" />
+      </div>
+
+      <SheetBody
+        className="px-5"
+        style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
+      >
+        {event.body ? (
+          <RevealText
+            text={event.body}
+            className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]"
+          />
+        ) : (
+          <p className="text-sm italic text-[var(--ink-3)]">No story body yet.</p>
+        )}
+
+        {event.statusNote ? (
+          <blockquote className="mt-5 border-l-2 border-[var(--amber)] pl-4 text-sm italic text-[var(--ink-2)]">
+            &ldquo;{event.statusNote}&rdquo;
+          </blockquote>
+        ) : null}
+
+        {missionId && (
+          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-1">
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mission</p>
+            <p className="text-sm font-medium text-[var(--ink-1)] line-clamp-1">{missionTitle ?? "View mission"}</p>
+            {onNavigateToMission && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onNavigateToMission(missionId)}
+                className="self-start mt-1"
+              >
+                Open mission
+              </Button>
+            )}
+          </div>
+        )}
+      </SheetBody>
+    </>
+  );
+}
+
+function ActivityBody({
   event,
   onClose,
 }: {
-  event: HistoryEvent;
+  event: JournalEvent;
   onClose: () => void;
 }) {
   const hasState =
@@ -122,7 +270,7 @@ function CheckInDetail({
             {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </p>
           <SheetTitle className="text-base font-bold text-navy truncate">
-            {event.title ?? "Check-in"}
+            {event.title ?? "Story"}
           </SheetTitle>
           {event.locationLabel && (
             <p className="text-xs text-muted-foreground">{event.locationLabel}</p>
@@ -149,7 +297,7 @@ function CheckInDetail({
         {hasState && (
           <div className="rounded-md border bg-muted/20 px-3 py-3 grid gap-2">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              State at check-in
+              State at this story
             </p>
 
             {event.moodValue && (
@@ -193,49 +341,5 @@ function CheckInDetail({
         )}
       </div>
     </>
-  );
-}
-
-export default function CheckInDetailSheet({
-  event,
-  onClose,
-  onLocationFocus,
-}: CheckInDetailSheetProps) {
-  useEffect(() => {
-    if (event) {
-      log("info", "CheckInDetailSheet", "sheet:open", "ui", {
-        checkpointId: event.checkpointId,
-        storyLevel: event.storyLevel,
-      });
-    }
-  }, [event]);
-
-  useEffect(() => {
-    if (event?.lat !== undefined && event?.lon !== undefined) {
-      onLocationFocus({ lat: event.lat, lon: event.lon });
-    }
-  // Auto-focus when event opens; onLocationFocus is stable
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [event?._id]);
-
-  return (
-    <Sheet
-      open={Boolean(event)}
-      modal={false}
-      onOpenChange={(open) => {
-        if (!open) onClose();
-      }}
-    >
-      <SheetContent
-        side="bottom"
-        showBackdrop={false}
-        className="z-[11] shadow-2xl max-h-[50dvh]"
-        data-role="check-in-detail"
-      >
-        {event ? (
-          <CheckInDetail key={event._id} event={event} onClose={onClose} />
-        ) : null}
-      </SheetContent>
-    </Sheet>
   );
 }

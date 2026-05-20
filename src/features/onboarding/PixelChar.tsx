@@ -19,7 +19,7 @@ const PALETTE: Record<string, string> = {
 type Pixel = readonly [x: number, y: number, paletteKey: string];
 
 /**
- * Explorer character — the default greeter for the Support Crew landing tour.
+ * Explorer character — the default greeter for the Follower landing tour.
  * 12x16 grid, one frame, sprite-style. Ported from
  * tripcast-claude-design-handoff-temp/project/src/pixel-char.jsx.
  */

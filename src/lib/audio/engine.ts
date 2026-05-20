@@ -5,7 +5,7 @@
  * gesture so browser autoplay rules are respected.
  */
 
-export type AudioScenario = "idle" | "voteActive" | "challengeActive" | "overBudget" | "story";
+export type AudioScenario = "idle" | "voteActive" | "missionActive" | "overBudget" | "story";
 
 export type AudioSoundtrack =
   | "auto"
@@ -15,7 +15,7 @@ export type AudioSoundtrack =
   | "cafe"
   | "story"
   | "vote"
-  | "challenge";
+  | "mission";
 
 export type SfxName =
   | "pin"
@@ -107,7 +107,7 @@ const PROGRESSIONS: Record<string, Progression> = {
       { name: "A7sus", bass: 33, notes: [57, 64, 67, 71], arp: [64, 67, 71, 74] },
     ],
   },
-  challenge: {
+  mission: {
     bpm: 92,
     chords: [
       { name: "Em", bass: 28, notes: [52, 59, 64, 67], arp: [59, 64, 67, 71] },
@@ -133,7 +133,7 @@ export function resolveSoundtrackScenario(
 ): keyof typeof PROGRESSIONS {
   if (soundtrack !== "auto") return soundtrack;
   if (scenario === "voteActive") return "vote";
-  if (scenario === "challengeActive") return "challenge";
+  if (scenario === "missionActive") return "mission";
   return scenario;
 }
 

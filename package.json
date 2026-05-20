@@ -9,9 +9,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "validate": "tsc -b && eslint . && vitest run",
+    "validate": "npm run lint:terms && tsc -b && eslint . && vitest run",
     "typecheck": "tsc -b",
     "lint": "eslint .",
+    "lint:terms:report": "node scripts/lintTerms.mjs --mode=report",
+    "lint:terms:baseline": "node scripts/lintTerms.mjs --mode=baseline",
+    "lint:terms": "node scripts/lintTerms.mjs --mode=enforce",
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",
     "test": "vitest run"

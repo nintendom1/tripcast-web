@@ -24,6 +24,7 @@ import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
+import { TERMS } from "../../copy/terminology";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -42,7 +43,7 @@ type RouteVoteProgressProps = {
   isPickingCoordinate?: boolean;
   pendingOpenVoteId?: string | null;
   onClearPendingVoteId?: () => void;
-  onRequestOpenMissionDetail?: (challengeId: string) => void;
+  onRequestOpenMissionDetail?: (missionId: string) => void;
 };
 
 type View = "list" | "create" | "detail";
@@ -112,7 +113,7 @@ function VoteDetailView({
   ) => void;
   onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
-  onRequestOpenMissionDetail?: (challengeId: string) => void;
+  onRequestOpenMissionDetail?: (missionId: string) => void;
   onCloseVote: () => Promise<void>;
 }) {
   const detail = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
@@ -245,9 +246,9 @@ function VoteDetailView({
                       </div>
                     )}
                     {isSuggested && !detail.isTied && (
-                      <span className="text-xs text-muted-foreground">(suggested winner)</span>
+                      <span className="text-xs text-muted-foreground">(suggested {TERMS.winningOption.toLowerCase()})</span>
                     )}
-                    {isWinner && <span className="text-xs font-medium">Winner</span>}
+                    {isWinner && <span className="text-xs font-medium">{TERMS.winningOption}</span>}
                   </div>
                   <span className="text-xs text-muted-foreground shrink-0">
                     {count} / {total}
@@ -271,7 +272,7 @@ function VoteDetailView({
                       className="mt-2"
                       onClick={() => setConfirmingOptionId(option._id)}
                     >
-                      Set as winner
+                        Set as {TERMS.winningOption.toLowerCase()}
                     </Button>
                   ))}
               </div>
@@ -283,17 +284,17 @@ function VoteDetailView({
         </div>
       </DialogueBox>
 
-      {detail.challenge && (
+      {detail.mission && (
         <DialogueBox title="Mission Created">
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-navy line-clamp-1">
-                {detail.challenge.title}
+                {detail.mission.title}
               </p>
-              <StatusBadge status={detail.challenge.status} />
+              <StatusBadge status={detail.mission.status} />
             </div>
-            {detail.challenge.locationLabel && (
-              <p className="text-xs text-muted-foreground">{detail.challenge.locationLabel}</p>
+            {detail.mission.locationLabel && (
+              <p className="text-xs text-muted-foreground">{detail.mission.locationLabel}</p>
             )}
             <p className="text-xs text-muted-foreground">
               Open Missions to view and edit.
@@ -302,7 +303,7 @@ function VoteDetailView({
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => onRequestOpenMissionDetail(detail.challenge!._id)}
+                onClick={() => onRequestOpenMissionDetail(detail.mission!._id)}
               >
                 View Mission
               </Button>
@@ -474,10 +475,10 @@ export default function RouteVoteProgress({
             )}
             <SheetTitle className="text-sm font-semibold">
               {view === "create"
-                ? "New Vote"
+                ? `New ${TERMS.routeVote}`
                 : view === "detail"
-                  ? "Vote Details"
-                  : "Manage Votes"}
+                  ? `${TERMS.routeVote} Details`
+                  : TERMS.votes}
             </SheetTitle>
           </div>
           <SheetCloseButton aria-label="Close route votes" />

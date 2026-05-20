@@ -76,7 +76,7 @@ describe("RouteVoteProgress: VoteDetailView null state", () => {
 
     renderProgress();
 
-    expect(screen.getByText("Manage Votes")).toBeInTheDocument();
+    expect(screen.getByText("Votes")).toBeInTheDocument();
     expect(document.querySelector('[class*="bottom-0"]')).toBeInTheDocument();
     expect(document.querySelector('[class*="bottom-5"][class*="left-5"]')).not.toBeInTheDocument();
   });

@@ -12,7 +12,7 @@ type Props = {
 };
 
 export default function RouteVoteSourceCard({ sourceVoteId, sourceOptionId, token, onNavigate }: Props) {
-  const log = useDebugLogger("RouteVoteSourceCard", "src/features/challenges/RouteVoteSourceCard.tsx");
+  const log = useDebugLogger("RouteVoteSourceCard", "src/features/missions/RouteVoteSourceCard.tsx");
 
   const vote = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
     token,

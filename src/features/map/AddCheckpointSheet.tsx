@@ -25,18 +25,18 @@ export type SelectedCoordinate = {
 /**
  * Prefill payload for `AddCheckpointSheet`.
  *
- * `challengeId` is forwarded straight into `addCheckpoint` so the row + its
- * history event are linked to the mission atomically. The parent (TripMap)
+ * `missionId` is forwarded straight into `addCheckpoint` so the row + its
+ * journal event are linked to the mission atomically. The parent (TripMap)
  * also reads it back from `onCheckpointCreated` to fire
- * `travelerCompleteChallenge`, which is what flips the mission to
+ * `travelerCompleteMission`, which is what flips the mission to
  * "completed" and closes the Vote → Mission → Story loop.
  */
 export type CheckpointPrefill = {
   title?: string;
   note?: string;
   locationLabel?: string;
-  challengeId?: string;
-  completeChallenge?: boolean;
+  missionId?: string;
+  completeMission?: boolean;
   transaction?: TransactionInlineInput;
   /** Kicker label override — e.g. "Story · Mission completion" when prefilled from a mission. */
   kickerLabel?: string;
@@ -90,8 +90,8 @@ export default function AddCheckpointSheet({
   const music = useMusicSafe();
 
   const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
-  const isFromMission = Boolean(prefill?.challengeId);
-  const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Check-in");
+  const isFromMission = Boolean(prefill?.missionId);
+  const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Story");
   const titleText = isFromMission ? "Complete as story" : "Add pin";
   const showBackAffordance = isFromMission && Boolean(onBack);
 
@@ -139,7 +139,7 @@ export default function AddCheckpointSheet({
         lat: selectedCoordinate.lat,
         lon: selectedCoordinate.lon,
         source: selectedCoordinate.source,
-        challengeId: prefill?.challengeId,
+        missionId: prefill?.missionId,
       });
       log.logInteraction("submit:success", { checkpointId });
       music.sfx("pin");
@@ -175,7 +175,7 @@ export default function AddCheckpointSheet({
               {titleText}
             </SheetTitle>
           </div>
-          <SheetCloseButton aria-label="Close check-in form" />
+          <SheetCloseButton aria-label="Close story form" />
         </div>
 
         <form
@@ -207,7 +207,7 @@ export default function AddCheckpointSheet({
             <Textarea
               maxLength={1000}
               onChange={(e) => setNote(e.target.value)}
-              placeholder={isFromMission ? "Tell the crew what happened…" : undefined}
+              placeholder={isFromMission ? "Tell the follower what happened…" : undefined}
               rows={isFromMission ? 5 : 3}
               value={note}
             />

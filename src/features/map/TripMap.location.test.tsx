@@ -75,7 +75,7 @@ vi.mock("./RouteVoteMapOverlay", () => ({
   default: () => null,
 }));
 
-vi.mock("./ChallengeMarkers", () => ({
+vi.mock("./MissionMarkers", () => ({
   default: () => null,
 }));
 
@@ -98,8 +98,8 @@ vi.mock("../routevote/RouteVoteProgress", () => ({
   default: () => null,
 }));
 
-vi.mock("../history/HistorySheet", () => ({
-  default: () => <div data-testid="history-sheet" />,
+vi.mock("../journal/JournalSheet", () => ({
+  default: () => <div data-testid="journal-sheet" />,
 }));
 
 vi.mock("../travelfunds/TravelFundsSheet", () => ({
@@ -128,6 +128,16 @@ function setupQueries({
       return travelerLocation;
     }
     if (query === tripcastApi.routeVotes.travelerListRouteVotes) return [];
+    if (query === tripcastApi.travelFunds.travelerGetConfig) {
+      return {
+        enabled: true,
+        featureEnabled: true,
+        startingBudgetUsd: 100,
+        remainingUsd: 75,
+        spentUsd: 25,
+        budgetLabel: undefined,
+      };
+    }
     return null;
   });
 }
@@ -173,12 +183,12 @@ describe("TripMap location marker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Funds" }));
     expect(await screen.findByTestId("funds-sheet")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Story" }));
+    fireEvent.click(screen.getByRole("button", { name: "Journal" }));
 
     await waitFor(() => {
       expect(screen.queryByTestId("funds-sheet")).not.toBeInTheDocument();
     });
-    expect(screen.getByTestId("history-sheet")).toBeInTheDocument();
+    expect(screen.getByTestId("journal-sheet")).toBeInTheDocument();
   });
 
   it("keeps the route vote fallback origin stable across follower rerenders", async () => {
@@ -197,7 +207,7 @@ describe("TripMap location marker", () => {
       ],
     });
 
-    const { rerender } = render(<TripMap token="test-token" role="support_crew" />);
+    const { rerender } = render(<TripMap token="test-token" role="follower" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Votes" }));
 
@@ -206,7 +216,7 @@ describe("TripMap location marker", () => {
     });
     const firstFallbackOrigin = routeVotePanelProps.at(-1)?.fallbackOrigin;
 
-    rerender(<TripMap token="test-token" role="support_crew" />);
+    rerender(<TripMap token="test-token" role="follower" />);
 
     await waitFor(() => {
       expect(routeVotePanelProps.at(-1)?.fallbackOrigin).toBe(firstFallbackOrigin);
@@ -218,7 +228,7 @@ describe("TripMap location marker", () => {
       travelerLocation: { lat: 47.61, lon: -122.33, isSharing: true },
     });
 
-    render(<TripMap token="test-token" role="support_crew" />);
+    render(<TripMap token="test-token" role="follower" />);
 
     await waitFor(() => {
       expect(getTravelerMarker()).toHaveClass("traveler-location-marker--pulsing");

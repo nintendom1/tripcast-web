@@ -2,14 +2,14 @@ import { useEffect, useRef } from "react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { useQuery } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Challenge, Role } from "../../convex/tripcastApi";
+import type { Mission, Role } from "../../convex/tripcastApi";
 
 // Visual style by lifecycle state
 const STATUS_COLORS: Record<string, string> = {
   proposed: "#94a3b8",     // muted slate — only visible to traveler/proposer
-  visible: "#1e3a5f",      // standard navy challenge pin
+  visible: "#1e3a5f",      // standard navy mission pin
   planned: "#1e3a5f",      // legacy — same as visible
-  in_progress: "#d97706",  // amber — active challenge
+  in_progress: "#d97706",  // amber - active mission
   completed: "#16a34a",    // green — completed
   dropped: "#94a3b8",      // muted — dropped
 };
@@ -18,16 +18,16 @@ type Props = {
   map: maplibregl.Map | null;
   token: string;
   role: Role;
-  onChallengeClick?: (challengeId: string) => void;
+  onMissionClick?: (missionId: string) => void;
 };
 
-function createPopupContent(challenge: Challenge) {
+function createPopupContent(Mission: Mission) {
   const wrapper = document.createElement("div");
   wrapper.className = "checkpoint-popup";
 
   const label = document.createElement("small");
-  label.textContent = "Challenge";
-  label.style.color = STATUS_COLORS[challenge.status] ?? "#1e3a5f";
+  label.textContent = "Mission";
+  label.style.color = STATUS_COLORS[Mission.status] ?? "#1e3a5f";
   label.style.fontWeight = "700";
   label.style.textTransform = "uppercase";
   label.style.fontSize = "10px";
@@ -35,22 +35,22 @@ function createPopupContent(challenge: Challenge) {
   wrapper.appendChild(label);
 
   const title = document.createElement("strong");
-  title.textContent = challenge.title;
+  title.textContent = Mission.title;
   wrapper.appendChild(title);
 
-  if (challenge.status === "proposed") {
+  if (Mission.status === "proposed") {
     const note = document.createElement("small");
     note.textContent = "Pending review";
     note.style.color = "#64748b";
     note.style.display = "block";
     wrapper.appendChild(note);
-  } else if (challenge.status === "in_progress") {
+  } else if (Mission.status === "in_progress") {
     const note = document.createElement("small");
     note.textContent = "In progress";
     note.style.color = "#d97706";
     note.style.display = "block";
     wrapper.appendChild(note);
-  } else if (challenge.status === "completed") {
+  } else if (Mission.status === "completed") {
     const note = document.createElement("small");
     note.textContent = "Completed";
     note.style.color = "#16a34a";
@@ -61,10 +61,10 @@ function createPopupContent(challenge: Challenge) {
   return wrapper;
 }
 
-export default function ChallengeMarkers({ map, token, role, onChallengeClick }: Props) {
+export default function MissionMarkers({ map, token, role, onMissionClick }: Props) {
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
 
-  const pins = useQuery(tripcastApi.challenges.listChallengeMapPins, { token });
+  const pins = useQuery(tripcastApi.missions.listMissionMapPins, { token });
 
   useEffect(() => {
     if (!map) return;
@@ -77,31 +77,31 @@ export default function ChallengeMarkers({ map, token, role, onChallengeClick }:
 
     markersRef.current = pins
       .filter((c) => c.lat !== undefined && c.lon !== undefined)
-      .map((challenge) => {
-        const color = STATUS_COLORS[challenge.status] ?? "#1e3a5f";
+      .map((Mission) => {
+        const color = STATUS_COLORS[Mission.status] ?? "#1e3a5f";
         const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
-          createPopupContent(challenge),
+          createPopupContent(Mission),
         );
 
         const marker = new maplibregl.Marker({ color })
-          .setLngLat([challenge.lon!, challenge.lat!])
+          .setLngLat([Mission.lon!, Mission.lat!])
           .setPopup(popup)
           .addTo(map);
 
-        if (onChallengeClick) {
+        if (onMissionClick) {
           marker.getElement().addEventListener("click", () => {
-            onChallengeClick(challenge._id);
+            onMissionClick(Mission._id);
           });
         }
 
-        return { marker, id: challenge._id };
+        return { marker, id: Mission._id };
       });
 
     return () => {
       markersRef.current.forEach(({ marker }) => marker.remove());
       markersRef.current = [];
     };
-  }, [map, pins, onChallengeClick]);
+  }, [map, pins, onMissionClick]);
 
   return null;
 }

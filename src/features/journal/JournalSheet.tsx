@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { HistoryEvent, HistoryEventType, HistoryStoryLevel, Role } from "../../convex/tripcastApi";
+import type { JournalEvent, JournalEventType, JournalNarrativeLevel, Role } from "../../convex/tripcastApi";
 import {
   Sheet,
   SheetBody,
@@ -34,60 +34,61 @@ import { getStateEmoji } from "../travelstate/travelerStateUtils";
 import { formatUsd } from "../travelfunds/currency";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { TERMS } from "../../copy/terminology";
 
 import EditCheckpointSheet from "./EditCheckpointSheet";
 
-type FilterTab = "story" | "all" | "checkins" | "challenges" | "votes";
+type FilterTab = "story" | "all" | "entries" | "missions" | "votes";
 
 const FILTER_TABS: { id: FilterTab; label: string }[] = [
-  { id: "story", label: "Story" },
+  { id: "story", label: TERMS.story },
   { id: "all", label: "All" },
-  { id: "checkins", label: "Check-ins" },
-  { id: "challenges", label: "Challenges" },
-  { id: "votes", label: "Votes" },
+  { id: "entries", label: "Entries" },
+  { id: "missions", label: TERMS.missions },
+  { id: "votes", label: TERMS.votes },
 ];
 
 const EMPTY_COPY: Record<FilterTab, string> = {
   story: "No story entries yet.",
   all: "No entries.",
-  checkins: "No check-ins yet.",
-  challenges: "No mission events yet.",
+  entries: "No entries yet.",
+  missions: "No mission events yet.",
   votes: "No vote events yet.",
 };
 
-function filterEvents(events: HistoryEvent[], tab: FilterTab): HistoryEvent[] {
+function filterEvents(events: JournalEvent[], tab: FilterTab): JournalEvent[] {
   switch (tab) {
     case "story": {
-      // Story tab = narrative content the reader wants to read: check-ins
-      // (story-level) and challenge completions that don't already have a
-      // paired story-level check-in pointing at the same challenge. The
-      // Complete-as-Story flow lands BOTH a `check_in` (with `challengeId`)
-      // and a `challenge_completed` event; the check-in is the canonical
-      // narrative row and the challenge_completed row is the auto-emitted
+      // Story tab = narrative content the reader wants to read: Stories
+      // (narrative-level) and mission completions that don't already have a
+      // paired narrative-level Story pointing at the same mission. The
+      // Complete-as-Story flow lands BOTH a `story` (with `missionId`)
+      // and a `mission_completed` event; the Story is the canonical
+      // narrative row and the mission_completed row is the auto-emitted
       // status announcement, so we hide it. The backend also tags
-      // `route_vote_resolved` + `challenge_planned` as storyLevel "story"
+      // `route_vote_resolved` + `mission_planned` as narrativeLevel "narrative"
       // — those are status announcements, not narratives.
-      const challengeIdsCoveredByCheckIns = new Set<string>();
+      const missionIdsCoveredByStories = new Set<string>();
       for (const e of events) {
-        if (e.type === "check_in" && e.storyLevel === "story" && e.challengeId) {
-          challengeIdsCoveredByCheckIns.add(e.challengeId);
+        if (e.type === "story" && e.narrativeLevel === "narrative" && e.missionId) {
+          missionIdsCoveredByStories.add(e.missionId);
         }
       }
       return events.filter((e) => {
-        if (e.storyLevel !== "story") return false;
-        if (e.type === "check_in") return true;
-        if (e.type === "challenge_completed") {
-          return !e.challengeId || !challengeIdsCoveredByCheckIns.has(e.challengeId);
+        if (e.narrativeLevel !== "narrative") return false;
+        if (e.type === "story") return true;
+        if (e.type === "mission_completed") {
+          return !e.missionId || !missionIdsCoveredByStories.has(e.missionId);
         }
         return false;
       });
     }
     case "all":
       return events;
-    case "checkins":
-      return events.filter((e) => e.type === "check_in");
-    case "challenges":
-      return events.filter((e) => e.type.startsWith("challenge_"));
+    case "entries":
+      return events.filter((e) => e.type === "story");
+    case "missions":
+      return events.filter((e) => e.type.startsWith("mission_"));
     case "votes":
       return events.filter((e) => e.type.startsWith("route_vote_"));
   }
@@ -101,13 +102,13 @@ type EventVisual = {
   kicker: string;
 };
 
-function visualForEvent(type: HistoryEventType, storyLevel: HistoryStoryLevel): EventVisual {
-  if (type === "check_in") {
-    return storyLevel === "story"
-      ? { Icon: Camera, tint: "var(--amber)", kicker: "Story · Check-in" }
-      : { Icon: MapPin, tint: "var(--ink-1)", kicker: "Check-in" };
+function visualForEvent(type: JournalEventType, narrativeLevel: JournalNarrativeLevel): EventVisual {
+  if (type === "story") {
+    return narrativeLevel === "narrative"
+      ? { Icon: Camera, tint: "var(--amber)", kicker: "Story" }
+      : { Icon: MapPin, tint: "var(--ink-1)", kicker: "Story" };
   }
-  if (type.startsWith("challenge_")) {
+  if (type.startsWith("mission_")) {
     return { Icon: Trophy, tint: "var(--plum)", kicker: "Mission" };
   }
   if (type.startsWith("route_vote_")) {
@@ -116,15 +117,15 @@ function visualForEvent(type: HistoryEventType, storyLevel: HistoryStoryLevel): 
   return { Icon: Sparkles, tint: "var(--teal)", kicker: "Event" };
 }
 
-function eventTypeLabel(type: HistoryEventType): string {
+function eventTypeLabel(type: JournalEventType): string {
   switch (type) {
-    case "check_in": return "Check-in";
-    case "challenge_proposed": return "Mission proposed";
-    case "challenge_visible": return "Mission accepted";
-    case "challenge_planned": return "Mission planned";
-    case "challenge_in_progress": return "Mission started";
-    case "challenge_completed": return "Mission completed";
-    case "challenge_dropped": return "Mission dropped";
+    case "story": return TERMS.checkIn;
+    case "mission_proposed": return "Mission proposed";
+    case "mission_visible": return "Mission accepted";
+    case "mission_planned": return "Mission planned";
+    case "mission_in_progress": return "Mission started";
+    case "mission_completed": return "Mission completed";
+    case "mission_dropped": return "Mission dropped";
     case "route_vote_opened": return "Vote opened";
     case "route_vote_closed": return "Vote closed";
     case "route_vote_resolved": return "Vote resolved";
@@ -140,33 +141,31 @@ function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-type HistorySheetProps = {
-  events: HistoryEvent[];
+type JournalSheetProps = {
+  events: JournalEvent[];
   token: string;
-  /** Role gates the edit/delete swipe actions on check-in rows — Traveler only. */
+  /** Role gates the edit/delete swipe actions on Story rows — Traveler only. */
   role?: Role;
   onClose: () => void;
-  onCheckInSelect: (event: HistoryEvent) => void;
-  onStorySelect: (event: HistoryEvent) => void;
+  onStorySelect: (event: JournalEvent) => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   onMarkAllRead: () => void;
 };
 
-export default function HistorySheet({
+export default function JournalSheet({
   events,
   token,
   role,
   onClose,
-  onCheckInSelect,
   onStorySelect,
   onLocationFocus,
   onMarkAllRead,
-}: HistorySheetProps) {
+}: JournalSheetProps) {
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
   const [swipedId, setSwipedId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<HistoryEvent | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<JournalEvent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<HistoryEvent | null>(null);
+  const [editingEvent, setEditingEvent] = useState<JournalEvent | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
   const [storyTitle, setStoryTitle] = useState("");
   const [storyBody, setStoryBody] = useState("");
@@ -178,7 +177,7 @@ export default function HistorySheet({
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const music = useMusicSafe();
-  const log = useDebugLogger("HistorySheet", "src/features/history/HistorySheet.tsx");
+  const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
@@ -198,7 +197,7 @@ export default function HistorySheet({
   const isTraveler = role === "traveler";
 
   async function handleConfirmDelete() {
-    if (!pendingDelete || pendingDelete.type !== "check_in" || !pendingDelete.checkpointId) {
+    if (!pendingDelete || pendingDelete.type !== "story" || !pendingDelete.checkpointId) {
       setPendingDelete(null);
       return;
     }
@@ -262,9 +261,9 @@ export default function HistorySheet({
         <SheetGrabber />
         <div className="flex items-start justify-between gap-2 px-4 pt-2">
           <div className="flex flex-col gap-1">
-            <SheetKicker dotColor="var(--flag)">Journal</SheetKicker>
+            <SheetKicker dotColor="var(--flag)">{TERMS.journal}</SheetKicker>
             <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              {viewMode === "create" ? "New story entry" : "Trip story"}
+              {viewMode === "create" ? `New ${TERMS.story.toLowerCase()} entry` : TERMS.journal}
             </SheetTitle>
           </div>
           <div className="flex items-center gap-2">
@@ -279,7 +278,7 @@ export default function HistorySheet({
                 New
               </Button>
             )}
-            <SheetCloseButton aria-label="Close history" />
+            <SheetCloseButton aria-label="Close journal" />
           </div>
         </div>
 
@@ -322,12 +321,12 @@ export default function HistorySheet({
           </SheetBody>
         ) : (
           <>
-        <SheetTabs aria-label="History filters" className="mt-3">
+        <SheetTabs aria-label="Journal filters" className="mt-3">
           {FILTER_TABS.map((tab) => (
             <SheetTab
               key={tab.id}
-              id={`history-tab-${tab.id}`}
-              aria-controls="history-tabpanel"
+              id={`journal-tab-${tab.id}`}
+              aria-controls="journal-tabpanel"
               active={activeTab === tab.id}
               onClick={() => {
                 log.logInteraction("filter:change", { from: activeTab, to: tab.id });
@@ -341,9 +340,9 @@ export default function HistorySheet({
         </SheetTabs>
 
         <SheetBody
-          id="history-tabpanel"
+          id="journal-tabpanel"
           role="tabpanel"
-          aria-labelledby={`history-tab-${activeTab}`}
+          aria-labelledby={`journal-tab-${activeTab}`}
           style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >
           {filtered.length === 0 ? (
@@ -353,26 +352,22 @@ export default function HistorySheet({
               {filtered.map((event, index) => {
                 let actualCostUsd: number | undefined;
                 if (costMap) {
-                  if (event.type === "check_in" && event.checkpointId) {
+                  if (event.type === "story" && event.checkpointId) {
                     actualCostUsd = costMap.byCheckpointId[event.checkpointId];
-                  } else if (event.type === "challenge_completed" && event.challengeId) {
-                    actualCostUsd = costMap.byChallengeId[event.challengeId];
+                  } else if (event.type === "mission_completed" && event.missionId) {
+                    actualCostUsd = costMap.byMissionId[event.missionId];
                   }
                 }
-                const canSwipe = isTraveler && event.type === "check_in" && Boolean(event.checkpointId);
+                const canSwipe = isTraveler && event.type === "story" && Boolean(event.checkpointId);
                 const item = (
                   <StoryRailItem
                     event={event}
                     isLast={index === filtered.length - 1}
                     actualCostUsd={actualCostUsd}
                     onSelect={() => {
-                      log.logInteraction("row:click", { type: event.type, storyLevel: event.storyLevel });
-                      if (event.type === "check_in") {
-                        if (event.storyLevel === "story") {
-                          onStorySelect(event);
-                        } else {
-                          onCheckInSelect(event);
-                        }
+                      log.logInteraction("row:click", { type: event.type, narrativeLevel: event.narrativeLevel });
+                      if (event.type === "story") {
+                        onStorySelect(event);
                       } else if (event.lat !== undefined && event.lon !== undefined) {
                         onLocationFocus({ lat: event.lat, lon: event.lon });
                       }
@@ -407,7 +402,7 @@ export default function HistorySheet({
       onOpenChange={(open) => {
         if (!open) setPendingDelete(null);
       }}
-      title="Delete this check-in?"
+      title="Delete this Story?"
       itemLabel={pendingDelete?.title ?? undefined}
       description="The pin disappears from the map and the journal. Linked transactions are kept but unlinked. This can't be undone."
       onConfirm={handleConfirmDelete}
@@ -424,16 +419,16 @@ export default function HistorySheet({
 }
 
 type StoryRailItemProps = {
-  event: HistoryEvent;
+  event: JournalEvent;
   isLast: boolean;
   actualCostUsd?: number;
   onSelect: () => void;
 };
 
 function StoryRailItem({ event, isLast, actualCostUsd, onSelect }: StoryRailItemProps) {
-  const visual = visualForEvent(event.type, event.storyLevel);
+  const visual = visualForEvent(event.type, event.narrativeLevel);
   const Icon = visual.Icon;
-  const isCheckIn = event.type === "check_in";
+  const isCheckIn = event.type === "story";
   const hasState =
     event.moodValue !== undefined ||
     event.energyLevel !== undefined ||
