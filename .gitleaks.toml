@@ -1,10 +1,10 @@
-title = "TripCast Gitleaks Rules"
+title = "TripCast"
 
 [extend]
 useDefault = true
 
 [[rules]]
-id = "convex-url"
-description = "Convex deployment or site URL"
-regex = '''https://[a-z0-9-]+\.(convex\.cloud|convex\.site)'''
-tags = ["convex", "url", "tripcast"]
+id = "tripcast-convex-url"
+description = "Convex deployment or site URL committed to source"
+regex = '''https?://[a-z0-9-]+\.convex\.(cloud|site)'''
+tags = ["convex", "deployment-url"]
