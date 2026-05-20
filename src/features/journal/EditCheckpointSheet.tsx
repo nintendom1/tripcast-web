@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useMutation } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { HistoryEvent } from "../../convex/tripcastApi";
+import type { JournalEvent } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -18,7 +18,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 
 export interface EditCheckpointSheetProps {
   /** The Story event to edit. `null` closes the sheet. */
-  event: HistoryEvent | null;
+  event: JournalEvent | null;
   token: string;
   onClose: () => void;
 }
@@ -58,7 +58,7 @@ export default function EditCheckpointSheet({ event, token, onClose }: EditCheck
       setTitle(event.title ?? "");
       setNote(event.body ?? "");
       setLocationLabel(event.locationLabel ?? "");
-      setShowInStory(event.storyLevel !== "activity");
+      setShowInStory(event.narrativeLevel !== "activity");
       setError(null);
       setIsSaving(false);
     }

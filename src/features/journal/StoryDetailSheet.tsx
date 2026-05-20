@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { Camera } from "lucide-react";
+import { X } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
+import { StatBar } from "../../components/rpg/StatBar";
 
-import type { HistoryEvent } from "../../convex/tripcastApi";
+import type { JournalEvent } from "../../convex/tripcastApi";
 import { log } from "../../debug/debugLogger";
 import {
   Sheet,
@@ -11,10 +13,21 @@ import {
   SheetCloseButton,
   SheetContent,
   SheetGrabber,
+  SheetHeader,
   SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { RevealText } from "../../components/ui/RevealText";
+import {
+  MOOD_LABELS,
+  ENERGY_LABELS,
+  STOMACH_LABELS,
+  STRESS_LABELS,
+  SCHEDULE_LABELS,
+  ENERGY_SCORE_FOR_LEVEL,
+  STRESS_SCORE_FOR_LEVEL,
+  STOMACH_SCORE_FOR_LEVEL,
+} from "../travelstate/travelerStateUtils";
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -28,8 +41,68 @@ function formatDate(ts: number): string {
   });
 }
 
+function StatChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="rounded-full bg-muted px-2 py-0.5 font-medium">{value}</span>
+    </div>
+  );
+}
+
+function StatBarRow({
+  label,
+  value,
+  score,
+  maxScore = 100,
+  colorClass,
+}: {
+  label: string;
+  value: string;
+  score: number;
+  maxScore?: number;
+  colorClass: string;
+}) {
+  const pct = Math.round((score / maxScore) * 100);
+  return (
+    <div className="grid gap-0.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium text-muted-foreground">{label}</span>
+        <span className="font-semibold">{value}</span>
+      </div>
+      <StatBar value={pct} label="" colorClass={colorClass} />
+    </div>
+  );
+}
+
+function StomachBarRow({ level }: { level: string }) {
+  const score = STOMACH_SCORE_FOR_LEVEL[level as keyof typeof STOMACH_SCORE_FOR_LEVEL] ?? 0;
+  const label = STOMACH_LABELS[level as keyof typeof STOMACH_LABELS] ?? level;
+  const maxScore = 150;
+  const markerPct = (100 / 150) * 100;
+  const totalFillPct = (score / maxScore) * 100;
+  const normalFillPct = Math.min(totalFillPct, markerPct);
+  const overflowFillPct = Math.max(0, totalFillPct - markerPct);
+
+  return (
+    <div className="grid gap-0.5">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium text-muted-foreground">Stomach</span>
+        <span className="font-semibold">{label}</span>
+      </div>
+      <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div className="absolute inset-y-0 left-0 bg-orange-500" style={{ width: `${normalFillPct}%` }} />
+        {overflowFillPct > 0 && (
+          <div className="absolute inset-y-0 bg-amber-700" style={{ left: `${markerPct}%`, width: `${overflowFillPct}%` }} />
+        )}
+        <div className="absolute inset-y-0 w-px bg-background/60" style={{ left: `${markerPct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 type StoryDetailSheetProps = {
-  event: HistoryEvent | null;
+  event: JournalEvent | null;
   onClose: () => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   /** Title of the mission the story was filed against, when `event.missionId`
@@ -39,18 +112,6 @@ type StoryDetailSheetProps = {
   onNavigateToMission?: (id: string) => void;
 };
 
-/**
- * StoryDetailSheet — immersive view for story-level check-ins.
- *
- * Renders the Story body with a letter-by-letter reveal driven by
- * `ReadingSpeedProvider` (no-op when the user has chosen "instant"). The sheet
- * takes more vertical space than `CheckInDetailSheet` — story posts are the
- * narrative payoff of a Story and deserve room to breathe.
- *
- * Inline image blocks are deliberately out of scope for this part — they
- * require a `blocks` schema addition in `tripcast-backend` that is bundled
- * with the rest of the deferred backend mutations.
- */
 export default function StoryDetailSheet({
   event,
   onClose,
@@ -63,7 +124,7 @@ export default function StoryDetailSheet({
     if (event) {
       log("info", "StoryDetailSheet", "sheet:open", "ui", {
         checkpointId: event.checkpointId,
-        storyLevel: event.storyLevel,
+        narrativeLevel: event.narrativeLevel,
       });
     }
   }, [event]);
@@ -76,6 +137,8 @@ export default function StoryDetailSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?._id]);
 
+  const isNarrative = event?.narrativeLevel === "narrative";
+
   return (
     <Sheet
       open={Boolean(event)}
@@ -87,31 +150,39 @@ export default function StoryDetailSheet({
       <SheetContent
         side="bottom"
         showBackdrop={false}
-        className="z-[11] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+        className={
+          isNarrative
+            ? "z-[11] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+            : "z-[11] shadow-2xl max-h-[50dvh]"
+        }
         data-role="story-detail"
       >
-        <SheetGrabber />
+        {isNarrative ? <SheetGrabber /> : null}
         {event ? (
-          <StoryBody
-            key={event._id}
-            event={event}
-            missionTitle={missionTitle}
-            missionId={missionId}
-            onNavigateToMission={onNavigateToMission}
-          />
+          isNarrative ? (
+            <NarrativeBody
+              key={event._id}
+              event={event}
+              missionTitle={missionTitle}
+              missionId={missionId}
+              onNavigateToMission={onNavigateToMission}
+            />
+          ) : (
+            <ActivityBody key={event._id} event={event} onClose={onClose} />
+          )
         ) : null}
       </SheetContent>
     </Sheet>
   );
 }
 
-function StoryBody({
+function NarrativeBody({
   event,
   missionTitle,
   missionId,
   onNavigateToMission,
 }: {
-  event: HistoryEvent;
+  event: JournalEvent;
   missionTitle?: string;
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
@@ -172,6 +243,103 @@ function StoryBody({
           </div>
         )}
       </SheetBody>
+    </>
+  );
+}
+
+function ActivityBody({
+  event,
+  onClose,
+}: {
+  event: JournalEvent;
+  onClose: () => void;
+}) {
+  const hasState =
+    event.moodValue !== undefined ||
+    event.energyLevel !== undefined ||
+    event.stomachLevel !== undefined ||
+    event.stressLevel !== undefined ||
+    event.schedulePressureLevel !== undefined ||
+    event.statusNote !== undefined;
+
+  return (
+    <>
+      <SheetHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <p className="text-xs text-muted-foreground">
+            {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
+          </p>
+          <SheetTitle className="text-base font-bold text-navy truncate">
+            {event.title ?? "Story"}
+          </SheetTitle>
+          {event.locationLabel && (
+            <p className="text-xs text-muted-foreground">{event.locationLabel}</p>
+          )}
+        </div>
+        <button
+          type="button"
+          aria-label="Close"
+          className="ml-3 shrink-0 rounded-md p-1.5 hover:bg-muted transition-colors"
+          onClick={onClose}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </SheetHeader>
+
+      <div
+        className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4"
+        style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+      >
+        {event.body && (
+          <p className="text-sm text-foreground whitespace-pre-wrap">{event.body}</p>
+        )}
+
+        {hasState && (
+          <div className="rounded-md border bg-muted/20 px-3 py-3 grid gap-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              State at this story
+            </p>
+
+            {event.moodValue && (
+              <StatChip
+                label="Mood"
+                value={MOOD_LABELS[event.moodValue as keyof typeof MOOD_LABELS] ?? event.moodValue}
+              />
+            )}
+
+            {event.energyLevel && (
+              <StatBarRow
+                label="Energy"
+                value={ENERGY_LABELS[event.energyLevel as keyof typeof ENERGY_LABELS] ?? event.energyLevel}
+                score={ENERGY_SCORE_FOR_LEVEL[event.energyLevel as keyof typeof ENERGY_SCORE_FOR_LEVEL] ?? 50}
+                colorClass="bg-amber-500"
+              />
+            )}
+
+            {event.stomachLevel && <StomachBarRow level={event.stomachLevel} />}
+
+            {event.stressLevel && (
+              <StatBarRow
+                label="Stress"
+                value={STRESS_LABELS[event.stressLevel as keyof typeof STRESS_LABELS] ?? event.stressLevel}
+                score={STRESS_SCORE_FOR_LEVEL[event.stressLevel as keyof typeof STRESS_SCORE_FOR_LEVEL] ?? 50}
+                colorClass="bg-red-500"
+              />
+            )}
+
+            {event.schedulePressureLevel && (
+              <StatChip
+                label="Schedule"
+                value={SCHEDULE_LABELS[event.schedulePressureLevel as keyof typeof SCHEDULE_LABELS] ?? event.schedulePressureLevel}
+              />
+            )}
+
+            {event.statusNote && (
+              <p className="text-xs italic text-muted-foreground">&ldquo;{event.statusNote}&rdquo;</p>
+            )}
+          </div>
+        )}
+      </div>
     </>
   );
 }

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { HistoryEvent, HistoryEventType, HistoryStoryLevel, Role } from "../../convex/tripcastApi";
+import type { JournalEvent, JournalEventType, JournalNarrativeLevel, Role } from "../../convex/tripcastApi";
 import {
   Sheet,
   SheetBody,
@@ -38,12 +38,12 @@ import { TERMS } from "../../copy/terminology";
 
 import EditCheckpointSheet from "./EditCheckpointSheet";
 
-type FilterTab = "story" | "all" | "checkins" | "missions" | "votes";
+type FilterTab = "story" | "all" | "entries" | "missions" | "votes";
 
 const FILTER_TABS: { id: FilterTab; label: string }[] = [
   { id: "story", label: TERMS.story },
   { id: "all", label: "All" },
-  { id: "checkins", label: "Check Ins" },
+  { id: "entries", label: "Entries" },
   { id: "missions", label: TERMS.missions },
   { id: "votes", label: TERMS.votes },
 ];
@@ -51,42 +51,42 @@ const FILTER_TABS: { id: FilterTab; label: string }[] = [
 const EMPTY_COPY: Record<FilterTab, string> = {
   story: "No story entries yet.",
   all: "No entries.",
-  checkins: "No Check Ins yet.",
+  entries: "No entries yet.",
   missions: "No mission events yet.",
   votes: "No vote events yet.",
 };
 
-function filterEvents(events: HistoryEvent[], tab: FilterTab): HistoryEvent[] {
+function filterEvents(events: JournalEvent[], tab: FilterTab): JournalEvent[] {
   switch (tab) {
     case "story": {
       // Story tab = narrative content the reader wants to read: Stories
-      // (story-level) and mission completions that don't already have a
-      // paired story-level Story pointing at the same mission. The
-      // Complete-as-Story flow lands BOTH a `check_in` (with `missionId`)
+      // (narrative-level) and mission completions that don't already have a
+      // paired narrative-level Story pointing at the same mission. The
+      // Complete-as-Story flow lands BOTH a `story` (with `missionId`)
       // and a `mission_completed` event; the Story is the canonical
       // narrative row and the mission_completed row is the auto-emitted
       // status announcement, so we hide it. The backend also tags
-      // `route_vote_resolved` + `mission_planned` as storyLevel "story"
+      // `route_vote_resolved` + `mission_planned` as narrativeLevel "narrative"
       // — those are status announcements, not narratives.
-      const missionIdsCoveredByCheckIns = new Set<string>();
+      const missionIdsCoveredByStories = new Set<string>();
       for (const e of events) {
-        if (e.type === "check_in" && e.storyLevel === "story" && e.missionId) {
-          missionIdsCoveredByCheckIns.add(e.missionId);
+        if (e.type === "story" && e.narrativeLevel === "narrative" && e.missionId) {
+          missionIdsCoveredByStories.add(e.missionId);
         }
       }
       return events.filter((e) => {
-        if (e.storyLevel !== "story") return false;
-        if (e.type === "check_in") return true;
+        if (e.narrativeLevel !== "narrative") return false;
+        if (e.type === "story") return true;
         if (e.type === "mission_completed") {
-          return !e.missionId || !missionIdsCoveredByCheckIns.has(e.missionId);
+          return !e.missionId || !missionIdsCoveredByStories.has(e.missionId);
         }
         return false;
       });
     }
     case "all":
       return events;
-    case "checkins":
-      return events.filter((e) => e.type === "check_in");
+    case "entries":
+      return events.filter((e) => e.type === "story");
     case "missions":
       return events.filter((e) => e.type.startsWith("mission_"));
     case "votes":
@@ -102,9 +102,9 @@ type EventVisual = {
   kicker: string;
 };
 
-function visualForEvent(type: HistoryEventType, storyLevel: HistoryStoryLevel): EventVisual {
-  if (type === "check_in") {
-    return storyLevel === "story"
+function visualForEvent(type: JournalEventType, narrativeLevel: JournalNarrativeLevel): EventVisual {
+  if (type === "story") {
+    return narrativeLevel === "narrative"
       ? { Icon: Camera, tint: "var(--amber)", kicker: "Story" }
       : { Icon: MapPin, tint: "var(--ink-1)", kicker: "Story" };
   }
@@ -117,9 +117,9 @@ function visualForEvent(type: HistoryEventType, storyLevel: HistoryStoryLevel): 
   return { Icon: Sparkles, tint: "var(--teal)", kicker: "Event" };
 }
 
-function eventTypeLabel(type: HistoryEventType): string {
+function eventTypeLabel(type: JournalEventType): string {
   switch (type) {
-    case "check_in": return TERMS.checkIn;
+    case "story": return TERMS.checkIn;
     case "mission_proposed": return "Mission proposed";
     case "mission_visible": return "Mission accepted";
     case "mission_planned": return "Mission planned";
@@ -141,33 +141,31 @@ function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-type HistorySheetProps = {
-  events: HistoryEvent[];
+type JournalSheetProps = {
+  events: JournalEvent[];
   token: string;
   /** Role gates the edit/delete swipe actions on Story rows — Traveler only. */
   role?: Role;
   onClose: () => void;
-  onCheckInSelect: (event: HistoryEvent) => void;
-  onStorySelect: (event: HistoryEvent) => void;
+  onStorySelect: (event: JournalEvent) => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   onMarkAllRead: () => void;
 };
 
-export default function HistorySheet({
+export default function JournalSheet({
   events,
   token,
   role,
   onClose,
-  onCheckInSelect,
   onStorySelect,
   onLocationFocus,
   onMarkAllRead,
-}: HistorySheetProps) {
+}: JournalSheetProps) {
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
   const [swipedId, setSwipedId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<HistoryEvent | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<JournalEvent | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<HistoryEvent | null>(null);
+  const [editingEvent, setEditingEvent] = useState<JournalEvent | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
   const [storyTitle, setStoryTitle] = useState("");
   const [storyBody, setStoryBody] = useState("");
@@ -179,7 +177,7 @@ export default function HistorySheet({
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const music = useMusicSafe();
-  const log = useDebugLogger("HistorySheet", "src/features/journal/HistorySheet.tsx");
+  const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
@@ -199,7 +197,7 @@ export default function HistorySheet({
   const isTraveler = role === "traveler";
 
   async function handleConfirmDelete() {
-    if (!pendingDelete || pendingDelete.type !== "check_in" || !pendingDelete.checkpointId) {
+    if (!pendingDelete || pendingDelete.type !== "story" || !pendingDelete.checkpointId) {
       setPendingDelete(null);
       return;
     }
@@ -354,26 +352,22 @@ export default function HistorySheet({
               {filtered.map((event, index) => {
                 let actualCostUsd: number | undefined;
                 if (costMap) {
-                  if (event.type === "check_in" && event.checkpointId) {
+                  if (event.type === "story" && event.checkpointId) {
                     actualCostUsd = costMap.byCheckpointId[event.checkpointId];
                   } else if (event.type === "mission_completed" && event.missionId) {
                     actualCostUsd = costMap.byMissionId[event.missionId];
                   }
                 }
-                const canSwipe = isTraveler && event.type === "check_in" && Boolean(event.checkpointId);
+                const canSwipe = isTraveler && event.type === "story" && Boolean(event.checkpointId);
                 const item = (
                   <StoryRailItem
                     event={event}
                     isLast={index === filtered.length - 1}
                     actualCostUsd={actualCostUsd}
                     onSelect={() => {
-                      log.logInteraction("row:click", { type: event.type, storyLevel: event.storyLevel });
-                      if (event.type === "check_in") {
-                        if (event.storyLevel === "story") {
-                          onStorySelect(event);
-                        } else {
-                          onCheckInSelect(event);
-                        }
+                      log.logInteraction("row:click", { type: event.type, narrativeLevel: event.narrativeLevel });
+                      if (event.type === "story") {
+                        onStorySelect(event);
                       } else if (event.lat !== undefined && event.lon !== undefined) {
                         onLocationFocus({ lat: event.lat, lon: event.lon });
                       }
@@ -425,16 +419,16 @@ export default function HistorySheet({
 }
 
 type StoryRailItemProps = {
-  event: HistoryEvent;
+  event: JournalEvent;
   isLast: boolean;
   actualCostUsd?: number;
   onSelect: () => void;
 };
 
 function StoryRailItem({ event, isLast, actualCostUsd, onSelect }: StoryRailItemProps) {
-  const visual = visualForEvent(event.type, event.storyLevel);
+  const visual = visualForEvent(event.type, event.narrativeLevel);
   const Icon = visual.Icon;
-  const isCheckIn = event.type === "check_in";
+  const isCheckIn = event.type === "story";
   const hasState =
     event.moodValue !== undefined ||
     event.energyLevel !== undefined ||

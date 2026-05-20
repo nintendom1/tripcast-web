@@ -8,7 +8,7 @@ import {
   tripcastApi,
   type AddCheckpointArgs,
   type Checkpoint,
-  type HistoryEvent,
+  type JournalEvent,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
 } from "../../convex/tripcastApi";
@@ -46,10 +46,9 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
-import HistorySheet from "../journal/HistorySheet";
-import CheckInDetailSheet from "../journal/CheckInDetailSheet";
+import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
-import { useHistoryUnread } from "../journal/useHistoryUnread";
+import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
@@ -416,11 +415,9 @@ export default function TripMap({
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
-  const [selectedCheckInEvent, setSelectedCheckInEvent] = useState<HistoryEvent | null>(null);
-  const [selectedStoryEvent, setSelectedStoryEvent] = useState<HistoryEvent | null>(null);
-  const [checkInOpenedFromHistory, setCheckInOpenedFromHistory] = useState(false);
-  const [storyOpenedFromHistory, setStoryOpenedFromHistory] = useState(false);
+  const [isJournalOpen, setIsJournalOpen] = useState(false);
+  const [selectedStoryEvent, setSelectedStoryEvent] = useState<JournalEvent | null>(null);
+  const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
@@ -446,16 +443,16 @@ export default function TripMap({
     token,
   });
 
-  const historyEvents = useQuery(tripcastApi.historyEvents.listHistoryEvents, { token }) ?? [];
-  const { unreadCount, markAllRead } = useHistoryUnread(historyEvents);
+  const journalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
+  const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
 
   const allMissionsForBadge = useQuery(
     tripcastApi.missions.travelerListMissions,
     role === "traveler" ? { token } : "skip",
   );
   const crewMissions = useQuery(
-    tripcastApi.missions.supportCrewListMissions,
-    role === "support_crew" ? { token } : "skip",
+    tripcastApi.missions.followerListMissions,
+    role === "follower" ? { token } : "skip",
   );
   const missionBadgeCount =
     role === "traveler"
@@ -480,17 +477,17 @@ export default function TripMap({
     musicRef.current = music;
   }, [music]);
 
-  function openHistory() {
-    if (isHistoryOpen) {
+  function openJournal() {
+    if (isJournalOpen) {
       log.logInteraction("panel:close", { panel: "journal" });
       music.sfx("close");
-      setIsHistoryOpen(false);
+      setIsJournalOpen(false);
       return;
     }
     log.logInteraction("panel:open", { panel: "journal" });
     performance.mark("tripcast:debug:journal:open");
     music.sfx("open");
-    setIsHistoryOpen(true);
+    setIsJournalOpen(true);
     setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
@@ -506,7 +503,7 @@ export default function TripMap({
     performance.mark("tripcast:debug:Missions:open");
     music.sfx("open");
     setIsMissionsPanelOpen(true);
-    setIsHistoryOpen(false);
+    setIsJournalOpen(false);
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
   }
@@ -521,7 +518,7 @@ export default function TripMap({
     performance.mark("tripcast:debug:votes:open");
     music.sfx("open");
     setIsVotePanelOpen(true);
-    setIsHistoryOpen(false);
+    setIsJournalOpen(false);
     setIsMissionsPanelOpen(false);
     setIsTravelFundsSheetOpen(false);
   }
@@ -536,12 +533,12 @@ export default function TripMap({
     performance.mark("tripcast:debug:funds:open");
     music.sfx("open");
     setIsTravelFundsSheetOpen(true);
-    setIsHistoryOpen(false);
+    setIsJournalOpen(false);
     setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(false);
   }
 
-  const activeDockTab: DockTab | null = isHistoryOpen
+  const activeDockTab: DockTab | null = isJournalOpen
     ? "journal"
     : isMissionsPanelOpen
       ? "missions"
@@ -553,14 +550,14 @@ export default function TripMap({
 
   function handleDockSelect(tab: DockTab) {
     setFanOpen(false);
-    if (tab === "journal") openHistory();
+    if (tab === "journal") openJournal();
     else if (tab === "missions") openMissions();
     else if (tab === "votes") openVotes();
     else if (tab === "funds") openFunds();
   }
 
   function handleDockAdd() {
-    if (role === "support_crew") {
+    if (role === "follower") {
       openMissions();
       return;
     }
@@ -760,8 +757,7 @@ export default function TripMap({
     setVoteOptionNumberById(null);
     setCoordinatePickMode(null);
     coordinatePickModeRef.current = null;
-    setIsHistoryOpen(false);
-    setSelectedCheckInEvent(null);
+    setIsJournalOpen(false);
     setSelectedStoryEvent(null);
   }, [tripDataResetNonce]);
 
@@ -839,7 +835,7 @@ export default function TripMap({
     music.sfx("page");
     setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(true);
-    setIsHistoryOpen(false);
+    setIsJournalOpen(false);
     setIsTravelFundsSheetOpen(false);
     setPendingOpenVoteId(voteId);
   }
@@ -851,12 +847,12 @@ export default function TripMap({
     setVoteMapOverlay(null);
     setVoteOptionNumberById(null);
     setIsMissionsPanelOpen(true);
-    setIsHistoryOpen(false);
+    setIsJournalOpen(false);
     setIsTravelFundsSheetOpen(false);
     setPendingOpenDetailMissionId(missionId);
   }
 
-  function handleOpenLinkedStory(event: HistoryEvent) {
+  function handleOpenLinkedStory(event: JournalEvent) {
     log.logInteraction("panel:navigate", { from: "Missions", to: "story", eventId: event._id });
     music.sfx("page");
     setSelectedStoryEvent(event);
@@ -996,10 +992,10 @@ export default function TripMap({
     });
   }
 
-  function handleCheckInDetailLocationFocus(coordinate: { lat: number; lon: number }) {
+  function handleStoryDetailLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
-    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "checkin-detail:location-focus" });
+    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "story-detail:location-focus" });
     const mapContainer = map.getContainer();
     const mapHeight = mapContainer.clientHeight;
     const mapWidth = mapContainer.clientWidth;
@@ -1009,7 +1005,7 @@ export default function TripMap({
     const cardsBottom = cardsRect ? cardsRect.bottom : 0;
 
     // Measure actual rendered sheet height; fall back to 50% of mapHeight if not mounted yet.
-    const sheetEl = document.querySelector('[data-role="checkin-detail"]') as HTMLElement | null;
+    const sheetEl = document.querySelector('[data-role="story-detail"]') as HTMLElement | null;
     const rawSheetHeight = sheetEl?.offsetHeight ?? 0;
     const sheetHeight = rawSheetHeight > 0 ? rawSheetHeight : Math.round(mapHeight * 0.50);
 
@@ -1120,17 +1116,11 @@ export default function TripMap({
         checkpoints={checkpoints}
         onCheckpointClick={(checkpoint) => {
           if (isPlacementMode || coordinatePickMode) return;
-          const event = historyEvents.find((e) => e.checkpointId === checkpoint._id);
+          const event = journalEvents.find((e) => e.checkpointId === checkpoint._id);
           if (!event) return;
-          if (event.storyLevel === "story") {
-            music.sfx("page");
-            setStoryOpenedFromHistory(false);
-            setSelectedStoryEvent(event);
-          } else {
-            music.sfx("page");
-            setCheckInOpenedFromHistory(false);
-            setSelectedCheckInEvent(event);
-          }
+          music.sfx("page");
+          setStoryOpenedFromJournal(false);
+          setSelectedStoryEvent(event);
         }}
       />
       <TravelerLocationMarker
@@ -1493,35 +1483,29 @@ export default function TripMap({
       </FeatureBoundary>
 
       <AnimatePresence>
-        {isHistoryOpen && (
+        {isJournalOpen && (
           <FeatureBoundary
-            resetKeys={[isHistoryOpen, historyEvents.length]}
+            resetKeys={[isJournalOpen, journalEvents.length]}
             onClose={() => {
               music.sfx("close");
-              setIsHistoryOpen(false);
+              setIsJournalOpen(false);
             }}
             title="Journal hit a problem."
             message="Try again, or close journal and reopen it."
             fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
           >
-            <HistorySheet
-              events={historyEvents}
+            <JournalSheet
+              events={journalEvents}
               token={token}
               role={role}
               onClose={() => {
                 music.sfx("close");
-                setIsHistoryOpen(false);
-              }}
-              onCheckInSelect={(event) => {
-                music.sfx("page");
-                setIsHistoryOpen(false);
-                setCheckInOpenedFromHistory(true);
-                setSelectedCheckInEvent(event);
+                setIsJournalOpen(false);
               }}
               onStorySelect={(event) => {
                 music.sfx("page");
-                setIsHistoryOpen(false);
-                setStoryOpenedFromHistory(true);
+                setIsJournalOpen(false);
+                setStoryOpenedFromJournal(true);
                 setSelectedStoryEvent(event);
               }}
               onLocationFocus={handleHistoryLocationFocus}
@@ -1531,28 +1515,16 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
-      <CheckInDetailSheet
-        event={selectedCheckInEvent}
-        onClose={() => {
-          music.sfx(checkInOpenedFromHistory ? "page" : "close");
-          const returnToHistory = checkInOpenedFromHistory;
-          setSelectedCheckInEvent(null);
-          setCheckInOpenedFromHistory(false);
-          if (returnToHistory) setIsHistoryOpen(true);
-        }}
-        onLocationFocus={handleCheckInDetailLocationFocus}
-      />
-
       <StoryDetailSheet
         event={selectedStoryEvent}
         onClose={() => {
-          music.sfx(storyOpenedFromHistory ? "page" : "close");
-          const returnToHistory = storyOpenedFromHistory;
+          music.sfx(storyOpenedFromJournal ? "page" : "close");
+          const returnToJournal = storyOpenedFromJournal;
           setSelectedStoryEvent(null);
-          setStoryOpenedFromHistory(false);
-          if (returnToHistory) setIsHistoryOpen(true);
+          setStoryOpenedFromJournal(false);
+          if (returnToJournal) setIsJournalOpen(true);
         }}
-        onLocationFocus={handleCheckInDetailLocationFocus}
+        onLocationFocus={handleStoryDetailLocationFocus}
         missionTitle={
           selectedStoryEvent?.missionId
             ? (missionsForLookup ?? []).find((c) => c._id === selectedStoryEvent.missionId)?.title

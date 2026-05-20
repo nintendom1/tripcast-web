@@ -5,7 +5,7 @@ import type { FunctionReference } from "convex/server";
 // Shared types
 // ---------------------------------------------------------------------------
 
-export type Role = "traveler" | "support_crew";
+export type Role = "traveler" | "follower";
 
 export type CheckpointSource = "right_click" | "tap_add_mode" | "long_press" | "current_activity" | "inline_form";
 
@@ -35,7 +35,7 @@ export type AddCheckpointArgs = {
   lon?: number;
   source: CheckpointSource;
   // Optional link back to the mission a Story narrates. Persisted on
-  // the checkpoint and threaded into the emitted check_in event so
+  // the checkpoint and threaded into the emitted story event so
   // the Story tab can fold the paired mission_completed row.
   missionId?: string;
   // Optional inline state snapshot (atomic with checkpoint save)
@@ -425,8 +425,8 @@ export type UpdateTravelerStateArgs = {
 // Journal types
 // ---------------------------------------------------------------------------
 
-export type HistoryEventType =
-  | "check_in"
+export type JournalEventType =
+  | "story"
   | "mission_proposed"
   | "mission_visible"
   | "mission_planned"
@@ -438,13 +438,13 @@ export type HistoryEventType =
   | "route_vote_resolved"
   | "emergency_reset";
 
-export type HistoryStoryLevel = "story" | "activity";
+export type JournalNarrativeLevel = "narrative" | "activity";
 
-export type HistoryEvent = {
+export type JournalEvent = {
   _id: string;
   _creationTime: number;
-  type: HistoryEventType;
-  storyLevel: HistoryStoryLevel;
+  type: JournalEventType;
+  narrativeLevel: JournalNarrativeLevel;
   occurredAt: number;
   createdAt: number;
   title?: string;
@@ -455,7 +455,7 @@ export type HistoryEvent = {
   checkpointId?: string;
   routeVoteId?: string;
   missionId?: string;
-  // State snapshot (check_in events only)
+  // State snapshot (story events only)
   moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
   stomachLevel?: TravelerStomachLevel;
@@ -1082,7 +1082,7 @@ export const tripcastApi = {
       { token: string; status?: MissionStatus },
       Mission[]
     >,
-    supportCrewListMissions: (anyApi as any).missions.supportCrewListMissions as FunctionReference<
+    followerListMissions: (anyApi as any).missions.followerListMissions as FunctionReference<
       "query",
       "public",
       { token: string },
@@ -1114,7 +1114,7 @@ export const tripcastApi = {
       { token: string },
       MissionSettings
     >,
-    supportCrewGetMissionSettings: (anyApi as any).missionSettings.supportCrewGetMissionSettings as FunctionReference<
+    followerGetMissionSettings: (anyApi as any).missionSettings.followerGetMissionSettings as FunctionReference<
       "query",
       "public",
       { token: string },
@@ -1132,7 +1132,7 @@ export const tripcastApi = {
     travelerDropCurrentActivity: (anyApi as any).currentActivity.travelerDropCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string }, null>,
     travelerCompleteCurrentActivity: (anyApi as any).currentActivity.travelerCompleteCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string; checkpointId: string }, null>,
     travelerGetCurrentActivity: (anyApi as any).currentActivity.travelerGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
-    supportCrewGetCurrentActivity: (anyApi as any).currentActivity.supportCrewGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
+    followerGetCurrentActivity: (anyApi as any).currentActivity.followerGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
     travelerListRecentActivities: (anyApi as any).currentActivity.travelerListRecentActivities as FunctionReference<"query", "public", { token: string }, CurrentActivity[]>,
   },
   travelerState: {
@@ -1142,7 +1142,7 @@ export const tripcastApi = {
       { token: string },
       { state: TravelerState | null; visibility: TravelerStateVisibility }
     >,
-    supportCrewGetTravelerState: (anyApi as any).travelerState.supportCrewGetTravelerState as FunctionReference<
+    followerGetTravelerState: (anyApi as any).travelerState.followerGetTravelerState as FunctionReference<
       "query",
       "public",
       { token: string },
@@ -1184,7 +1184,7 @@ export const tripcastApi = {
       { token: string },
       AutoState
     >,
-    supportCrewGetAutoState: (anyApi as any).travelerAutoState.supportCrewGetAutoState as FunctionReference<
+    followerGetAutoState: (anyApi as any).travelerAutoState.followerGetAutoState as FunctionReference<
       "query",
       "public",
       { token: string },
@@ -1214,12 +1214,12 @@ export const tripcastApi = {
       null
     >,
   },
-  historyEvents: {
-    listHistoryEvents: (anyApi as any).historyEvents.listHistoryEvents as FunctionReference<
+  journalEvents: {
+    listJournalEvents: (anyApi as any).journalEvents.listJournalEvents as FunctionReference<
       "query",
       "public",
       { token: string },
-      HistoryEvent[]
+      JournalEvent[]
     >,
   },
   followers: {
@@ -1349,13 +1349,13 @@ export const tripcastApi = {
       { token: string; transactionId: string },
       null
     >,
-    supportCrewGetFundsSummary: (anyApi as any).travelFunds.supportCrewGetFundsSummary as FunctionReference<
+    followerGetFundsSummary: (anyApi as any).travelFunds.followerGetFundsSummary as FunctionReference<
       "query",
       "public",
       { token: string },
       TravelFundsSummaryForCrew
     >,
-    supportCrewListVisibleTransactions: (anyApi as any).travelFunds.supportCrewListVisibleTransactions as FunctionReference<
+    followerListVisibleTransactions: (anyApi as any).travelFunds.followerListVisibleTransactions as FunctionReference<
       "query",
       "public",
       { token: string },
