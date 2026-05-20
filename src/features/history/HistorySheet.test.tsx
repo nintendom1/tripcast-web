@@ -1,5 +1,7 @@
 import { render, screen, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import * as convexReact from "convex/react";
 import HistorySheet from "./HistorySheet";
 import type { HistoryEvent } from "../../convex/tripcastApi";
 
@@ -182,6 +184,59 @@ describe("HistorySheet", () => {
   it("State tab is not present", () => {
     render(<HistorySheet {...defaultProps} />);
     expect(screen.queryByRole("tab", { name: "State" })).not.toBeInTheDocument();
+  });
+
+  describe("inline story creation", () => {
+    let mutationFn: ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      mutationFn = vi.fn().mockResolvedValue("new-cp-id");
+      vi.mocked(convexReact.useMutation).mockReturnValue(mutationFn as any);
+      vi.mocked(convexReact.useQuery).mockReturnValue(undefined as any);
+    });
+
+    it('shows "+ New" button for traveler role', () => {
+      render(<HistorySheet {...defaultProps} role="traveler" />);
+      expect(screen.getByRole("button", { name: "New" })).toBeInTheDocument();
+    });
+
+    it('does not show "+ New" button for support_crew', () => {
+      render(<HistorySheet {...defaultProps} role="support_crew" />);
+      expect(screen.queryByRole("button", { name: "New" })).not.toBeInTheDocument();
+    });
+
+    it("clicking New shows the inline create form", async () => {
+      const user = userEvent.setup();
+      render(<HistorySheet {...defaultProps} role="traveler" />);
+      await user.click(screen.getByRole("button", { name: "New" }));
+      expect(screen.getByPlaceholderText("Story title (optional)")).toBeInTheDocument();
+    });
+
+    it("Cancel in create form returns to the list view", async () => {
+      const user = userEvent.setup();
+      render(<HistorySheet {...defaultProps} role="traveler" />);
+      await user.click(screen.getByRole("button", { name: "New" }));
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByPlaceholderText("Story title (optional)")).not.toBeInTheDocument();
+    });
+
+    it("submitting the form calls addCheckpoint with showInStory=true and source=inline_form", async () => {
+      const user = userEvent.setup();
+      render(<HistorySheet {...defaultProps} role="traveler" />);
+      await user.click(screen.getByRole("button", { name: "New" }));
+      await user.type(screen.getByPlaceholderText("Story title (optional)"), "My Story");
+      await user.type(screen.getByPlaceholderText("What happened?"), "It was great");
+      await user.click(screen.getByRole("button", { name: "Add to Journal" }));
+      expect(mutationFn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: "test-token",
+          title: "My Story",
+          note: "It was great",
+          showInStory: true,
+          source: "inline_form",
+        }),
+      );
+    });
   });
 
   describe("Traveler role — swipe row actions", () => {
