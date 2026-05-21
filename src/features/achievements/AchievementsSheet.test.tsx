@@ -4,6 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { AchievementEvent, ScoreSummary } from "../../convex/tripcastApi";
 import AchievementsSheet from "./AchievementsSheet";
 
+vi.mock("convex/react", () => ({
+  useQuery: () => undefined,
+  useMutation: () => vi.fn(),
+}));
+
 vi.mock("../../components/ui/sheet", () => ({
   Sheet: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
     open ? <div data-testid="sheet">{children}</div> : null,
@@ -53,7 +58,7 @@ function makeSummary(overrides: Partial<ScoreSummary> = {}): ScoreSummary {
 describe("AchievementsSheet", () => {
   it("shows the total score and point log", () => {
     render(
-      <AchievementsSheet open summary={makeSummary()} onOpenChange={vi.fn()} />,
+      <AchievementsSheet open summary={makeSummary()} token="t" onOpenChange={vi.fn()} />,
     );
     expect(screen.getByText(/3 points/)).toBeInTheDocument();
     expect(screen.getByText("+1 Daily Visit")).toBeInTheDocument();
@@ -62,14 +67,14 @@ describe("AchievementsSheet", () => {
 
   it("shows the developer-testing label only when isDev", () => {
     const { rerender } = render(
-      <AchievementsSheet open summary={makeSummary({ isDev: false })} onOpenChange={vi.fn()} />,
+      <AchievementsSheet open summary={makeSummary({ isDev: false })} token="t" onOpenChange={vi.fn()} />,
     );
     expect(
       screen.queryByText("Testing Follower achievements as Traveler"),
     ).not.toBeInTheDocument();
 
     rerender(
-      <AchievementsSheet open summary={makeSummary({ isDev: true })} onOpenChange={vi.fn()} />,
+      <AchievementsSheet open summary={makeSummary({ isDev: true })} token="t" onOpenChange={vi.fn()} />,
     );
     expect(
       screen.getByText("Testing Follower achievements as Traveler"),
@@ -81,6 +86,7 @@ describe("AchievementsSheet", () => {
       <AchievementsSheet
         open
         summary={makeSummary({ total: 0, count: 0, recent: [] })}
+        token="t"
         onOpenChange={vi.fn()}
       />,
     );

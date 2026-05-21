@@ -135,7 +135,12 @@ export default function AchievementsConnected({ token, className }: Props) {
         ) : null}
       </button>
 
-      <AchievementsSheet open={open} summary={summary} onOpenChange={setOpen} />
+      <AchievementsSheet
+        open={open}
+        summary={summary}
+        token={token}
+        onOpenChange={setOpen}
+      />
 
       <AchievementToast toast={toast} log={log} />
     </>
