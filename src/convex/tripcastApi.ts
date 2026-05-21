@@ -251,9 +251,14 @@ export type MissionContentArgs = {
 // Achievements / scoring types
 // ---------------------------------------------------------------------------
 
-export type AchievementEventType = "daily_visit" | "mission_proposed_weekly";
+export type AchievementEventType =
+  | "daily_visit"
+  | "mission_proposed_weekly"
+  | "mission_visible"
+  | "mission_completed"
+  | "mission_featured_in_story";
 
-export type AchievementSourceType = "visit" | "mission";
+export type AchievementSourceType = "visit" | "mission" | "story";
 
 export type AchievementEvent = {
   _id: string;
@@ -266,6 +271,7 @@ export type AchievementEvent = {
   uniqueKey: string;
   sourceType: AchievementSourceType;
   sourceMissionId?: string;
+  sourceCheckpointId?: string;
   title: string;
   message: string;
   detail?: string;
@@ -284,6 +290,32 @@ export type ScoreSummary = {
 
 export type ScoringSettings = {
   developerScoringEnabled: boolean;
+};
+
+export type AttributionSourceType = "mission" | "story";
+
+export type AttributionRole =
+  | "creator"
+  | "proposer"
+  | "contributor"
+  | "credited"
+  | "traveler_added";
+
+export type AttributionList = {
+  publicCopy: string | null;
+  attributions: Array<{
+    _id: string;
+    role: AttributionRole;
+    userId: string | null;
+    displayName: string | null;
+    username: string | null;
+    showAttribution: boolean | null;
+    isDev: boolean;
+  }>;
+};
+
+export type AttributionSettings = {
+  showAttribution: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -803,6 +835,7 @@ export type FollowerSession = {
   role: Role;
   displayName: string;
   username: string;
+  showAttribution: boolean;
   membershipStatus: MembershipStatus;
 };
 
@@ -810,6 +843,7 @@ export type FollowerInfo = {
   userId: string;
   username: string;
   displayName: string;
+  showAttribution: boolean;
   membershipStatus: MembershipStatus;
   isBanned: boolean;
   createdAt: number;
@@ -1347,6 +1381,37 @@ export const tripcastApi = {
       "mutation",
       "public",
       { token: string; enabled: boolean },
+      null
+    >,
+  },
+  attributions: {
+    listAttributionsForSource: (anyApi as any).attributions.listAttributionsForSource as FunctionReference<
+      "query",
+      "public",
+      { token: string; sourceType: AttributionSourceType; sourceId: string },
+      AttributionList
+    >,
+    getMyAttributionSettings: (anyApi as any).attributions.getMyAttributionSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      AttributionSettings
+    >,
+    setShowAttribution: (anyApi as any).attributions.setShowAttribution as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; showAttribution: boolean },
+      null
+    >,
+    travelerSetFollowerAttributions: (anyApi as any).attributions.travelerSetFollowerAttributions as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        sourceType: AttributionSourceType;
+        sourceId: string;
+        attributions: Array<{ userId: string; role?: AttributionRole }>;
+      },
       null
     >,
   },

@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock,
   Database,
+  Eye,
   LogOut,
   Play,
   ShieldAlert,
@@ -275,6 +276,48 @@ function DeveloperScoringToggle({ token }: { token: string }) {
   );
 }
 
+function FollowerAttributionToggle({ token }: { token: string }) {
+  const settings = useQuery(tripcastApi.attributions.getMyAttributionSettings, { token });
+  const setShowAttribution = useMutation(tripcastApi.attributions.setShowAttribution);
+  const [error, setError] = useState<string | null>(null);
+  const enabled = settings?.showAttribution ?? true;
+
+  async function handleToggle() {
+    setError(null);
+    try {
+      await setShowAttribution({ token, showAttribution: !enabled });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <div className="grid gap-1.5 rounded-xl bg-[var(--bg-card)] p-3">
+      <label className="flex cursor-pointer items-start gap-3">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-2)]">
+          <Eye className="h-4 w-4" aria-hidden />
+        </div>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-[var(--ink-1)]">
+            Show my attribution
+          </span>
+          <span className="block text-xs text-[var(--ink-3)]">
+            When off, your name is hidden from public Mission and Story credit, but you can still earn points.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={handleToggle}
+          className="mt-1 h-4 w-4"
+          style={{ accentColor: "var(--flag)" }}
+        />
+      </label>
+      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+    </div>
+  );
+}
+
 export default function OptionsSheet({
   open,
   onOpenChange,
@@ -439,6 +482,7 @@ function OptionsHome({
           title={session.displayName ?? (session.username ? `@${session.username}` : "Signed in")}
           detail="Display name"
         />
+        {role === "follower" ? <FollowerAttributionToggle token={session.token} /> : null}
         <OptionsRow icon={LogOut} title="Sign out" onClick={onSignOut} />
       </OptionsSection>
 

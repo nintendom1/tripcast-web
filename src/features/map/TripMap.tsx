@@ -1532,6 +1532,8 @@ export default function TripMap({
 
       <StoryDetailSheet
         event={selectedStoryEvent}
+        token={token}
+        role={role}
         onClose={() => {
           music.sfx(storyOpenedFromJournal ? "page" : "close");
           const returnToJournal = storyOpenedFromJournal;
