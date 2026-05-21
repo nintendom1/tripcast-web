@@ -1,8 +1,11 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { useMutation, useQuery } from "convex/react";
 
 import StoryDetailSheet from "./StoryDetailSheet";
 import { ReadingSpeedProvider } from "../../providers/ReadingSpeedProvider";
+import { tripcastApi } from "../../convex/tripcastApi";
+import { getActiveUiContext, resetActiveUiContextForTests } from "../../debug/activeUiContext";
 import type { JournalEvent } from "../../convex/tripcastApi";
 
 vi.mock("convex/react", () => ({
@@ -114,5 +117,151 @@ describe("StoryDetailSheet", () => {
       "instant",
     );
     expect(screen.getByText(/no story body yet/i)).toBeInTheDocument();
+  });
+});
+
+describe("StoryDetailSheet — inline edit mode", () => {
+  const updateSpy = vi.fn().mockResolvedValue(undefined);
+  const deleteSpy = vi.fn().mockResolvedValue(undefined);
+
+  beforeEach(() => {
+    resetActiveUiContextForTests();
+    updateSpy.mockClear();
+    deleteSpy.mockClear();
+    (vi.mocked(useMutation) as any).mockImplementation((ref: unknown) => {
+      if (ref === tripcastApi.checkpoints.updateCheckpoint) return updateSpy;
+      if (ref === tripcastApi.checkpoints.deleteCheckpoint) return deleteSpy;
+      return vi.fn().mockResolvedValue(undefined);
+    });
+    (vi.mocked(useQuery) as any).mockReturnValue(undefined);
+    window.localStorage.setItem("tripcast.story.readingSpeed", "instant");
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+    vi.mocked(useMutation).mockReset();
+    vi.mocked(useQuery).mockReset();
+  });
+
+  function editableEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
+    return makeStoryEvent({
+      checkpointId: "cp1",
+      title: "Coffee",
+      body: "Body text",
+      locationLabel: "Seattle",
+      ...overrides,
+    });
+  }
+
+  it("shows the Edit link for a Traveler on a Story with a checkpoint", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent()}
+          token="t"
+          role="traveler"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
+
+  it("hides the Edit link for a Follower", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent()}
+          token="t"
+          role="follower"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  it("flips the active UI context view to narrative:edit on entering edit mode", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent()}
+          token="t"
+          role="traveler"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    expect(getActiveUiContext()?.view).toBe("narrative");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(getActiveUiContext()?.view).toBe("narrative:edit");
+  });
+
+  it("entering edit mode swaps the body for the edit form", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent()}
+          token="t"
+          role="traveler"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByText("Edit Story")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
+  });
+
+  it("Save calls updateCheckpoint with the edited fields", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent()}
+          token="t"
+          role="traveler"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByDisplayValue("Coffee"), {
+      target: { value: "Coffee Updated" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(updateSpy).toHaveBeenCalledWith({
+      token: "t",
+      checkpointId: "cp1",
+      title: "Coffee Updated",
+      note: "Body text",
+      locationLabel: "Seattle",
+      showInStory: true,
+    });
+  });
+
+  it("confirming Delete calls deleteCheckpoint then closes the sheet", async () => {
+    const onClose = vi.fn();
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent()}
+          token="t"
+          role="traveler"
+          onClose={onClose}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Story" }));
+    expect(screen.getByText("Delete this Story?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(deleteSpy).toHaveBeenCalledWith({ token: "t", checkpointId: "cp1" });
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });
