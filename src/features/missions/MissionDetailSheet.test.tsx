@@ -6,6 +6,7 @@ import * as convexReact from "convex/react";
 
 import type { Mission, TransactionInlineInput } from "../../convex/tripcastApi";
 import { tripcastApi } from "../../convex/tripcastApi";
+import { getActiveUiContext, resetActiveUiContextForTests } from "../../debug/activeUiContext";
 import MissionDetailSheet from "./MissionDetailSheet";
 
 vi.mock("convex/react", () => ({
@@ -47,6 +48,7 @@ const Mission: Mission = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetActiveUiContextForTests();
   vi.mocked(convexReact.useQuery).mockReturnValue(undefined as any);
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn().mockResolvedValue(null) as any);
 });
@@ -129,6 +131,31 @@ describe("MissionDetailSheet — attribution & Award Badge placement", () => {
     render(<MissionDetailSheet Mission={planned} token="t" role="traveler" onClose={vi.fn()} />);
     await user.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.queryByRole("button", { name: /Award Badge/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("MissionDetailSheet — active UI context", () => {
+  const completed: Mission = {
+    _id: "ch-ctx",
+    title: "Context Mission",
+    status: "completed",
+    source: "traveler",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  it("registers a MissionDetailSheet context with view 'detail' when shown", () => {
+    render(<MissionDetailSheet Mission={completed} token="t" role="traveler" onClose={vi.fn()} />);
+    const ctx = getActiveUiContext();
+    expect(ctx?.sheetName).toBe("MissionDetailSheet");
+    expect(ctx?.view).toBe("detail");
+  });
+
+  it("flips the context view to 'edit' when entering edit mode", async () => {
+    const user = userEvent.setup();
+    render(<MissionDetailSheet Mission={completed} token="t" role="traveler" onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(getActiveUiContext()?.view).toBe("edit");
   });
 });
 

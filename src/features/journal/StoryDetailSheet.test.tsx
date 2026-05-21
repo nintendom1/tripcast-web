@@ -5,6 +5,7 @@ import { useMutation, useQuery } from "convex/react";
 import StoryDetailSheet from "./StoryDetailSheet";
 import { ReadingSpeedProvider } from "../../providers/ReadingSpeedProvider";
 import { tripcastApi } from "../../convex/tripcastApi";
+import { getActiveUiContext, resetActiveUiContextForTests } from "../../debug/activeUiContext";
 import type { JournalEvent } from "../../convex/tripcastApi";
 
 vi.mock("convex/react", () => ({
@@ -124,6 +125,7 @@ describe("StoryDetailSheet — inline edit mode", () => {
   const deleteSpy = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
+    resetActiveUiContextForTests();
     updateSpy.mockClear();
     deleteSpy.mockClear();
     (vi.mocked(useMutation) as any).mockImplementation((ref: unknown) => {
@@ -179,6 +181,23 @@ describe("StoryDetailSheet — inline edit mode", () => {
       </ReadingSpeedProvider>,
     );
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+  });
+
+  it("flips the active UI context view to narrative:edit on entering edit mode", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent()}
+          token="t"
+          role="traveler"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    expect(getActiveUiContext()?.view).toBe("narrative");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(getActiveUiContext()?.view).toBe("narrative:edit");
   });
 
   it("entering edit mode swaps the body for the edit form", () => {

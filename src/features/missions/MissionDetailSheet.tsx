@@ -13,6 +13,7 @@ import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 
 const RESPONSE_PRESETS = [
@@ -43,6 +44,9 @@ type Props = {
   onCompleteAsStory?: (Mission: Mission, transaction?: TransactionInlineInput) => void;
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: JournalEvent) => void;
+  /** Provenance for the debug "Active UI Context" — where the detail was opened
+   *  from. Threaded down from MissionPanel. */
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 function statusLabel(status: string): string {
@@ -74,6 +78,7 @@ export default function MissionDetailSheet({
   onCompleteAsStory,
   onRequestNavigateToVote,
   onOpenLinkedStory,
+  debugSource,
 }: Props) {
   const log = useDebugLogger("MissionDetailSheet", "src/features/missions/MissionDetailSheet.tsx");
 
@@ -133,6 +138,19 @@ export default function MissionDetailSheet({
   const linkedStory = allJournalEvents.find(
     (e) => e.type === "story" && e.missionId === c?._id,
   ) ?? null;
+
+  // Surface the Mission detail in the debug "Active UI Context", mirroring
+  // StoryDetailSheet. The detail is rendered inside MissionPanel's sheet, so it
+  // pushes a context on top of the panel's while open; `view` flips to "edit"
+  // when the Traveler enters the inline edit mode.
+  useActiveUiContext(Boolean(c), {
+    sheetName: "MissionDetailSheet",
+    label: "Mission detail",
+    view: isEditing ? "edit" : "detail",
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/missions/MissionDetailSheet.tsx",
+  }, { boundsSelector: "[data-role='missions-sheet']" });
 
   if (!c) return null;
 

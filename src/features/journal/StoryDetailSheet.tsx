@@ -136,10 +136,18 @@ export default function StoryDetailSheet({
   debugSource,
 }: StoryDetailSheetProps) {
   const isNarrative = event?.narrativeLevel === "narrative";
+  // `isEditing` lives here (not in NarrativeBody) so the active UI context can
+  // reflect the edit sub-view in the debug log. Reset whenever the open story
+  // changes or the sheet closes so a new story never opens mid-edit.
+  const [isEditing, setIsEditing] = useState(false);
+  useEffect(() => {
+    setIsEditing(false);
+  }, [event?._id]);
+
   useActiveUiContext(Boolean(event), {
     sheetName: "StoryDetailSheet",
     label: isNarrative ? "Story detail" : "Activity detail",
-    view: isNarrative ? "narrative" : "activity",
+    view: isNarrative ? (isEditing ? "narrative:edit" : "narrative") : "activity",
     source: debugSource?.source ?? "unknown",
     sourceLabel: debugSource?.sourceLabel ?? "Unknown",
     file: "src/features/journal/StoryDetailSheet.tsx",
@@ -189,6 +197,8 @@ export default function StoryDetailSheet({
               token={token}
               role={role}
               onClose={onClose}
+              isEditing={isEditing}
+              setIsEditing={setIsEditing}
               missionTitle={missionTitle}
               missionId={missionId}
               onNavigateToMission={onNavigateToMission}
@@ -218,6 +228,8 @@ function NarrativeBody({
   token,
   role,
   onClose,
+  isEditing,
+  setIsEditing,
   missionTitle,
   missionId,
   onNavigateToMission,
@@ -226,6 +238,8 @@ function NarrativeBody({
   token?: string;
   role?: Role;
   onClose: () => void;
+  isEditing: boolean;
+  setIsEditing: (editing: boolean) => void;
   missionTitle?: string;
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
@@ -235,7 +249,6 @@ function NarrativeBody({
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
 
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editLocation, setEditLocation] = useState("");

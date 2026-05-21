@@ -343,6 +343,7 @@ export default function MissionPanel({
                 }
                 onRequestNavigateToVote={onRequestNavigateToVote}
                 onOpenLinkedStory={onOpenLinkedStory}
+                debugSource={debugSource}
               />
             </SheetBody>
           ) : null}
