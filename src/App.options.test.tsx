@@ -143,7 +143,7 @@ describe("App: Options sheet — Traveler", () => {
     expect(dialog).toHaveClass("h-[88dvh]", "overflow-hidden");
 
     const logList = screen.getByLabelText(/recent debug log entries/i);
-    expect(logList.parentElement).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+    expect(logList.parentElement).toHaveClass("h-[18rem]", "shrink-0", "overflow-y-auto");
     expect(screen.getByRole("button", { name: /copy debug summary/i })).toBeInTheDocument();
   });
 });

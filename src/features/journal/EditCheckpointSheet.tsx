@@ -15,6 +15,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 export interface EditCheckpointSheetProps {
   /** The Story event to edit. `null` closes the sheet. */
@@ -52,6 +53,14 @@ export default function EditCheckpointSheet({ event, token, onClose }: EditCheck
   const [showInStory, setShowInStory] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  useActiveUiContext(Boolean(event), {
+    sheetName: "EditCheckpointSheet",
+    label: "Edit Story",
+    view: "form",
+    source: "journal:edit-story",
+    sourceLabel: "Journal -> Edit Story",
+    file: "src/features/journal/EditCheckpointSheet.tsx",
+  }, { boundsSelector: "[data-role='edit-checkpoint-sheet']" });
 
   useEffect(() => {
     if (event) {

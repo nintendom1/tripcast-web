@@ -1,3 +1,5 @@
+import { formatActiveUiContextForSummary } from "./activeUiContext";
+
 const LS_ENABLED = "tripcast.debug.enabled";
 const LS_LOG_KEY = "tripcast.debug.logs";
 const LS_PRESET_KEY = "tripcast.debug.preset";
@@ -317,6 +319,8 @@ export function buildLlmSummary(): string {
     }
     lines.push("");
   }
+
+  lines.push(...formatActiveUiContextForSummary());
 
   // Timeline (last 100)
   lines.push("## Timeline");

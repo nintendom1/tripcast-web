@@ -26,6 +26,7 @@ import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteU
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 
 type RouteVotePanelProps = {
@@ -37,6 +38,7 @@ type RouteVotePanelProps = {
   ) => void;
   onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 type VoteCardProps = {
@@ -296,6 +298,7 @@ export default function RouteVotePanel({
   onVoteOverlayChange,
   onRequestFitMap,
   fallbackOrigin,
+  debugSource,
 }: RouteVotePanelProps) {
   const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token });
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
@@ -303,6 +306,14 @@ export default function RouteVotePanel({
   const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
+  useActiveUiContext(true, {
+    sheetName: "RouteVotePanel",
+    label: TERMS.votes,
+    view: selectedVote ? "detail" : "list",
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/routevote/RouteVotePanel.tsx",
+  }, { boundsSelector: "[data-role='route-votes-sheet']" });
 
   function handleBack() {
     log.logInteraction("view:change", { from: "detail", to: "list" });

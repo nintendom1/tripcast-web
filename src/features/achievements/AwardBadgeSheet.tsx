@@ -16,6 +16,7 @@ import {
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 type Props = {
   open: boolean;
@@ -50,6 +51,14 @@ export default function AwardBadgeSheet({
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  useActiveUiContext(open, {
+    sheetName: "AwardBadgeSheet",
+    label: "Award Badge",
+    view: badgeType ? "badge-selected" : "select-badge",
+    source: "story-detail:award-badge",
+    sourceLabel: "Story detail -> Award Badge",
+    file: "src/features/achievements/AwardBadgeSheet.tsx",
+  }, { boundsSelector: "[data-role='award-badge-sheet']" });
 
   // Default-select every attributed Follower the first time the context loads.
   useEffect(() => {

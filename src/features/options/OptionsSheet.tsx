@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import DebugPanel from "../../debug/DebugPanel";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
@@ -62,6 +63,7 @@ type OptionsSheetProps = {
   onLocationDataCleared: () => void;
   onTripDataDeleted: () => void;
   onResetStarted: (message: string) => void;
+  preserveDebugContext?: boolean;
 };
 
 export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "bulk-import" | "debug-logs";
@@ -331,11 +333,23 @@ export default function OptionsSheet({
   onLocationDataCleared,
   onTripDataDeleted,
   onResetStarted,
+  preserveDebugContext = false,
 }: OptionsSheetProps) {
   const [view, setView] = useState<OptionsView>("options");
   const [isEmergencyResetPending, setIsEmergencyResetPending] = useState(false);
   const music = useMusicSafe();
   const log = useDebugLogger("OptionsSheet", "src/features/options/OptionsSheet.tsx");
+  useActiveUiContext(open, {
+    sheetName: "OptionsSheet",
+    label: "Options",
+    view,
+    source: "topbar:options",
+    sourceLabel: "Options button",
+    file: "src/features/options/OptionsSheet.tsx",
+  }, {
+    enabled: !preserveDebugContext,
+    boundsSelector: "[data-role='options-sheet']",
+  });
 
   useEffect(() => {
     log.logInteraction(open ? "sheet:open" : "sheet:close");
@@ -380,6 +394,7 @@ export default function OptionsSheet({
       <Sheet open={open && view !== "bulk-import"} onOpenChange={handleOpenChange}>
         <SheetContent
           side="bottom"
+          data-role="options-sheet"
           className={cn(
             "max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
             view === "debug-logs" && "h-[88dvh] overflow-hidden",
@@ -411,6 +426,7 @@ export default function OptionsSheet({
               <TravelFundsSheet
                 token={session.token}
                 onClose={() => { music.sfx("page"); navigateTo("options"); }}
+                debugSource={{ source: "options:travel-funds", sourceLabel: "Options -> Travel Funds" }}
               />
             </SheetBody>
           ) : view === "options" ? (
