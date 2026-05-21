@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
+import { useMutation } from "convex/react";
 import { Camera } from "lucide-react";
 import { X } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import { StatBar } from "../../components/rpg/StatBar";
 
+import { tripcastApi } from "../../convex/tripcastApi";
 import type { JournalEvent, Role } from "../../convex/tripcastApi";
 import { log } from "../../debug/debugLogger";
 import {
@@ -17,7 +21,9 @@ import {
   SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { RevealText } from "../../components/ui/RevealText";
+import { useMusicSafe } from "../../providers/MusicProvider";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import {
@@ -171,6 +177,7 @@ export default function StoryDetailSheet({
               event={event}
               token={token}
               role={role}
+              onClose={onClose}
               missionTitle={missionTitle}
               missionId={missionId}
               onNavigateToMission={onNavigateToMission}
@@ -184,10 +191,22 @@ export default function StoryDetailSheet({
   );
 }
 
+function friendlyError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.toLowerCase().includes("too many") || message.toLowerCase().includes("rate")) {
+    return "Too many edits in a short window. Try again in a minute.";
+  }
+  if (message.toLowerCase().includes("not found")) {
+    return "This Story no longer exists.";
+  }
+  return message || "Unable to save changes.";
+}
+
 function NarrativeBody({
   event,
   token,
   role,
+  onClose,
   missionTitle,
   missionId,
   onNavigateToMission,
@@ -195,12 +214,93 @@ function NarrativeBody({
   event: JournalEvent;
   token?: string;
   role?: Role;
+  onClose: () => void;
   missionTitle?: string;
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
 }) {
+  const music = useMusicSafe();
+  const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
+  const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
+
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editShowInStory, setEditShowInStory] = useState(true);
+  const [isWorking, setIsWorking] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const isTraveler = role === "traveler";
+  const canEdit = isTraveler && Boolean(token) && Boolean(event.checkpointId);
+
+  function openEditMode() {
+    log("info", "StoryDetailSheet", "form:open", "ui", { checkpointId: event.checkpointId });
+    setEditTitle(event.title ?? "");
+    setEditBody(event.body ?? "");
+    setEditLocation(event.locationLabel ?? "");
+    // A narrative story shown in this sheet is, by definition, in the Story.
+    setEditShowInStory(event.narrativeLevel !== "activity");
+    setActionError(null);
+    setIsEditing(true);
+  }
+
+  function cancelEditMode() {
+    log("info", "StoryDetailSheet", "form:cancel", "ui", {});
+    setIsEditing(false);
+    setActionError(null);
+  }
+
+  async function handleSaveEdit() {
+    if (!token || !event.checkpointId || isWorking) return;
+    setIsWorking(true);
+    setActionError(null);
+    log("info", "StoryDetailSheet", "form:submit", "mutation", { checkpointId: event.checkpointId });
+    try {
+      await updateCheckpoint({
+        token,
+        checkpointId: event.checkpointId,
+        title: editTitle.trim() ? editTitle : undefined,
+        note: editBody.trim() ? editBody : undefined,
+        locationLabel: editLocation.trim() ? editLocation : undefined,
+        showInStory: editShowInStory,
+      });
+      music.sfx("success");
+      log("info", "StoryDetailSheet", "form:submit:success", "mutation", {});
+      setIsEditing(false);
+    } catch (e) {
+      log("error", "StoryDetailSheet", "form:submit:error", "mutation", { message: String(e) });
+      setActionError(friendlyError(e));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (!token || !event.checkpointId) {
+      setPendingDelete(false);
+      return;
+    }
+    setIsDeleting(true);
+    log("info", "StoryDetailSheet", "delete:confirm", "mutation", { checkpointId: event.checkpointId });
+    try {
+      await deleteCheckpoint({ token, checkpointId: event.checkpointId });
+      music.sfx("success");
+      log("info", "StoryDetailSheet", "delete:success", "mutation", {});
+      setPendingDelete(false);
+      onClose();
+    } catch (e) {
+      // Leave the sheet open; the data subscription refreshes if it landed.
+      log("error", "StoryDetailSheet", "delete:error", "mutation", { message: String(e) });
+      setPendingDelete(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   return (
     <>
       <div className="flex items-start justify-between gap-2 px-5 pt-2">
@@ -218,80 +318,195 @@ function NarrativeBody({
             </p>
           ) : null}
         </div>
-        <SheetCloseButton aria-label="Close story" />
+        <div className="flex shrink-0 items-center gap-3">
+          {canEdit && !isEditing ? (
+            <button
+              type="button"
+              className="text-xs text-navy underline"
+              onClick={openEditMode}
+            >
+              Edit
+            </button>
+          ) : null}
+          <SheetCloseButton aria-label="Close story" />
+        </div>
       </div>
 
       <SheetBody
         className="px-5"
         style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
       >
-        {event.body ? (
-          <RevealText
-            text={event.body}
-            className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]"
-          />
-        ) : (
-          <p className="text-sm italic text-[var(--ink-3)]">No story body yet.</p>
-        )}
-
-        {event.statusNote ? (
-          <blockquote className="mt-5 border-l-2 border-[var(--amber)] pl-4 text-sm italic text-[var(--ink-2)]">
-            &ldquo;{event.statusNote}&rdquo;
-          </blockquote>
-        ) : null}
-
-        {event.checkpointId && token && role ? (
-          <div className="mt-4">
-            <AttributionBlock
-              token={token}
-              viewerRole={role}
-              sourceType="story"
-              sourceId={event.checkpointId}
-            />
-          </div>
-        ) : null}
-
-        {isTraveler && token && event.checkpointId ? (
-          <div className="mt-3">
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                log("info", "StoryDetailSheet", "badge:award:open", "ui", {
-                  sourceType: "story",
-                });
-                setAwardBadgeOpen(true);
-              }}
-            >
-              🏅 Award Badge
-            </Button>
-            <AwardBadgeSheet
-              open={awardBadgeOpen}
-              token={token}
-              sourceType="story"
-              sourceId={event.checkpointId}
-              onOpenChange={setAwardBadgeOpen}
-            />
-          </div>
-        ) : null}
-
-        {missionId && (
-          <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-1">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mission</p>
-            <p className="text-sm font-medium text-[var(--ink-1)] line-clamp-1">{missionTitle ?? "View mission"}</p>
-            {onNavigateToMission && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onNavigateToMission(missionId)}
-                className="self-start mt-1"
+        {isEditing ? (
+          <div className="flex flex-col gap-3 pt-1">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-[var(--ink-1)]">Edit Story</span>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground underline"
+                onClick={cancelEditMode}
               >
-                Open mission
-              </Button>
-            )}
+                Cancel
+              </button>
+            </div>
+
+            <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+              Title <span className="font-normal text-[var(--ink-3)]">(optional)</span>
+              <Input
+                maxLength={120}
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                type="text"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+              Place name <span className="font-normal text-[var(--ink-3)]">(optional)</span>
+              <Input
+                maxLength={120}
+                value={editLocation}
+                onChange={(e) => setEditLocation(e.target.value)}
+                placeholder="e.g. Capitol Hill"
+                type="text"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+              Story / Notes
+              <Textarea
+                maxLength={1000}
+                value={editBody}
+                onChange={(e) => setEditBody(e.target.value)}
+                rows={5}
+              />
+            </label>
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[var(--ink-1)]">
+              <input
+                type="checkbox"
+                checked={editShowInStory}
+                onChange={(e) => setEditShowInStory(e.target.checked)}
+                className="h-4 w-4"
+                style={{ accentColor: "var(--flag)" }}
+              />
+              Add to Story
+            </label>
+
+            {actionError ? (
+              <p
+                role="alert"
+                className="rounded-md border px-3 py-2 text-sm"
+                style={{
+                  borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
+                  background: "color-mix(in oklab, var(--danger) 10%, transparent)",
+                  color: "var(--danger)",
+                }}
+              >
+                {actionError}
+              </p>
+            ) : null}
+
+            <Button type="button" disabled={isWorking} onClick={handleSaveEdit}>
+              {isWorking ? "Saving…" : "Save changes"}
+            </Button>
+
+            {token && event.checkpointId ? (
+              <div className="mt-1 border-t border-[var(--line-soft)] pt-3">
+                <AttributionBlock
+                  token={token}
+                  viewerRole={role!}
+                  sourceType="story"
+                  sourceId={event.checkpointId}
+                />
+                <div className="mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      log("info", "StoryDetailSheet", "badge:award:open", "ui", {
+                        sourceType: "story",
+                      });
+                      setAwardBadgeOpen(true);
+                    }}
+                  >
+                    🏅 Award Badge
+                  </Button>
+                  <AwardBadgeSheet
+                    open={awardBadgeOpen}
+                    token={token}
+                    sourceType="story"
+                    sourceId={event.checkpointId}
+                    onOpenChange={setAwardBadgeOpen}
+                  />
+                </div>
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    className="text-sm font-semibold text-[var(--danger)] underline"
+                    onClick={() => setPendingDelete(true)}
+                  >
+                    Delete Story
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
+        ) : (
+          <>
+            {event.body ? (
+              <RevealText
+                text={event.body}
+                className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]"
+              />
+            ) : (
+              <p className="text-sm italic text-[var(--ink-3)]">No story body yet.</p>
+            )}
+
+            {event.statusNote ? (
+              <blockquote className="mt-5 border-l-2 border-[var(--amber)] pl-4 text-sm italic text-[var(--ink-2)]">
+                &ldquo;{event.statusNote}&rdquo;
+              </blockquote>
+            ) : null}
+
+            {event.checkpointId && token && role ? (
+              <div className="mt-4">
+                <AttributionBlock
+                  token={token}
+                  viewerRole={role}
+                  sourceType="story"
+                  sourceId={event.checkpointId}
+                  editable={false}
+                />
+              </div>
+            ) : null}
+
+            {missionId && (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mission</p>
+                <p className="text-sm font-medium text-[var(--ink-1)] line-clamp-1">{missionTitle ?? "View mission"}</p>
+                {onNavigateToMission && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onNavigateToMission(missionId)}
+                    className="self-start mt-1"
+                  >
+                    Open mission
+                  </Button>
+                )}
+              </div>
+            )}
+          </>
         )}
       </SheetBody>
+
+      <ConfirmDelete
+        open={pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(false);
+        }}
+        title="Delete this Story?"
+        itemLabel={event.title ?? undefined}
+        description="The pin disappears from the map and the journal. Linked transactions are kept but unlinked. This can't be undone."
+        onConfirm={handleConfirmDelete}
+        pending={isDeleting}
+      />
     </>
   );
 }

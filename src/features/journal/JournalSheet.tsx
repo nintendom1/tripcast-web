@@ -27,17 +27,12 @@ import {
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
-import { SwipeRow } from "../../components/ui/SwipeRow";
-import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { cn } from "@/lib/utils";
 import { getStateEmoji } from "../travelstate/travelerStateUtils";
 import { formatUsd } from "../travelfunds/currency";
-import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
-
-import EditCheckpointSheet from "./EditCheckpointSheet";
 
 type FilterTab = "story" | "all" | "entries" | "missions" | "votes";
 
@@ -145,7 +140,7 @@ function formatDate(ts: number): string {
 type JournalSheetProps = {
   events: JournalEvent[];
   token: string;
-  /** Role gates the edit/delete swipe actions on Story rows — Traveler only. */
+  /** Role gates the "New" create action — Traveler only. */
   role?: Role;
   onClose: () => void;
   onStorySelect: (event: JournalEvent) => void;
@@ -163,10 +158,6 @@ export default function JournalSheet({
   onMarkAllRead,
 }: JournalSheetProps) {
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
-  const [swipedId, setSwipedId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<JournalEvent | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<JournalEvent | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
   const [storyTitle, setStoryTitle] = useState("");
   const [storyBody, setStoryBody] = useState("");
@@ -175,9 +166,7 @@ export default function JournalSheet({
   const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
-  const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  const music = useMusicSafe();
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
 
   useEffect(() => {
@@ -196,26 +185,6 @@ export default function JournalSheet({
 
   const filtered = filterEvents(events, activeTab);
   const isTraveler = role === "traveler";
-
-  async function handleConfirmDelete() {
-    if (!pendingDelete || pendingDelete.type !== "story" || !pendingDelete.checkpointId) {
-      setPendingDelete(null);
-      return;
-    }
-    setIsDeleting(true);
-    try {
-      await deleteCheckpoint({ token, checkpointId: pendingDelete.checkpointId });
-      music.sfx("success");
-      setPendingDelete(null);
-    } catch {
-      // The mutation throws ConvexError on rate-limit or auth issues — close
-      // the confirm but leave the row in the list (the data subscription
-      // will refresh if it actually landed).
-      setPendingDelete(null);
-    } finally {
-      setIsDeleting(false);
-    }
-  }
 
   async function handleCreateStory() {
     setIsCreating(true);
@@ -247,7 +216,6 @@ export default function JournalSheet({
       modal={false}
       onOpenChange={(open) => {
         if (!open) {
-          if (editingEvent !== null || pendingDelete !== null) return;
           log.logInteraction("sheet:close", { trigger: "backdrop" });
           onClose();
         }
@@ -332,7 +300,6 @@ export default function JournalSheet({
               onClick={() => {
                 log.logInteraction("filter:change", { from: activeTab, to: tab.id });
                 setActiveTab(tab.id);
-                setSwipedId(null);
               }}
             >
               {tab.label}
@@ -359,9 +326,9 @@ export default function JournalSheet({
                     actualCostUsd = costMap.byMissionId[event.missionId];
                   }
                 }
-                const canSwipe = isTraveler && event.type === "story" && Boolean(event.checkpointId);
-                const item = (
+                return (
                   <StoryRailItem
+                    key={event._id}
                     event={event}
                     token={token}
                     isLast={index === filtered.length - 1}
@@ -376,20 +343,6 @@ export default function JournalSheet({
                     }}
                   />
                 );
-                if (!canSwipe) return <span key={event._id}>{item}</span>;
-                return (
-                  <SwipeRow
-                    key={event._id}
-                    id={event._id}
-                    openId={swipedId}
-                    onOpenChange={setSwipedId}
-                    onEdit={() => setEditingEvent(event)}
-                    onDelete={() => setPendingDelete(event)}
-                    className="mb-2"
-                  >
-                    {item}
-                  </SwipeRow>
-                );
               })}
             </ol>
           )}
@@ -398,24 +351,6 @@ export default function JournalSheet({
         )}
       </SheetContent>
     </Sheet>
-
-    <ConfirmDelete
-      open={pendingDelete !== null}
-      onOpenChange={(open) => {
-        if (!open) setPendingDelete(null);
-      }}
-      title="Delete this Story?"
-      itemLabel={pendingDelete?.title ?? undefined}
-      description="The pin disappears from the map and the journal. Linked transactions are kept but unlinked. This can't be undone."
-      onConfirm={handleConfirmDelete}
-      pending={isDeleting}
-    />
-
-    <EditCheckpointSheet
-      event={editingEvent}
-      token={token}
-      onClose={() => setEditingEvent(null)}
-    />
     </>
   );
 }

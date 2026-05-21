@@ -231,27 +231,20 @@ describe("JournalSheet", () => {
     });
   });
 
-  describe("Traveler role — swipe row actions", () => {
+  describe("Traveler role — Story rows (no swipe; edit/delete moved to the detail sheet)", () => {
     const travelerEvent = makeEvent({ _id: "evt1", checkpointId: "cp1", title: "Trail stop" });
     const travelerProps = { ...defaultProps, role: "traveler" as const, events: [travelerEvent] };
 
-    it("shows the More button on Story rows that have a checkpointId", () => {
+    it("does not render swipe/row-action affordances", () => {
       render(<JournalSheet {...travelerProps} />);
-      expect(screen.getByRole("button", { name: "Show row actions" })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Show row actions" })).not.toBeInTheDocument();
     });
 
-    it("clicking ... then Edit opens the edit sheet", () => {
-      render(<JournalSheet {...travelerProps} />);
-      fireEvent.click(screen.getByRole("button", { name: "Show row actions" }));
-      fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-      expect(screen.getByText("Edit Story")).toBeInTheDocument();
-    });
-
-    it("clicking ... then Delete opens the confirm dialog", () => {
-      render(<JournalSheet {...travelerProps} />);
-      fireEvent.click(screen.getByRole("button", { name: "Show row actions" }));
-      fireEvent.click(screen.getByRole("button", { name: "Delete" }));
-      expect(screen.getByText("Delete this Story?")).toBeInTheDocument();
+    it("a Story row still opens the detail on tap", () => {
+      const onStorySelect = vi.fn();
+      render(<JournalSheet {...travelerProps} onStorySelect={onStorySelect} />);
+      fireEvent.click(screen.getByRole("button", { name: /check in: trail stop/i }));
+      expect(onStorySelect).toHaveBeenCalledWith(travelerEvent);
     });
   });
 });

@@ -100,6 +100,38 @@ describe("MissionDetailSheet — Set Current Activity button", () => {
   });
 });
 
+describe("MissionDetailSheet — attribution & Award Badge placement", () => {
+  const completed: Mission = {
+    _id: "ch-9",
+    title: "Done Mission",
+    status: "completed",
+    source: "traveler",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+
+  it("read-only view shows no Award Badge button and no Edit-credits control", () => {
+    render(<MissionDetailSheet Mission={completed} token="t" role="traveler" onClose={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Award Badge/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit credits" })).not.toBeInTheDocument();
+  });
+
+  it("edit mode exposes the Award Badge action for a completed mission", async () => {
+    const user = userEvent.setup();
+    render(<MissionDetailSheet Mission={completed} token="t" role="traveler" onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: /Award Badge/ })).toBeInTheDocument();
+  });
+
+  it("edit mode hides the Award Badge action for a non-completed mission", async () => {
+    const user = userEvent.setup();
+    const planned: Mission = { ...completed, _id: "ch-10", status: "planned" };
+    render(<MissionDetailSheet Mission={planned} token="t" role="traveler" onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByRole("button", { name: /Award Badge/ })).not.toBeInTheDocument();
+  });
+});
+
 describe("MissionDetailSheet", () => {
   it("passes inline Travel Funds data into Complete as story", async () => {
     const onCompleteAsStory = vi.fn();

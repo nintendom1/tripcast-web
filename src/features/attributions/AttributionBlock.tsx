@@ -29,6 +29,10 @@ type AttributionBlockProps = {
   viewerRole: Role;
   sourceType: AttributionSourceType;
   sourceId: string;
+  /** When `false`, render the attribution display only — no "Edit credits"
+   *  button and no edit form. Used by the read-only Story view, where editing
+   *  lives in the Story's inline edit mode instead. Defaults to `true`. */
+  editable?: boolean;
 };
 
 function roleLabel(role: AttributionRole) {
@@ -40,6 +44,7 @@ export default function AttributionBlock({
   viewerRole,
   sourceType,
   sourceId,
+  editable = true,
 }: AttributionBlockProps) {
   const log = useDebugLogger("AttributionBlock", "src/features/attributions/AttributionBlock.tsx");
   const data = useQuery(tripcastApi.attributions.listAttributionsForSource, {
@@ -120,22 +125,22 @@ export default function AttributionBlock({
   }
 
   return (
-    <section className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3">
+    <section className="grid gap-1.5 rounded-lg border border-slate-200 bg-white p-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             <UserRound className="h-3 w-3" aria-hidden />
             Attribution
           </p>
           {data?.publicCopy ? (
-            <p className="mt-1 text-sm text-[var(--ink-1)]">{data.publicCopy}</p>
+            <p className="mt-0.5 text-xs text-[var(--ink-1)]">{data.publicCopy}</p>
           ) : (
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-0.5 text-xs text-muted-foreground">
               {isTraveler ? "No public attribution yet." : ""}
             </p>
           )}
         </div>
-        {isTraveler ? (
+        {isTraveler && editable ? (
           <button
             type="button"
             className="text-xs text-navy underline"
@@ -151,7 +156,7 @@ export default function AttributionBlock({
       </div>
 
       {isTraveler && !isEditing ? (
-        <div className="grid gap-1 text-xs text-muted-foreground">
+        <div className="grid gap-0.5 text-[11px] text-muted-foreground">
           {(data?.attributions ?? []).map((item) => (
             <span key={item._id} className="flex items-center gap-1.5">
               <span>
@@ -183,7 +188,7 @@ export default function AttributionBlock({
         </div>
       ) : null}
 
-      {isTraveler && isEditing ? (
+      {isTraveler && editable && isEditing ? (
         <div className="grid gap-2">
           <div className="grid gap-1">
             {draft.length === 0 ? (
@@ -192,7 +197,7 @@ export default function AttributionBlock({
               draft.map((item) => (
                 <div
                   key={item.userId}
-                  className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1.5 text-sm"
+                  className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1 text-xs"
                 >
                   <span className="min-w-0 truncate">
                     {displayNameFor(item.userId)} · {roleLabel(item.role)}

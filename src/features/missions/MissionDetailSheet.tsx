@@ -521,6 +521,41 @@ export default function MissionDetailSheet({
         >
           {isWorking ? "Saving…" : "Save Changes"}
         </Button>
+
+        <div className="mt-1 flex flex-col gap-3 border-t border-[var(--line-soft)] pt-3">
+          <AttributionBlock
+            token={token}
+            viewerRole={role}
+            sourceType="mission"
+            sourceId={c._id}
+          />
+
+          {/* Award Badge — Traveler, completed Missions only (uses saved status) */}
+          {isTraveler && status === "completed" && (
+            <Button
+              size="sm"
+              variant="outline"
+              type="button"
+              className="w-fit"
+              onClick={() => {
+                log.logUi("badge:award:open", { sourceType: "mission" });
+                setAwardBadgeOpen(true);
+              }}
+            >
+              🏅 Award Badge
+            </Button>
+          )}
+
+          {isTraveler && (
+            <AwardBadgeSheet
+              open={awardBadgeOpen}
+              token={token}
+              sourceType="mission"
+              sourceId={c._id}
+              onOpenChange={setAwardBadgeOpen}
+            />
+          )}
+        </div>
       </div>
     );
   }
@@ -589,33 +624,8 @@ export default function MissionDetailSheet({
         viewerRole={role}
         sourceType="mission"
         sourceId={c._id}
+        editable={false}
       />
-
-      {/* Award Badge — Traveler, completed Missions only */}
-      {isTraveler && status === "completed" && (
-        <Button
-          size="sm"
-          variant="outline"
-          type="button"
-          className="w-fit"
-          onClick={() => {
-            log.logUi("badge:award:open", { sourceType: "mission" });
-            setAwardBadgeOpen(true);
-          }}
-        >
-          🏅 Award Badge
-        </Button>
-      )}
-
-      {isTraveler && (
-        <AwardBadgeSheet
-          open={awardBadgeOpen}
-          token={token}
-          sourceType="mission"
-          sourceId={c._id}
-          onOpenChange={setAwardBadgeOpen}
-        />
-      )}
 
       {/* Route vote source card — shown when mission originated from a vote */}
       {c.sourceRouteVoteId && (
