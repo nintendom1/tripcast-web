@@ -89,6 +89,31 @@ function isAllowed(finding, allowlist) {
   });
 }
 
+function suppressionRuleIds(line, directive) {
+  const idx = line.indexOf(directive);
+  if (idx === -1) return null; // directive not present
+  const rest = line.slice(idx + directive.length).trim();
+  return rest ? rest.split(/[\s,]+/).filter(Boolean) : []; // [] = suppress all
+}
+
+function isSuppressed(lines, index, ruleId) {
+  const cur = lines[index] ?? "";
+  // A standalone next-line directive comment is lint-control metadata. Its
+  // rule-id args can themselves embed a banned term, so never flag the
+  // directive line itself.
+  if (cur.includes("term-lint-disable-next-line")) return true;
+  const checks = [
+    [lines[index - 1] ?? "", "term-lint-disable-next-line"],
+    [cur, "term-lint-disable-line"],
+  ];
+  for (const [line, directive] of checks) {
+    const ids = suppressionRuleIds(line, directive);
+    if (ids === null) continue;
+    if (ids.length === 0 || ids.includes(ruleId)) return true;
+  }
+  return false;
+}
+
 function fingerprint(input) {
   return crypto.createHash("sha1").update(input).digest("hex").slice(0, 12);
 }
@@ -127,7 +152,10 @@ function scan(config) {
             line: index + 1,
             excerpt: lineText.trim(),
           };
-          if (!isAllowed(finding, config.allowlist ?? [])) {
+          if (
+            !isAllowed(finding, config.allowlist ?? []) &&
+            !isSuppressed(lines, index, finding.ruleId)
+          ) {
             findings.push({ ...finding, key: findingKey(finding) });
           }
           if (match[0].length === 0) rule.regexp.lastIndex++;
