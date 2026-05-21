@@ -320,6 +320,8 @@ export type AttributionList = {
     username: string | null;
     showAttribution: boolean | null;
     isDev: boolean;
+    // Badges this attributor earned for this source (point-free).
+    badges: Array<{ badgeType: BadgeType; emoji: string; name: string }>;
   }>;
 };
 
@@ -1216,6 +1218,7 @@ export const tripcastApi = {
         lon: number;
         source: CheckpointSource;
         transaction?: TransactionInlineInput;
+        awardBadgeType?: BadgeType;
       },
       string
     >,

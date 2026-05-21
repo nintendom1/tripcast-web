@@ -153,11 +153,33 @@ export default function AttributionBlock({
       {isTraveler && !isEditing ? (
         <div className="grid gap-1 text-xs text-muted-foreground">
           {(data?.attributions ?? []).map((item) => (
-            <span key={item._id}>
-              {item.displayName ?? "Hidden"} · {roleLabel(item.role)}
-              {item.showAttribution === false ? " · hidden publicly" : ""}
+            <span key={item._id} className="flex items-center gap-1.5">
+              <span>
+                {item.displayName ?? "Hidden"} · {roleLabel(item.role)}
+                {item.showAttribution === false ? " · hidden publicly" : ""}
+              </span>
+              {item.badges.length > 0 ? (
+                <span aria-label={`Badges: ${item.badges.map((b) => b.name).join(", ")}`}>
+                  {item.badges.map((b) => b.emoji).join(" ")}
+                </span>
+              ) : null}
             </span>
           ))}
+        </div>
+      ) : null}
+
+      {!isTraveler ? (
+        <div className="grid gap-0.5 text-xs text-[var(--ink-2)]">
+          {(data?.attributions ?? [])
+            .filter((item) => item.displayName && item.badges.length > 0)
+            .map((item) => (
+              <span key={item._id} className="flex items-center gap-1.5">
+                <span className="font-medium">{item.displayName}</span>
+                <span aria-label={`Badges: ${item.badges.map((b) => b.name).join(", ")}`}>
+                  {item.badges.map((b) => b.emoji).join(" ")}
+                </span>
+              </span>
+            ))}
         </div>
       ) : null}
 

@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   tripcastApi,
   type AddCheckpointArgs,
+  type BadgeType,
   type Checkpoint,
   type JournalEvent,
   type Role,
@@ -218,12 +219,19 @@ function ConvexCheckpointSheet({
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
 }) {
+  const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const completeMissionAsStory = useMutation(
     tripcastApi.missions.travelerCompleteMissionAsStory,
   );
+  const isFromMission = Boolean(prefill?.missionId);
+  const badgeDefinitions = useQuery(
+    tripcastApi.badges.listBadgeDefinitions,
+    isFromMission ? { token } : "skip",
+  );
 
   const [stateOpen, setStateOpen] = useState(false);
+  const [awardBadgeType, setAwardBadgeType] = useState<BadgeType | null>(null);
   const [transactionState, setTransactionState] = useState<TravelFundsInlineState>(null);
   const [moodValue, setMoodValue] = useState<import("../../convex/tripcastApi").TravelerMoodValue | undefined>();
   const [energyLevel, setEnergyLevel] = useState<import("../../convex/tripcastApi").TravelerEnergyLevel | undefined>();
@@ -243,6 +251,7 @@ function ConvexCheckpointSheet({
       setScheduleLevel(undefined);
       setQuickNote("");
       setTransactionState(null);
+      setAwardBadgeType(null);
     }
   }, [selectedCoordinate]);
 
@@ -271,6 +280,7 @@ function ConvexCheckpointSheet({
         lon: args.lon,
         source: args.source,
         transaction: inlineTransaction,
+        awardBadgeType: awardBadgeType ?? undefined,
       });
     }
     return addCheckpoint({
@@ -348,6 +358,49 @@ function ConvexCheckpointSheet({
             />
             <span className="text-right text-xs text-muted-foreground">{quickNote.length}/240</span>
           </div>
+        </div>
+      )}
+      {isFromMission && (
+        <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm">
+          <span className="text-xs font-semibold text-muted-foreground">
+            Award a badge to the creator?{" "}
+            <span className="font-normal">(optional)</span>
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setAwardBadgeType(null)}
+              className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                awardBadgeType === null
+                  ? "bg-navy text-white"
+                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+              }`}
+            >
+              None
+            </button>
+            {(badgeDefinitions ?? []).map((b) => (
+              <button
+                key={b.badgeType}
+                type="button"
+                onClick={() => {
+                  setAwardBadgeType(b.badgeType);
+                  log.logInteraction("badge:complete-as-story:select", {
+                    badgeType: b.badgeType,
+                  });
+                }}
+                className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                  awardBadgeType === b.badgeType
+                    ? "bg-navy text-white"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                <span aria-hidden>{b.emoji}</span> {b.name}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            The badge is awarded to the Follower(s) credited on this Mission.
+          </p>
         </div>
       )}
       <TravelFundsInlineSection
