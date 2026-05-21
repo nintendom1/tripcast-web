@@ -118,18 +118,19 @@ describe("AchievementsConnected", () => {
     });
   });
 
-  it("groups multiple untoasted achievements into one toast", async () => {
+  it("toasts multiple untoasted achievements individually, not batched", async () => {
     const { markToasted } = setup({
       summary: followerSummary,
       untoasted: [
-        makeEvent({ _id: "e1", points: 1 }),
-        makeEvent({ _id: "e2", points: 1 }),
+        makeEvent({ _id: "e1", points: 1, title: "+1 Daily Visit" }),
+        makeEvent({ _id: "e2", points: 1, title: "+1 Mission Created" }),
       ],
     });
     render(<AchievementsConnected token="t" />);
 
-    expect(await screen.findByText("You earned 2 achievements")).toBeInTheDocument();
-    expect(screen.getByText("+2 points")).toBeInTheDocument();
+    // The first queued achievement shows on its own; no batched summary toast.
+    expect(await screen.findByText("+1 Daily Visit")).toBeInTheDocument();
+    expect(screen.queryByText(/You earned 2 achievements/)).not.toBeInTheDocument();
     await waitFor(() => {
       expect(markToasted).toHaveBeenCalledWith({ token: "t", ids: ["e1", "e2"] });
     });

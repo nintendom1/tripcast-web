@@ -11,6 +11,7 @@ import TravelFundsInlineSection, {
 } from "../travelfunds/TravelFundsInlineSection";
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import AttributionBlock from "../attributions/AttributionBlock";
+import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 
 
@@ -97,6 +98,7 @@ export default function MissionDetailSheet({
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
+  const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
   const [completionTxState, setCompletionTxState] = useState<TravelFundsInlineState>(null);
 
   const accept = useMutation(tripcastApi.missions.travelerAcceptMission);
@@ -588,6 +590,32 @@ export default function MissionDetailSheet({
         sourceType="mission"
         sourceId={c._id}
       />
+
+      {/* Award Badge — Traveler, completed Missions only */}
+      {isTraveler && status === "completed" && (
+        <Button
+          size="sm"
+          variant="outline"
+          type="button"
+          className="w-fit"
+          onClick={() => {
+            log.logUi("badge:award:open", { sourceType: "mission" });
+            setAwardBadgeOpen(true);
+          }}
+        >
+          🏅 Award Badge
+        </Button>
+      )}
+
+      {isTraveler && (
+        <AwardBadgeSheet
+          open={awardBadgeOpen}
+          token={token}
+          sourceType="mission"
+          sourceId={c._id}
+          onOpenChange={setAwardBadgeOpen}
+        />
+      )}
 
       {/* Route vote source card — shown when mission originated from a vote */}
       {c.sourceRouteVoteId && (

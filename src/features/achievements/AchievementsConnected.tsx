@@ -28,16 +28,12 @@ export default function AchievementsConnected({ token, className }: Props) {
     "src/features/achievements/AchievementsConnected.tsx",
   );
   const [open, setOpen] = useState(false);
+  // Pending achievement toasts, shown one at a time (FIFO). Each newly-earned
+  // event gets its own toast — they are never batched into a summary.
+  const [queue, setQueue] = useState<ToastState[]>([]);
   const [toast, setToast] = useState<ToastState | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastedIdsRef = useRef<Set<string>>(new Set());
   const prevTotalRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (toastTimer.current !== null) clearTimeout(toastTimer.current);
-    };
-  }, []);
 
   // Point changes: log the score total whenever it changes (and once on first
   // load), so the ledger's effect on the derived total is traceable.
@@ -63,39 +59,46 @@ export default function AchievementsConnected({ token, className }: Props) {
     prevTotalRef.current = summary.total;
   }, [summary, log]);
 
-  // Queue an achievement toast for any newly-earned (untoasted) events, then
-  // mark them toasted so they do not re-toast on reload.
+  // Enqueue one toast per newly-earned (untoasted) event, then mark them
+  // toasted so they do not re-toast on reload.
   useEffect(() => {
     if (!untoasted || untoasted.length === 0) return;
     const fresh = untoasted.filter((e) => !toastedIdsRef.current.has(e._id));
     if (fresh.length === 0) return;
     fresh.forEach((e) => toastedIdsRef.current.add(e._id));
 
-    const points = fresh.reduce((sum, e) => sum + e.points, 0);
-    const nextToast: ToastState =
-      fresh.length === 1
-        ? { main: fresh[0].title, sub: fresh[0].message, points, count: 1 }
-        : {
-            main: `You earned ${fresh.length} achievements`,
-            sub: `+${points} points`,
-            points,
-            count: fresh.length,
-          };
-    setToast(nextToast);
-    log.logUi("achievement:toast:queued", {
-      main: nextToast.main,
-      sub: nextToast.sub,
-      points: nextToast.points,
-      count: nextToast.count,
-    });
-    music.sfx("open");
-    if (toastTimer.current !== null) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 4000);
+    const newToasts: ToastState[] = fresh.map((e) => ({
+      main: e.title,
+      sub: e.message,
+      points: e.points,
+      count: 1,
+    }));
+    setQueue((current) => [...current, ...newToasts]);
+    log.logUi("achievement:toast:queued", { count: newToasts.length });
 
     markToasted({ token, ids: fresh.map((e) => e._id) }).catch(() => {
       // best-effort; will retry next open if it failed
     });
-  }, [untoasted, token, markToasted, music, log]);
+  }, [untoasted, token, markToasted, log]);
+
+  // Show the next queued toast once nothing is showing (small gap so the prior
+  // toast finishes its exit animation before the next enters).
+  useEffect(() => {
+    if (toast !== null || queue.length === 0) return;
+    const timer = setTimeout(() => {
+      setToast(queue[0]);
+      setQueue((current) => current.slice(1));
+      music.sfx("open");
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [toast, queue, music]);
+
+  // Auto-dismiss the current toast after its display window.
+  useEffect(() => {
+    if (toast === null) return;
+    const timer = setTimeout(() => setToast(null), 3200);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // No scoring identity (or still loading) → render nothing.
   if (summary === undefined || summary === null) {
@@ -135,7 +138,12 @@ export default function AchievementsConnected({ token, className }: Props) {
         ) : null}
       </button>
 
-      <AchievementsSheet open={open} summary={summary} onOpenChange={setOpen} />
+      <AchievementsSheet
+        open={open}
+        summary={summary}
+        token={token}
+        onOpenChange={setOpen}
+      />
 
       <AchievementToast toast={toast} log={log} />
     </>

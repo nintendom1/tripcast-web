@@ -256,9 +256,17 @@ export type AchievementEventType =
   | "mission_proposed_weekly"
   | "mission_visible"
   | "mission_completed"
-  | "mission_featured_in_story";
+  | "mission_featured_in_story"
+  | "badge_awarded";
 
 export type AchievementSourceType = "visit" | "mission" | "story";
+
+export type BadgeType =
+  | "life_changing"
+  | "tasty"
+  | "entertained"
+  | "refreshing"
+  | "popular";
 
 export type AchievementEvent = {
   _id: string;
@@ -267,6 +275,7 @@ export type AchievementEvent = {
   recipientSessionId?: string;
   isDev: boolean;
   eventType: AchievementEventType;
+  badgeType?: BadgeType;
   points: number;
   uniqueKey: string;
   sourceType: AchievementSourceType;
@@ -311,11 +320,68 @@ export type AttributionList = {
     username: string | null;
     showAttribution: boolean | null;
     isDev: boolean;
+    // Badges this attributor earned for this source (point-free).
+    badges: Array<{ badgeType: BadgeType; emoji: string; name: string }>;
   }>;
 };
 
 export type AttributionSettings = {
   showAttribution: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Badges
+// ---------------------------------------------------------------------------
+
+export type BadgeSourceType = "mission" | "story";
+
+// Points are intentionally absent — they never surface on Badge chips/detail,
+// only in the achievement History ledger (AchievementEvent.points).
+export type BadgeDefinition = {
+  badgeType: BadgeType;
+  name: string;
+  emoji: string;
+  description: string;
+};
+
+export type BadgeBoardAward = {
+  sourceType: BadgeSourceType;
+  sourceLabel: string;
+  awardedAt: number;
+  note?: string;
+};
+
+export type BadgeBoardEntry = BadgeDefinition & {
+  earned: boolean;
+  count: number;
+  awards: BadgeBoardAward[];
+};
+
+export type BadgeBoard = {
+  isDev: boolean;
+  badges: BadgeBoardEntry[];
+};
+
+export type BadgeAwardRecipient = {
+  idTag: string;
+  userId: string | null;
+  devSessionId: string | null;
+  displayName: string;
+  isDev: boolean;
+  hiddenAttribution: boolean;
+};
+
+export type BadgeAwardContext = {
+  sourceLabel: string;
+  recipients: BadgeAwardRecipient[];
+  badges: BadgeDefinition[];
+  awarded: Array<{ idTag: string; badgeType: BadgeType }>;
+};
+
+export type BadgeAwardResult = {
+  awardedCount: number;
+  alreadyAwardedCount: number;
+  skippedNotAttributedCount: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -1152,6 +1218,7 @@ export const tripcastApi = {
         lon: number;
         source: CheckpointSource;
         transaction?: TransactionInlineInput;
+        awardBadgeType?: BadgeType;
       },
       string
     >,
@@ -1341,6 +1408,12 @@ export const tripcastApi = {
       { token: string },
       ScoreSummary | null
     >,
+    listAchievementHistory: (anyApi as any).scoring.listAchievementHistory as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      AchievementEvent[]
+    >,
     listUnseenAchievements: (anyApi as any).scoring.listUnseenAchievements as FunctionReference<
       "query",
       "public",
@@ -1413,6 +1486,39 @@ export const tripcastApi = {
         attributions: Array<{ userId: string; role?: AttributionRole }>;
       },
       null
+    >,
+  },
+  badges: {
+    listBadgeDefinitions: (anyApi as any).badges.listBadgeDefinitions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      BadgeDefinition[]
+    >,
+    getMyBadges: (anyApi as any).badges.getMyBadges as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      BadgeBoard | null
+    >,
+    travelerGetBadgeAwardContext: (anyApi as any).badges.travelerGetBadgeAwardContext as FunctionReference<
+      "query",
+      "public",
+      { token: string; sourceType: BadgeSourceType; sourceId: string },
+      BadgeAwardContext
+    >,
+    travelerAwardBadges: (anyApi as any).badges.travelerAwardBadges as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        sourceType: BadgeSourceType;
+        sourceId: string;
+        badgeType: BadgeType;
+        recipients: Array<{ userId?: string; devSessionId?: string }>;
+        note?: string;
+      },
+      BadgeAwardResult
     >,
   },
   followers: {

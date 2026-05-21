@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Camera } from "lucide-react";
 import { X } from "lucide-react";
 
@@ -19,6 +19,7 @@ import {
 } from "../../components/ui/sheet";
 import { RevealText } from "../../components/ui/RevealText";
 import AttributionBlock from "../attributions/AttributionBlock";
+import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import {
   MOOD_LABELS,
   ENERGY_LABELS,
@@ -198,6 +199,8 @@ function NarrativeBody({
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
 }) {
+  const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
+  const isTraveler = role === "traveler";
   return (
     <>
       <div className="flex items-start justify-between gap-2 px-5 pt-2">
@@ -244,6 +247,30 @@ function NarrativeBody({
               viewerRole={role}
               sourceType="story"
               sourceId={event.checkpointId}
+            />
+          </div>
+        ) : null}
+
+        {isTraveler && token && event.checkpointId ? (
+          <div className="mt-3">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                log("info", "StoryDetailSheet", "badge:award:open", "ui", {
+                  sourceType: "story",
+                });
+                setAwardBadgeOpen(true);
+              }}
+            >
+              🏅 Award Badge
+            </Button>
+            <AwardBadgeSheet
+              open={awardBadgeOpen}
+              token={token}
+              sourceType="story"
+              sourceId={event.checkpointId}
+              onOpenChange={setAwardBadgeOpen}
             />
           </div>
         ) : null}
