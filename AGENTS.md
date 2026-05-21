@@ -16,6 +16,18 @@ Rules here encode **specific failure modes that have already occurred** — in p
 - If you find yourself on `main` at the start of a task, create a feature branch first via `git checkout -b <branch-name>`.
 - When creating a frontend git worktree, copy the existing `.env.local` from the primary frontend checkout into the new worktree before running Vite. Keep `.env.local` untracked and never commit it.
 
+## Frontend Worktree Setup
+
+When creating a frontend git worktree:
+
+1. Copy `.env.local` from the primary frontend checkout into the new worktree.
+2. Check whether `node_modules/.bin/tsc` exists in the new worktree.
+3. If it is missing, run `npm install` in the new worktree before validation.
+4. Do not treat `tsc is not recognized` as a TypeScript failure; it means dependencies are not installed in that worktree.
+5. After installing dependencies, rerun `npm run validate`.
+
+Do not symlink or reuse `node_modules` across worktrees by default, especially on Windows.
+
 ## Planning Mode Behavior
 
 - When in planning mode, **ask clarifying questions as needed to explore and refine requirements** before finalizing the plan. Probe for edge cases, prioritization, and constraints the user may not have stated.
@@ -257,9 +269,9 @@ Map controls live in a single horizontal Dock at the bottom plus two corner util
 | HUD top stack | `inset-x-3 top-3` | `StatusCard` (state + activity), `LivePill` (Traveler only), `FundsCompact` |
 | Music indicator | `right-3 top-3` | `MusicMuteIndicator` |
 | Map utility | `bottom-[88px] right-3` | `MapCenterButton` (recenter on traveler / last check-in) |
-| Bottom Dock | `inset-x-3 bottom-3` | `Dock` (Story · Missions · `+` · Votes · Funds) |
+| Bottom Dock | `inset-x-3 bottom-3` | `Dock` (Traveler: Journal · Missions · `+` · Votes · Awards; Follower: Journal · Missions · Votes · Awards) |
 
-The Dock is the single nav surface. Its center `+` is a FAB: Traveler opens `FanMenu` (Check-in / Activity / Transaction / Mission / Vote); Followers go straight to "Propose Mission" (no fan).
+The Dock is the single nav surface. Its center `+` is a Traveler-only FAB that opens `FanMenu` (Check-in / Activity / Transaction / Mission / Vote). Followers access Mission proposal from Missions instead of a redundant `+` tab.
 
 Touch targets in the Dock are 44 × 44 px or larger; the FAB is 48 × 48 px and bleeds slightly above the dock baseline. Live the design tokens in `src/styles.css` (`--dock-h`, `--shadow-fab`, `--flag`) — do not hardcode colors at use sites.
 
@@ -275,7 +287,7 @@ Modal flows (Options, Emergency Reset) keep the default backdrop/modal behavior.
 
 ### Mutual panel exclusion
 
-At most one bottom sheet (Journal, Missions, Votes, Funds) may be open at a time. The Dock's `onSelect` callback funnels into the existing `open<Panel>` helpers, which use named functions — not raw `setState` on the button `onClick` — to enforce exclusion:
+At most one bottom sheet (Journal, Missions, Votes, Funds, Achievements) may be open at a time. The Dock's `onSelect` callback funnels into the existing `open<Panel>` helpers, which use named functions — not raw `setState` on the button `onClick` — to enforce exclusion:
 
 ```typescript
 function openHistory() {

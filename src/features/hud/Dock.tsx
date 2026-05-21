@@ -1,16 +1,18 @@
 import * as React from "react";
-import { Clock, Plus, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
+import { Award, Clock, Plus, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { LABELS } from "../../copy/terminology";
 
-export type DockTab = "journal" | "missions" | "votes" | "funds";
+export type DockTab = "journal" | "missions" | "votes" | "funds" | "achievements";
 
 export interface DockBadges {
   journal?: number;
   missions?: number;
   votes?: number;
   votesPulsing?: boolean;
+  achievements?: number;
+  achievementsPulsing?: boolean;
 }
 
 export interface DockProps {
@@ -20,6 +22,7 @@ export interface DockProps {
   fanOpen?: boolean;
   showAdd?: boolean;
   showFunds?: boolean;
+  showAchievements?: boolean;
   addLabel?: string;
   badges?: DockBadges;
   className?: string;
@@ -27,11 +30,11 @@ export interface DockProps {
 
 /**
  * Bottom Dock replaces the legacy bottom-left + bottom-right FAB clusters with
- * a single nav strip: Story · Missions · [+] · Votes · Funds.
+ * a single nav strip. Traveler: Journal · Missions · [+] · Votes · Awards.
+ * Follower: Journal · Missions · Votes · Awards.
  *
- * The center FAB is the entry point for adding (Traveler) or proposing (Follower
- * route votes) — its behavior is owned by the parent. Pulsing vote badge signals an
- * active vote that the follower has not yet seen.
+ * The center FAB is the Traveler entry point for adding. Pulsing vote badge
+ * signals an active vote that the follower has not yet seen.
  */
 export function Dock({
   active,
@@ -40,6 +43,7 @@ export function Dock({
   fanOpen = false,
   showAdd = true,
   showFunds = true,
+  showAchievements = false,
   addLabel = "Add",
   badges = {},
   className,
@@ -88,9 +92,7 @@ export function Dock({
         >
           <Plus className="h-6 w-6" strokeWidth={2.6} aria-hidden="true" />
         </button>
-      ) : (
-        <span className="w-12" aria-hidden="true" />
-      )}
+      ) : null}
 
       <DockButton
         active={active === "votes"}
@@ -107,6 +109,16 @@ export function Dock({
           label={LABELS.dock.funds}
           icon={<Wallet className="h-5 w-5" aria-hidden="true" />}
           onClick={() => handleSelect("funds")}
+        />
+      ) : null}
+      {showAchievements ? (
+        <DockButton
+          active={active === "achievements"}
+          label={LABELS.dock.achievements}
+          icon={<Award className="h-5 w-5" aria-hidden="true" />}
+          badge={badges.achievements}
+          badgePulsing={badges.achievementsPulsing}
+          onClick={() => handleSelect("achievements")}
         />
       ) : null}
     </nav>
@@ -137,7 +149,7 @@ function DockButton({ active, label, icon, badge, badgePulsing, onClick }: DockB
       )}
     >
       {icon}
-      <span className="font-[var(--font-mono)] uppercase tracking-[0.08em]">{label}</span>
+      <span className="font-[var(--font-mono)]">{label}</span>
       {badge && badge > 0 ? (
         <span
           className={cn(

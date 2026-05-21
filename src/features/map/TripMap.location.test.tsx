@@ -175,12 +175,14 @@ beforeEach(() => {
 });
 
 describe("TripMap location marker", () => {
-  it("closes the Funds sheet when another Dock sheet opens", async () => {
+  it("keeps Funds off the Dock but closes its sheet when another Dock sheet opens", async () => {
     setupQueries();
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Funds" }));
+    expect(screen.queryByRole("button", { name: "Funds" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Funds\./ }));
     expect(await screen.findByTestId("funds-sheet")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Journal" }));
@@ -189,6 +191,18 @@ describe("TripMap location marker", () => {
       expect(screen.queryByTestId("funds-sheet")).not.toBeInTheDocument();
     });
     expect(screen.getByTestId("journal-sheet")).toBeInTheDocument();
+  });
+
+  it("removes the follower add button and keeps Awards in the Dock", () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    expect(screen.getByRole("button", { name: "Journal" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Missions" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Votes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Awards" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
   });
 
   it("keeps the route vote fallback origin stable across follower rerenders", async () => {
