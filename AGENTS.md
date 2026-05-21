@@ -72,6 +72,17 @@ export default function MySheet({ ... }) {
 | State transition worth tracking | `log.logState("stateName", before, after)` | `state` |
 | Travel-funds change | `log.logFunds("event:name", { ... })` | `funds` |
 | Routing/navigation change | `log.info("route:change", "route", { ... })` | `route` |
+| App initialization / page load | `debugLog("info", "App", "app:init", "ui", { online, viewport, hadStoredSession })` | `ui` |
+| Transient surface appears (toast/banner) | `log.logUi("x:toast:shown", { text, points, placement, dims, viewport })` | `ui` |
+| Tracked domain value changes (score/points/budget) | `log.logUi("x:value:change", { from, to, delta })` (or `log.logState`) | `ui` / `state` |
+
+### Always-in-scope instrumentation for new features
+
+Beyond the per-component basics above, **every new feature must instrument these three lifecycle concerns** — they are the ones most often missing and most useful when debugging on a device you cannot see:
+
+1. **App / feature initialization** — log once on mount / page load (fires on refresh). Include enough context to reconstruct the entry state (viewport, online status, whether a stored session existed, relevant feature flags). See `app:init` in `src/App.tsx`.
+2. **Transient UI surfaces (toasts, banners, popovers)** — log when they *appear*, capturing the **rendered text/values, placement, and measured dimensions** (`getBoundingClientRect()` after commit) plus the viewport. Placement/size bugs on mobile are invisible without this. See `achievement:toast:shown` in `src/features/achievements/AchievementsConnected.tsx`.
+3. **Tracked value changes** — when a feature surfaces a number the user watches (score/points, budget, counts), log every change with `{ from, to, delta }` (and an `:init` entry on first load). See `achievement:points:change`.
 
 ### Required instrumentation for every new sheet or panel
 

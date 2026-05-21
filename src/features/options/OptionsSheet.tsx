@@ -9,6 +9,7 @@ import {
   LogOut,
   Play,
   ShieldAlert,
+  Trophy,
   User,
   UserPlus,
   Users,
@@ -231,6 +232,49 @@ function MissionSettingsSection({ token }: { token: string }) {
   );
 }
 
+function DeveloperScoringToggle({ token }: { token: string }) {
+  const settings = useQuery(tripcastApi.scoring.travelerGetScoringSettings, { token });
+  const setDeveloperScoring = useMutation(tripcastApi.scoring.travelerSetDeveloperScoring);
+  const [error, setError] = useState<string | null>(null);
+  const enabled = settings?.developerScoringEnabled ?? false;
+
+  async function handleToggle() {
+    setError(null);
+    try {
+      await setDeveloperScoring({ token, enabled: !enabled });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <div className="grid gap-1.5 rounded-xl bg-[var(--bg-card)] p-3">
+      <label className="flex cursor-pointer items-start gap-3">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-2)]">
+          <Trophy className="h-4 w-4" aria-hidden />
+        </div>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold text-[var(--ink-1)]">
+            Earn Follower points as Traveler
+          </span>
+          <span className="block text-xs text-[var(--ink-3)]">
+            Developer testing only. Lets the Traveler test achievement toasts and
+            score UI.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={handleToggle}
+          className="mt-1 h-4 w-4"
+          style={{ accentColor: "var(--flag)" }}
+        />
+      </label>
+      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+    </div>
+  );
+}
+
 export default function OptionsSheet({
   open,
   onOpenChange,
@@ -435,6 +479,7 @@ function OptionsHome({
 
       <OptionsSection label="Developer">
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
+        {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
       </OptionsSection>
 
       {role === "traveler" ? (

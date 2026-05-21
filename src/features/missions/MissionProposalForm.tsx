@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
+import { getLocalDateKey } from "../achievements/dateUtils";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -54,6 +55,7 @@ export default function MissionProposalForm({ token, onSuccess, onRequestCoordin
     try {
       const result = await propose({
         token,
+        clientLocalDate: getLocalDateKey(),
         title: title.trim(),
         description: description.trim() || undefined,
         locationLabel: locationLabel.trim() || undefined,

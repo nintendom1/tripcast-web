@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, JournalEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import { getLocalDateKey } from "../achievements/dateUtils";
 import MissionCard from "./MissionCard";
 import MissionProposalForm from "./MissionProposalForm";
 import MissionDetailSheet from "./MissionDetailSheet";
@@ -524,6 +525,7 @@ function TravelerCreateForm({
     try {
       await create({
         token,
+        clientLocalDate: getLocalDateKey(),
         title: title.trim(),
         description: description.trim() || undefined,
         locationLabel: locationLabel.trim() || undefined,

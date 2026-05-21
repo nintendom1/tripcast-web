@@ -248,6 +248,45 @@ export type MissionContentArgs = {
 };
 
 // ---------------------------------------------------------------------------
+// Achievements / scoring types
+// ---------------------------------------------------------------------------
+
+export type AchievementEventType = "daily_visit" | "mission_proposed_weekly";
+
+export type AchievementSourceType = "visit" | "mission";
+
+export type AchievementEvent = {
+  _id: string;
+  _creationTime: number;
+  recipientUserId?: string;
+  recipientSessionId?: string;
+  isDev: boolean;
+  eventType: AchievementEventType;
+  points: number;
+  uniqueKey: string;
+  sourceType: AchievementSourceType;
+  sourceMissionId?: string;
+  title: string;
+  message: string;
+  detail?: string;
+  createdAt: number;
+  toastedAt?: number;
+  seenAt?: number;
+};
+
+export type ScoreSummary = {
+  total: number;
+  count: number;
+  isDev: boolean;
+  unseenCount: number;
+  recent: AchievementEvent[];
+};
+
+export type ScoringSettings = {
+  developerScoringEnabled: boolean;
+};
+
+// ---------------------------------------------------------------------------
 // Current Activity types
 // ---------------------------------------------------------------------------
 
@@ -1015,7 +1054,7 @@ export const tripcastApi = {
     followerProposeMission: (anyApi as any).missions.followerProposeMission as FunctionReference<
       "mutation",
       "public",
-      { token: string } & MissionContentArgs,
+      { token: string; clientLocalDate?: string } & MissionContentArgs,
       { missionId: string; autoPublished: boolean }
     >,
     followerWithdrawMission: (anyApi as any).missions.followerWithdrawMission as FunctionReference<
@@ -1027,7 +1066,7 @@ export const tripcastApi = {
     travelerCreateMission: (anyApi as any).missions.travelerCreateMission as FunctionReference<
       "mutation",
       "public",
-      { token: string } & MissionContentArgs,
+      { token: string; clientLocalDate?: string } & MissionContentArgs,
       string
     >,
     travelerEditMission: (anyApi as any).missions.travelerEditMission as FunctionReference<
@@ -1259,6 +1298,56 @@ export const tripcastApi = {
       "public",
       { token: string },
       JournalEvent[]
+    >,
+  },
+  scoring: {
+    getScoreSummary: (anyApi as any).scoring.getScoreSummary as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      ScoreSummary | null
+    >,
+    listUnseenAchievements: (anyApi as any).scoring.listUnseenAchievements as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      AchievementEvent[]
+    >,
+    listUntoastedAchievements: (anyApi as any).scoring.listUntoastedAchievements as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      AchievementEvent[]
+    >,
+    recordDailyVisit: (anyApi as any).scoring.recordDailyVisit as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; localDateKey: string },
+      null
+    >,
+    markAchievementsToasted: (anyApi as any).scoring.markAchievementsToasted as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; ids: string[] },
+      null
+    >,
+    markAchievementsSeen: (anyApi as any).scoring.markAchievementsSeen as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+    travelerGetScoringSettings: (anyApi as any).scoring.travelerGetScoringSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      ScoringSettings
+    >,
+    travelerSetDeveloperScoring: (anyApi as any).scoring.travelerSetDeveloperScoring as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; enabled: boolean },
+      null
     >,
   },
   followers: {
