@@ -35,6 +35,7 @@ import { formatUsd } from "../travelfunds/currency";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { TERMS } from "../../copy/terminology";
+import AttributionPublicLine from "../attributions/AttributionPublicLine";
 
 import EditCheckpointSheet from "./EditCheckpointSheet";
 
@@ -362,6 +363,7 @@ export default function JournalSheet({
                 const item = (
                   <StoryRailItem
                     event={event}
+                    token={token}
                     isLast={index === filtered.length - 1}
                     actualCostUsd={actualCostUsd}
                     onSelect={() => {
@@ -420,12 +422,13 @@ export default function JournalSheet({
 
 type StoryRailItemProps = {
   event: JournalEvent;
+  token: string;
   isLast: boolean;
   actualCostUsd?: number;
   onSelect: () => void;
 };
 
-function StoryRailItem({ event, isLast, actualCostUsd, onSelect }: StoryRailItemProps) {
+function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryRailItemProps) {
   const visual = visualForEvent(event.type, event.narrativeLevel);
   const Icon = visual.Icon;
   const isCheckIn = event.type === "story";
@@ -496,6 +499,15 @@ function StoryRailItem({ event, isLast, actualCostUsd, onSelect }: StoryRailItem
           <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)]">
             {event.body}
           </p>
+        ) : null}
+
+        {event.type === "story" && event.checkpointId ? (
+          <AttributionPublicLine
+            token={token}
+            sourceType="story"
+            sourceId={event.checkpointId}
+            className="text-[11px] text-[var(--ink-3)]"
+          />
         ) : null}
 
         {event.locationLabel ? (

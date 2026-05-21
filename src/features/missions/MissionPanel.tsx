@@ -461,6 +461,7 @@ function TravelerListView({
             const card = (
               <MissionCard
                 Mission={c}
+                token={token}
                 isHighlighted={c._id === highlightedMissionId}
                 onClick={() => onOpenDetail(c)}
               />
@@ -749,6 +750,7 @@ function FollowerListView({
               <div key={c._id}>
                 <MissionCard
                   Mission={c}
+                  token={token}
                   isOwn
                   isHighlighted={c._id === highlightedMissionId}
                   onClick={() => onOpenDetail(c, true)}
@@ -765,6 +767,7 @@ function FollowerListView({
             <div key={c._id}>
               <MissionCard
                 Mission={c}
+                token={token}
                 isOwn={mineIds.has(c._id)}
                 isHighlighted={c._id === highlightedMissionId}
                 onClick={() => onOpenDetail(c, mineIds.has(c._id))}

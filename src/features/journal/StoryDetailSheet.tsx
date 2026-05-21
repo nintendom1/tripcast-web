@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { StatBar } from "../../components/rpg/StatBar";
 
-import type { JournalEvent } from "../../convex/tripcastApi";
+import type { JournalEvent, Role } from "../../convex/tripcastApi";
 import { log } from "../../debug/debugLogger";
 import {
   Sheet,
@@ -18,6 +18,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { RevealText } from "../../components/ui/RevealText";
+import AttributionBlock from "../attributions/AttributionBlock";
 import {
   MOOD_LABELS,
   ENERGY_LABELS,
@@ -103,6 +104,8 @@ function StomachBarRow({ level }: { level: string }) {
 
 type StoryDetailSheetProps = {
   event: JournalEvent | null;
+  token?: string;
+  role?: Role;
   onClose: () => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   /** Title of the mission the story was filed against, when `event.missionId`
@@ -114,6 +117,8 @@ type StoryDetailSheetProps = {
 
 export default function StoryDetailSheet({
   event,
+  token,
+  role,
   onClose,
   onLocationFocus,
   missionTitle,
@@ -163,6 +168,8 @@ export default function StoryDetailSheet({
             <NarrativeBody
               key={event._id}
               event={event}
+              token={token}
+              role={role}
               missionTitle={missionTitle}
               missionId={missionId}
               onNavigateToMission={onNavigateToMission}
@@ -178,11 +185,15 @@ export default function StoryDetailSheet({
 
 function NarrativeBody({
   event,
+  token,
+  role,
   missionTitle,
   missionId,
   onNavigateToMission,
 }: {
   event: JournalEvent;
+  token?: string;
+  role?: Role;
   missionTitle?: string;
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
@@ -224,6 +235,17 @@ function NarrativeBody({
           <blockquote className="mt-5 border-l-2 border-[var(--amber)] pl-4 text-sm italic text-[var(--ink-2)]">
             &ldquo;{event.statusNote}&rdquo;
           </blockquote>
+        ) : null}
+
+        {event.checkpointId && token && role ? (
+          <div className="mt-4">
+            <AttributionBlock
+              token={token}
+              viewerRole={role}
+              sourceType="story"
+              sourceId={event.checkpointId}
+            />
+          </div>
         ) : null}
 
         {missionId && (

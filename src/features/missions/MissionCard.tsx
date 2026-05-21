@@ -1,7 +1,9 @@
 import type { Mission } from "../../convex/tripcastApi";
+import AttributionPublicLine from "../attributions/AttributionPublicLine";
 
 type Props = {
   Mission: Mission;
+  token?: string;
   isOwn?: boolean;
   isHighlighted?: boolean;
   onClick?: () => void;
@@ -25,7 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
   dropped: "bg-slate-100 text-slate-500",
 };
 
-export default function MissionCard({ Mission, isOwn, isHighlighted, onClick }: Props) {
+export default function MissionCard({ Mission, token, isOwn, isHighlighted, onClick }: Props) {
   const statusLabel = STATUS_LABELS[Mission.status] ?? Mission.status;
   const statusColor = STATUS_COLORS[Mission.status] ?? "bg-slate-100 text-slate-600";
 
@@ -48,6 +50,15 @@ export default function MissionCard({ Mission, isOwn, isHighlighted, onClick }: 
       {Mission.description && (
         <p className="text-xs text-muted-foreground line-clamp-1">{Mission.description}</p>
       )}
+
+      {token ? (
+        <AttributionPublicLine
+          token={token}
+          sourceType="mission"
+          sourceId={Mission._id}
+          className="text-xs text-[var(--ink-3)]"
+        />
+      ) : null}
 
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
         {Mission.locationLabel && (

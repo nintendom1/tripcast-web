@@ -10,6 +10,7 @@ import TravelFundsInlineSection, {
   type TravelFundsInlineState,
 } from "../travelfunds/TravelFundsInlineSection";
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
+import AttributionBlock from "../attributions/AttributionBlock";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 
 
@@ -580,6 +581,13 @@ export default function MissionDetailSheet({
           <span>⚡ Energy: {c.estimatedEnergyImpact}</span>
         )}
       </div>
+
+      <AttributionBlock
+        token={token}
+        viewerRole={role}
+        sourceType="mission"
+        sourceId={c._id}
+      />
 
       {/* Route vote source card — shown when mission originated from a vote */}
       {c.sourceRouteVoteId && (
