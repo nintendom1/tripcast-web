@@ -48,6 +48,7 @@ import {
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
+import AchievementsConnected from "../achievements/AchievementsConnected";
 import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -1229,6 +1230,20 @@ export default function TripMap({
         active={role === "traveler" ? isLocationSharing : storedTravelerLocation !== null}
         onClick={handleCenterLocation}
       />
+
+      {/* Achievements — floating score button (renders only when the current
+          user has a scoring identity) plus its sheet and queued toasts. */}
+      <FeatureBoundary
+        resetKeys={[token, role, "achievements"]}
+        title="Achievements hit a problem."
+        message="Try again."
+        fallbackClassName={CARD_ERROR_CLASS}
+      >
+        <AchievementsConnected
+          token={token}
+          className="absolute bottom-[140px] right-3 z-[3]"
+        />
+      </FeatureBoundary>
 
       {/* Bottom Dock — replaces the bottom-left + bottom-right FAB clusters */}
       <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[3] tripcast-frame">

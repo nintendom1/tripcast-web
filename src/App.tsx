@@ -25,6 +25,7 @@ import { PendingNotice } from "./components/resilience/PendingNotice";
 import { useDelayedPending } from "./components/resilience/useDelayedPending";
 import { useOnlineStatus } from "./components/resilience/useOnlineStatus";
 import { useMusicSafe } from "./providers/MusicProvider";
+import { getLocalDateKey } from "./features/achievements/dateUtils";
 import { useInteractionLogger } from "./debug/useInteractionLogger";
 import DebugErrorBoundary from "./debug/DebugErrorBoundary";
 import { log as debugLog } from "./debug/debugLogger";
@@ -95,6 +96,15 @@ function ConnectedApp() {
 
   useInteractionLogger();
 
+  // App initialization (fires on every full page load / refresh).
+  useEffect(() => {
+    debugLog("info", "App", "app:init", "ui", {
+      online: typeof navigator !== "undefined" ? navigator.onLine : undefined,
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+      hadStoredSession: getStoredSession() !== null,
+    });
+  }, []);
+
   useEffect(() => {
     const onError = (e: ErrorEvent) =>
       debugLog("error", "window", "global:error", "error", { message: e.message, filename: e.filename, line: e.lineno });
@@ -122,6 +132,8 @@ function ConnectedApp() {
 
   const signOutMutation = useMutation(tripcastApi.auth.signOut);
   const followerSignOutMutation = useMutation(tripcastApi.followers.followerSignOut);
+  const recordDailyVisit = useMutation(tripcastApi.scoring.recordDailyVisit);
+  const dailyVisitTokenRef = useRef<string | null>(null);
   const sessionCheckIsDelayed = useDelayedPending(
     session !== null && activeSessionCheck === undefined,
     5000,
@@ -159,6 +171,28 @@ function ConnectedApp() {
       setIsFollowerTourOpen(true);
     }
   }, [currentRole]);
+
+  // Daily-visit scoring: fire once per session token after the session
+  // validates. Idempotent + no-op server-side when there is no scoring
+  // identity (e.g. a Traveler with developer scoring disabled).
+  useEffect(() => {
+    if (
+      session !== null &&
+      activeSessionCheck &&
+      typeof activeSessionCheck === "object" &&
+      dailyVisitTokenRef.current !== session.token
+    ) {
+      dailyVisitTokenRef.current = session.token;
+      void Promise.resolve()
+        .then(() =>
+          recordDailyVisit({
+            token: session.token,
+            localDateKey: getLocalDateKey(),
+          }),
+        )
+        .catch(() => {});
+    }
+  }, [session, activeSessionCheck, recordDailyVisit]);
 
   function handleSignIn(newSession: StoredSession) {
     setStoredSession(newSession);

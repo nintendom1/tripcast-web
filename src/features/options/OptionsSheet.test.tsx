@@ -152,3 +152,27 @@ describe("OptionsSheet traveler timezone", () => {
     expect(screen.queryByRole("button", { name: /set timezone to/i })).not.toBeInTheDocument();
   });
 });
+
+describe("OptionsSheet developer scoring toggle", () => {
+  const followerSession: StoredSession = {
+    token: "follower-token",
+    role: "follower",
+    sessionType: "follower",
+    username: "f1",
+    displayName: "Follower",
+  };
+
+  it("shows the Traveler-only 'Earn Follower points as Traveler' toggle for the Traveler", () => {
+    setupMocks();
+    renderOptions();
+    expect(screen.getByText("Earn Follower points as Traveler")).toBeInTheDocument();
+  });
+
+  it("does not show the developer scoring toggle for a Follower", () => {
+    setupMocks();
+    renderOptions({ session: followerSession, role: "follower" });
+    expect(
+      screen.queryByText("Earn Follower points as Traveler"),
+    ).not.toBeInTheDocument();
+  });
+});
