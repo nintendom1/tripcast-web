@@ -487,6 +487,7 @@ export default function TripMap({
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
+  const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
   const [journalDebugSource, setJournalDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [missionsDebugSource, setMissionsDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
@@ -566,6 +567,7 @@ export default function TripMap({
     setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
   }
   function openMissions(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isMissionsPanelOpen) {
@@ -582,6 +584,7 @@ export default function TripMap({
     setIsJournalOpen(false);
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
   }
   function openVotes(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isVotePanelOpen) {
@@ -598,6 +601,7 @@ export default function TripMap({
     setIsJournalOpen(false);
     setIsMissionsPanelOpen(false);
     setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
   }
   function openFunds(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isTravelFundsSheetOpen) {
@@ -614,6 +618,23 @@ export default function TripMap({
     setIsJournalOpen(false);
     setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(false);
+    setIsAchievementsOpen(false);
+  }
+  function openAchievements() {
+    if (isAchievementsOpen) {
+      log.logInteraction("panel:close", { panel: "achievements" });
+      music.sfx("close");
+      setIsAchievementsOpen(false);
+      return;
+    }
+    log.logInteraction("panel:open", { panel: "achievements" });
+    performance.mark("tripcast:debug:achievements:open");
+    music.sfx("open");
+    setIsAchievementsOpen(true);
+    setIsJournalOpen(false);
+    setIsMissionsPanelOpen(false);
+    setIsVotePanelOpen(false);
+    setIsTravelFundsSheetOpen(false);
   }
 
   const activeDockTab: DockTab | null = isJournalOpen
@@ -624,7 +645,9 @@ export default function TripMap({
         ? "votes"
         : isTravelFundsSheetOpen
           ? "funds"
-          : null;
+          : isAchievementsOpen
+            ? "achievements"
+            : null;
 
   function handleDockSelect(tab: DockTab) {
     setFanOpen(false);
@@ -632,13 +655,10 @@ export default function TripMap({
     else if (tab === "missions") openMissions({ source: "dock:missions", sourceLabel: "Dock -> Missions" });
     else if (tab === "votes") openVotes({ source: "dock:votes", sourceLabel: "Dock -> Votes" });
     else if (tab === "funds") openFunds({ source: "dock:funds", sourceLabel: "Dock -> Funds" });
+    else if (tab === "achievements") openAchievements();
   }
 
   function handleDockAdd() {
-    if (role === "follower") {
-      openMissions({ source: "dock:add", sourceLabel: "Dock -> Propose Mission" });
-      return;
-    }
     music.sfx("tap");
     setFanOpen((prev) => !prev);
   }
@@ -840,6 +860,7 @@ export default function TripMap({
     setCoordinatePickMode(null);
     coordinatePickModeRef.current = null;
     setIsJournalOpen(false);
+    setIsAchievementsOpen(false);
     setSelectedStoryEvent(null);
   }, [tripDataResetNonce]);
 
@@ -920,6 +941,7 @@ export default function TripMap({
     setIsVotePanelOpen(true);
     setIsJournalOpen(false);
     setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
     setPendingOpenVoteId(voteId);
   }
 
@@ -936,6 +958,7 @@ export default function TripMap({
     setIsMissionsPanelOpen(true);
     setIsJournalOpen(false);
     setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
     setPendingOpenDetailMissionId(missionId);
   }
 
@@ -1239,6 +1262,7 @@ export default function TripMap({
         onMissionClick={(id) => {
           music.sfx("open");
           setIsMissionsPanelOpen(true);
+          setIsAchievementsOpen(false);
           setPendingOpenMissionId(id);
         }}
       />
@@ -1321,8 +1345,7 @@ export default function TripMap({
         onClick={handleCenterLocation}
       />
 
-      {/* Achievements — floating score button (renders only when the current
-          user has a scoring identity) plus its sheet and queued toasts. */}
+      {/* Achievements sheet and queued toasts. The Dock owns the trigger. */}
       <FeatureBoundary
         resetKeys={[token, role, "achievements"]}
         title="Achievements hit a problem."
@@ -1331,7 +1354,9 @@ export default function TripMap({
       >
         <AchievementsConnected
           token={token}
-          className="absolute bottom-[140px] right-3 z-[3]"
+          open={isAchievementsOpen}
+          onOpenChange={setIsAchievementsOpen}
+          showButton={false}
         />
       </FeatureBoundary>
 
@@ -1343,7 +1368,9 @@ export default function TripMap({
           onAdd={handleDockAdd}
           fanOpen={fanOpen}
           addLabel={role === "traveler" ? "Add" : `Propose ${TERMS.mission.toLowerCase()}`}
-          showFunds={role === "traveler"}
+          showAdd={role === "traveler"}
+          showFunds={false}
+          showAchievements
           badges={{
             journal: unreadCount,
             missions: missionBadgeCount,

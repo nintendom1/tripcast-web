@@ -23,6 +23,7 @@ export const TERMS = {
   debugLog: "Debug Log",
   dangerZone: "Danger Zone",
   emergencyReset: "Emergency Reset",
+  awards: "Awards",
   badges: "Badges",
 } as const;
 
@@ -32,6 +33,7 @@ export const LABELS = {
     missions: TERMS.missions,
     votes: TERMS.votes,
     funds: TERMS.funds,
+    achievements: TERMS.awards,
   },
   sheets: {
     journalTitle: TERMS.journal,
