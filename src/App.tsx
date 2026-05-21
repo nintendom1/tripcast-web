@@ -82,6 +82,7 @@ function ConnectedApp() {
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [optionsDefaultView, setOptionsDefaultView] = useState<OptionsView>("options");
+  const [preserveDebugContext, setPreserveDebugContext] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
   const music = useMusicSafe();
   // Follower first-launch tour visibility — only shown for Follower sessions
@@ -386,6 +387,7 @@ function ConnectedApp() {
         role={role}
         onOpenOptions={() => {
           music.sfx("open");
+          setPreserveDebugContext(false);
           setOptionsDefaultView("options");
           setIsOptionsOpen(true);
         }}
@@ -397,10 +399,12 @@ function ConnectedApp() {
           if (!nextOpen) {
             music.sfx("close");
             setOptionsDefaultView("options");
+            setPreserveDebugContext(false);
           }
           setIsOptionsOpen(nextOpen);
         }}
         defaultView={optionsDefaultView}
+        preserveDebugContext={preserveDebugContext}
         session={session}
         role={role}
         onSignOut={handleSignOut}
@@ -445,6 +449,7 @@ function ConnectedApp() {
             tripDataResetNonce={tripDataResetNonce}
             onOpenDebugPanel={() => {
               music.sfx("open");
+              setPreserveDebugContext(true);
               setOptionsDefaultView("debug-logs");
               setIsOptionsOpen(true);
             }}

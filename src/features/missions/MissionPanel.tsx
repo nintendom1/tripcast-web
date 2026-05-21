@@ -27,6 +27,7 @@ import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 
 type Props = {
@@ -51,6 +52,7 @@ type Props = {
   onClearPendingDetail?: () => void;
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: JournalEvent) => void;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -94,6 +96,7 @@ export default function MissionPanel({
   onClearPendingDetail,
   onRequestNavigateToVote,
   onOpenLinkedStory,
+  debugSource,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedMission, setSelectedMission] = useState<SelectedMission | null>(null);
@@ -101,6 +104,14 @@ export default function MissionPanel({
   const [isDeleting, setIsDeleting] = useState(false);
   const music = useMusicSafe();
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
+  useActiveUiContext(open, {
+    sheetName: "MissionPanel",
+    label: TERMS.missions,
+    view: viewMode,
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/missions/MissionPanel.tsx",
+  }, { boundsSelector: "[data-role='missions-sheet']" });
   const deleteMission = useMutation(tripcastApi.missions.travelerDeleteMission);
 
   async function handleConfirmDelete() {

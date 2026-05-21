@@ -15,6 +15,7 @@ import {
 } from "../../components/ui/sheet";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -55,8 +56,9 @@ type AddCheckpointSheetProps = {
    *  parent can wire to "reopen the mission detail" — matching the rest of the
    *  rework's internal-nav back affordance. Dismissal via swipe-down / escape
    *  still flows through `onClose` and just closes the sheet without
-   *  navigating back to the mission. */
+  *  navigating back to the mission. */
   onBack?: () => void;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 function formatCoordinate(value: number) {
@@ -80,6 +82,7 @@ export default function AddCheckpointSheet({
   prefill,
   onCheckpointCreated,
   onBack,
+  debugSource,
 }: AddCheckpointSheetProps) {
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
@@ -94,6 +97,14 @@ export default function AddCheckpointSheet({
   const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Story");
   const titleText = isFromMission ? "Complete as story" : "Add pin";
   const showBackAffordance = isFromMission && Boolean(onBack);
+  useActiveUiContext(Boolean(selectedCoordinate), {
+    sheetName: "AddCheckpointSheet",
+    label: titleText,
+    view: isFromMission ? "mission-completion" : "check-in",
+    source: debugSource?.source ?? selectedCoordinate?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/map/AddCheckpointSheet.tsx",
+  }, { boundsSelector: "[data-role='add-checkpoint-sheet']" });
 
   useEffect(() => {
     if (selectedCoordinate) {

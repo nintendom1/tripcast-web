@@ -14,6 +14,7 @@ Rules here encode **specific failure modes that have already occurred** — in p
 - **Never work directly on `main`.** Always create a feature branch before making changes.
 - Name feature branches with hyphens only — no slashes. Examples: `feat-mission-lifecycle`, `fix-map-markers`, `chore-update-deps`.
 - If you find yourself on `main` at the start of a task, create a feature branch first via `git checkout -b <branch-name>`.
+- When creating a frontend git worktree, copy the existing `.env.local` from the primary frontend checkout into the new worktree before running Vite. Keep `.env.local` untracked and never commit it.
 
 ## Planning Mode Behavior
 
@@ -43,6 +44,7 @@ Rules here encode **specific failure modes that have already occurred** — in p
 ## Debug Logging (Required for New Features)
 
 TripCast has a local-only debug logger (`src/debug/`) that is always present but disabled by default. **Every new component or feature must instrument itself using this system.** Do not add `console.log` for diagnostic output — use the logger instead.
+Any new sheet, panel, modal, drawer, or map-adjacent surface must also register active UI context via `useActiveUiContext` so the floating Debug button and copied summary identify it. Include a human label, implementation sheet/panel name, active view/tab when available, source/opened-by label, file path, and bounds selector. If the surface is nested, register the nested surface too so it can temporarily override the primary sheet while open.
 
 ### Quick-start
 

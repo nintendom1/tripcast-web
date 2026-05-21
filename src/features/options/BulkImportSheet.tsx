@@ -21,6 +21,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 const SAMPLE_JSON = `{
   "timeZone": "America/Los_Angeles",
@@ -143,6 +144,14 @@ export default function BulkImportSheet({
   const [result, setResult] = useState<BulkImportResult | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
   const music = useMusicSafe();
+  useActiveUiContext(open, {
+    sheetName: "BulkImportSheet",
+    label: "Bulk Import",
+    view: stage,
+    source: "options:bulk-import",
+    sourceLabel: "Options -> Bulk Import",
+    file: "src/features/options/BulkImportSheet.tsx",
+  }, { boundsSelector: "[data-role='bulk-import-sheet']" });
 
   const preview = useQuery(
     tripcastApi.bulkImport.previewBulkImport,
@@ -195,6 +204,7 @@ export default function BulkImportSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
+        data-role="bulk-import-sheet"
         className="max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
         <SheetGrabber />
