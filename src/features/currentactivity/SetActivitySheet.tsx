@@ -11,6 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -20,6 +21,7 @@ type SetActivitySheetProps = {
   open: boolean;
   token: string;
   onOpenChange: (open: boolean) => void;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 // ---------------------------------------------------------------------------
@@ -52,13 +54,21 @@ function friendlyError(error: unknown): string {
 // Component
 // ---------------------------------------------------------------------------
 
-export default function SetActivitySheet({ open, token, onOpenChange }: SetActivitySheetProps) {
+export default function SetActivitySheet({ open, token, onOpenChange, debugSource }: SetActivitySheetProps) {
   const [title, setTitle] = useState("");
   const [emoji, setEmoji] = useState("");
   const [note, setNote] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useActiveUiContext(open, {
+    sheetName: "SetActivitySheet",
+    label: "Set Current Activity",
+    view: "form",
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/currentactivity/SetActivitySheet.tsx",
+  }, { boundsSelector: "[data-role='set-activity-sheet']" });
 
   const existingActivity = useQuery(
     tripcastApi.currentActivity.travelerGetCurrentActivity,
@@ -102,7 +112,7 @@ export default function SetActivitySheet({ open, token, onOpenChange }: SetActiv
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="bottom">
+      <SheetContent side="bottom" data-role="set-activity-sheet">
         <SheetHeader>
           <SheetTitle>Set Current Activity</SheetTitle>
         </SheetHeader>

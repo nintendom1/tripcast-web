@@ -26,6 +26,7 @@ import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import {
   MOOD_LABELS,
   ENERGY_LABELS,
@@ -120,6 +121,7 @@ type StoryDetailSheetProps = {
   missionTitle?: string;
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 export default function StoryDetailSheet({
@@ -131,7 +133,18 @@ export default function StoryDetailSheet({
   missionTitle,
   missionId,
   onNavigateToMission,
+  debugSource,
 }: StoryDetailSheetProps) {
+  const isNarrative = event?.narrativeLevel === "narrative";
+  useActiveUiContext(Boolean(event), {
+    sheetName: "StoryDetailSheet",
+    label: isNarrative ? "Story detail" : "Activity detail",
+    view: isNarrative ? "narrative" : "activity",
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/journal/StoryDetailSheet.tsx",
+  }, { boundsSelector: "[data-role='story-detail']" });
+
   useEffect(() => {
     if (event) {
       log("info", "StoryDetailSheet", "sheet:open", "ui", {
@@ -148,8 +161,6 @@ export default function StoryDetailSheet({
     // Focus map when story opens; onLocationFocus is stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [event?._id]);
-
-  const isNarrative = event?.narrativeLevel === "narrative";
 
   return (
     <Sheet

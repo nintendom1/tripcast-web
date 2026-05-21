@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils";
 import { getStateEmoji } from "../travelstate/travelerStateUtils";
 import { formatUsd } from "../travelfunds/currency";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
 
@@ -146,6 +147,7 @@ type JournalSheetProps = {
   onStorySelect: (event: JournalEvent) => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   onMarkAllRead: () => void;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 export default function JournalSheet({
@@ -156,6 +158,7 @@ export default function JournalSheet({
   onStorySelect,
   onLocationFocus,
   onMarkAllRead,
+  debugSource,
 }: JournalSheetProps) {
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
@@ -168,6 +171,14 @@ export default function JournalSheet({
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
+  useActiveUiContext(true, {
+    sheetName: "JournalSheet",
+    label: TERMS.journal,
+    view: viewMode === "create" ? "create-story" : `list:${activeTab}`,
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/journal/JournalSheet.tsx",
+  }, { boundsSelector: "[data-role='journal-sheet']" });
 
   useEffect(() => {
     return () => { onMarkAllRead(); };
@@ -225,6 +236,7 @@ export default function JournalSheet({
         ref={containerRef}
         side="bottom"
         showBackdrop={false}
+        data-role="journal-sheet"
         className="z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
         <SheetGrabber />

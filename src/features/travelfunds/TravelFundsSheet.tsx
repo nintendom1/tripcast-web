@@ -13,11 +13,13 @@ import { formatLocal, formatUsd, getCategoryEmoji, getCategoryLabel } from "./cu
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 
 type TravelFundsSheetProps = {
   token: string;
   onClose: () => void;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 type View = "summary" | "add" | "edit" | "settings";
@@ -29,7 +31,7 @@ const VIEW_TITLES: Record<View, string> = {
   settings: `${TERMS.funds} settings`,
 };
 
-export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetProps) {
+export default function TravelFundsSheet({ token, onClose, debugSource }: TravelFundsSheetProps) {
   const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
   const transactions = useQuery(tripcastApi.travelFunds.travelerListTransactions, { token });
   const updateConfig = useMutation(tripcastApi.travelFunds.travelerUpdateConfig);
@@ -48,6 +50,14 @@ export default function TravelFundsSheet({ token, onClose }: TravelFundsSheetPro
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const music = useMusicSafe();
   const log = useDebugLogger("TravelFundsSheet", "src/features/travelfunds/TravelFundsSheet.tsx");
+  useActiveUiContext(true, {
+    sheetName: "TravelFundsSheet",
+    label: TERMS.travelFunds,
+    view,
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/travelfunds/TravelFundsSheet.tsx",
+  }, { boundsSelector: "[data-role='travel-funds-sheet']" });
 
   function openSettings() {
     log.logInteraction("view:change", { from: view, to: "settings" });

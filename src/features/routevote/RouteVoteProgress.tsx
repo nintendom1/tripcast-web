@@ -23,6 +23,7 @@ import CreateRouteVoteForm from "./CreateRouteVoteForm";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 import { TERMS } from "../../copy/terminology";
 
@@ -44,6 +45,7 @@ type RouteVoteProgressProps = {
   pendingOpenVoteId?: string | null;
   onClearPendingVoteId?: () => void;
   onRequestOpenMissionDetail?: (missionId: string) => void;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 type View = "list" | "create" | "detail";
@@ -362,6 +364,7 @@ export default function RouteVoteProgress({
   pendingOpenVoteId,
   onClearPendingVoteId,
   onRequestOpenMissionDetail,
+  debugSource,
 }: RouteVoteProgressProps) {
   const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token });
   const containerRef = useRef<HTMLDivElement>(null);
@@ -375,6 +378,14 @@ export default function RouteVoteProgress({
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const [actingVoteId, setActingVoteId] = useState<string | null>(null);
   const music = useMusicSafe();
+  useActiveUiContext(true, {
+    sheetName: "RouteVoteProgress",
+    label: TERMS.votes,
+    view: isPickingCoordinate ? `${view}:coordinate-pick` : view,
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/routevote/RouteVoteProgress.tsx",
+  }, { boundsSelector: "[data-role='route-votes-sheet']" });
 
   useEffect(() => {
     const id = setTimeout(() => {

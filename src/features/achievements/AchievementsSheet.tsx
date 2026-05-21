@@ -19,6 +19,7 @@ import {
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import BadgeBoard, { BADGE_COLOR } from "./BadgeBoard";
 
 type Props = {
@@ -159,6 +160,15 @@ export default function AchievementsSheet({
   );
   const [tab, setTab] = useState<Tab>("badges");
   const [detailBadge, setDetailBadge] = useState<BadgeBoardEntry | null>(null);
+  const activeView = detailBadge ? "badge-detail" : tab;
+  useActiveUiContext(open, {
+    sheetName: "AchievementsSheet",
+    label: "Achievements",
+    view: activeView,
+    source: "achievements-chip",
+    sourceLabel: "Badge chip",
+    file: "src/features/achievements/AchievementsSheet.tsx",
+  }, { boundsSelector: "[data-role='achievements-sheet']" });
 
   const board = useQuery(
     tripcastApi.badges.getMyBadges,

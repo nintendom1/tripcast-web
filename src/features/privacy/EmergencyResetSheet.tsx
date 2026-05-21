@@ -12,6 +12,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { TERMS } from "../../copy/terminology";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 type EmergencyResetSheetProps = {
   open: boolean;
@@ -102,6 +103,14 @@ export function EmergencyResetContent({
   const [isConfirming, setIsConfirming] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  useActiveUiContext(true, {
+    sheetName: "EmergencyResetSheet",
+    label: TERMS.emergencyReset,
+    view: isConfirming ? "confirm" : "overview",
+    source: "options:emergency-reset",
+    sourceLabel: "Options -> Emergency Reset",
+    file: "src/features/privacy/EmergencyResetSheet.tsx",
+  }, { boundsSelector: "[data-role='options-sheet']" });
 
   function setPending(nextPending: boolean) {
     setIsPending(nextPending);

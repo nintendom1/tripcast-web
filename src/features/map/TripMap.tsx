@@ -89,6 +89,16 @@ type CoordinatePickMode = {
   callback: (coord: { lat: number; lon: number }) => void;
 };
 
+type DebugOpenSource = {
+  source: string;
+  sourceLabel: string;
+};
+
+const UNKNOWN_DEBUG_SOURCE: DebugOpenSource = {
+  source: "unknown",
+  sourceLabel: "Unknown",
+};
+
 function isFiniteLngLatBounds(
   bounds: [[number, number], [number, number]],
 ) {
@@ -205,6 +215,7 @@ function ConvexCheckpointSheet({
   transactionPrefill,
   onCheckpointCreated,
   onBack,
+  debugSource,
 }: {
   selectedCoordinate: SelectedCoordinate | null;
   token: string;
@@ -218,6 +229,7 @@ function ConvexCheckpointSheet({
   };
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
+  debugSource?: DebugOpenSource;
 }) {
   const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
@@ -420,6 +432,7 @@ function ConvexCheckpointSheet({
       prefill={prefill}
       onCheckpointCreated={onCheckpointCreated}
       onBack={onBack}
+      debugSource={debugSource}
     />
   );
 }
@@ -475,6 +488,13 @@ export default function TripMap({
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
+  const [journalDebugSource, setJournalDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
+  const [missionsDebugSource, setMissionsDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
+  const [votesDebugSource, setVotesDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
+  const [fundsDebugSource, setFundsDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
+  const [activityDebugSource, setActivityDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
+  const [storyDebugSource, setStoryDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
+  const [checkInDebugSource, setCheckInDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [pendingOpenMissionId, setPendingOpenMissionId] = useState<string | null>(null);
   // Mission Complete-as-Story flow: when the Traveler picks the "Complete as story"
   // branch in a mission detail, this prefill seeds AddCheckpointSheet with the
@@ -531,13 +551,14 @@ export default function TripMap({
     musicRef.current = music;
   }, [music]);
 
-  function openJournal() {
+  function openJournal(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isJournalOpen) {
       log.logInteraction("panel:close", { panel: "journal" });
       music.sfx("close");
       setIsJournalOpen(false);
       return;
     }
+    setJournalDebugSource(debugSource);
     log.logInteraction("panel:open", { panel: "journal" });
     performance.mark("tripcast:debug:journal:open");
     music.sfx("open");
@@ -546,13 +567,14 @@ export default function TripMap({
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
   }
-  function openMissions() {
+  function openMissions(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isMissionsPanelOpen) {
       log.logInteraction("panel:close", { panel: "Missions" });
       music.sfx("close");
       setIsMissionsPanelOpen(false);
       return;
     }
+    setMissionsDebugSource(debugSource);
     log.logInteraction("panel:open", { panel: "Missions" });
     performance.mark("tripcast:debug:Missions:open");
     music.sfx("open");
@@ -561,13 +583,14 @@ export default function TripMap({
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
   }
-  function openVotes() {
+  function openVotes(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isVotePanelOpen) {
       log.logInteraction("panel:close", { panel: "votes" });
       music.sfx("close");
       setIsVotePanelOpen(false);
       return;
     }
+    setVotesDebugSource(debugSource);
     log.logInteraction("panel:open", { panel: "votes" });
     performance.mark("tripcast:debug:votes:open");
     music.sfx("open");
@@ -576,13 +599,14 @@ export default function TripMap({
     setIsMissionsPanelOpen(false);
     setIsTravelFundsSheetOpen(false);
   }
-  function openFunds() {
+  function openFunds(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isTravelFundsSheetOpen) {
       log.logInteraction("panel:close", { panel: "funds" });
       music.sfx("close");
       setIsTravelFundsSheetOpen(false);
       return;
     }
+    setFundsDebugSource(debugSource);
     log.logInteraction("panel:open", { panel: "funds" });
     performance.mark("tripcast:debug:funds:open");
     music.sfx("open");
@@ -604,15 +628,15 @@ export default function TripMap({
 
   function handleDockSelect(tab: DockTab) {
     setFanOpen(false);
-    if (tab === "journal") openJournal();
-    else if (tab === "missions") openMissions();
-    else if (tab === "votes") openVotes();
-    else if (tab === "funds") openFunds();
+    if (tab === "journal") openJournal({ source: "dock:journal", sourceLabel: "Dock -> Journal" });
+    else if (tab === "missions") openMissions({ source: "dock:missions", sourceLabel: "Dock -> Missions" });
+    else if (tab === "votes") openVotes({ source: "dock:votes", sourceLabel: "Dock -> Votes" });
+    else if (tab === "funds") openFunds({ source: "dock:funds", sourceLabel: "Dock -> Funds" });
   }
 
   function handleDockAdd() {
     if (role === "follower") {
-      openMissions();
+      openMissions({ source: "dock:add", sourceLabel: "Dock -> Propose Mission" });
       return;
     }
     music.sfx("tap");
@@ -626,21 +650,23 @@ export default function TripMap({
       case "checkin":
         log.logInteraction("placement:enter", { trigger: "fan:checkin" });
         performance.mark("tripcast:debug:placement:enter");
+        setCheckInDebugSource({ source: "fan-menu:checkin", sourceLabel: "FanMenu -> Check In" });
         setSelectedCoordinate(null);
         setIsPlacementMode(true);
         break;
       case "activity":
         music.sfx("open");
+        setActivityDebugSource({ source: "fan-menu:activity", sourceLabel: "FanMenu -> Activity" });
         setIsSetActivityOpen(true);
         break;
       case "transaction":
-        openFunds();
+        openFunds({ source: "fan-menu:transaction", sourceLabel: "FanMenu -> Add Transaction" });
         break;
       case "mission":
-        openMissions();
+        openMissions({ source: "fan-menu:mission", sourceLabel: "FanMenu -> Add Mission" });
         break;
       case "vote":
-        openVotes();
+        openVotes({ source: "fan-menu:vote", sourceLabel: "FanMenu -> Add Vote" });
         break;
     }
   }
@@ -686,6 +712,7 @@ export default function TripMap({
       if (!canWrite) return;
       event.preventDefault();
       musicRef.current.sfx("pin");
+      setCheckInDebugSource({ source: "map:right-click", sourceLabel: "Map right-click" });
       setSelectedCoordinate({
         lat: event.lngLat.lat,
         lon: event.lngLat.lng,
@@ -725,6 +752,7 @@ export default function TripMap({
       log.logInteraction("coordinate:picked", { lat: event.lngLat.lat, lon: event.lngLat.lng, source: "placement" });
       setIsPlacementMode(false);
       musicRef.current.sfx("pin");
+      setCheckInDebugSource({ source: "fan-menu:checkin", sourceLabel: "FanMenu -> Check In" });
       setSelectedCoordinate({
         lat: event.lngLat.lat,
         lon: event.lngLat.lng,
@@ -887,6 +915,7 @@ export default function TripMap({
   function handleNavigateToVote(voteId: string) {
     log.logInteraction("panel:navigate", { from: "Missions", to: "votes", voteId });
     music.sfx("page");
+    setVotesDebugSource({ source: "missions:linked-vote", sourceLabel: "Missions -> Route Vote" });
     setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(true);
     setIsJournalOpen(false);
@@ -894,9 +923,13 @@ export default function TripMap({
     setPendingOpenVoteId(voteId);
   }
 
-  function handleNavigateToMissionDetail(missionId: string) {
+  function handleNavigateToMissionDetail(
+    missionId: string,
+    debugSource: DebugOpenSource = { source: "votes:linked-mission", sourceLabel: "Votes -> Mission" },
+  ) {
     log.logInteraction("panel:navigate", { from: "votes", to: "Missions", missionId });
     music.sfx("page");
+    setMissionsDebugSource(debugSource);
     setIsVotePanelOpen(false);
     setVoteMapOverlay(null);
     setVoteOptionNumberById(null);
@@ -909,13 +942,14 @@ export default function TripMap({
   function handleOpenLinkedStory(event: JournalEvent) {
     log.logInteraction("panel:navigate", { from: "Missions", to: "story", eventId: event._id });
     music.sfx("page");
+    setStoryDebugSource({ source: "missions:linked-story", sourceLabel: "Missions -> Story" });
     setSelectedStoryEvent(event);
   }
 
   function handleOpenMissionFromStory(missionId: string) {
     log.logInteraction("panel:navigate", { from: "story", to: "Missions", missionId });
     setSelectedStoryEvent(null);
-    handleNavigateToMissionDetail(missionId);
+    handleNavigateToMissionDetail(missionId, { source: "story-detail:mission", sourceLabel: "Story detail -> Mission" });
   }
 
   function handleRequestMissionCoordinatePick(
@@ -953,6 +987,7 @@ export default function TripMap({
     lon?: number;
   }, transaction?: import("../../convex/tripcastApi").TransactionInlineInput) {
     music.sfx("page");
+    setCheckInDebugSource({ source: "missions:complete-as-story", sourceLabel: "Mission detail -> Complete as Story" });
     setIsMissionsPanelOpen(false);
     setStoryPrefill({
       missionId: Mission._id,
@@ -989,6 +1024,7 @@ export default function TripMap({
     setStoryPrefill(null);
     setSelectedCoordinate(null);
     setIsPlacementMode(false);
+    setMissionsDebugSource({ source: "story-form:back", sourceLabel: "Back button" });
     setIsMissionsPanelOpen(true);
   }
 
@@ -1174,6 +1210,7 @@ export default function TripMap({
           if (!event) return;
           music.sfx("page");
           setStoryOpenedFromJournal(false);
+          setStoryDebugSource({ source: "story-pin", sourceLabel: "Story Pin" });
           setSelectedStoryEvent(event);
         }}
       />
@@ -1343,6 +1380,7 @@ export default function TripMap({
           transactionPrefill={storyPrefill?.transaction}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
+          debugSource={checkInDebugSource}
         />
       )}
 
@@ -1373,6 +1411,7 @@ export default function TripMap({
               onVoteOverlayChange={handleVoteOverlayChange}
               onRequestFitMap={handleRequestFitMap}
               fallbackOrigin={routeVoteFallbackOrigin}
+              debugSource={votesDebugSource}
             />
           </FeatureBoundary>
         )}
@@ -1408,6 +1447,7 @@ export default function TripMap({
               pendingOpenVoteId={pendingOpenVoteId}
               onClearPendingVoteId={() => setPendingOpenVoteId(null)}
               onRequestOpenMissionDetail={handleNavigateToMissionDetail}
+              debugSource={votesDebugSource}
             />
           </FeatureBoundary>
       )}
@@ -1450,6 +1490,7 @@ export default function TripMap({
             role={role}
             onOpenState={() => {
               music.sfx("open");
+              setActivityDebugSource({ source: "status-card:state", sourceLabel: "Status card" });
               setIsTravelerStateOpen(true);
             }}
           />
@@ -1469,7 +1510,7 @@ export default function TripMap({
             <FundsCompactConnected
               token={token}
               role={role}
-              onOpenSheet={role === "traveler" ? openFunds : undefined}
+              onOpenSheet={role === "traveler" ? () => openFunds({ source: "funds-chip", sourceLabel: "Funds chip" }) : undefined}
             />
           </FeatureBoundary>
         </div>
@@ -1509,6 +1550,7 @@ export default function TripMap({
                   music.sfx("close");
                   setIsTravelFundsSheetOpen(false);
                 }}
+                debugSource={fundsDebugSource}
               />
             )}
           </div>
@@ -1547,6 +1589,7 @@ export default function TripMap({
           onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
           onRequestNavigateToVote={handleNavigateToVote}
           onOpenLinkedStory={handleOpenLinkedStory}
+          debugSource={missionsDebugSource}
         />
       </FeatureBoundary>
 
@@ -1574,10 +1617,12 @@ export default function TripMap({
                 music.sfx("page");
                 setIsJournalOpen(false);
                 setStoryOpenedFromJournal(true);
+                setStoryDebugSource({ source: "journal:story-select", sourceLabel: "Journal -> Story" });
                 setSelectedStoryEvent(event);
               }}
               onLocationFocus={handleHistoryLocationFocus}
               onMarkAllRead={markAllRead}
+              debugSource={journalDebugSource}
             />
           </FeatureBoundary>
         )}
@@ -1602,6 +1647,7 @@ export default function TripMap({
         }
         missionId={selectedStoryEvent?.missionId ?? undefined}
         onNavigateToMission={handleOpenMissionFromStory}
+        debugSource={storyDebugSource}
       />
 
       {role === "traveler" && (
@@ -1618,6 +1664,7 @@ export default function TripMap({
           <SetActivitySheet
             open={isSetActivityOpen}
             token={token}
+            debugSource={activityDebugSource}
             onOpenChange={(nextOpen) => {
               if (!nextOpen) music.sfx("close");
               setIsSetActivityOpen(nextOpen);

@@ -17,10 +17,12 @@ import {
   setPreset,
   subscribe,
 } from "./debugLogger";
+import { resetActiveUiContextForTests, setActiveUiContext } from "./activeUiContext";
 
 beforeEach(() => {
   localStorage.clear();
   clearLogs();
+  resetActiveUiContextForTests();
 });
 
 // ---------------------------------------------------------------------------
@@ -306,6 +308,25 @@ describe("buildLlmSummary()", () => {
     setLocationRedact(false);
     const summary = buildLlmSummary();
     expect(summary).not.toContain("[location-redacted]");
+  });
+
+  it("includes active UI context in the summary", () => {
+    setEnabled(true);
+    setPreset("normal");
+    setActiveUiContext("journal", {
+      sheetName: "JournalSheet",
+      label: "Journal",
+      view: "list:story",
+      sourceLabel: "Dock -> Journal",
+      file: "src/features/journal/JournalSheet.tsx",
+    });
+
+    const summary = buildLlmSummary();
+
+    expect(summary).toContain("## Active UI Context");
+    expect(summary).toContain("Active sheet: JournalSheet");
+    expect(summary).toContain("Label: Journal");
+    expect(summary).toContain("Source: Dock -> Journal");
   });
 });
 

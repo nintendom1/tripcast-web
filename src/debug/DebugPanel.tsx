@@ -15,10 +15,20 @@ import {
   getLocationRedact,
   setLocationRedact,
   subscribe,
+  log as rawLog,
   type DebugEntry,
   type DebugCategory,
   type DebugPreset,
 } from "./debugLogger";
+import {
+  formatActiveUiContextForCopy,
+  getFloatingDebugSettings,
+  setFloatingDebugButtonMode,
+  setFloatingDebugIncludeFile,
+  setFloatingDebugShowSource,
+  subscribeActiveUiContext,
+  type FloatingDebugButtonMode,
+} from "./activeUiContext";
 import { TERMS } from "../copy/terminology";
 
 // ---------------------------------------------------------------------------
@@ -146,6 +156,12 @@ const PRESET_LABELS: Array<{ preset: DebugPreset; label: string }> = [
   { preset: "interaction-trace", label: "Trace" },
 ];
 
+const BUTTON_MODE_LABELS: Array<{ mode: FloatingDebugButtonMode; label: string }> = [
+  { mode: "log-count", label: "Count" },
+  { mode: "compact-context", label: "Compact" },
+  { mode: "detailed-context", label: "Detailed" },
+];
+
 function CategoryOverrides({ disabled, onRefresh }: { disabled: boolean; onRefresh: () => void }) {
   const [, forceRender] = useState(0);
 
@@ -235,6 +251,7 @@ function CategoryOverrides({ disabled, onRefresh }: { disabled: boolean; onRefre
 export default function DebugPanel({ onBack }: { onBack: () => void }) {
   const [enabled, setEnabledState] = useState(isEnabled);
   const [locationRedact, setLocationRedactState] = useState(getLocationRedact);
+  const [floatingSettings, setFloatingSettings] = useState(getFloatingDebugSettings);
   const [logs, setLogs] = useState<DebugEntry[]>(() => getLogs().slice(-50).reverse());
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const copyStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -247,6 +264,12 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     return subscribe(refresh);
   }, [refresh]);
+
+  useEffect(() => {
+    return subscribeActiveUiContext(() => {
+      setFloatingSettings(getFloatingDebugSettings());
+    });
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -283,6 +306,38 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
     const next = !locationRedact;
     setLocationRedact(next);
     setLocationRedactState(next);
+  }
+
+  function handleButtonMode(mode: FloatingDebugButtonMode) {
+    if (!enabled) return;
+    setFloatingDebugButtonMode(mode);
+    setFloatingSettings(getFloatingDebugSettings());
+    rawLog("info", "DebugPanel", "debug:floating-context-setting:update", "debug", {
+      setting: "buttonMode",
+      value: mode,
+    });
+  }
+
+  function handleShowSourceToggle() {
+    if (!enabled) return;
+    const next = !floatingSettings.showSource;
+    setFloatingDebugShowSource(next);
+    setFloatingSettings(getFloatingDebugSettings());
+    rawLog("info", "DebugPanel", "debug:floating-context-setting:update", "debug", {
+      setting: "showSource",
+      enabled: next,
+    });
+  }
+
+  function handleIncludeFileToggle() {
+    if (!enabled) return;
+    const next = !floatingSettings.includeFileInCopies;
+    setFloatingDebugIncludeFile(next);
+    setFloatingSettings(getFloatingDebugSettings());
+    rawLog("info", "DebugPanel", "debug:floating-context-setting:update", "debug", {
+      setting: "includeFileInCopies",
+      enabled: next,
+    });
   }
 
   function handleClear() {
@@ -322,10 +377,25 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
     }
   }
 
+  async function handleCopyCurrentContext() {
+    if (!enabled) return;
+    const context = formatActiveUiContextForCopy();
+    rawLog("info", "DebugPanel", "debug:context:copy", "debug", {
+      includeFile: floatingSettings.includeFileInCopies,
+    });
+    try {
+      await copyToClipboard(context);
+      showCopyStatus("Copied current context!");
+    } catch {
+      downloadJson(`tripcast-debug-context-${getSessionId()}.md`, context);
+      showCopyStatus("Downloaded context (clipboard unavailable)");
+    }
+  }
+
   const allLogs = getLogs();
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-5 px-5 pb-6">
+    <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-5 pb-6">
       {/* Back header */}
       <div className="flex items-center gap-2 pt-1">
         <button
@@ -390,6 +460,73 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
       {/* Preset + category overrides */}
       <CategoryOverrides disabled={!enabled} onRefresh={refresh} />
 
+      {/* Floating Debug button settings */}
+      <div
+        className={`rounded-xl bg-[var(--bg-card)] px-4 py-3 grid gap-3 ${enabled ? "" : "opacity-60"}`}
+        aria-disabled={!enabled}
+      >
+        <div>
+          <p className="text-xs font-semibold text-[var(--ink-2)] mb-1.5">Floating Debug Button</p>
+          <div className="flex gap-1 flex-wrap">
+            {BUTTON_MODE_LABELS.map(({ mode, label }) => (
+              <button
+                key={mode}
+                type="button"
+                disabled={!enabled}
+                onClick={() => handleButtonMode(mode)}
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed ${
+                  floatingSettings.buttonMode === mode
+                    ? "bg-[var(--flag)] text-[var(--ink-on-dark)]"
+                    : "bg-[var(--bg-surface)] text-[var(--ink-2)] hover:bg-[var(--bg-hover)]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="flex items-center justify-between gap-3 text-xs text-[var(--ink-2)]">
+          Show source/opened-by
+          <button
+            type="button"
+            role="switch"
+            aria-checked={floatingSettings.showSource}
+            aria-label="Show source opened by"
+            disabled={!enabled}
+            onClick={handleShowSourceToggle}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              floatingSettings.showSource ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]"
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                floatingSettings.showSource ? "translate-x-4" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </label>
+        <label className="flex items-center justify-between gap-3 text-xs text-[var(--ink-2)]">
+          Include file path in copies
+          <button
+            type="button"
+            role="switch"
+            aria-checked={floatingSettings.includeFileInCopies}
+            aria-label="Include file path in copies"
+            disabled={!enabled}
+            onClick={handleIncludeFileToggle}
+            className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              floatingSettings.includeFileInCopies ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]"
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                floatingSettings.includeFileInCopies ? "translate-x-4" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </label>
+      </div>
+
       {/* Stats + refresh */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-[var(--ink-3)]">
@@ -434,6 +571,14 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
         <button
           type="button"
           disabled={!enabled}
+          onClick={handleCopyCurrentContext}
+          className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Copy current context
+        </button>
+        <button
+          type="button"
+          disabled={!enabled}
           onClick={handleCopyDebugSummary}
           className="rounded-xl bg-[var(--flag)] py-2.5 text-xs font-semibold text-[var(--ink-on-dark)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -446,7 +591,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
       ) : null}
 
       {/* Log list */}
-      <div className="min-h-0 flex-1 overflow-y-auto rounded-xl bg-[var(--bg-card)] px-3 py-2">
+      <div className="h-[18rem] max-h-[40dvh] min-h-[14rem] shrink-0 overflow-y-auto rounded-xl bg-[var(--bg-card)] px-3 py-2">
         {logs.length === 0 ? (
           <p className="py-4 text-center text-xs text-[var(--ink-3)]">
             {enabled ? "No logs yet. Interact with the app to capture events." : "Enable debug logging to start capturing."}

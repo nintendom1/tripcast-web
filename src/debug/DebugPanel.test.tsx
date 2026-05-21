@@ -2,11 +2,17 @@ import { act } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DebugPanel from "./DebugPanel";
-import { clearLogs, setEnabled } from "./debugLogger";
+import { clearLogs, getLogs, setEnabled, setPreset } from "./debugLogger";
+import {
+  getFloatingDebugSettings,
+  resetActiveUiContextForTests,
+  setActiveUiContext,
+} from "./activeUiContext";
 
 beforeEach(() => {
   localStorage.clear();
   clearLogs();
+  resetActiveUiContextForTests();
 });
 
 afterEach(() => {
@@ -32,6 +38,7 @@ describe("DebugPanel", () => {
     expect(screen.getByRole("button", { name: /download json/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^copy json$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /copy debug summary/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /copy current context/i })).toBeDisabled();
     expect(screen.getByLabelText(/ui/i)).toBeDisabled();
   });
 
@@ -43,7 +50,49 @@ describe("DebugPanel", () => {
     expect(screen.getByRole("button", { name: /minimal/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /refresh/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /copy debug summary/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /copy current context/i })).not.toBeDisabled();
     expect(screen.getByLabelText(/ui/i)).not.toBeDisabled();
+  });
+
+  it("updates floating Debug button settings", () => {
+    setEnabled(true);
+    setPreset("verbose");
+    render(<DebugPanel onBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /compact/i }));
+    fireEvent.click(screen.getByRole("switch", { name: /show source opened by/i }));
+    fireEvent.click(screen.getByRole("switch", { name: /include file path in copies/i }));
+
+    expect(getFloatingDebugSettings()).toEqual({
+      buttonMode: "compact-context",
+      showSource: false,
+      includeFileInCopies: false,
+    });
+    expect(getLogs().some((entry) => entry.action === "debug:floating-context-setting:update")).toBe(true);
+  });
+
+  it("copies current context", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    setEnabled(true);
+    setActiveUiContext("story", {
+      sheetName: "StoryDetailSheet",
+      label: "Story detail",
+      view: "narrative",
+      sourceLabel: "Journal -> Story",
+    });
+
+    render(<DebugPanel onBack={vi.fn()} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /copy current context/i }));
+    });
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Active sheet: StoryDetailSheet"));
+    expect(screen.getByRole("status")).toHaveTextContent(/copied current context/i);
   });
 
   it("restarts the copy status timer on repeated copies", async () => {

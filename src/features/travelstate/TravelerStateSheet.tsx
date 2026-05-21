@@ -39,11 +39,13 @@ import { formatSaveError } from "./formatSaveError";
 import AutoStateTab from "./AutoStateTab";
 import { computeAutoState } from "./autoStateCalc";
 import { TERMS } from "../../copy/terminology";
+import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 type TravelerStateSheetProps = {
   token: string;
   onClose: () => void;
   onToast?: (msg: string) => void;
+  debugSource?: { source: string; sourceLabel: string };
 };
 
 type TabView = "state" | "visibility" | "auto";
@@ -210,7 +212,7 @@ function ToggleRow({
   );
 }
 
-export default function TravelerStateSheet({ token, onClose, onToast }: TravelerStateSheetProps) {
+export default function TravelerStateSheet({ token, onClose, onToast, debugSource }: TravelerStateSheetProps) {
   const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
   const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
@@ -253,6 +255,14 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
   const [showSchedulePressure, setShowSchedulePressure] = useState(DEFAULT_VISIBILITY.showSchedulePressure);
   const [showStatusNote, setShowStatusNote] = useState(DEFAULT_VISIBILITY.showStatusNote);
   const [showBiometrics, setShowBiometrics] = useState(DEFAULT_VISIBILITY.showBiometrics);
+  useActiveUiContext(true, {
+    sheetName: "TravelerStateSheet",
+    label: TERMS.travelerState,
+    view: reviewing && tab === "state" ? "state-review" : tab,
+    source: debugSource?.source ?? "unknown",
+    sourceLabel: debugSource?.sourceLabel ?? "Unknown",
+    file: "src/features/travelstate/TravelerStateSheet.tsx",
+  }, { boundsSelector: "[data-role='traveler-state-sheet']" });
 
   useEffect(() => {
     log.logUi("sheet:open", { tab: "state" });
@@ -421,6 +431,7 @@ export default function TravelerStateSheet({ token, onClose, onToast }: Traveler
   return (
     <motion.div
       {...PANEL_MOTION}
+      data-role="traveler-state-sheet"
       className="absolute inset-x-0 bottom-0 z-[10] flex max-h-[90dvh] flex-col rounded-t-xl border bg-background shadow-xl"
     >
       {/* Header */}
