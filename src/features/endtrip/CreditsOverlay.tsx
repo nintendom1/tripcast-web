@@ -72,7 +72,7 @@ export default function CreditsOverlay({ token, onClose }: Props) {
       <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4">
         <div>
           <div className="font-[var(--meadow-font-display)] text-[10px] uppercase tracking-[0.18em] text-white/50">
-            The trip ended
+            {credits?.ended ? "The trip ended" : "Trip credits"}
           </div>
           <div className="font-[var(--font-display)] text-lg font-extrabold text-white">TripCast</div>
         </div>
