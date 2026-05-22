@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { ChevronLeft, X } from "lucide-react";
+import { ChevronLeft, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Sheet = Dialog.Root;
@@ -226,12 +226,13 @@ const SheetAccentRail = ({ color, className, style, ...props }: SheetAccentRailP
 SheetAccentRail.displayName = "SheetAccentRail";
 
 interface SheetPersonalityTagProps extends React.HTMLAttributes<HTMLDivElement> {
+  Icon?: LucideIcon;
   motif?: string;
   tag: string;
   color?: string;
 }
 
-const SheetPersonalityTag = ({ motif, tag, color, className, style, ...props }: SheetPersonalityTagProps) => (
+const SheetPersonalityTag = ({ Icon, motif, tag, color, className, style, ...props }: SheetPersonalityTagProps) => (
   <div
     className={cn(
       "inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.14em]",
@@ -240,7 +241,7 @@ const SheetPersonalityTag = ({ motif, tag, color, className, style, ...props }: 
     style={color ? { color, fontFamily: "var(--meadow-font-display)", ...style } : { fontFamily: "var(--meadow-font-display)", ...style }}
     {...props}
   >
-    {motif ? <span aria-hidden="true" className="text-xs leading-none">{motif}</span> : null}
+    {Icon ? <Icon aria-hidden="true" className="h-3 w-3" /> : motif ? <span aria-hidden="true" className="text-xs leading-none">{motif}</span> : null}
     {tag}
   </div>
 );

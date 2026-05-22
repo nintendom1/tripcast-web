@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
+import { CheckSquare, Plus } from "lucide-react";
 import {
   tripcastApi,
   type RouteVoteMapOverlay,
@@ -26,6 +27,7 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 import { TERMS } from "../../copy/terminology";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -49,6 +51,7 @@ type RouteVoteProgressProps = {
 };
 
 type View = "list" | "create" | "detail";
+const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function VoteListCard({
   vote,
@@ -67,10 +70,19 @@ function VoteListCard({
   const total = vote.totalSubmissions;
 
   return (
-    <div className="rounded-md border bg-card p-3 flex flex-col gap-2">
+    <div className="flex flex-col gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)]">
       <div className="flex items-start justify-between gap-2">
-        <button type="button" onClick={onViewDetail} className="font-medium text-sm text-left hover:underline">
-          {vote.title}
+        <button type="button" onClick={onViewDetail} className="flex min-w-0 items-start gap-2 text-left">
+          <span
+            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
+            style={{ background: VOTES_PERSONALITY.color }}
+            aria-hidden="true"
+          >
+            <CheckSquare className="h-4 w-4" />
+          </span>
+          <span className="font-[var(--font-display)] text-sm font-extrabold leading-snug text-[var(--ink-1)]">
+            {vote.title}
+          </span>
         </button>
         <StatusBadge status={status} />
       </div>
@@ -469,8 +481,12 @@ export default function RouteVoteProgress({
         )}
         data-role="route-votes-sheet"
       >
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
         <SheetGrabber />
-        <div className="sticky top-0 z-[1] flex shrink-0 items-center justify-between border-b bg-[var(--bg-paper)] px-4 py-3">
+        <div
+          className="sticky top-0 z-[1] flex shrink-0 items-center justify-between border-b border-[var(--line-soft)] px-4 py-3"
+          style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+        >
           <div className="flex items-center gap-2">
             {(view === "create" || view === "detail") && (
               <button
@@ -485,13 +501,31 @@ export default function RouteVoteProgress({
                 ←
               </button>
             )}
-            <SheetTitle className="text-sm font-semibold">
-              {view === "create"
-                ? `New ${TERMS.routeVote}`
-                : view === "detail"
-                  ? `${TERMS.routeVote} Details`
-                  : TERMS.votes}
-            </SheetTitle>
+            <div className="grid gap-1">
+              <div
+                className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
+                style={{ color: VOTES_PERSONALITY.color }}
+              >
+                <CheckSquare aria-hidden="true" className="h-3 w-3" />
+                {VOTES_PERSONALITY.tag}
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  style={{ background: VOTES_PERSONALITY.color }}
+                >
+                  <CheckSquare className="h-4 w-4" />
+                </span>
+                <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                  {view === "create"
+                    ? `New ${TERMS.routeVote}`
+                    : view === "detail"
+                      ? `${TERMS.routeVote} Details`
+                      : TERMS.votes}
+                </SheetTitle>
+              </div>
+            </div>
           </div>
           <SheetCloseButton aria-label="Close route votes" />
         </div>
@@ -566,7 +600,8 @@ export default function RouteVoteProgress({
                 }}
                 className="w-full"
               >
-                + Propose new route
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Propose new route
               </Button>
               {votes === undefined ? (
                 <PendingNotice label="Loading votes..." />

@@ -6,6 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
+import { DollarSign } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -45,7 +46,6 @@ import {
   SheetCloseButton,
   SheetContent,
   SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
@@ -76,6 +76,7 @@ import {
 } from "../travelstate/travelerStateUtils";
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 import { TERMS } from "../../copy/terminology";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const OPEN_FREE_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
@@ -85,6 +86,7 @@ const BOTTOM_SHEET_ERROR_CLASS =
   "absolute inset-x-0 bottom-0 z-[4] grid gap-3 border-t bg-background p-4 text-sm shadow-lg";
 const CARD_ERROR_CLASS =
   "grid w-56 gap-3 rounded-md border bg-background/95 p-3 text-xs shadow-md backdrop-blur-sm";
+const FUNDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.funds;
 
 type CoordinatePickMode = {
   label: string;
@@ -1588,13 +1590,32 @@ export default function TripMap({
           className="z-[10] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
           data-role="travel-funds-sheet"
         >
+          <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: FUNDS_PERSONALITY.color }} />
           <SheetGrabber />
-          <div className="flex items-start justify-between gap-2 px-4 pt-2">
+          <div
+            className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
+            style={{ background: `linear-gradient(180deg, ${FUNDS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+          >
             <div className="flex min-w-0 flex-col gap-1">
-              <SheetKicker dotColor="var(--green)">{TERMS.funds}</SheetKicker>
-              <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-                {TERMS.travelFunds}
-              </SheetTitle>
+              <div
+                className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
+                style={{ color: FUNDS_PERSONALITY.color }}
+              >
+                <DollarSign aria-hidden="true" className="h-3 w-3" />
+                {FUNDS_PERSONALITY.tag}
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  style={{ background: FUNDS_PERSONALITY.color }}
+                >
+                  <DollarSign className="h-4 w-4" />
+                </span>
+                <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                  {TERMS.travelFunds}
+                </SheetTitle>
+              </div>
             </div>
             <SheetCloseButton aria-label={`Close ${TERMS.travelFunds.toLowerCase()}`} />
           </div>

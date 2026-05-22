@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { Plus } from "lucide-react";
+import { Plus, Trophy } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, JournalEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
@@ -15,7 +15,6 @@ import {
   SheetCloseButton,
   SheetContent,
   SheetGrabber,
-  SheetKicker,
   SheetTab,
   SheetTabs,
   SheetTitle,
@@ -29,6 +28,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type Props = {
   open: boolean;
@@ -74,6 +74,7 @@ const TITLE_BY_VIEW: Record<ViewMode, { traveler: string; follower: string }> = 
   create: { traveler: `New ${TERMS.mission.toLowerCase()}`, follower: `Propose ${TERMS.mission.toLowerCase()}` },
   detail: { traveler: TERMS.mission, follower: TERMS.mission },
 };
+const MISSIONS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
 
 // ---------------------------------------------------------------------------
 // Main panel — owns the internal list / create / detail nav stack
@@ -243,17 +244,36 @@ export default function MissionPanel({
         )}
         data-role="missions-sheet"
       >
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: MISSIONS_PERSONALITY.color }} />
         <SheetGrabber />
-        <div className="flex items-start justify-between gap-2 px-4 pt-2">
+        <div
+          className="relative flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
+          style={{ background: `linear-gradient(180deg, ${MISSIONS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+        >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
               <SheetBackButton aria-label="Back to missions list" onClick={() => goToList()} />
             ) : null}
             <div className="flex min-w-0 flex-col gap-1">
-              <SheetKicker dotColor="var(--plum)">{TERMS.missions}</SheetKicker>
-              <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-                {headerTitle}
-              </SheetTitle>
+              <div
+                className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
+                style={{ color: MISSIONS_PERSONALITY.color }}
+              >
+                <Trophy aria-hidden="true" className="h-3 w-3" />
+                {MISSIONS_PERSONALITY.tag}
+              </div>
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  style={{ background: MISSIONS_PERSONALITY.color }}
+                >
+                  <Trophy className="h-4 w-4" />
+                </span>
+                <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                  {headerTitle}
+                </SheetTitle>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">

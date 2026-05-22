@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "convex/react";
-import { Award, ChevronLeft, Lock, Trophy } from "lucide-react";
+import { Award, ChevronLeft, Lock, Medal } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
@@ -14,13 +14,14 @@ import {
   SheetCloseButton,
   SheetContent,
   SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import BadgeBoard, { BADGE_COLOR } from "./BadgeBoard";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { TERMS } from "../../copy/terminology";
 
 type Props = {
   open: boolean;
@@ -30,6 +31,7 @@ type Props = {
 };
 
 type Tab = "badges" | "history";
+const AWARDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.awards;
 
 function formatWhen(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
@@ -38,8 +40,11 @@ function formatWhen(ts: number): string {
 function HistoryRow({ event }: { event: AchievementEvent }) {
   const isNew = event.seenAt === undefined;
   return (
-    <li className="flex items-center gap-3 rounded-xl bg-[var(--bg-card)] p-3">
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-2)]">
+    <li className="flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)]">
+      <div
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white"
+        style={{ background: AWARDS_PERSONALITY.color }}
+      >
         <Award className="h-4 w-4" aria-hidden />
       </div>
       <div className="min-w-0 flex-1">
@@ -54,7 +59,7 @@ function HistoryRow({ event }: { event: AchievementEvent }) {
         </p>
         <p className="truncate text-xs text-[var(--ink-3)]">{event.message}</p>
       </div>
-      {/* Points are shown ONLY in History (never on Badge chips/detail). */}
+      {/* Points are shown only in the point log, never on Badge chips/detail. */}
       <span className="shrink-0 font-[var(--font-mono)] text-xs font-semibold text-[var(--ink-2)]">
         +{event.points}
       </span>
@@ -163,7 +168,7 @@ export default function AchievementsSheet({
   const activeView = detailBadge ? "badge-detail" : tab;
   useActiveUiContext(open, {
     sheetName: "AchievementsSheet",
-    label: "Achievements",
+    label: TERMS.awards,
     view: activeView,
     source: "achievements-chip",
     sourceLabel: "Badge chip",
@@ -226,16 +231,34 @@ export default function AchievementsSheet({
           "max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
         )}
       >
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: AWARDS_PERSONALITY.color }} />
         <SheetGrabber />
-        <div className="flex items-start justify-between gap-3 px-5 pt-3">
+        <div
+          className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 pb-3 pt-3"
+          style={{ background: `linear-gradient(180deg, ${AWARDS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+        >
           <div className="grid gap-1">
-            <SheetKicker>Achievements</SheetKicker>
-            <SheetTitle className="flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-[var(--flag)]" aria-hidden />
-              {summary.total} {summary.total === 1 ? "point" : "points"}
-            </SheetTitle>
+            <div
+              className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
+              style={{ color: AWARDS_PERSONALITY.color }}
+            >
+              <Medal aria-hidden="true" className="h-3 w-3" />
+              {AWARDS_PERSONALITY.tag}
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                aria-hidden="true"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                style={{ background: AWARDS_PERSONALITY.color }}
+              >
+                <Medal className="h-4 w-4" />
+              </span>
+              <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                {summary.total} {summary.total === 1 ? "point" : "points"}
+              </SheetTitle>
+            </div>
             {summary.isDev ? (
-              <p className="text-xs font-semibold text-[var(--flag)]">
+              <p className="text-xs font-semibold" style={{ color: AWARDS_PERSONALITY.color }}>
                 Testing Follower achievements as Traveler
               </p>
             ) : null}

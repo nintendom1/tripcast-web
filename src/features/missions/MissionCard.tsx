@@ -1,5 +1,7 @@
 import type { Mission } from "../../convex/tripcastApi";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
+import { Clock, DollarSign, MapPin, Trophy, Zap } from "lucide-react";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type Props = {
   Mission: Mission;
@@ -18,65 +20,105 @@ const STATUS_LABELS: Record<string, string> = {
   dropped: "Dropped",
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  proposed: "bg-slate-100 text-slate-600",
-  visible: "bg-blue-50 text-blue-700",
-  planned: "bg-blue-50 text-blue-700",
-  in_progress: "bg-amber-50 text-amber-700",
-  completed: "bg-green-50 text-green-700",
-  dropped: "bg-slate-100 text-slate-500",
+const STATUS_STYLES: Record<string, { text: string; background: string; border: string }> = {
+  proposed: { text: "var(--ink-3)", background: "var(--bg-paper-2)", border: "var(--line-soft)" },
+  visible: { text: "var(--meadow-gold)", background: "color-mix(in oklab, var(--meadow-gold) 14%, transparent)", border: "color-mix(in oklab, var(--meadow-gold) 40%, transparent)" },
+  planned: { text: "var(--meadow-gold)", background: "color-mix(in oklab, var(--meadow-gold) 14%, transparent)", border: "color-mix(in oklab, var(--meadow-gold) 40%, transparent)" },
+  in_progress: { text: "var(--flag)", background: "color-mix(in oklab, var(--flag) 12%, transparent)", border: "color-mix(in oklab, var(--flag) 35%, transparent)" },
+  completed: { text: "var(--green)", background: "color-mix(in oklab, var(--green) 12%, transparent)", border: "color-mix(in oklab, var(--green) 32%, transparent)" },
+  dropped: { text: "var(--ink-3)", background: "var(--bg-paper-2)", border: "var(--line-soft)" },
 };
+
+const MISSION_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
 
 export default function MissionCard({ Mission, token, isOwn, isHighlighted, onClick }: Props) {
   const statusLabel = STATUS_LABELS[Mission.status] ?? Mission.status;
-  const statusColor = STATUS_COLORS[Mission.status] ?? "bg-slate-100 text-slate-600";
+  const statusStyle = STATUS_STYLES[Mission.status] ?? STATUS_STYLES.proposed;
 
   return (
     <button
       type="button"
       data-mission-id={Mission._id}
-      className={`w-full text-left p-3 pr-10 rounded-lg border bg-white hover:bg-slate-50 transition-all flex flex-col gap-1.5 ${
-        isHighlighted ? "border-amber-400 ring-2 ring-amber-300 bg-amber-50" : "border-slate-200"
+      className={`group relative flex w-full items-start gap-3 rounded-2xl border bg-[var(--bg-card)] p-3 pr-10 text-left shadow-[var(--shadow-card)] transition-all hover:-translate-y-0.5 ${
+        isHighlighted ? "ring-2" : ""
       }`}
+      style={{
+        borderColor: isHighlighted ? MISSION_PERSONALITY.color : "var(--line-soft)",
+        background: isHighlighted ? MISSION_PERSONALITY.bg : "var(--bg-card)",
+        boxShadow: isHighlighted
+          ? `0 0 0 2px color-mix(in oklab, ${MISSION_PERSONALITY.color} 28%, transparent), var(--shadow-card)`
+          : undefined,
+      }}
       onClick={onClick}
     >
-      <div className="flex min-w-0 items-start justify-between gap-2">
-        <span className="min-w-0 text-sm font-medium text-navy line-clamp-2">{Mission.title}</span>
-        <span className={`max-w-[48%] truncate text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full whitespace-nowrap shrink-0 ${statusColor}`}>
-          {statusLabel}
+      <span
+        className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border"
+        style={{
+          color: MISSION_PERSONALITY.color,
+          background: "color-mix(in oklab, var(--meadow-gold) 18%, var(--bg-paper))",
+          borderColor: "color-mix(in oklab, var(--meadow-gold) 45%, var(--line-soft))",
+        }}
+        aria-hidden="true"
+      >
+        <Trophy className="h-[18px] w-[18px]" />
+      </span>
+
+      <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <span className="flex min-w-0 items-start justify-between gap-2">
+          <span className="min-w-0 font-[var(--font-display)] text-sm font-extrabold leading-snug text-[var(--ink-1)] line-clamp-2">
+            {Mission.title}
+          </span>
+          <span
+            className="max-w-[48%] shrink-0 truncate rounded-full border px-2 py-0.5 font-[var(--font-mono)] text-[9px] font-semibold uppercase tracking-[0.1em] whitespace-nowrap"
+            style={{
+              color: statusStyle.text,
+              background: statusStyle.background,
+              borderColor: statusStyle.border,
+            }}
+          >
+            {statusLabel}
+          </span>
         </span>
-      </div>
 
-      {Mission.description && (
-        <p className="text-xs text-muted-foreground line-clamp-1">{Mission.description}</p>
-      )}
+        {Mission.description && (
+          <span className="text-xs leading-snug text-[var(--ink-2)] line-clamp-1">{Mission.description}</span>
+        )}
 
-      {token ? (
-        <AttributionPublicLine
-          token={token}
-          sourceType="mission"
-          sourceId={Mission._id}
-          className="text-xs text-[var(--ink-3)]"
-        />
-      ) : null}
+        {token ? (
+          <AttributionPublicLine
+            token={token}
+            sourceType="mission"
+            sourceId={Mission._id}
+            className="text-xs text-[var(--ink-3)]"
+          />
+        ) : null}
 
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-        {Mission.locationLabel && (
-          <span>📍 {Mission.locationLabel}</span>
-        )}
-        {Mission.estimatedDurationMinutes && (
-          <span>⏱ {Mission.estimatedDurationMinutes} min</span>
-        )}
-        {Mission.estimatedCostUsd !== undefined && (
-          <span>💰 ${Mission.estimatedCostUsd.toFixed(0)}</span>
-        )}
-        {Mission.estimatedEnergyImpact && (
-          <span>⚡ {Mission.estimatedEnergyImpact} energy</span>
-        )}
-        {isOwn && Mission.status === "proposed" && (
-          <span className="text-slate-400 italic">Awaiting review</span>
-        )}
-      </div>
+        <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--ink-3)]">
+          {Mission.locationLabel && (
+            <span className="inline-flex items-center gap-1">
+              <MapPin className="h-3 w-3" aria-hidden="true" /> {Mission.locationLabel}
+            </span>
+          )}
+          {Mission.estimatedDurationMinutes && (
+            <span className="inline-flex items-center gap-1">
+              <Clock className="h-3 w-3" aria-hidden="true" /> {Mission.estimatedDurationMinutes} min
+            </span>
+          )}
+          {Mission.estimatedCostUsd !== undefined && (
+            <span className="inline-flex items-center gap-1">
+              <DollarSign className="h-3 w-3" aria-hidden="true" /> {Mission.estimatedCostUsd.toFixed(0)}
+            </span>
+          )}
+          {Mission.estimatedEnergyImpact && (
+            <span className="inline-flex items-center gap-1">
+              <Zap className="h-3 w-3" aria-hidden="true" /> {Mission.estimatedEnergyImpact} energy
+            </span>
+          )}
+          {isOwn && Mission.status === "proposed" && (
+            <span className="italic text-[var(--ink-3)]">Awaiting review</span>
+          )}
+        </span>
+      </span>
     </button>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
+import { CheckSquare } from "lucide-react";
 import {
   tripcastApi,
   type RouteVoteMapOverlay,
@@ -15,7 +16,6 @@ import {
   SheetCloseButton,
   SheetContent,
   SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
@@ -28,6 +28,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type RouteVotePanelProps = {
   token: string;
@@ -45,17 +46,27 @@ type VoteCardProps = {
   vote: VisibleRouteVote;
   onSelect: () => void;
 };
+const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function VoteCard({ vote, onSelect }: VoteCardProps) {
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="w-full rounded-2xl bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
+      className="w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="font-[var(--font-display)] text-sm font-bold leading-snug text-[var(--ink-1)]">
-          {vote.title}
+        <span className="flex min-w-0 items-start gap-2">
+          <span
+            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
+            style={{ background: VOTES_PERSONALITY.color }}
+            aria-hidden="true"
+          >
+            <CheckSquare className="h-4 w-4" />
+          </span>
+          <span className="font-[var(--font-display)] text-sm font-extrabold leading-snug text-[var(--ink-1)]">
+            {vote.title}
+          </span>
         </span>
         <StatusBadge status={vote.effectiveStatus} />
       </div>
@@ -347,17 +358,36 @@ export default function RouteVotePanel({
         data-role="route-votes-sheet"
         style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom))" }}
       >
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
         <SheetGrabber />
-        <div className="flex items-start justify-between gap-2 px-4 pt-2">
+        <div
+          className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
+          style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+        >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
               <SheetBackButton aria-label="Back to votes list" onClick={handleBack} />
             ) : null}
             <div className="flex min-w-0 flex-col gap-1">
-              <SheetKicker dotColor="var(--flag)">{TERMS.votes}</SheetKicker>
-              <SheetTitle className="truncate font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-                {selectedVote ? selectedVote.title : headerTitle}
-              </SheetTitle>
+              <div
+                className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
+                style={{ color: VOTES_PERSONALITY.color }}
+              >
+                <CheckSquare aria-hidden="true" className="h-3 w-3" />
+                {VOTES_PERSONALITY.tag}
+              </div>
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  style={{ background: VOTES_PERSONALITY.color }}
+                >
+                  <CheckSquare className="h-4 w-4" />
+                </span>
+                <SheetTitle className="truncate font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                  {selectedVote ? selectedVote.title : headerTitle}
+                </SheetTitle>
+              </div>
             </div>
           </div>
           <SheetCloseButton aria-label={`Close ${TERMS.votes.toLowerCase()} panel`} />

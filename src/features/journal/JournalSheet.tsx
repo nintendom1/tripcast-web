@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   Camera,
+  CheckSquare,
   ChevronRight,
+  Clock,
   MapPin,
   Plus,
   Sparkles,
   Trophy,
-  Vote as VoteIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -19,7 +20,6 @@ import {
   SheetCloseButton,
   SheetContent,
   SheetGrabber,
-  SheetKicker,
   SheetTab,
   SheetTabs,
   SheetTitle,
@@ -34,6 +34,7 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type FilterTab = "story" | "all" | "entries" | "missions" | "votes";
 
@@ -52,6 +53,9 @@ const EMPTY_COPY: Record<FilterTab, string> = {
   missions: "No mission events yet.",
   votes: "No vote events yet.",
 };
+const JOURNAL_PERSONALITY = MEADOW_SHEET_PERSONALITIES.journal;
+const MISSIONS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
+const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function filterEvents(events: JournalEvent[], tab: FilterTab): JournalEvent[] {
   switch (tab) {
@@ -102,14 +106,14 @@ type EventVisual = {
 function visualForEvent(type: JournalEventType, narrativeLevel: JournalNarrativeLevel): EventVisual {
   if (type === "story") {
     return narrativeLevel === "narrative"
-      ? { Icon: Camera, tint: "var(--amber)", kicker: "Story" }
+      ? { Icon: Camera, tint: JOURNAL_PERSONALITY.color, kicker: "Story" }
       : { Icon: MapPin, tint: "var(--ink-1)", kicker: "Story" };
   }
   if (type.startsWith("mission_")) {
-    return { Icon: Trophy, tint: "var(--plum)", kicker: "Mission" };
+    return { Icon: Trophy, tint: MISSIONS_PERSONALITY.color, kicker: "Mission" };
   }
   if (type.startsWith("route_vote_")) {
-    return { Icon: VoteIcon, tint: "var(--flag)", kicker: "Vote" };
+    return { Icon: CheckSquare, tint: VOTES_PERSONALITY.color, kicker: "Vote" };
   }
   return { Icon: Sparkles, tint: "var(--teal)", kicker: "Event" };
 }
@@ -240,13 +244,32 @@ export default function JournalSheet({
         data-role="journal-sheet"
         className="z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: JOURNAL_PERSONALITY.color }} />
         <SheetGrabber />
-        <div className="flex items-start justify-between gap-2 px-4 pt-2">
+        <div
+          className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
+          style={{ background: `linear-gradient(180deg, ${JOURNAL_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+        >
           <div className="flex flex-col gap-1">
-            <SheetKicker dotColor="var(--flag)">{TERMS.journal}</SheetKicker>
-            <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              {viewMode === "create" ? `New ${TERMS.story.toLowerCase()} entry` : TERMS.journal}
-            </SheetTitle>
+            <div
+              className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
+              style={{ color: JOURNAL_PERSONALITY.color }}
+            >
+              <Clock aria-hidden="true" className="h-3 w-3" />
+              {JOURNAL_PERSONALITY.tag}
+            </div>
+            <div className="flex items-center gap-2">
+              <span
+                aria-hidden="true"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                style={{ background: JOURNAL_PERSONALITY.color }}
+              >
+                <Clock className="h-4 w-4" />
+              </span>
+              <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                {viewMode === "create" ? `New ${TERMS.story.toLowerCase()} entry` : TERMS.journal}
+              </SheetTitle>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {isTraveler && viewMode === "list" && (
@@ -403,7 +426,7 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryR
     <li className="grid grid-cols-[28px_1fr] gap-3 py-1.5">
       <div className="flex flex-col items-center">
         <span
-          className="flex h-7 w-7 items-center justify-center rounded-full text-white"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-white shadow-sm"
           style={{ background: visual.tint }}
           aria-hidden="true"
         >
@@ -419,7 +442,7 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryR
         onClick={onSelect}
         aria-label={cardLabel}
         className={cn(
-          "group relative mb-2 flex flex-col items-stretch gap-1 rounded-2xl bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform",
+          "group relative mb-2 flex flex-col items-stretch gap-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform",
           "active:scale-[0.99]",
         )}
       >
@@ -432,7 +455,13 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryR
               </span>
             ) : null}
           </span>
-          <span className="font-[var(--font-mono)] text-[10px] text-[var(--ink-3)]">
+          <span
+            className="rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[10px]"
+            style={{
+              color: visual.tint,
+              background: `color-mix(in oklab, ${visual.tint} 12%, transparent)`,
+            }}
+          >
             {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </span>
         </div>

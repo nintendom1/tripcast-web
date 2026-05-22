@@ -4,7 +4,7 @@
 // Later PRs apply these to SheetAccentRail, SheetPersonalityTag, and
 // per-sheet header backgrounds.
 
-export type SheetKey = "journal" | "missions" | "votes" | "awards" | "state";
+export type SheetKey = "journal" | "missions" | "votes" | "awards" | "state" | "funds";
 
 export interface SheetPersonality {
   color: string;
@@ -14,11 +14,12 @@ export interface SheetPersonality {
 }
 
 export const MEADOW_SHEET_PERSONALITIES: Record<SheetKey, SheetPersonality> = {
-  journal:  { color: "#ff8b4a", tag: "Diary",   motif: "✿", bg: "#fff0dc" },
-  missions: { color: "#6dba4a", tag: "Tasks",   motif: "✦", bg: "#e5f2d6" },
-  votes:    { color: "#7a9cdc", tag: "Vote",    motif: "✤", bg: "#dfeafa" },
-  awards:   { color: "#ffb84a", tag: "Cabinet", motif: "★", bg: "#fff1d4" },
+  journal:  { color: "#6dba4a", tag: "Diary",   motif: "clock", bg: "#e5f2d6" },
+  missions: { color: "#ffb84a", tag: "Tasks",   motif: "trophy", bg: "#fff1d4" },
+  votes:    { color: "#7a9cdc", tag: "Vote",    motif: "check-square", bg: "#dfeafa" },
+  awards:   { color: "#f06f7e", tag: "Cabinet", motif: "medal", bg: "#ffdfe2" },
   state:    { color: "#f06f7e", tag: "Feels",   motif: "♥", bg: "#ffdfe2" },
+  funds:    { color: "#6dba4a", tag: "Ledger",  motif: "dollar-sign", bg: "#e5f2d6" },
 } as const;
 
 export const SHEET_KEYS = Object.keys(MEADOW_SHEET_PERSONALITIES) as SheetKey[];
