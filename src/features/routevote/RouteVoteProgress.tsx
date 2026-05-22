@@ -462,6 +462,7 @@ export default function RouteVoteProgress({
         ref={containerRef}
         side="bottom"
         showBackdrop={false}
+        mapAdjacent
         className={cn(
           "z-[10] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
           isPickingCoordinate && "invisible pointer-events-none",

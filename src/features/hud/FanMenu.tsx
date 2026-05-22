@@ -85,7 +85,7 @@ export function FanMenu({
         role="menu"
         aria-label="Quick actions"
         className={cn(
-          "pointer-events-auto absolute bottom-[calc(var(--dock-h,76px)+24px)] left-1/2 z-[20] flex -translate-x-1/2 flex-col gap-2",
+          "pointer-events-auto absolute bottom-[calc(var(--dock-h,76px)+24px)] left-1/2 z-[21] flex -translate-x-1/2 flex-col gap-2",
           className,
         )}
       >

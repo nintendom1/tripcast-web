@@ -181,6 +181,7 @@ export default function StoryDetailSheet({
       <SheetContent
         side="bottom"
         showBackdrop={false}
+        mapAdjacent
         className={
           isNarrative
             ? "z-[11] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"

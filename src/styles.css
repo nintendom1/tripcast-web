@@ -1,7 +1,9 @@
+@import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Quicksand:wght@400;500;600;700&display=swap");
 
 @custom-variant dark (&:is(.dark *));
 
@@ -73,6 +75,11 @@ textarea {
 @keyframes traveler-location-ping {
   0% { transform: scale(1); opacity: 0.75; }
   70%, 100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes game-toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Pixel-character sprite + speech-bubble caret animations.
@@ -218,7 +225,7 @@ textarea {
   --shadow-card: 0 1px 0 rgba(27,42,51,0.06), 0 8px 24px -8px rgba(27,42,51,0.18);
   --shadow-fab: 0 2px 0 rgba(27,42,51,0.10), 0 12px 30px -8px rgba(217,83,43,0.55);
 
-  /* Meadow intro tokens for UX Rework 2. These are intentionally UI-only;
+  /* Meadow theme tokens for redesign surfaces and intro UI.
      MapLibre tiles keep their native style with no grain or retinting. */
   --meadow-bg: #fdf6e3;
   --meadow-paper: #fffdf4;
@@ -232,9 +239,23 @@ textarea {
   --meadow-royal: #7a9cdc;
   --meadow-forest: #6dba4a;
   --meadow-ruby: #f06f7e;
+  --meadow-radius: 14px;
+  --meadow-radius-lg: 26px;
   --meadow-font-display: "Fredoka", "M PLUS Rounded 1c", system-ui, sans-serif;
   --meadow-font-body: "Quicksand", "Nunito", system-ui, sans-serif;
   --meadow-font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Meadow sheet personality colors — one accent per panel key */
+  --sheet-journal-color: #ff8b4a;
+  --sheet-journal-bg: #fff0dc;
+  --sheet-missions-color: #6dba4a;
+  --sheet-missions-bg: #e5f2d6;
+  --sheet-votes-color: #7a9cdc;
+  --sheet-votes-bg: #dfeafa;
+  --sheet-awards-color: #ffb84a;
+  --sheet-awards-bg: #fff1d4;
+  --sheet-state-color: #f06f7e;
+  --sheet-state-bg: #ffdfe2;
 
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

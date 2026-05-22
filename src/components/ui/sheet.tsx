@@ -23,16 +23,23 @@ SheetBackdrop.displayName = "SheetBackdrop";
 interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof Dialog.Popup> {
   side?: "top" | "right" | "bottom" | "left";
   showBackdrop?: boolean;
+  /**
+   * Non-modal map-adjacent sheets: lowers z-index to z-10 (below the Dock at z-20)
+   * and adds 100px bottom padding so scrollable content clears the Dock.
+   * Use on all bottom sheets with modal={false} showBackdrop={false}.
+   */
+  mapAdjacent?: boolean;
 }
 
 const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
-  ({ side = "right", showBackdrop = true, className, children, ...props }, ref) => (
+  ({ side = "right", showBackdrop = true, mapAdjacent = false, className, children, ...props }, ref) => (
     <SheetPortal>
       {showBackdrop ? <SheetBackdrop /> : null}
       <Dialog.Popup
         ref={ref}
         className={cn(
           "fixed z-50 flex flex-col bg-background shadow-xl",
+          mapAdjacent && "z-[10] pb-[100px]",
           side === "bottom" &&
             "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t transition-transform duration-200 ease-out data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full",
           side === "top" &&
@@ -204,6 +211,41 @@ const SheetBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>
 );
 SheetBody.displayName = "SheetBody";
 
+interface SheetAccentRailProps extends React.HTMLAttributes<HTMLDivElement> {
+  color?: string;
+}
+
+const SheetAccentRail = ({ color, className, style, ...props }: SheetAccentRailProps) => (
+  <div
+    aria-hidden="true"
+    className={cn("absolute left-0 right-0 top-0 h-1 rounded-t-xl", className)}
+    style={color ? { background: color, ...style } : style}
+    {...props}
+  />
+);
+SheetAccentRail.displayName = "SheetAccentRail";
+
+interface SheetPersonalityTagProps extends React.HTMLAttributes<HTMLDivElement> {
+  motif?: string;
+  tag: string;
+  color?: string;
+}
+
+const SheetPersonalityTag = ({ motif, tag, color, className, style, ...props }: SheetPersonalityTagProps) => (
+  <div
+    className={cn(
+      "inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.14em]",
+      className,
+    )}
+    style={color ? { color, fontFamily: "var(--meadow-font-display)", ...style } : { fontFamily: "var(--meadow-font-display)", ...style }}
+    {...props}
+  >
+    {motif ? <span aria-hidden="true" className="text-xs leading-none">{motif}</span> : null}
+    {tag}
+  </div>
+);
+SheetPersonalityTag.displayName = "SheetPersonalityTag";
+
 export {
   Sheet,
   SheetPortal,
@@ -222,4 +264,6 @@ export {
   SheetTabs,
   SheetTab,
   SheetBody,
+  SheetAccentRail,
+  SheetPersonalityTag,
 };
