@@ -9,8 +9,6 @@ import {
   Sheet,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -39,8 +37,6 @@ export type CheckpointPrefill = {
   missionId?: string;
   completeMission?: boolean;
   transaction?: TransactionInlineInput;
-  /** Kicker label override — e.g. "Story · Mission completion" when prefilled from a mission. */
-  kickerLabel?: string;
 };
 
 type AddCheckpointSheetProps = {
@@ -94,7 +90,6 @@ export default function AddCheckpointSheet({
 
   const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
   const isFromMission = Boolean(prefill?.missionId);
-  const kicker = prefill?.kickerLabel ?? (isFromMission ? "Story · Mission completion" : "Story");
   const titleText = isFromMission ? "Complete as story" : "Add pin";
   const showBackAffordance = isFromMission && Boolean(onBack);
   useActiveUiContext(Boolean(selectedCoordinate), {
@@ -179,10 +174,8 @@ export default function AddCheckpointSheet({
         className="z-[12] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
         data-role="add-checkpoint-sheet"
       >
-        <SheetGrabber />
         <div className="flex items-start justify-between gap-2 px-4 pt-2">
           <div className="flex min-w-0 flex-col gap-1">
-            <SheetKicker dotColor={isFromMission ? "var(--plum)" : "var(--flag)"}>{kicker}</SheetKicker>
             <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
               {titleText}
             </SheetTitle>

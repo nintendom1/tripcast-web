@@ -13,7 +13,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -223,28 +222,22 @@ export default function AchievementsSheet({
   const recent = summary.recent.slice(0, 3);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} modal={false} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
+        showBackdrop={false}
+        mapAdjacent
         data-role="achievements-sheet"
         className={cn(
-          "max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+          "z-[10] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
         )}
       >
         <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: AWARDS_PERSONALITY.color }} />
-        <SheetGrabber />
         <div
           className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 pb-3 pt-3"
           style={{ background: `linear-gradient(180deg, ${AWARDS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="grid gap-1">
-            <div
-              className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
-              style={{ color: AWARDS_PERSONALITY.color }}
-            >
-              <Medal aria-hidden="true" className="h-3 w-3" />
-              {AWARDS_PERSONALITY.tag}
-            </div>
             <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"

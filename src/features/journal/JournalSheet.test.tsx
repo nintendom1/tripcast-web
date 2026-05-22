@@ -68,12 +68,23 @@ describe("JournalSheet", () => {
   it("switching to All tab shows all events", () => {
     const events = [
       makeEvent({ _id: "a", narrativeLevel: "narrative", title: "Story Event" }),
+      makeEvent({ _id: "b", narrativeLevel: "activity", title: "Activity Mission", type: "mission_visible" }),
+    ];
+    render(<JournalSheet {...defaultProps} events={events} />);
+    fireEvent.click(screen.getByRole("tab", { name: "All" }));
+    expect(screen.getByText("Story Event")).toBeInTheDocument();
+    expect(screen.getByText("Activity Mission")).toBeInTheDocument();
+  });
+
+  it("does not show route vote events in Journal", () => {
+    const events = [
+      makeEvent({ _id: "a", narrativeLevel: "narrative", title: "Story Event" }),
       makeEvent({ _id: "b", narrativeLevel: "activity", title: "Activity Vote", type: "route_vote_opened" }),
     ];
     render(<JournalSheet {...defaultProps} events={events} />);
     fireEvent.click(screen.getByRole("tab", { name: "All" }));
     expect(screen.getByText("Story Event")).toBeInTheDocument();
-    expect(screen.getByText("Activity Vote")).toBeInTheDocument();
+    expect(screen.queryByText("Activity Vote")).not.toBeInTheDocument();
   });
 
   it("clicking a story event calls onStorySelect", () => {
@@ -116,18 +127,16 @@ describe("JournalSheet", () => {
     const events = [
       makeEvent({
         _id: "a",
-        type: "route_vote_resolved",
+        type: "mission_visible",
         narrativeLevel: "narrative",
         lat: 47.6,
         lon: -122.3,
-        title: "Vote Done",
+        title: "Mission Visible",
       }),
     ];
     render(<JournalSheet {...defaultProps} events={events} onLocationFocus={onLocationFocus} />);
-    // route_vote_resolved is no longer a Story-tab row (vote outcomes are
-    // status announcements, not narratives) — switch to the Votes tab.
-    fireEvent.click(screen.getByRole("tab", { name: "Votes" }));
-    fireEvent.click(screen.getByRole("button", { name: /vote resolved/i }));
+    fireEvent.click(screen.getByRole("tab", { name: "Missions" }));
+    fireEvent.click(screen.getByRole("button", { name: /mission accepted/i }));
     expect(onLocationFocus).toHaveBeenCalledWith({ lat: 47.6, lon: -122.3 });
   });
 
@@ -176,6 +185,11 @@ describe("JournalSheet", () => {
   it("State tab is not present", () => {
     render(<JournalSheet {...defaultProps} />);
     expect(screen.queryByRole("tab", { name: "State" })).not.toBeInTheDocument();
+  });
+
+  it("Votes tab is not present", () => {
+    render(<JournalSheet {...defaultProps} />);
+    expect(screen.queryByRole("tab", { name: "Votes" })).not.toBeInTheDocument();
   });
 
   describe("inline story creation", () => {

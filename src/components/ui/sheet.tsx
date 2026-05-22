@@ -1,6 +1,6 @@
 import * as React from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { ChevronLeft, X, type LucideIcon } from "lucide-react";
+import { ChevronLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const Sheet = Dialog.Root;
@@ -95,39 +95,6 @@ const SheetDescription = React.forwardRef<
   />
 ));
 SheetDescription.displayName = "SheetDescription";
-
-const SheetGrabber = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div
-    aria-hidden="true"
-    className={cn("mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-[var(--meter-track)]", className)}
-    {...props}
-  />
-);
-SheetGrabber.displayName = "SheetGrabber";
-
-interface SheetKickerProps extends React.HTMLAttributes<HTMLDivElement> {
-  dotColor?: string;
-}
-
-const SheetKicker = ({ className, dotColor, children, ...props }: SheetKickerProps) => (
-  <div
-    className={cn(
-      "flex items-center gap-1.5 font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]",
-      className,
-    )}
-    {...props}
-  >
-    {dotColor ? (
-      <span
-        aria-hidden="true"
-        className="inline-block h-1.5 w-1.5 rounded-full"
-        style={{ background: dotColor }}
-      />
-    ) : null}
-    {children}
-  </div>
-);
-SheetKicker.displayName = "SheetKicker";
 
 interface SheetBackButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
 
@@ -225,28 +192,6 @@ const SheetAccentRail = ({ color, className, style, ...props }: SheetAccentRailP
 );
 SheetAccentRail.displayName = "SheetAccentRail";
 
-interface SheetPersonalityTagProps extends React.HTMLAttributes<HTMLDivElement> {
-  Icon?: LucideIcon;
-  motif?: string;
-  tag: string;
-  color?: string;
-}
-
-const SheetPersonalityTag = ({ Icon, motif, tag, color, className, style, ...props }: SheetPersonalityTagProps) => (
-  <div
-    className={cn(
-      "inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.14em]",
-      className,
-    )}
-    style={color ? { color, fontFamily: "var(--meadow-font-display)", ...style } : { fontFamily: "var(--meadow-font-display)", ...style }}
-    {...props}
-  >
-    {Icon ? <Icon aria-hidden="true" className="h-3 w-3" /> : motif ? <span aria-hidden="true" className="text-xs leading-none">{motif}</span> : null}
-    {tag}
-  </div>
-);
-SheetPersonalityTag.displayName = "SheetPersonalityTag";
-
 export {
   Sheet,
   SheetPortal,
@@ -258,13 +203,10 @@ export {
   SheetFooter,
   SheetTitle,
   SheetDescription,
-  SheetGrabber,
-  SheetKicker,
   SheetBackButton,
   SheetCloseButton,
   SheetTabs,
   SheetTab,
   SheetBody,
   SheetAccentRail,
-  SheetPersonalityTag,
 };

@@ -23,8 +23,6 @@ vi.mock("../../components/ui/sheet", () => ({
   SheetCloseButton: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button type="button" {...props}>Close</button>
   ),
-  SheetGrabber: () => <div />,
-  SheetKicker: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SheetTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
   SheetBackButton: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button type="button" {...props}>Back</button>

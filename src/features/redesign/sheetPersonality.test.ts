@@ -19,19 +19,18 @@ describe("MEADOW_SHEET_PERSONALITIES", () => {
     expect([...SHEET_KEYS].sort()).toEqual([...expected].sort());
   });
 
-  // The Meadow pass corrected an earlier mis-mapping (missions had forest,
-  // journal had gold, awards had gold). Lock the intended identity colors so
-  // the swap cannot silently regress.
+  // Lock the tripcast-handoff-repair Meadow colors so the sheet identities
+  // cannot silently regress.
   it.each([
-    ["missions", "#ffb84a", "Tasks", "trophy"],
-    ["journal", "#6dba4a", "Diary", "clock"],
-    ["votes", "#7a9cdc", "Vote", "check-square"],
-    ["awards", "#f06f7e", "Cabinet", "medal"],
-    ["funds", "#6dba4a", "Ledger", "dollar-sign"],
-  ] as const)("maps %s to its identity color/tag/motif", (key, color, tag, motif) => {
+    ["journal", "#ff8b4a", "#fff0dc", "clock"],
+    ["missions", "#6dba4a", "#e5f2d6", "trophy"],
+    ["votes", "#7a9cdc", "#dfeafa", "check-square"],
+    ["awards", "#ffb84a", "#fff1d4", "medal"],
+    ["funds", "#6dba4a", "#e5f2d6", "dollar-sign"],
+  ] as const)("maps %s to its identity color/background/motif", (key, color, bg, motif) => {
     const personality = MEADOW_SHEET_PERSONALITIES[key];
     expect(personality.color).toBe(color);
-    expect(personality.tag).toBe(tag);
+    expect(personality.bg).toBe(bg);
     expect(personality.motif).toBe(motif);
   });
 
@@ -41,7 +40,6 @@ describe("MEADOW_SHEET_PERSONALITIES", () => {
       const p = MEADOW_SHEET_PERSONALITIES[key];
       expect(p.color, `${key} color`).toMatch(hex);
       expect(p.bg, `${key} bg`).toMatch(hex);
-      expect(p.tag.length, `${key} tag`).toBeGreaterThan(0);
       expect(p.motif.length, `${key} motif`).toBeGreaterThan(0);
     }
   });

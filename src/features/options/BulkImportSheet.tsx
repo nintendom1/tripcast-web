@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, ChevronLeft, ClipboardList, FileJson, RotateCcw } from "lucide-react";
+import { Check, ChevronLeft, ClipboardList, RotateCcw } from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 
 import {
@@ -14,8 +14,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
@@ -207,13 +205,8 @@ export default function BulkImportSheet({
         data-role="bulk-import-sheet"
         className="max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
-        <SheetGrabber />
         <div className="flex items-start justify-between gap-2 px-5 pt-2">
           <div className="flex min-w-0 flex-col gap-1.5">
-            <SheetKicker dotColor="var(--teal)">
-              <FileJson className="h-3 w-3" aria-hidden="true" />
-              Data · Import
-            </SheetKicker>
             <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
               Bulk Import
             </SheetTitle>

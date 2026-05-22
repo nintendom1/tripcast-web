@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
-import { Camera } from "lucide-react";
 import { X } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
@@ -16,9 +15,7 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
   SheetHeader,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
@@ -189,7 +186,6 @@ export default function StoryDetailSheet({
         }
         data-role="story-detail"
       >
-        {isNarrative ? <SheetGrabber /> : null}
         {event ? (
           isNarrative ? (
             <NarrativeBody
@@ -330,13 +326,12 @@ function NarrativeBody({
     <>
       <div className="flex items-start justify-between gap-2 px-5 pt-2">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <SheetKicker dotColor="var(--amber)">
-            <Camera className="h-3 w-3" aria-hidden="true" />
-            Story · {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
-          </SheetKicker>
           <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold leading-tight tracking-tight text-[var(--ink-1)]">
             {event.title ?? "Story"}
           </SheetTitle>
+          <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+            {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
+          </p>
           {event.locationLabel ? (
             <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
               {event.locationLabel}

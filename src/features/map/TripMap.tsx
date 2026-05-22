@@ -45,15 +45,12 @@ import {
   Sheet,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
   SheetTitle,
 } from "../../components/ui/sheet";
 import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
 import AchievementsConnected from "../achievements/AchievementsConnected";
-import FollowerReactionBar from "../reactions/FollowerReactionBar";
-import TravelerReactionMoments from "../reactions/TravelerReactionMoments";
 import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -1034,7 +1031,6 @@ export default function TripMap({
       note: Mission.description,
       locationLabel: Mission.locationLabel,
       transaction,
-      kickerLabel: "Story · Mission completion",
     });
     // Remember which mission to land on if the Traveler backs out of the story
     // form — the MissionPanel re-opens directly on this detail view.
@@ -1392,14 +1388,6 @@ export default function TripMap({
         />
       </FeatureBoundary>
 
-      {/* Follower reactions: bar for the Follower, moment toasts for the Traveler */}
-      {role === "traveler" && <TravelerReactionMoments token={token} />}
-      {role === "follower" && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[96px] z-[20] flex justify-center px-3">
-          <FollowerReactionBar token={token} />
-        </div>
-      )}
-
       {/* Bottom Dock */}
       <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
         <Dock
@@ -1601,19 +1589,11 @@ export default function TripMap({
           data-role="travel-funds-sheet"
         >
           <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: FUNDS_PERSONALITY.color }} />
-          <SheetGrabber />
           <div
             className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
             style={{ background: `linear-gradient(180deg, ${FUNDS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
           >
             <div className="flex min-w-0 flex-col gap-1">
-              <div
-                className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
-                style={{ color: FUNDS_PERSONALITY.color }}
-              >
-                <DollarSign aria-hidden="true" className="h-3 w-3" />
-                {FUNDS_PERSONALITY.tag}
-              </div>
               <div className="flex items-center gap-2">
                 <span
                   aria-hidden="true"

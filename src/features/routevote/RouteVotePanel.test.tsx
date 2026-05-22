@@ -45,7 +45,29 @@ const MOCK_VOTE: VisibleRouteVote = {
   resultsVisibility: "before_voting" as const,
 };
 
-const MOCK_VOTES: VisibleRouteVote[] = [MOCK_VOTE];
+const MOCK_CLOSED_VOTE: VisibleRouteVote = {
+  _id: "vote2",
+  title: "Closed Vote",
+  effectiveStatus: "resolved",
+  expiresAt: Date.now() - 1_000,
+  resultsVisibility: "after_close",
+  confirmedWinningOptionId: "opt2",
+  resultingMissionId: "mission1",
+  options: [
+    {
+      _id: "opt2",
+      title: "Winner",
+      routeVoteId: "vote2",
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  ],
+  visibleComments: [],
+  optionVoteCounts: { opt2: 3 },
+  totalSubmissions: 3,
+};
+
+const MOCK_VOTES: VisibleRouteVote[] = [MOCK_VOTE, MOCK_CLOSED_VOTE];
 
 function setupMocks() {
 
@@ -79,6 +101,14 @@ describe("RouteVotePanel", () => {
   it("renders vote list", () => {
     renderPanel();
     expect(screen.getByText("Test Vote")).toBeInTheDocument();
+    expect(screen.getByText("Closed Vote")).toBeInTheDocument();
+    expect(screen.getByText("1 open · 1 closed")).toBeInTheDocument();
+  });
+
+  it("shows closed vote winner and tally", () => {
+    renderPanel();
+    expect(screen.getByText("Winner:")).toBeInTheDocument();
+    expect(screen.getByText("3/3")).toBeInTheDocument();
   });
 
   it("clicking a vote shows VoteDetail", async () => {

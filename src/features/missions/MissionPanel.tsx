@@ -14,7 +14,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
   SheetTab,
   SheetTabs,
   SheetTitle,
@@ -245,7 +244,6 @@ export default function MissionPanel({
         data-role="missions-sheet"
       >
         <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: MISSIONS_PERSONALITY.color }} />
-        <SheetGrabber />
         <div
           className="relative flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
           style={{ background: `linear-gradient(180deg, ${MISSIONS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
@@ -255,13 +253,6 @@ export default function MissionPanel({
               <SheetBackButton aria-label="Back to missions list" onClick={() => goToList()} />
             ) : null}
             <div className="flex min-w-0 flex-col gap-1">
-              <div
-                className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
-                style={{ color: MISSIONS_PERSONALITY.color }}
-              >
-                <Trophy aria-hidden="true" className="h-3 w-3" />
-                {MISSIONS_PERSONALITY.tag}
-              </div>
               <div className="flex items-center gap-2">
                 <span
                   aria-hidden="true"

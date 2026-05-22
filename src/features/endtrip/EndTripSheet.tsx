@@ -9,8 +9,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
@@ -97,10 +95,8 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
         data-role="end-trip-sheet"
         className="max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
-        <SheetGrabber />
         <div className="flex items-start justify-between gap-2 px-5 pt-2">
           <div className="flex min-w-0 flex-col gap-1.5">
-            <SheetKicker dotColor="var(--flag)">Finale</SheetKicker>
             <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
               End Trip
             </SheetTitle>

@@ -13,7 +13,6 @@ import {
   Sheet,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
@@ -517,7 +516,6 @@ export default function RouteVoteProgress({
         data-role="route-votes-sheet"
       >
         <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
-        <SheetGrabber />
         <div
           className="sticky top-0 z-[1] flex shrink-0 items-center justify-between border-b border-[var(--line-soft)] px-4 py-3"
           style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
@@ -537,13 +535,6 @@ export default function RouteVoteProgress({
               </button>
             )}
             <div className="grid gap-1">
-              <div
-                className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
-                style={{ color: VOTES_PERSONALITY.color }}
-              >
-                <CheckSquare aria-hidden="true" className="h-3 w-3" />
-                {VOTES_PERSONALITY.tag}
-              </div>
               <div className="flex items-center gap-2">
                 <span
                   aria-hidden="true"

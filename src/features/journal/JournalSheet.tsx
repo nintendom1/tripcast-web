@@ -19,7 +19,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
   SheetTab,
   SheetTabs,
   SheetTitle,
@@ -36,14 +35,13 @@ import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
 import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
-type FilterTab = "story" | "all" | "entries" | "missions" | "votes";
+type FilterTab = "story" | "all" | "entries" | "missions";
 
 const FILTER_TABS: { id: FilterTab; label: string }[] = [
   { id: "story", label: TERMS.story },
   { id: "all", label: "All" },
   { id: "entries", label: "Entries" },
   { id: "missions", label: TERMS.missions },
-  { id: "votes", label: TERMS.votes },
 ];
 
 const EMPTY_COPY: Record<FilterTab, string> = {
@@ -51,7 +49,6 @@ const EMPTY_COPY: Record<FilterTab, string> = {
   all: "No entries.",
   entries: "No entries yet.",
   missions: "No mission events yet.",
-  votes: "No vote events yet.",
 };
 const JOURNAL_PERSONALITY = MEADOW_SHEET_PERSONALITIES.journal;
 const MISSIONS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
@@ -85,13 +82,11 @@ function filterEvents(events: JournalEvent[], tab: FilterTab): JournalEvent[] {
       });
     }
     case "all":
-      return events;
+      return events.filter((e) => !e.type.startsWith("route_vote_"));
     case "entries":
       return events.filter((e) => e.type === "story");
     case "missions":
       return events.filter((e) => e.type.startsWith("mission_"));
-    case "votes":
-      return events.filter((e) => e.type.startsWith("route_vote_"));
   }
 }
 
@@ -245,19 +240,11 @@ export default function JournalSheet({
         className="z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
         <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: JOURNAL_PERSONALITY.color }} />
-        <SheetGrabber />
         <div
           className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
           style={{ background: `linear-gradient(180deg, ${JOURNAL_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="flex flex-col gap-1">
-            <div
-              className="inline-flex items-center gap-1.5 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em]"
-              style={{ color: JOURNAL_PERSONALITY.color }}
-            >
-              <Clock aria-hidden="true" className="h-3 w-3" />
-              {JOURNAL_PERSONALITY.tag}
-            </div>
             <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"
@@ -446,7 +433,7 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryR
           "active:scale-[0.99]",
         )}
       >
-        <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.1em]">
+        <div className="flex items-start justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.1em]">
           <span className="flex items-center gap-1.5 text-[var(--ink-3)]">
             {fullKicker}
             {stateEmoji ? (
@@ -455,14 +442,22 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryR
               </span>
             ) : null}
           </span>
-          <span
-            className="rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[10px]"
-            style={{
-              color: visual.tint,
-              background: `color-mix(in oklab, ${visual.tint} 12%, transparent)`,
-            }}
-          >
-            {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
+          <span className="flex shrink-0 items-center gap-1">
+            <span
+              className="rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[10px]"
+              style={{
+                color: visual.tint,
+                background: `color-mix(in oklab, ${visual.tint} 12%, transparent)`,
+              }}
+            >
+              {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
+            </span>
+            {isCheckIn ? (
+              <ChevronRight
+                aria-hidden="true"
+                className="h-4 w-4 text-[var(--ink-3)] transition-colors group-hover:text-[var(--ink-1)]"
+              />
+            ) : null}
           </span>
         </div>
 
@@ -500,12 +495,6 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryR
           </div>
         ) : null}
 
-        {isCheckIn ? (
-          <ChevronRight
-            aria-hidden="true"
-            className="absolute right-3 top-3 h-4 w-4 text-[var(--ink-3)] transition-colors group-hover:text-[var(--ink-1)]"
-          />
-        ) : null}
       </button>
     </li>
   );
