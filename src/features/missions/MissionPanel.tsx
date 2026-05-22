@@ -236,6 +236,7 @@ export default function MissionPanel({
       <SheetContent
         side="bottom"
         showBackdrop={false}
+        mapAdjacent
         className={cn(
           "z-[10] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
           isPickingCoordinate && "invisible pointer-events-none",

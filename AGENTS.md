@@ -327,3 +327,25 @@ const height = el?.offsetHeight ?? fallback;
 - Vertical: `cardsBottom > pinNaturalY_inViewport`
 
 Only offset when *both* are true. A one-axis check causes unnecessary offsets when cards are collapsed or horizontally narrow.
+
+### Sheet / Dock z-index stacking hierarchy
+
+Non-modal map sheets slide **under** the Dock; modals (Options, Emergency Reset) stay above everything.
+
+| Layer | z-index | Who |
+|---|---|---|
+| Non-modal sheets (Journal, Missions, Votes, Funds) | z-[10] | mapAdjacent base |
+| Story detail / nested sheets | z-[11] | overrides mapAdjacent |
+| Add-checkpoint sheet | z-[12] | overrides mapAdjacent |
+| FanMenu backdrop | z-[19] | below Dock; catches map clicks |
+| Dock pill (mobile) | z-[20] | always above map sheets |
+| FanMenu item buttons | z-[21] | above Dock pill |
+| Modal sheets (Options, EmergencyReset, etc.) | z-[50] | above all navigation |
+
+**`mapAdjacent` prop on `SheetContent`** (`src/components/ui/sheet.tsx`): adds `z-[10] pb-[100px]` so the sheet floats under the Dock with 100 px of bottom padding to keep scroll content visible above it. Because `className` is last in `cn()`, tailwind-merge lets the caller's explicit `z-[11]`/`z-[12]` win over `mapAdjacent`'s `z-[10]`.
+
+**Inline `style` overrides CSS classes.** If a `SheetContent` already has an inline `style={{ paddingBottom: "..." }}`, it will clobber the `pb-[100px]` class from `mapAdjacent`. Fix: embed both in the same inline value: `"calc(100px + env(safe-area-inset-bottom))"`. See `RouteVotePanel.tsx` for an example.
+
+### Desktop layout (DesktopMapFrame)
+
+`src/features/layout/DesktopMapFrame.tsx` wraps the map section in a 3-column CSS grid on viewport ≥ 960 px (left rail 88 px / center 1fr / right rail 380 px). On mobile it is transparent (`<>{children}</>`). The reactive breakpoint is managed by `src/lib/useIsDesktop.ts` (a `matchMedia` listener). The mobile Dock pill in `TripMap.tsx` is hidden via `{!isDesktop && (...)}` when the desktop layout is active — `DesktopMapFrame` renders its own `Dock variant="rail"` in the left rail.

@@ -342,9 +342,10 @@ export default function RouteVotePanel({
       <SheetContent
         side="bottom"
         showBackdrop={false}
+        mapAdjacent
         className="z-[10] max-h-[80dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
         data-role="route-votes-sheet"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+        style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom))" }}
       >
         <SheetGrabber />
         <div className="flex items-start justify-between gap-2 px-4 pt-2">

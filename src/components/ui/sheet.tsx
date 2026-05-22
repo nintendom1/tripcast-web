@@ -23,16 +23,23 @@ SheetBackdrop.displayName = "SheetBackdrop";
 interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof Dialog.Popup> {
   side?: "top" | "right" | "bottom" | "left";
   showBackdrop?: boolean;
+  /**
+   * Non-modal map-adjacent sheets: lowers z-index to z-10 (below the Dock at z-20)
+   * and adds 100px bottom padding so scrollable content clears the Dock.
+   * Use on all bottom sheets with modal={false} showBackdrop={false}.
+   */
+  mapAdjacent?: boolean;
 }
 
 const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
-  ({ side = "right", showBackdrop = true, className, children, ...props }, ref) => (
+  ({ side = "right", showBackdrop = true, mapAdjacent = false, className, children, ...props }, ref) => (
     <SheetPortal>
       {showBackdrop ? <SheetBackdrop /> : null}
       <Dialog.Popup
         ref={ref}
         className={cn(
           "fixed z-50 flex flex-col bg-background shadow-xl",
+          mapAdjacent && "z-[10] pb-[100px]",
           side === "bottom" &&
             "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t transition-transform duration-200 ease-out data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full",
           side === "top" &&

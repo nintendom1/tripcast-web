@@ -175,6 +175,7 @@ export default function AddCheckpointSheet({
       <SheetContent
         side="bottom"
         showBackdrop={false}
+        mapAdjacent
         className="z-[12] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
         data-role="add-checkpoint-sheet"
       >
