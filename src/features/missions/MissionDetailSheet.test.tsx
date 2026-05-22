@@ -178,3 +178,46 @@ describe("MissionDetailSheet", () => {
     expect(onCompleteAsStory).toHaveBeenCalledWith(Mission, inlineTransaction);
   });
 });
+
+describe("MissionDetailSheet — sectioned redesign", () => {
+  it("organizes the detail into Next steps and About sections", () => {
+    const ch: Mission = { _id: "ch-s", title: "M", status: "visible", source: "traveler", createdAt: 1, updatedAt: 1 };
+    render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
+    expect(screen.getByText("Next steps")).toBeInTheDocument();
+    expect(screen.getByText("About")).toBeInTheDocument();
+  });
+
+  it("shows a Linked section only when a source vote is present", () => {
+    const plain: Mission = { _id: "ch-a", title: "M", status: "visible", source: "traveler", createdAt: 1, updatedAt: 1 };
+    const { rerender } = render(<MissionDetailSheet Mission={plain} token="t" role="traveler" onClose={vi.fn()} />);
+    expect(screen.queryByText("Linked")).not.toBeInTheDocument();
+
+    const fromVote: Mission = { ...plain, _id: "ch-b", sourceRouteVoteId: "vote-1" };
+    rerender(<MissionDetailSheet Mission={fromVote} token="t" role="traveler" onClose={vi.fn()} />);
+    expect(screen.getByText("Linked")).toBeInTheDocument();
+  });
+
+  it("keeps lifecycle status out of Edit mode (no status selector while editing)", async () => {
+    const user = userEvent.setup();
+    const ch: Mission = { _id: "ch-e", title: "M", status: "visible", source: "traveler", createdAt: 1, updatedAt: 1 };
+    render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("applies a manual status override through the lifecycle area", async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn().mockResolvedValue(null);
+    vi.mocked(convexReact.useMutation).mockReturnValue(mutate as any);
+    const ch: Mission = { _id: "ch-x", title: "M", status: "in_progress", source: "traveler", createdAt: 1, updatedAt: 1 };
+    render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Change status manually" }));
+    await user.selectOptions(screen.getByRole("combobox"), "completed");
+    await user.click(screen.getByRole("button", { name: /Apply status/ }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ missionId: "ch-x", newStatus: "completed" }),
+    );
+  });
+});
