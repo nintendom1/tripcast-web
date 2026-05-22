@@ -900,6 +900,20 @@ export type BulkImportResult = {
 };
 
 // ---------------------------------------------------------------------------
+// Reactions
+// ---------------------------------------------------------------------------
+
+export type ReactionTargetKind = "activity" | "state";
+
+export type Reaction = {
+  _id: string;
+  emoji: string;
+  reactorName: string;
+  targetKind: ReactionTargetKind;
+  createdAt: number;
+};
+
+// ---------------------------------------------------------------------------
 // Follower / account types
 // ---------------------------------------------------------------------------
 
@@ -1427,6 +1441,32 @@ export const tripcastApi = {
       "public",
       { token: string },
       JournalEvent[]
+    >,
+  },
+  reactions: {
+    followerSubmitReaction: (anyApi as any).reactions.followerSubmitReaction as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; emoji: string; targetKind: ReactionTargetKind },
+      null
+    >,
+    travelerListRecentReactions: (anyApi as any).reactions.travelerListRecentReactions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Reaction[]
+    >,
+    travelerListUnseenReactions: (anyApi as any).reactions.travelerListUnseenReactions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Reaction[]
+    >,
+    travelerMarkReactionsSeen: (anyApi as any).reactions.travelerMarkReactionsSeen as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; ids: string[] },
+      null
     >,
   },
   scoring: {

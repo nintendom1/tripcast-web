@@ -52,6 +52,8 @@ import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
 import AchievementsConnected from "../achievements/AchievementsConnected";
+import FollowerReactionBar from "../reactions/FollowerReactionBar";
+import TravelerReactionMoments from "../reactions/TravelerReactionMoments";
 import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -1389,6 +1391,14 @@ export default function TripMap({
           showButton={false}
         />
       </FeatureBoundary>
+
+      {/* Follower reactions: bar for the Follower, moment toasts for the Traveler */}
+      {role === "traveler" && <TravelerReactionMoments token={token} />}
+      {role === "follower" && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-[96px] z-[20] flex justify-center px-3">
+          <FollowerReactionBar token={token} />
+        </div>
+      )}
 
       {/* Bottom Dock */}
       <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
