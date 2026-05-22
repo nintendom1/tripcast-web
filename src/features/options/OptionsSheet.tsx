@@ -7,6 +7,7 @@ import {
   Clock,
   Database,
   Eye,
+  Flag,
   LogOut,
   Play,
   ShieldAlert,
@@ -63,6 +64,10 @@ type OptionsSheetProps = {
   onLocationDataCleared: () => void;
   onTripDataDeleted: () => void;
   onResetStarted: (message: string) => void;
+  /** Traveler-only: open the End Trip flow (handled on the map). */
+  onEndTrip?: () => void;
+  /** Either role: open the full-screen trip credits. */
+  onViewCredits?: () => void;
   preserveDebugContext?: boolean;
 };
 
@@ -333,6 +338,8 @@ export default function OptionsSheet({
   onLocationDataCleared,
   onTripDataDeleted,
   onResetStarted,
+  onEndTrip,
+  onViewCredits,
   preserveDebugContext = false,
 }: OptionsSheetProps) {
   const [view, setView] = useState<OptionsView>("options");
@@ -440,6 +447,8 @@ export default function OptionsSheet({
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
+              onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
+              onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
             />
           ) : view === "debug-logs" ? (
             <SheetBody className="min-h-0 overflow-hidden p-0">
@@ -476,6 +485,8 @@ function OptionsHome({
   onBulkImport,
   onEmergencyReset,
   onDebugLogs,
+  onEndTrip,
+  onViewCredits,
 }: {
   role: "traveler" | "follower";
   session: StoredSession;
@@ -486,6 +497,8 @@ function OptionsHome({
   onDebugLogs: () => void;
   onBulkImport: () => void;
   onEmergencyReset: () => void;
+  onEndTrip?: () => void;
+  onViewCredits?: () => void;
 }) {
   return (
     <SheetBody className="grid gap-5 px-5">
@@ -530,10 +543,24 @@ function OptionsHome({
           <OptionsSection label="Tour">
             <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the onboarding intro" onClick={onReplayFollowerTour} />
           </OptionsSection>
+
+          {onEndTrip || onViewCredits ? (
+            <OptionsSection label="Finale">
+              {onEndTrip ? (
+                <OptionsRow icon={Flag} title="End Trip" detail="Roll the credits and leave a thank-you note" onClick={onEndTrip} />
+              ) : null}
+              {onViewCredits ? (
+                <OptionsRow icon={Trophy} title="View trip credits" detail="Roll the finale reel" onClick={onViewCredits} />
+              ) : null}
+            </OptionsSection>
+          ) : null}
         </>
       ) : (
         <OptionsSection label="Trip">
           <OptionsRow icon={Play} title="Replay welcome tour" detail="See the onboarding intro again" onClick={onReplayFollowerTour} />
+          {onViewCredits ? (
+            <OptionsRow icon={Trophy} title="View trip credits" detail="Roll the finale reel" onClick={onViewCredits} />
+          ) : null}
         </OptionsSection>
       )}
 

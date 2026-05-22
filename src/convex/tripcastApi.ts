@@ -914,6 +914,22 @@ export type Reaction = {
 };
 
 // ---------------------------------------------------------------------------
+// End Trip / credits
+// ---------------------------------------------------------------------------
+
+export type TripCreditsEntry = { name: string; points: number; badges: number };
+
+export type TripCredits = {
+  ended: boolean;
+  endedAt?: number;
+  thankYouNote?: string;
+  travelerName: string;
+  followers: string[];
+  leaderboard: TripCreditsEntry[];
+  totals: { points: number; badges: number; followers: number };
+};
+
+// ---------------------------------------------------------------------------
 // Follower / account types
 // ---------------------------------------------------------------------------
 
@@ -1467,6 +1483,26 @@ export const tripcastApi = {
       "public",
       { token: string; ids: string[] },
       null
+    >,
+  },
+  endTrip: {
+    travelerEndTrip: (anyApi as any).endTrip.travelerEndTrip as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; thankYouNote?: string },
+      null
+    >,
+    travelerReopenTrip: (anyApi as any).endTrip.travelerReopenTrip as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+    getTripCredits: (anyApi as any).endTrip.getTripCredits as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TripCredits
     >,
   },
   scoring: {
