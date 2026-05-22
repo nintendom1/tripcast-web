@@ -49,10 +49,6 @@ vi.mock("../../components/ui/sheet", () => ({
   SheetBody: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
     <div {...props}>{children}</div>
   ),
-  SheetGrabber: () => <div data-testid="sheet-grabber" />,
-  SheetKicker: ({ children, ...props }: HTMLAttributes<HTMLDivElement>) => (
-    <div {...props}>{children}</div>
-  ),
   SheetBackButton: ({ children, ...props }: HTMLAttributes<HTMLButtonElement>) => (
     <button type="button" {...props}>{children ?? "Back"}</button>
   ),

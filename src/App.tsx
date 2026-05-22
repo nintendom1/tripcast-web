@@ -16,6 +16,8 @@ import FollowerLoginScreen from "./features/auth/FollowerLoginScreen";
 import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
 import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet, { type OptionsView } from "./features/options/OptionsSheet";
+import EndTripSheet from "./features/endtrip/EndTripSheet";
+import CreditsOverlay from "./features/endtrip/CreditsOverlay";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 import { TopBar } from "./features/hud";
 import {
@@ -92,6 +94,8 @@ function ConnectedApp() {
 
   const [session, setSession] = useState<StoredSession | null>(getStoredSession);
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  const [isEndTripOpen, setIsEndTripOpen] = useState(false);
+  const [isCreditsOpen, setIsCreditsOpen] = useState(false);
   const [optionsDefaultView, setOptionsDefaultView] = useState<OptionsView>("options");
   const [preserveDebugContext, setPreserveDebugContext] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
@@ -425,7 +429,22 @@ function ConnectedApp() {
         onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
         onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
         onResetStarted={showResetToast}
+        onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); setIsEndTripOpen(true); } : undefined}
+        onViewCredits={() => { setIsOptionsOpen(false); setIsCreditsOpen(true); }}
       />
+
+      {role === "traveler" && (
+        <EndTripSheet
+          token={session.token}
+          open={isEndTripOpen}
+          onOpenChange={setIsEndTripOpen}
+          onViewCredits={() => { setIsEndTripOpen(false); setIsCreditsOpen(true); }}
+        />
+      )}
+
+      {isCreditsOpen && (
+        <CreditsOverlay token={session.token} onClose={() => setIsCreditsOpen(false)} />
+      )}
 
       <ErrorBoundary
         resetKeys={[session.token, role, locationResetNonce, tripDataResetNonce]}

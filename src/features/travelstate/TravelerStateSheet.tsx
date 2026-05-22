@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
@@ -212,6 +212,30 @@ function ToggleRow({
   );
 }
 
+/** Grouped "segment" of the State form — a titled card that reduces density by
+ *  visually separating the bars, the chip pickers, notes, and biometrics. */
+function StateSegment({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="grid gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)]">
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-[var(--meadow-font-display)] text-xs font-extrabold uppercase tracking-[0.14em] text-[var(--ink-2)]">
+          {title}
+        </h3>
+        {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
 export default function TravelerStateSheet({ token, onClose, onToast, debugSource }: TravelerStateSheetProps) {
   const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
   const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
@@ -268,6 +292,24 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     log.logUi("sheet:open", { tab: "state" });
     return () => log.logUi("sheet:close", { trigger: "unmount" });
   }, [log]);
+
+  // Rendered-dimensions instrumentation (transient surface): measure the sheet
+  // after commit so layout/size bugs are visible on devices we can't see.
+  useEffect(() => {
+    const el = document.querySelector<HTMLElement>("[data-role='traveler-state-sheet']");
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    log.logUi("state:rendered", {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      viewport: { w: window.innerWidth, h: window.innerHeight },
+    });
+  }, [log]);
+
+  // Log a "segment" (bar) value change with from/to for device debugging.
+  function logBarChange(bar: "energy" | "stomach" | "calm", from: number | undefined, to: number) {
+    log.logUi("state:segment:change", { bar, from, to });
+  }
 
   // Populate form once from loaded data
   useEffect(() => {
@@ -359,6 +401,12 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   function handleReviewState() {
     setError(null);
     setReviewing(true);
+    log.logUi("state:review:open", {
+      mood: moodValue,
+      energy: energyScore,
+      stomach: stomachScore,
+      calm: stressScore,
+    });
   }
 
   async function handleConfirmSave() {
@@ -570,7 +618,114 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         })()}
 
         {!reviewing && tab === "state" && (
-          <div className="grid gap-5 p-4">
+          <div className="grid gap-4 p-4">
+            {autoState?.autoStateEnabled && (
+              <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                Energy and Stomach are being auto-estimated in the HUD. Edits here will re-anchor the Auto base.
+              </p>
+            )}
+
+            {/* Segment 1 — the three bars come first (#5, #6) */}
+            <StateSegment title="Energy · Stomach · Calm" hint="how you're running">
+              {/* Energy */}
+              <div className="grid gap-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Energy
+                </label>
+                <ChipRow
+                  values={ENERGY_VALUES}
+                  labels={ENERGY_LABELS}
+                  selected={energyLevel}
+                  onSelect={(v) => {
+                    setEnergyLevel(v);
+                    setEnergyScore(ENERGY_SCORE_FOR_LEVEL[v]);
+                  }}
+                  onDeselect={() => { setEnergyLevel(undefined); setEnergyScore(undefined); }}
+                />
+                <ScoreSlider
+                  value={energyScore}
+                  min={0}
+                  max={100}
+                  label="/ 100"
+                  onChange={(n) => {
+                    logBarChange("energy", energyScore, n);
+                    setEnergyScore(n);
+                    setEnergyLevel(getEnergyLevelFromScore(n));
+                  }}
+                />
+              </div>
+
+              {/* Stomach */}
+              <div className="grid gap-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Stomach
+                </label>
+                <ChipRow
+                  values={STOMACH_VALUES}
+                  labels={STOMACH_LABELS}
+                  selected={stomachLevel}
+                  onSelect={(v) => {
+                    setStomachLevel(v);
+                    setStomachScore(STOMACH_SCORE_FOR_LEVEL[v]);
+                  }}
+                  onDeselect={() => { setStomachLevel(undefined); setStomachScore(undefined); }}
+                />
+                <ScoreSlider
+                  value={stomachScore}
+                  min={0}
+                  max={150}
+                  label="/ 150"
+                  onChange={(n) => {
+                    logBarChange("stomach", stomachScore, n);
+                    setStomachScore(n);
+                    setStomachLevel(getStomachLevelFromScore(n));
+                  }}
+                />
+              </div>
+
+              {/* Calm — the stress axis runs Calm → Overwhelmed */}
+              <div className="grid gap-1.5">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Calm
+                </label>
+                <ChipRow
+                  values={STRESS_VALUES}
+                  labels={STRESS_LABELS}
+                  selected={stressLevel}
+                  onSelect={(v) => {
+                    setStressLevel(v);
+                    setStressScore(STRESS_SCORE_FOR_LEVEL[v]);
+                  }}
+                  onDeselect={() => { setStressLevel(undefined); setStressScore(undefined); }}
+                />
+                <ScoreSlider
+                  value={stressScore}
+                  min={0}
+                  max={100}
+                  label="/ 100"
+                  onChange={(n) => {
+                    logBarChange("calm", stressScore, n);
+                    setStressScore(n);
+                    setStressLevel(getStressLevelFromScore(n));
+                  }}
+                />
+              </div>
+            </StateSegment>
+
+            {/* Mood — chip only (#4) */}
+            <div className="grid gap-1.5">
+              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Mood
+              </label>
+              <ChipRow
+                values={MOOD_VALUES}
+                labels={MOOD_LABELS}
+                selected={moodValue}
+                onSelect={setMoodValue}
+                onDeselect={() => setMoodValue(undefined)}
+              />
+            </div>
+
             {/* When */}
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between">
@@ -590,107 +745,6 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                 value={stateAt || toIsoLocal(Date.now())}
                 onChange={(e) => setStateAt(e.target.value)}
                 className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-              />
-            </div>
-
-            {/* Mood — chip only (#4) */}
-            <div className="grid gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Mood
-              </label>
-              <ChipRow
-                values={MOOD_VALUES}
-                labels={MOOD_LABELS}
-                selected={moodValue}
-                onSelect={setMoodValue}
-                onDeselect={() => setMoodValue(undefined)}
-              />
-            </div>
-
-            {autoState?.autoStateEnabled && (
-              <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                Energy and Stomach are being auto-estimated in the HUD. Edits here will re-anchor the Auto base.
-              </p>
-            )}
-
-            {/* Energy — chips + slider (#5, #6) */}
-            <div className="grid gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Energy
-              </label>
-              <ChipRow
-                values={ENERGY_VALUES}
-                labels={ENERGY_LABELS}
-                selected={energyLevel}
-                onSelect={(v) => {
-                  setEnergyLevel(v);
-                  setEnergyScore(ENERGY_SCORE_FOR_LEVEL[v]);
-                }}
-                onDeselect={() => { setEnergyLevel(undefined); setEnergyScore(undefined); }}
-              />
-              <ScoreSlider
-                value={energyScore}
-                min={0}
-                max={100}
-                label="/ 100"
-                onChange={(n) => {
-                  setEnergyScore(n);
-                  setEnergyLevel(getEnergyLevelFromScore(n));
-                }}
-              />
-            </div>
-
-            {/* Stomach — chips + slider (#5, #6) */}
-            <div className="grid gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Stomach
-              </label>
-              <ChipRow
-                values={STOMACH_VALUES}
-                labels={STOMACH_LABELS}
-                selected={stomachLevel}
-                onSelect={(v) => {
-                  setStomachLevel(v);
-                  setStomachScore(STOMACH_SCORE_FOR_LEVEL[v]);
-                }}
-                onDeselect={() => { setStomachLevel(undefined); setStomachScore(undefined); }}
-              />
-              <ScoreSlider
-                value={stomachScore}
-                min={0}
-                max={150}
-                label="/ 150"
-                onChange={(n) => {
-                  setStomachScore(n);
-                  setStomachLevel(getStomachLevelFromScore(n));
-                }}
-              />
-            </div>
-
-            {/* Stress — chips + slider (#5, #6) */}
-            <div className="grid gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Stress
-              </label>
-              <ChipRow
-                values={STRESS_VALUES}
-                labels={STRESS_LABELS}
-                selected={stressLevel}
-                onSelect={(v) => {
-                  setStressLevel(v);
-                  setStressScore(STRESS_SCORE_FOR_LEVEL[v]);
-                }}
-                onDeselect={() => { setStressLevel(undefined); setStressScore(undefined); }}
-              />
-              <ScoreSlider
-                value={stressScore}
-                min={0}
-                max={100}
-                label="/ 100"
-                onChange={(n) => {
-                  setStressScore(n);
-                  setStressLevel(getStressLevelFromScore(n));
-                }}
               />
             </div>
 

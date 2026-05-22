@@ -10,8 +10,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -172,10 +170,8 @@ export default function AwardBadgeSheet({
         data-role="award-badge-sheet"
         className="max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
-        <SheetGrabber />
         <div className="flex items-start justify-between gap-3 px-5 pt-3">
           <div className="grid gap-1">
-            <SheetKicker>Award Badge</SheetKicker>
             <SheetTitle className="text-base">
               {context?.sourceLabel ?? "Loading…"}
             </SheetTitle>

@@ -2,10 +2,12 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
+import type { Mission } from "../../convex/tripcastApi";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
+  useQuery: vi.fn(),
 }));
 
 function renderForm() {
@@ -41,6 +43,8 @@ function getCloseInput() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: no linkable missions, so the Mission-link selector is hidden.
+  vi.mocked(convexReact.useQuery).mockReturnValue([] as any);
   vi.spyOn(Date, "now").mockReturnValue(new Date("2026-05-13T10:00:00").getTime());
 });
 
@@ -112,5 +116,36 @@ describe("CreateRouteVoteForm", () => {
     expect(screen.getByPlaceholderText("Description (optional)")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Est. cost USD")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Duration (min)")).toBeInTheDocument();
+  });
+
+  it("prefills an option from a linked Mission and submits its linkedMissionId", async () => {
+    const linkableMission: Mission = {
+      _id: "mission-1",
+      title: "Ride the ferry",
+      status: "visible",
+      source: "follower",
+      locationLabel: "Pier 52",
+      estimatedCostUsd: 8,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    vi.mocked(convexReact.useQuery).mockReturnValue([linkableMission] as any);
+
+    const { createVote } = renderForm();
+
+    const linkSelects = screen.getAllByLabelText(/Link to an existing mission/i);
+    await userEvent.selectOptions(linkSelects[0], "mission-1");
+
+    const optionTitles = screen.getAllByPlaceholderText("Option title");
+    expect(optionTitles[0]).toHaveValue("Ride the ferry");
+    await userEvent.type(optionTitles[1], "Food crawl");
+
+    await userEvent.click(screen.getByRole("button", { name: "Propose Route Vote" }));
+
+    await waitFor(() => expect(createVote).toHaveBeenCalledTimes(1));
+    const arg = createVote.mock.calls[0][0];
+    expect(arg.options[0].linkedMissionId).toBe("mission-1");
+    expect(arg.options[0].title).toBe("Ride the ferry");
+    expect(arg.options[1].linkedMissionId).toBeUndefined();
   });
 });

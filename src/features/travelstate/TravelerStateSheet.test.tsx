@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
@@ -256,6 +256,45 @@ describe("TravelerStateSheet — State tab", () => {
     await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Traveler access is required");
+    });
+  });
+});
+
+describe("TravelerStateSheet — segmented redesign", () => {
+  it("leads with the Energy/Stomach/Calm bars segment", () => {
+    setupMocks();
+    renderSheet();
+    expect(screen.getByText("Energy · Stomach · Calm")).toBeInTheDocument();
+    // The stress axis is presented as "Calm" on the state form (section label
+    // plus the lowest-stress chip both read "Calm").
+    expect(screen.getAllByText("Calm").length).toBeGreaterThan(0);
+  });
+
+  it("logs a segment change when a bar slider moves", async () => {
+    setEnabled(true);
+    setupMocks();
+    renderSheet();
+    const sliders = screen.getAllByRole("slider");
+    fireEvent.change(sliders[0], { target: { value: "42" } });
+    await waitFor(() => {
+      expect(
+        getLogs().some(
+          (entry) => entry.src === "TravelerStateSheet" && entry.action === "state:segment:change",
+        ),
+      ).toBe(true);
+    });
+  });
+
+  it("logs rendered dimensions on mount", async () => {
+    setEnabled(true);
+    setupMocks();
+    renderSheet();
+    await waitFor(() => {
+      expect(
+        getLogs().some(
+          (entry) => entry.src === "TravelerStateSheet" && entry.action === "state:rendered",
+        ),
+      ).toBe(true);
     });
   });
 });

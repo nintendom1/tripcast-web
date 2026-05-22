@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
+import { CheckSquare } from "lucide-react";
 import {
   tripcastApi,
   type RouteVoteMapOverlay,
@@ -14,8 +15,6 @@ import {
   SheetBackButton,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
@@ -28,6 +27,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type RouteVotePanelProps = {
   token: string;
@@ -45,23 +45,114 @@ type VoteCardProps = {
   vote: VisibleRouteVote;
   onSelect: () => void;
 };
+const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
+
+function voteCode(id: string): string {
+  return `V-${id.slice(-3).toUpperCase()}`;
+}
 
 function VoteCard({ vote, onSelect }: VoteCardProps) {
+  const total = vote.totalSubmissions ?? 0;
+  const showTallies = vote.optionVoteCounts !== undefined;
+  const winner = vote.options.find((option) => option._id === vote.confirmedWinningOptionId);
+  const isClosed = vote.effectiveStatus !== "active";
+
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="w-full rounded-2xl bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
+      className="w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-[var(--font-display)] text-sm font-bold leading-snug text-[var(--ink-1)]">
-          {vote.title}
+      <div className="flex items-center gap-2">
+        {vote.effectiveStatus === "active" ? (
+          <span className="inline-flex items-center gap-1">
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: VOTES_PERSONALITY.color, boxShadow: `0 0 0 3px ${VOTES_PERSONALITY.color}33` }}
+            />
+            <span
+              className="font-[var(--font-display)] text-[9px] font-extrabold uppercase tracking-[0.14em]"
+              style={{ color: VOTES_PERSONALITY.color }}
+            >
+              Open
+            </span>
+          </span>
+        ) : (
+          <span className="font-[var(--font-display)] text-[9px] font-bold uppercase tracking-[0.14em] text-[var(--ink-3)]">
+            {vote.effectiveStatus}
+          </span>
+        )}
+        <span className="font-[var(--font-mono)] text-[10px] font-bold text-[var(--ink-3)]">
+          {voteCode(vote._id)}
         </span>
-        <StatusBadge status={vote.effectiveStatus} />
+        <span className="ml-auto text-[11px] text-[var(--ink-3)]">
+          {showTallies ? `${total} ${total === 1 ? "vote" : "votes"}` : "Results hidden"}
+        </span>
       </div>
-      <div className="mt-1 font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
+
+      <div className="mt-1.5 flex items-start justify-between gap-2">
+        <span className="flex min-w-0 items-start gap-2">
+          <span
+            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
+            style={{ background: VOTES_PERSONALITY.color }}
+            aria-hidden="true"
+          >
+            <CheckSquare className="h-4 w-4" />
+          </span>
+          <span className="font-[var(--font-display)] text-sm font-extrabold leading-snug text-[var(--ink-1)]">
+            {vote.title}
+          </span>
+        </span>
+      </div>
+
+      {showTallies && vote.options.length > 0 ? (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {vote.options.slice(0, 3).map((option) => {
+            const count = vote.optionVoteCounts?.[option._id] ?? 0;
+            const pct = total > 0 ? (count / total) * 100 : 0;
+            return (
+              <div
+                key={option._id}
+                className="relative overflow-hidden rounded-lg bg-[var(--bg-paper)] px-2.5 py-2"
+              >
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-y-0 left-0"
+                  style={{ width: `${pct}%`, background: `color-mix(in oklab, ${VOTES_PERSONALITY.color} 18%, transparent)` }}
+                />
+                <div className="relative flex items-center gap-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-bold text-[var(--ink-1)]">{option.title}</span>
+                    {option.locationLabel ? (
+                      <span className="block truncate text-[10px] text-[var(--ink-3)]">{option.locationLabel}</span>
+                    ) : null}
+                  </span>
+                  <span className="font-[var(--font-mono)] text-xs font-bold" style={{ color: VOTES_PERSONALITY.color }}>
+                    {count}/{total}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {isClosed && winner ? (
+        <div
+          className="mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-[var(--ink-1)]"
+          style={{ background: VOTES_PERSONALITY.bg }}
+        >
+          Winner: <strong>{winner.title}</strong>
+          {vote.resultingMissionId ? (
+            <span className="ml-auto rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[9px] font-extrabold uppercase tracking-[0.1em]" style={{ color: MEADOW_SHEET_PERSONALITIES.missions.color, background: `color-mix(in oklab, ${MEADOW_SHEET_PERSONALITIES.missions.color} 16%, transparent)` }}>
+              Mission
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="mt-1.5 font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
         {formatTimeRemaining(vote.expiresAt)} · {vote.options.length} options
-        {vote.totalSubmissions !== undefined && ` · ${vote.totalSubmissions} votes`}
       </div>
       {vote.mySubmission && (
         <div className="mt-1 text-xs italic text-[var(--ink-3)]">You voted</div>
@@ -306,6 +397,8 @@ export default function RouteVotePanel({
   const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
+  const openCount = votes?.filter((vote) => vote.effectiveStatus === "active").length ?? 0;
+  const closedCount = votes?.filter((vote) => vote.effectiveStatus !== "active").length ?? 0;
   useActiveUiContext(true, {
     sheetName: "RouteVotePanel",
     label: TERMS.votes,
@@ -347,17 +440,33 @@ export default function RouteVotePanel({
         data-role="route-votes-sheet"
         style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom))" }}
       >
-        <SheetGrabber />
-        <div className="flex items-start justify-between gap-2 px-4 pt-2">
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
+        <div
+          className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
+          style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+        >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
               <SheetBackButton aria-label="Back to votes list" onClick={handleBack} />
             ) : null}
             <div className="flex min-w-0 flex-col gap-1">
-              <SheetKicker dotColor="var(--flag)">{TERMS.votes}</SheetKicker>
-              <SheetTitle className="truncate font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-                {selectedVote ? selectedVote.title : headerTitle}
-              </SheetTitle>
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  style={{ background: VOTES_PERSONALITY.color }}
+                >
+                  <CheckSquare className="h-4 w-4" />
+                </span>
+                <SheetTitle className="truncate font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                  {selectedVote ? selectedVote.title : headerTitle}
+                </SheetTitle>
+              </div>
+              {!selectedVote && votes ? (
+                <p className="text-xs text-[var(--ink-3)]">
+                  {openCount} open · {closedCount} closed
+                </p>
+              ) : null}
             </div>
           </div>
           <SheetCloseButton aria-label={`Close ${TERMS.votes.toLowerCase()} panel`} />
@@ -399,7 +508,7 @@ export default function RouteVotePanel({
                   />
                 ) : votes.length === 0 ? (
                   <p className="py-6 text-center text-sm text-[var(--ink-3)]">
-                    No active votes right now.
+                    No votes yet.
                   </p>
                 ) : (
                   votes.map((vote) => (

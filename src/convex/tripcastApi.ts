@@ -111,6 +111,8 @@ export type TravelerLocation = {
   isSharing: true;
 } | null;
 
+export type LinkedMissionAction = "planned" | "visible" | "leave";
+
 export type RouteVoteOptionInput = {
   title: string;
   description?: string;
@@ -120,6 +122,8 @@ export type RouteVoteOptionInput = {
   estimatedCostUsd?: number;
   estimatedDurationMinutes?: number;
   estimatedEnergyImpact?: EnergyImpact;
+  /** Optional link to an existing non-completed Mission this option mirrors. */
+  linkedMissionId?: string;
 };
 
 export type RouteVoteOption = RouteVoteOptionInput & {
@@ -175,6 +179,8 @@ export type VisibleRouteVote = {
   effectiveStatus: RouteVoteStatus;
   resultsVisibility: ResultsVisibility;
   expiresAt: number;
+  confirmedWinningOptionId?: string;
+  resultingMissionId?: string;
   options: RouteVoteOption[];
   mySubmission?: {
     _id: string;
@@ -211,6 +217,10 @@ export type Mission = {
   source: MissionSource;
   sourceRouteVoteId?: string;
   sourceRouteVoteOptionId?: string;
+  /** Reciprocal link set when a pre-existing Mission won a route vote.
+   *  Does not change the Mission source/sourceRouteVoteId. */
+  linkedRouteVoteId?: string;
+  linkedRouteVoteOptionId?: string;
   proposedBySessionId?: string;
   proposedByUserId?: string;
   locationLabel?: string;
@@ -892,6 +902,22 @@ export type BulkImportResult = {
 };
 
 // ---------------------------------------------------------------------------
+// End Trip / credits
+// ---------------------------------------------------------------------------
+
+export type TripCreditsEntry = { name: string; points: number; badges: number };
+
+export type TripCredits = {
+  ended: boolean;
+  endedAt?: number;
+  thankYouNote?: string;
+  travelerName: string;
+  followers: string[];
+  leaderboard: TripCreditsEntry[];
+  totals: { points: number; badges: number; followers: number };
+};
+
+// ---------------------------------------------------------------------------
 // Follower / account types
 // ---------------------------------------------------------------------------
 
@@ -1085,7 +1111,7 @@ export const tripcastApi = {
     travelerConfirmRouteVoteWinner: (anyApi as any).routeVotes.travelerConfirmRouteVoteWinner as FunctionReference<
       "mutation",
       "public",
-      { token: string; routeVoteId: string; winningOptionId: string },
+      { token: string; routeVoteId: string; winningOptionId: string; linkedMissionAction?: LinkedMissionAction },
       string
     >,
     travelerHideRouteVoteComment: (anyApi as any).routeVotes.travelerHideRouteVoteComment as FunctionReference<
@@ -1419,6 +1445,26 @@ export const tripcastApi = {
       "public",
       { token: string },
       JournalEvent[]
+    >,
+  },
+  endTrip: {
+    travelerEndTrip: (anyApi as any).endTrip.travelerEndTrip as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; thankYouNote?: string },
+      null
+    >,
+    travelerReopenTrip: (anyApi as any).endTrip.travelerReopenTrip as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
+    >,
+    getTripCredits: (anyApi as any).endTrip.getTripCredits as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TripCredits
     >,
   },
   scoring: {

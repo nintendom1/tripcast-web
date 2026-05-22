@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -66,6 +66,16 @@ function friendlyError(e: unknown): string {
   return msg || "Something went wrong.";
 }
 
+/** Stamped, prototype-style section heading used to split the detail into
+ *  Next Steps / About / Linked areas. */
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em] text-[var(--ink-3)]">
+      {children}
+    </div>
+  );
+}
+
 export default function MissionDetailSheet({
   Mission,
   token,
@@ -88,6 +98,10 @@ export default function MissionDetailSheet({
   const [showRejectForm, setShowRejectForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMarkInProgressConfirm, setShowMarkInProgressConfirm] = useState(false);
+  // Manual status override — kept in the Next Steps area so lifecycle changes
+  // stay separate from the About/Edit field form.
+  const [showStatusOverride, setShowStatusOverride] = useState(false);
+  const [overrideStatus, setOverrideStatus] = useState<MissionStatus>("visible");
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -99,7 +113,6 @@ export default function MissionDetailSheet({
   const [editCost, setEditCost] = useState("");
   const [editDuration, setEditDuration] = useState("");
   const [editEnergy, setEditEnergy] = useState<"" | "low" | "medium" | "high">("");
-  const [editStatus, setEditStatus] = useState<MissionStatus>("visible");
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
@@ -159,6 +172,12 @@ export default function MissionDetailSheet({
   const status = c.status;
   const hasLocation = c.lat !== undefined && c.lon !== undefined;
   const conflictingMission = (inProgressMissions ?? []).find((ch) => ch._id !== c._id) ?? null;
+  const hasMeta =
+    Boolean(c.locationLabel) ||
+    !hasLocation ||
+    c.estimatedDurationMinutes !== undefined ||
+    c.estimatedCostUsd !== undefined ||
+    Boolean(c.estimatedEnergyImpact);
 
   function openEditMode() {
     log.logForm("form:open");
@@ -174,7 +193,6 @@ export default function MissionDetailSheet({
         : "",
     );
     setEditEnergy((c!.estimatedEnergyImpact as "" | "low" | "medium" | "high") ?? "");
-    setEditStatus(c!.status);
     setIsEditing(true);
     setActionError(null);
   }
@@ -205,12 +223,6 @@ export default function MissionDetailSheet({
         estimatedDurationMinutes: editDuration ? parseInt(editDuration, 10) : undefined,
         estimatedEnergyImpact: editEnergy || undefined,
       });
-      if (editStatus !== c!.status) {
-        log.logMutation("Mission:status:update", { from: c!.status, to: editStatus });
-        await updateStatus({ token, missionId: c!._id, newStatus: editStatus });
-        log.logMutation("Mission:status:update:success");
-        log.logState("MissionStatus", c!.status, editStatus);
-      }
       setIsEditing(false);
     } catch (e) {
       log.error("Mission:edit:error", "mutation", { message: String(e) });
@@ -341,6 +353,33 @@ export default function MissionDetailSheet({
     try {
       await start({ token, missionId: c!._id });
     } catch (e) {
+      setActionError(friendlyError(e));
+    } finally {
+      setIsWorking(false);
+    }
+  }
+
+  function openStatusOverride() {
+    setOverrideStatus(c!.status);
+    setShowStatusOverride(true);
+    log.logUi("action:status-override:open", { status: c!.status });
+  }
+
+  async function handleApplyStatusOverride() {
+    if (overrideStatus === c!.status) {
+      setShowStatusOverride(false);
+      return;
+    }
+    setIsWorking(true);
+    setActionError(null);
+    log.logMutation("Mission:status:override", { from: c!.status, to: overrideStatus });
+    try {
+      await updateStatus({ token, missionId: c!._id, newStatus: overrideStatus });
+      log.logMutation("Mission:status:override:success");
+      log.logState("MissionStatus", c!.status, overrideStatus);
+      setShowStatusOverride(false);
+    } catch (e) {
+      log.error("Mission:status:override:error", "mutation", { message: String(e) });
       setActionError(friendlyError(e));
     } finally {
       setIsWorking(false);
@@ -512,24 +551,14 @@ export default function MissionDetailSheet({
           </div>
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Status</label>
-          <select
-            value={editStatus}
-            onChange={(e) => setEditStatus(e.target.value as MissionStatus)}
-            className="h-9 rounded-md border border-input bg-background px-2 text-sm"
-          >
-            <option value="planned">Planned</option>
-            <option value="visible">Visible</option>
-            <option value="in_progress">In Progress</option>
-            <option value="completed">Completed</option>
-            <option value="dropped">Dropped</option>
-          </select>
-        </div>
-
         {actionError && (
           <p className="text-sm text-rose-600" role="alert">{actionError}</p>
         )}
+
+        <p className="text-[11px] text-muted-foreground">
+          Lifecycle changes (start, complete, drop, status) live in Next Steps —
+          editing here only updates the Mission's details.
+        </p>
 
         <Button
           size="sm"
@@ -579,28 +608,217 @@ export default function MissionDetailSheet({
   }
 
   // ---------------------------------------------------------------------------
-  // Normal detail view
+  // Normal detail view — split into Next Steps / About / Linked areas
   // ---------------------------------------------------------------------------
+
+  const lifecycleActions = (
+    <>
+      {status === "proposed" && (
+        <>
+          <Button size="sm" type="button" disabled={!canAct} onClick={handleAccept}>
+            Accept and publish
+          </Button>
+          <Button
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
+          >
+            Mark &lsquo;In Progress&rsquo;
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => setShowRejectForm(true)}
+          >
+            Drop with response
+          </Button>
+          <div className="flex items-center gap-2 pt-1">
+            <div className="flex-1 h-px bg-rose-200" />
+            <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
+            <div className="flex-1 h-px bg-rose-200" />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => setShowDeleteConfirm(true)}
+            className="border-rose-300 text-rose-700 hover:bg-rose-50"
+          >
+            Delete silently
+          </Button>
+        </>
+      )}
+
+      {showMarkInProgressConfirm && conflictingMission && (
+        <div className="flex flex-col gap-3 border border-amber-200 rounded-lg p-3 bg-amber-50">
+          <p className="text-sm text-amber-800">
+            &ldquo;{conflictingMission.title}&rdquo; is currently in progress. Starting this mission will drop it.
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => setShowMarkInProgressConfirm(false)}
+            >
+              Cancel
+            </Button>
+            <Button size="sm" type="button" disabled={!canAct} onClick={handleMarkInProgress}>
+              Proceed
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {(status === "visible" || status === "planned") && (
+        <>
+          <Button
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
+          >
+            Mark &lsquo;In Progress&rsquo;
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={handleTogglePin}
+          >
+            {c.mapHidden ? "Show on map" : "Hide from map"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => setShowRejectForm(true)}
+          >
+            Drop with note
+          </Button>
+          <div className="flex items-center gap-2 pt-1">
+            <div className="flex-1 h-px bg-rose-200" />
+            <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
+            <div className="flex-1 h-px bg-rose-200" />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => setShowDeleteConfirm(true)}
+            className="border-rose-300 text-rose-700 hover:bg-rose-50"
+          >
+            Delete silently
+          </Button>
+        </>
+      )}
+
+      {status === "in_progress" && (
+        <>
+          {currentActivity?.linkedMissionId !== c._id && (
+            <Button
+              size="sm"
+              variant="outline"
+              type="button"
+              disabled={!canAct}
+              onClick={handleSetCurrentActivity}
+            >
+              Set Current Activity to This Mission
+            </Button>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Completing this Mission will mark the linked Current Activity as done and open the Story form.
+          </p>
+          {isTraveler && (
+            <TravelFundsInlineSection
+              token={token}
+              prefill={{
+                title: c.title,
+                ...(c.estimatedCostUsd !== undefined
+                  ? {
+                      localAmount: c.estimatedCostUsd,
+                      currencyCode: "USD",
+                      localCurrencyPerUsd: 1,
+                    }
+                  : {}),
+              }}
+              onChange={setCompletionTxState}
+            />
+          )}
+          {onCompleteAsStory && (
+            <Button
+              size="sm"
+              type="button"
+              disabled={!canAct}
+              onClick={handleCompleteAsStory}
+              className="border-[var(--plum)] text-white"
+              style={{ background: "var(--plum)" }}
+            >
+              Complete as story
+            </Button>
+          )}
+          <Button
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={handleComplete}
+            className="bg-green-600 hover:bg-green-700 text-white border-green-600"
+          >
+            {onCompleteAsStory ? "Mark complete (no story)" : "Complete Mission"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => setShowRejectForm(true)}
+          >
+            Drop with note
+          </Button>
+          <div className="flex items-center gap-2 pt-1">
+            <div className="flex-1 h-px bg-rose-200" />
+            <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
+            <div className="flex-1 h-px bg-rose-200" />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => setShowDeleteConfirm(true)}
+            className="border-rose-300 text-rose-700 hover:bg-rose-50"
+          >
+            Delete silently
+          </Button>
+        </>
+      )}
+
+      {(status === "completed" || status === "dropped") && (
+        <p className="text-sm text-muted-foreground">
+          {status === "completed" ? "This Mission is complete." : "This Mission was dropped."}
+        </p>
+      )}
+    </>
+  );
 
   return (
     <div className="flex flex-col gap-4 p-4 pt-0">
-      {/* Status badge + Edit button */}
+      {/* Header — status only; Edit lives in the About section so lifecycle
+          actions and field edits stay visually separate. */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {statusLabel(status)}
         </span>
-        {isTraveler && (
-          <button
-            type="button"
-            className="text-xs text-navy underline"
-            onClick={openEditMode}
-          >
-            Edit
-          </button>
-        )}
       </div>
 
-      {/* Content */}
+      {/* Title + description */}
       <div className="flex flex-col gap-1.5">
         <h2 className="text-base font-semibold text-navy">{c.title}</h2>
         {c.description && (
@@ -608,377 +826,273 @@ export default function MissionDetailSheet({
         )}
       </div>
 
-      {/* Add a story — top placement for completed missions without a linked story yet */}
-      {isTraveler && status === "completed" && onCompleteAsStory && !linkedStory && (
-        <Button
-          size="sm"
-          type="button"
-          disabled={!canAct}
-          onClick={handleCompleteAsStory}
-          className="border-[var(--plum)] text-white w-fit"
-          style={{ background: "var(--plum)" }}
-        >
-          Add a story
-        </Button>
-      )}
+      {/* ── Next Steps ──────────────────────────────────────────────── */}
+      <section className="flex flex-col gap-2">
+        <SectionLabel>Next steps</SectionLabel>
 
-      {/* Meta */}
-      <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-        {c.locationLabel && <span>📍 {c.locationLabel}</span>}
-        {!hasLocation && <span className="text-xs italic">No map location (text-only Mission)</span>}
-        {c.estimatedDurationMinutes && (
-          <span>⏱ Est. {c.estimatedDurationMinutes} min</span>
+        {/* Add a story — completed missions without a linked story yet */}
+        {isTraveler && status === "completed" && onCompleteAsStory && !linkedStory && (
+          <Button
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={handleCompleteAsStory}
+            className="border-[var(--plum)] text-white w-fit"
+            style={{ background: "var(--plum)" }}
+          >
+            Add a story
+          </Button>
         )}
-        {c.estimatedCostUsd !== undefined && (
-          <span>💰 Est. ${c.estimatedCostUsd.toFixed(2)} USD</span>
+
+        {actionError && (
+          <p className="text-sm text-rose-600" role="alert">{actionError}</p>
         )}
-        {c.estimatedEnergyImpact && (
-          <span>⚡ Energy: {c.estimatedEnergyImpact}</span>
-        )}
-      </div>
 
-      <AttributionBlock
-        token={token}
-        viewerRole={role}
-        sourceType="mission"
-        sourceId={c._id}
-        editable={false}
-      />
-
-      {/* Route vote source card — shown when mission originated from a vote */}
-      {c.sourceRouteVoteId && (
-        <RouteVoteSourceCard
-          sourceVoteId={c.sourceRouteVoteId}
-          sourceOptionId={c.sourceRouteVoteOptionId}
-          token={token}
-          onNavigate={onRequestNavigateToVote}
-        />
-      )}
-
-      {/* Linked story card — shown when a story has been filed against this mission */}
-      {isTraveler && linkedStory && (
-        <div className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Linked story</p>
-          <p className="text-sm font-medium text-navy line-clamp-1">{linkedStory.title ?? "Story"}</p>
-          <p className="text-xs text-muted-foreground">
-            {new Date(linkedStory.occurredAt).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
-          </p>
-          {onOpenLinkedStory && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="self-start"
-              onClick={() => { log.logUi("action:view-linked-story"); onOpenLinkedStory(linkedStory); }}
-            >
-              View story
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Traveler response (preset + note) — visible to both traveler and follower */}
-      {(c.travelerResponsePreset || c.travelerResponseNote) && !c.silentDrop && (
-        <div className="rounded-md bg-slate-50 border border-slate-200 p-3 flex flex-col gap-1.5">
-          <p className="text-xs font-medium text-muted-foreground">Traveler's response</p>
-          {c.travelerResponsePreset && (
-            <span className="self-start px-2.5 py-0.5 text-xs rounded-full bg-navy/10 text-navy font-medium">
-              {c.travelerResponsePreset}
-            </span>
-          )}
-          {c.travelerResponseNote && (
-            <p className="text-sm text-foreground">{c.travelerResponseNote}</p>
-          )}
-        </div>
-      )}
-
-      {/* Reject with response form */}
-      {isTraveler && showRejectForm && (
-        <div className="flex flex-col gap-3 border border-slate-200 rounded-lg p-3">
-          <div className="flex flex-wrap gap-2">
-            {RESPONSE_PRESETS.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
-                  selectedPreset === preset
-                    ? "bg-navy text-white border-navy"
-                    : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-                }`}
-                onClick={() => setSelectedPreset(selectedPreset === preset ? "" : preset)}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-          <Textarea
-            placeholder="Custom response note (optional)…"
-            value={responseNote}
-            onChange={(e) => setResponseNote(e.target.value)}
-            rows={2}
-            maxLength={500}
-          />
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              type="button"
-              onClick={() => {
-                setShowRejectForm(false);
-                setResponseNote("");
-                setSelectedPreset("");
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              type="button"
-              disabled={!canAct}
-              onClick={handleReject}
-              className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
-            >
-              {isWorking ? "Dropping…" : "Confirm drop"}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Delete silently confirmation */}
-      {isTraveler && showDeleteConfirm && (
-        <div className="flex flex-col gap-3 border border-rose-200 rounded-lg p-3 bg-rose-50">
-          <p className="text-sm text-rose-800">
-            This permanently deletes the Mission — the proposer will no longer see it. Are you sure?
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              type="button"
-              onClick={() => setShowDeleteConfirm(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              type="button"
-              disabled={!canAct}
-              onClick={handleDeleteSilently}
-              className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
-            >
-              {isWorking ? "Deleting…" : "Yes, delete"}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {actionError && (
-        <p className="text-sm text-rose-600" role="alert">{actionError}</p>
-      )}
-
-      {/* Traveler actions (hidden while reject form or delete confirm is open) */}
-      {isTraveler && !showRejectForm && !showDeleteConfirm && (
-        <div className="flex flex-col gap-2">
-          {status === "proposed" && (
-            <>
-              <Button size="sm" type="button" disabled={!canAct} onClick={handleAccept}>
-                Accept and publish
-              </Button>
-              <Button
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
-              >
-                Mark &lsquo;In Progress&rsquo;
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={() => setShowRejectForm(true)}
-              >
-                Drop with response
-              </Button>
-              <div className="flex items-center gap-2 pt-1">
-                <div className="flex-1 h-px bg-rose-200" />
-                <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
-                <div className="flex-1 h-px bg-rose-200" />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={() => setShowDeleteConfirm(true)}
-                className="border-rose-300 text-rose-700 hover:bg-rose-50"
-              >
-                Delete silently
-              </Button>
-            </>
-          )}
-
-          {showMarkInProgressConfirm && conflictingMission && (
-            <div className="flex flex-col gap-3 border border-amber-200 rounded-lg p-3 bg-amber-50">
-              <p className="text-sm text-amber-800">
-                &ldquo;{conflictingMission.title}&rdquo; is currently in progress. Starting this mission will drop it.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
+        {/* Reject with response form */}
+        {isTraveler && showRejectForm && (
+          <div className="flex flex-col gap-3 border border-slate-200 rounded-lg p-3">
+            <div className="flex flex-wrap gap-2">
+              {RESPONSE_PRESETS.map((preset) => (
+                <button
+                  key={preset}
                   type="button"
-                  onClick={() => setShowMarkInProgressConfirm(false)}
+                  className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                    selectedPreset === preset
+                      ? "bg-navy text-white border-navy"
+                      : "bg-white text-navy border-slate-300 hover:bg-slate-50"
+                  }`}
+                  onClick={() => setSelectedPreset(selectedPreset === preset ? "" : preset)}
                 >
-                  Cancel
-                </Button>
-                <Button size="sm" type="button" disabled={!canAct} onClick={handleMarkInProgress}>
-                  Proceed
-                </Button>
+                  {preset}
+                </button>
+              ))}
+            </div>
+            <Textarea
+              placeholder="Custom response note (optional)…"
+              value={responseNote}
+              onChange={(e) => setResponseNote(e.target.value)}
+              rows={2}
+              maxLength={500}
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => {
+                  setShowRejectForm(false);
+                  setResponseNote("");
+                  setSelectedPreset("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={handleReject}
+                className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
+              >
+                {isWorking ? "Dropping…" : "Confirm drop"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Delete silently confirmation */}
+        {isTraveler && showDeleteConfirm && (
+          <div className="flex flex-col gap-3 border border-rose-200 rounded-lg p-3 bg-rose-50">
+            <p className="text-sm text-rose-800">
+              This permanently deletes the Mission — the proposer will no longer see it. Are you sure?
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                type="button"
+                disabled={!canAct}
+                onClick={handleDeleteSilently}
+                className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
+              >
+                {isWorking ? "Deleting…" : "Yes, delete"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Traveler lifecycle actions (hidden while a confirm form is open) */}
+        {isTraveler && !showRejectForm && !showDeleteConfirm && (
+          <div className="flex flex-col gap-2">
+            {lifecycleActions}
+
+            {/* Manual status override — advanced, lifecycle-only control */}
+            {showStatusOverride ? (
+              <div className="mt-1 flex flex-col gap-2 rounded-lg border border-[var(--line-soft)] p-3">
+                <label className="text-xs font-medium text-muted-foreground">Set status manually</label>
+                <select
+                  value={overrideStatus}
+                  onChange={(e) => setOverrideStatus(e.target.value as MissionStatus)}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="proposed">Proposed</option>
+                  <option value="planned">Planned</option>
+                  <option value="visible">Visible</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="dropped">Dropped</option>
+                </select>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => setShowStatusOverride(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button size="sm" type="button" disabled={!canAct} onClick={handleApplyStatusOverride}>
+                    {isWorking ? "Saving…" : "Apply status"}
+                  </Button>
+                </div>
               </div>
+            ) : (
+              <button
+                type="button"
+                className="self-start text-xs text-muted-foreground underline"
+                onClick={openStatusOverride}
+              >
+                Change status manually
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Support follower: withdraw own proposed Mission */}
+        {!isTraveler && isOwn && status === "proposed" && (
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={handleWithdraw}
+            className="border-rose-300 text-rose-700 hover:bg-rose-50 w-fit"
+          >
+            Withdraw proposal
+          </Button>
+        )}
+      </section>
+
+      {/* ── About ───────────────────────────────────────────────────── */}
+      <section className="flex flex-col gap-2 border-t border-[var(--line-soft)] pt-3">
+        <div className="flex items-center justify-between">
+          <SectionLabel>About</SectionLabel>
+          {isTraveler && (
+            <button
+              type="button"
+              className="text-xs text-navy underline"
+              onClick={openEditMode}
+            >
+              Edit
+            </button>
+          )}
+        </div>
+
+        {/* Meta */}
+        {hasMeta && (
+          <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+            {c.locationLabel && <span>📍 {c.locationLabel}</span>}
+            {!hasLocation && <span className="text-xs italic">No map location (text-only Mission)</span>}
+            {c.estimatedDurationMinutes && (
+              <span>⏱ Est. {c.estimatedDurationMinutes} min</span>
+            )}
+            {c.estimatedCostUsd !== undefined && (
+              <span>💰 Est. ${c.estimatedCostUsd.toFixed(2)} USD</span>
+            )}
+            {c.estimatedEnergyImpact && (
+              <span>⚡ Energy: {c.estimatedEnergyImpact}</span>
+            )}
+          </div>
+        )}
+
+        {/* Traveler response (preset + note) — visible to both roles */}
+        {(c.travelerResponsePreset || c.travelerResponseNote) && !c.silentDrop && (
+          <div className="rounded-md bg-slate-50 border border-slate-200 p-3 flex flex-col gap-1.5">
+            <p className="text-xs font-medium text-muted-foreground">Traveler's response</p>
+            {c.travelerResponsePreset && (
+              <span className="self-start px-2.5 py-0.5 text-xs rounded-full bg-navy/10 text-navy font-medium">
+                {c.travelerResponsePreset}
+              </span>
+            )}
+            {c.travelerResponseNote && (
+              <p className="text-sm text-foreground">{c.travelerResponseNote}</p>
+            )}
+          </div>
+        )}
+
+        <AttributionBlock
+          token={token}
+          viewerRole={role}
+          sourceType="mission"
+          sourceId={c._id}
+          editable={false}
+        />
+      </section>
+
+      {/* ── Linked ──────────────────────────────────────────────────── */}
+      {(c.sourceRouteVoteId || c.linkedRouteVoteId || (isTraveler && linkedStory)) && (
+        <section className="flex flex-col gap-2 border-t border-[var(--line-soft)] pt-3">
+          <SectionLabel>Linked</SectionLabel>
+
+          {/* Route vote source card — shown when mission originated from a vote */}
+          {c.sourceRouteVoteId && (
+            <RouteVoteSourceCard
+              sourceVoteId={c.sourceRouteVoteId}
+              sourceOptionId={c.sourceRouteVoteOptionId}
+              token={token}
+              onNavigate={onRequestNavigateToVote}
+            />
+          )}
+
+          {/* Reciprocal link — this pre-existing mission won a later vote */}
+          {c.linkedRouteVoteId && c.linkedRouteVoteId !== c.sourceRouteVoteId && (
+            <RouteVoteSourceCard
+              heading="Won Route Vote"
+              sourceVoteId={c.linkedRouteVoteId}
+              sourceOptionId={c.linkedRouteVoteOptionId}
+              token={token}
+              onNavigate={onRequestNavigateToVote}
+            />
+          )}
+
+          {/* Linked story card — shown when a story has been filed against this mission */}
+          {isTraveler && linkedStory && (
+            <div className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-2">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Linked story</p>
+              <p className="text-sm font-medium text-navy line-clamp-1">{linkedStory.title ?? "Story"}</p>
+              <p className="text-xs text-muted-foreground">
+                {new Date(linkedStory.occurredAt).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+              </p>
+              {onOpenLinkedStory && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="self-start"
+                  onClick={() => { log.logUi("action:view-linked-story"); onOpenLinkedStory(linkedStory); }}
+                >
+                  View story
+                </Button>
+              )}
             </div>
           )}
-
-          {(status === "visible" || status === "planned") && (
-            <>
-              <Button
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
-              >
-                Mark &lsquo;In Progress&rsquo;
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={handleTogglePin}
-              >
-                {c.mapHidden ? "Show on map" : "Hide from map"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={() => setShowRejectForm(true)}
-              >
-                Drop with note
-              </Button>
-              <div className="flex items-center gap-2 pt-1">
-                <div className="flex-1 h-px bg-rose-200" />
-                <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
-                <div className="flex-1 h-px bg-rose-200" />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={() => setShowDeleteConfirm(true)}
-                className="border-rose-300 text-rose-700 hover:bg-rose-50"
-              >
-                Delete silently
-              </Button>
-            </>
-          )}
-
-          {status === "in_progress" && (
-            <>
-              {currentActivity?.linkedMissionId !== c._id && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  type="button"
-                  disabled={!canAct}
-                  onClick={handleSetCurrentActivity}
-                >
-                  Set Current Activity to This Mission
-                </Button>
-              )}
-              <p className="text-xs text-muted-foreground">
-                Completing this Mission will mark the linked Current Activity as done and open the Story form.
-              </p>
-              {isTraveler && (
-                <TravelFundsInlineSection
-                  token={token}
-                  prefill={{
-                    title: c.title,
-                    ...(c.estimatedCostUsd !== undefined
-                      ? {
-                          localAmount: c.estimatedCostUsd,
-                          currencyCode: "USD",
-                          localCurrencyPerUsd: 1,
-                        }
-                      : {}),
-                  }}
-                  onChange={setCompletionTxState}
-                />
-              )}
-              {onCompleteAsStory && (
-                <Button
-                  size="sm"
-                  type="button"
-                  disabled={!canAct}
-                  onClick={handleCompleteAsStory}
-                  className="border-[var(--plum)] text-white"
-                  style={{ background: "var(--plum)" }}
-                >
-                  Complete as story
-                </Button>
-              )}
-              <Button
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={handleComplete}
-                className="bg-green-600 hover:bg-green-700 text-white border-green-600"
-              >
-                {onCompleteAsStory ? "Mark complete (no story)" : "Complete Mission"}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={() => setShowRejectForm(true)}
-              >
-                Drop with note
-              </Button>
-              <div className="flex items-center gap-2 pt-1">
-                <div className="flex-1 h-px bg-rose-200" />
-                <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
-                <div className="flex-1 h-px bg-rose-200" />
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                type="button"
-                disabled={!canAct}
-                onClick={() => setShowDeleteConfirm(true)}
-                className="border-rose-300 text-rose-700 hover:bg-rose-50"
-              >
-                Delete silently
-              </Button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Support follower: withdraw own proposed Mission */}
-      {!isTraveler && isOwn && status === "proposed" && (
-        <Button
-          variant="outline"
-          size="sm"
-          type="button"
-          disabled={!canAct}
-          onClick={handleWithdraw}
-          className="border-rose-300 text-rose-700 hover:bg-rose-50 w-fit"
-        >
-          Withdraw proposal
-        </Button>
+        </section>
       )}
     </div>
   );

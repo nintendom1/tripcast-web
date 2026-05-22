@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
+import { CheckSquare, Plus } from "lucide-react";
 import {
   tripcastApi,
   type RouteVoteMapOverlay,
@@ -12,7 +13,6 @@ import {
   Sheet,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
@@ -26,6 +26,7 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 import { TERMS } from "../../copy/terminology";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -49,6 +50,7 @@ type RouteVoteProgressProps = {
 };
 
 type View = "list" | "create" | "detail";
+const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function VoteListCard({
   vote,
@@ -67,10 +69,19 @@ function VoteListCard({
   const total = vote.totalSubmissions;
 
   return (
-    <div className="rounded-md border bg-card p-3 flex flex-col gap-2">
+    <div className="flex flex-col gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)]">
       <div className="flex items-start justify-between gap-2">
-        <button type="button" onClick={onViewDetail} className="font-medium text-sm text-left hover:underline">
-          {vote.title}
+        <button type="button" onClick={onViewDetail} className="flex min-w-0 items-start gap-2 text-left">
+          <span
+            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
+            style={{ background: VOTES_PERSONALITY.color }}
+            aria-hidden="true"
+          >
+            <CheckSquare className="h-4 w-4" />
+          </span>
+          <span className="font-[var(--font-display)] text-sm font-extrabold leading-snug text-[var(--ink-1)]">
+            {vote.title}
+          </span>
         </button>
         <StatusBadge status={status} />
       </div>
@@ -184,10 +195,18 @@ function VoteDetailView({
   const canConfirmWinner =
     detail.effectiveStatus === "closed" && !detail.confirmedWinningOptionId;
 
-  async function handleConfirmWinner(optionId: string) {
+  async function handleConfirmWinner(
+    optionId: string,
+    linkedMissionAction?: "planned" | "visible" | "leave",
+  ) {
     setIsActing(true);
     try {
-      await confirmWinner({ token, routeVoteId: vote._id, winningOptionId: optionId });
+      await confirmWinner({
+        token,
+        routeVoteId: vote._id,
+        winningOptionId: optionId,
+        linkedMissionAction,
+      });
       music.sfx("success");
       setConfirmingOptionId(null);
     } finally {
@@ -257,16 +276,43 @@ function VoteDetailView({
                   </span>
                 </div>
                 <StatBar value={pct} />
+                {option.linkedMissionId && (
+                  <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-[var(--ink-1)]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ink-2)]">
+                    Linked mission
+                  </span>
+                )}
                 {canConfirmWinner &&
                   (confirmingOptionId === option._id ? (
-                    <div className="flex gap-2 mt-2">
-                      <Button size="sm" onClick={() => handleConfirmWinner(option._id)} disabled={isActing}>
-                        Confirm
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setConfirmingOptionId(null)}>
-                        Cancel
-                      </Button>
-                    </div>
+                    option.linkedMissionId ? (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          This option is linked to an existing mission. On confirm:
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" disabled={isActing} onClick={() => handleConfirmWinner(option._id, "planned")}>
+                            Mark planned
+                          </Button>
+                          <Button size="sm" disabled={isActing} onClick={() => handleConfirmWinner(option._id, "visible")}>
+                            Mark visible
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={isActing} onClick={() => handleConfirmWinner(option._id, "leave")}>
+                            Leave unchanged
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setConfirmingOptionId(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 mt-2">
+                        <Button size="sm" onClick={() => handleConfirmWinner(option._id)} disabled={isActing}>
+                          Confirm
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setConfirmingOptionId(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    )
                   ) : (
                     <Button
                       size="sm"
@@ -469,8 +515,11 @@ export default function RouteVoteProgress({
         )}
         data-role="route-votes-sheet"
       >
-        <SheetGrabber />
-        <div className="sticky top-0 z-[1] flex shrink-0 items-center justify-between border-b bg-[var(--bg-paper)] px-4 py-3">
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
+        <div
+          className="sticky top-0 z-[1] flex shrink-0 items-center justify-between border-b border-[var(--line-soft)] px-4 py-3"
+          style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+        >
           <div className="flex items-center gap-2">
             {(view === "create" || view === "detail") && (
               <button
@@ -485,13 +534,24 @@ export default function RouteVoteProgress({
                 ←
               </button>
             )}
-            <SheetTitle className="text-sm font-semibold">
-              {view === "create"
-                ? `New ${TERMS.routeVote}`
-                : view === "detail"
-                  ? `${TERMS.routeVote} Details`
-                  : TERMS.votes}
-            </SheetTitle>
+            <div className="grid gap-1">
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden="true"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  style={{ background: VOTES_PERSONALITY.color }}
+                >
+                  <CheckSquare className="h-4 w-4" />
+                </span>
+                <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+                  {view === "create"
+                    ? `New ${TERMS.routeVote}`
+                    : view === "detail"
+                      ? `${TERMS.routeVote} Details`
+                      : TERMS.votes}
+                </SheetTitle>
+              </div>
+            </div>
           </div>
           <SheetCloseButton aria-label="Close route votes" />
         </div>
@@ -566,7 +626,8 @@ export default function RouteVoteProgress({
                 }}
                 className="w-full"
               >
-                + Propose new route
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Propose new route
               </Button>
               {votes === undefined ? (
                 <PendingNotice label="Loading votes..." />

@@ -18,11 +18,9 @@ vi.mock("../../components/ui/sheet", () => ({
       {children}
     </div>
   )),
-  SheetGrabber: () => <div data-testid="mock-grabber" />,
   SheetTitle: vi.fn(({ children, className }) => <h2 className={className}>{children}</h2>),
   SheetCloseButton: () => <button>Close</button>,
   SheetBackButton: () => <button>Back</button>,
-  SheetKicker: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 // framer-motion's AnimatePresence / motion adds async animation state;

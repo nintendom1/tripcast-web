@@ -7,6 +7,7 @@ import {
   Clock,
   Database,
   Eye,
+  Flag,
   LogOut,
   Play,
   ShieldAlert,
@@ -35,8 +36,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetGrabber,
-  SheetKicker,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
@@ -63,6 +62,10 @@ type OptionsSheetProps = {
   onLocationDataCleared: () => void;
   onTripDataDeleted: () => void;
   onResetStarted: (message: string) => void;
+  /** Traveler-only: open the End Trip flow (handled on the map). */
+  onEndTrip?: () => void;
+  /** Either role: open the full-screen trip credits. */
+  onViewCredits?: () => void;
   preserveDebugContext?: boolean;
 };
 
@@ -333,6 +336,8 @@ export default function OptionsSheet({
   onLocationDataCleared,
   onTripDataDeleted,
   onResetStarted,
+  onEndTrip,
+  onViewCredits,
   preserveDebugContext = false,
 }: OptionsSheetProps) {
   const [view, setView] = useState<OptionsView>("options");
@@ -400,10 +405,8 @@ export default function OptionsSheet({
             view === "debug-logs" && "h-[88dvh] overflow-hidden",
           )}
         >
-          <SheetGrabber />
           {view === "travel-funds" ? (
             <SubViewHeader
-              kicker="Traveler"
               title={TERMS.travelFunds}
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
@@ -440,6 +443,8 @@ export default function OptionsSheet({
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
+              onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
+              onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
             />
           ) : view === "debug-logs" ? (
             <SheetBody className="min-h-0 overflow-hidden p-0">
@@ -476,6 +481,8 @@ function OptionsHome({
   onBulkImport,
   onEmergencyReset,
   onDebugLogs,
+  onEndTrip,
+  onViewCredits,
 }: {
   role: "traveler" | "follower";
   session: StoredSession;
@@ -486,6 +493,8 @@ function OptionsHome({
   onDebugLogs: () => void;
   onBulkImport: () => void;
   onEmergencyReset: () => void;
+  onEndTrip?: () => void;
+  onViewCredits?: () => void;
 }) {
   return (
     <SheetBody className="grid gap-5 px-5">
@@ -530,10 +539,24 @@ function OptionsHome({
           <OptionsSection label="Tour">
             <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the onboarding intro" onClick={onReplayFollowerTour} />
           </OptionsSection>
+
+          {onEndTrip || onViewCredits ? (
+            <OptionsSection label="Finale">
+              {onEndTrip ? (
+                <OptionsRow icon={Flag} title="End Trip" detail="Roll the credits and leave a thank-you note" onClick={onEndTrip} />
+              ) : null}
+              {onViewCredits ? (
+                <OptionsRow icon={Trophy} title="View trip credits" detail="Roll the finale reel" onClick={onViewCredits} />
+              ) : null}
+            </OptionsSection>
+          ) : null}
         </>
       ) : (
         <OptionsSection label="Trip">
           <OptionsRow icon={Play} title="Replay welcome tour" detail="See the onboarding intro again" onClick={onReplayFollowerTour} />
+          {onViewCredits ? (
+            <OptionsRow icon={Trophy} title="View trip credits" detail="Roll the finale reel" onClick={onViewCredits} />
+          ) : null}
         </OptionsSection>
       )}
 
@@ -556,9 +579,6 @@ function OptionsHomeHeader({ role }: { role: "traveler" | "follower" }) {
   return (
     <div className="flex items-start justify-between gap-2 px-5 pt-2">
       <div className="flex min-w-0 flex-col gap-1.5">
-        <SheetKicker dotColor={role === "traveler" ? "var(--flag)" : "var(--teal)"}>
-          {role === "traveler" ? TERMS.traveler : TERMS.follower}
-        </SheetKicker>
         <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
           {TERMS.options}
         </SheetTitle>
@@ -569,11 +589,9 @@ function OptionsHomeHeader({ role }: { role: "traveler" | "follower" }) {
 }
 
 function SubViewHeader({
-  kicker,
   title,
   onBack,
 }: {
-  kicker: string;
   title: string;
   onBack: () => void;
 }) {
@@ -582,7 +600,6 @@ function SubViewHeader({
       <div className="flex min-w-0 items-start gap-2">
         <SheetBackButton onClick={onBack} />
         <div className="flex min-w-0 flex-col gap-1.5">
-          <SheetKicker dotColor="var(--green)">{kicker}</SheetKicker>
           <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
             {title}
           </SheetTitle>
