@@ -1047,7 +1047,7 @@ export default function MissionDetailSheet({
       </section>
 
       {/* ── Linked ──────────────────────────────────────────────────── */}
-      {(c.sourceRouteVoteId || (isTraveler && linkedStory)) && (
+      {(c.sourceRouteVoteId || c.linkedRouteVoteId || (isTraveler && linkedStory)) && (
         <section className="flex flex-col gap-2 border-t border-[var(--line-soft)] pt-3">
           <SectionLabel>Linked</SectionLabel>
 
@@ -1056,6 +1056,17 @@ export default function MissionDetailSheet({
             <RouteVoteSourceCard
               sourceVoteId={c.sourceRouteVoteId}
               sourceOptionId={c.sourceRouteVoteOptionId}
+              token={token}
+              onNavigate={onRequestNavigateToVote}
+            />
+          )}
+
+          {/* Reciprocal link — this pre-existing mission won a later vote */}
+          {c.linkedRouteVoteId && c.linkedRouteVoteId !== c.sourceRouteVoteId && (
+            <RouteVoteSourceCard
+              heading="Won Route Vote"
+              sourceVoteId={c.linkedRouteVoteId}
+              sourceOptionId={c.linkedRouteVoteOptionId}
               token={token}
               onNavigate={onRequestNavigateToVote}
             />

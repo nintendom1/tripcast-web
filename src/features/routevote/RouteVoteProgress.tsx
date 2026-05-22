@@ -196,10 +196,18 @@ function VoteDetailView({
   const canConfirmWinner =
     detail.effectiveStatus === "closed" && !detail.confirmedWinningOptionId;
 
-  async function handleConfirmWinner(optionId: string) {
+  async function handleConfirmWinner(
+    optionId: string,
+    linkedMissionAction?: "planned" | "visible" | "leave",
+  ) {
     setIsActing(true);
     try {
-      await confirmWinner({ token, routeVoteId: vote._id, winningOptionId: optionId });
+      await confirmWinner({
+        token,
+        routeVoteId: vote._id,
+        winningOptionId: optionId,
+        linkedMissionAction,
+      });
       music.sfx("success");
       setConfirmingOptionId(null);
     } finally {
@@ -269,16 +277,43 @@ function VoteDetailView({
                   </span>
                 </div>
                 <StatBar value={pct} />
+                {option.linkedMissionId && (
+                  <span className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-[var(--ink-1)]/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--ink-2)]">
+                    Linked mission
+                  </span>
+                )}
                 {canConfirmWinner &&
                   (confirmingOptionId === option._id ? (
-                    <div className="flex gap-2 mt-2">
-                      <Button size="sm" onClick={() => handleConfirmWinner(option._id)} disabled={isActing}>
-                        Confirm
-                      </Button>
-                      <Button size="sm" variant="outline" onClick={() => setConfirmingOptionId(null)}>
-                        Cancel
-                      </Button>
-                    </div>
+                    option.linkedMissionId ? (
+                      <div className="mt-2 flex flex-col gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          This option is linked to an existing mission. On confirm:
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" disabled={isActing} onClick={() => handleConfirmWinner(option._id, "planned")}>
+                            Mark planned
+                          </Button>
+                          <Button size="sm" disabled={isActing} onClick={() => handleConfirmWinner(option._id, "visible")}>
+                            Mark visible
+                          </Button>
+                          <Button size="sm" variant="outline" disabled={isActing} onClick={() => handleConfirmWinner(option._id, "leave")}>
+                            Leave unchanged
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setConfirmingOptionId(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 mt-2">
+                        <Button size="sm" onClick={() => handleConfirmWinner(option._id)} disabled={isActing}>
+                          Confirm
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setConfirmingOptionId(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    )
                   ) : (
                     <Button
                       size="sm"

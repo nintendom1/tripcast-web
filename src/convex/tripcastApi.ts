@@ -111,6 +111,8 @@ export type TravelerLocation = {
   isSharing: true;
 } | null;
 
+export type LinkedMissionAction = "planned" | "visible" | "leave";
+
 export type RouteVoteOptionInput = {
   title: string;
   description?: string;
@@ -120,6 +122,8 @@ export type RouteVoteOptionInput = {
   estimatedCostUsd?: number;
   estimatedDurationMinutes?: number;
   estimatedEnergyImpact?: EnergyImpact;
+  /** Optional link to an existing non-completed Mission this option mirrors. */
+  linkedMissionId?: string;
 };
 
 export type RouteVoteOption = RouteVoteOptionInput & {
@@ -211,6 +215,10 @@ export type Mission = {
   source: MissionSource;
   sourceRouteVoteId?: string;
   sourceRouteVoteOptionId?: string;
+  /** Reciprocal link set when a pre-existing Mission won a route vote.
+   *  Does not change the Mission source/sourceRouteVoteId. */
+  linkedRouteVoteId?: string;
+  linkedRouteVoteOptionId?: string;
   proposedBySessionId?: string;
   proposedByUserId?: string;
   locationLabel?: string;
@@ -1085,7 +1093,7 @@ export const tripcastApi = {
     travelerConfirmRouteVoteWinner: (anyApi as any).routeVotes.travelerConfirmRouteVoteWinner as FunctionReference<
       "mutation",
       "public",
-      { token: string; routeVoteId: string; winningOptionId: string },
+      { token: string; routeVoteId: string; winningOptionId: string; linkedMissionAction?: LinkedMissionAction },
       string
     >,
     travelerHideRouteVoteComment: (anyApi as any).routeVotes.travelerHideRouteVoteComment as FunctionReference<

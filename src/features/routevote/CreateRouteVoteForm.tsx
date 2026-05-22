@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
-import { useMutation } from "convex/react";
-import { tripcastApi, type EnergyImpact, type ResultsVisibility } from "../../convex/tripcastApi";
+import { useMutation, useQuery } from "convex/react";
+import { tripcastApi, type EnergyImpact, type Mission, type ResultsVisibility } from "../../convex/tripcastApi";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -19,6 +19,8 @@ type OptionFormValue = {
   estimatedCostUsd: string;
   estimatedDurationMinutes: string;
   estimatedEnergyImpact: EnergyImpact | "";
+  /** Optional id of an existing Mission this option mirrors. Empty = free-form. */
+  linkedMissionId: string;
 };
 
 type FormValues = {
@@ -38,6 +40,7 @@ const EMPTY_OPTION: OptionFormValue = {
   estimatedCostUsd: "",
   estimatedDurationMinutes: "",
   estimatedEnergyImpact: "",
+  linkedMissionId: "",
 };
 
 const DEFAULT_TITLE = "Where should I go next?";
@@ -110,24 +113,56 @@ function OptionEditor({
   index,
   control,
   register,
+  setValue,
   errors,
   canRemove,
   onRemove,
   onPickOnMap,
   referenceLocation,
+  linkableMissions,
 }: {
   index: number;
   control: ReturnType<typeof useForm<FormValues>>["control"];
   register: ReturnType<typeof useForm<FormValues>>["register"];
+  setValue: ReturnType<typeof useForm<FormValues>>["setValue"];
   errors: ReturnType<typeof useForm<FormValues>>["formState"]["errors"];
   canRemove: boolean;
   onRemove: () => void;
   onPickOnMap: () => void;
   referenceLocation: { lat: number; lon: number } | null;
+  linkableMissions: Mission[];
 }) {
   const lat = useWatch({ control, name: `options.${index}.lat` });
   const lon = useWatch({ control, name: `options.${index}.lon` });
+  const linkedMissionId = useWatch({ control, name: `options.${index}.linkedMissionId` });
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Linking an option to an existing Mission prefills its fields so the option
+  // mirrors that Mission; clearing the link leaves the typed values in place.
+  function handleLinkMission(missionId: string) {
+    setValue(`options.${index}.linkedMissionId`, missionId, { shouldValidate: false });
+    if (!missionId) return;
+    const mission = linkableMissions.find((m) => m._id === missionId);
+    if (!mission) return;
+    setValue(`options.${index}.title`, mission.title, { shouldValidate: true });
+    setValue(`options.${index}.locationLabel`, mission.locationLabel ?? "");
+    setValue(`options.${index}.lat`, mission.lat !== undefined ? String(mission.lat) : "");
+    setValue(`options.${index}.lon`, mission.lon !== undefined ? String(mission.lon) : "");
+    setValue(
+      `options.${index}.estimatedCostUsd`,
+      mission.estimatedCostUsd !== undefined ? String(mission.estimatedCostUsd) : "",
+    );
+    setValue(
+      `options.${index}.estimatedDurationMinutes`,
+      mission.estimatedDurationMinutes !== undefined
+        ? String(mission.estimatedDurationMinutes)
+        : "",
+    );
+    setValue(
+      `options.${index}.estimatedEnergyImpact`,
+      mission.estimatedEnergyImpact ?? "",
+    );
+  }
 
   return (
     <div className="rounded-md border bg-muted/30 p-3 flex flex-col gap-2">
@@ -145,6 +180,25 @@ function OptionEditor({
           </button>
         )}
       </div>
+
+      {linkableMissions.length > 0 && (
+        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+          Link to an existing mission (optional)
+          <select
+            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground"
+            value={linkedMissionId ?? ""}
+            onChange={(e) => handleLinkMission(e.target.value)}
+          >
+            <option value="">Free-form option</option>
+            {linkableMissions.map((m) => (
+              <option key={m._id} value={m._id}>
+                {m.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <input type="hidden" {...register(`options.${index}.linkedMissionId`)} />
 
       <Input
         {...register(`options.${index}.title`, {
@@ -243,6 +297,10 @@ export default function CreateRouteVoteForm({
   referenceLocation,
 }: CreateRouteVoteFormProps) {
   const createVote = useMutation(tripcastApi.routeVotes.travelerCreateRouteVote);
+  const allMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const linkableMissions = (allMissions ?? []).filter(
+    (m) => m.status !== "completed" && m.status !== "dropped",
+  );
   const [selectedClosePreset, setSelectedClosePreset] = useState<number | null>(DEFAULT_CLOSE_HOURS);
   const log = useDebugLogger("CreateRouteVoteForm", "src/features/routevote/CreateRouteVoteForm.tsx");
 
@@ -281,6 +339,7 @@ export default function CreateRouteVoteForm({
       estimatedCostUsd: parseOptionalFloat(o.estimatedCostUsd),
       estimatedDurationMinutes: parseOptionalInt(o.estimatedDurationMinutes),
       estimatedEnergyImpact: (o.estimatedEnergyImpact || undefined) as EnergyImpact | undefined,
+      linkedMissionId: o.linkedMissionId || undefined,
     }));
 
     try {
@@ -402,11 +461,13 @@ export default function CreateRouteVoteForm({
             index={index}
             control={control}
             register={register}
+            setValue={setValue}
             errors={errors}
             canRemove={fields.length > 2}
             onRemove={() => remove(index)}
             onPickOnMap={() => handlePickOnMap(index)}
             referenceLocation={referenceLocation}
+            linkableMissions={linkableMissions}
           />
         ))}
         <Button

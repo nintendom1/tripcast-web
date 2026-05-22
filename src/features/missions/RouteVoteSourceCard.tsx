@@ -9,9 +9,11 @@ type Props = {
   sourceOptionId?: string;
   token: string;
   onNavigate?: (voteId: string) => void;
+  /** Card heading — defaults to the original-source phrasing. */
+  heading?: string;
 };
 
-export default function RouteVoteSourceCard({ sourceVoteId, sourceOptionId, token, onNavigate }: Props) {
+export default function RouteVoteSourceCard({ sourceVoteId, sourceOptionId, token, onNavigate, heading = "Source Route Vote" }: Props) {
   const log = useDebugLogger("RouteVoteSourceCard", "src/features/missions/RouteVoteSourceCard.tsx");
 
   const vote = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
@@ -38,7 +40,7 @@ export default function RouteVoteSourceCard({ sourceVoteId, sourceOptionId, toke
     <div className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-2">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-          Source Route Vote
+          {heading}
         </p>
         <StatusBadge status={vote.effectiveStatus} />
       </div>
