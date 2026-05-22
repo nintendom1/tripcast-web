@@ -5,6 +5,9 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { Dock, type DockBadges, type DockTab } from "../hud/Dock";
 import { TERMS } from "../../copy/terminology";
 
+// Flip to true in the desktop showcase PR to activate the 3-column grid.
+const DESKTOP_LAYOUT_ENABLED = false;
+
 export interface DesktopMapFrameProps {
   children: React.ReactNode;
   isDesktop: boolean;
@@ -52,7 +55,7 @@ export function DesktopMapFrame({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isDesktop]);
 
-  if (!isDesktop) {
+  if (!isDesktop || !DESKTOP_LAYOUT_ENABLED) {
     return <>{children}</>;
   }
 
@@ -75,7 +78,6 @@ export function DesktopMapFrame({
 
         {/* Vertical Dock */}
         <Dock
-          variant="rail"
           active={activeDockTab}
           onSelect={onDockSelect}
           onAdd={onAdd}

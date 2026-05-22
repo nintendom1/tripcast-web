@@ -26,11 +26,6 @@ export interface DockProps {
   addLabel?: string;
   badges?: DockBadges;
   className?: string;
-  /**
-   * "pill"  — default horizontal floating pill (mobile).
-   * "rail"  — vertical column for the desktop left rail.
-   */
-  variant?: "pill" | "rail";
 }
 
 /**
@@ -52,29 +47,12 @@ export function Dock({
   addLabel = "Add",
   badges = {},
   className,
-  variant = "pill",
 }: DockProps) {
   const log = useDebugLogger("Dock", "src/features/hud/Dock.tsx");
 
   function handleSelect(tab: DockTab) {
-    log.logInteraction("tab:select", { tab, previously: active, variant });
+    log.logInteraction("tab:select", { tab, previously: active });
     onSelect(tab);
-  }
-
-  if (variant === "rail") {
-    return (
-      <DockRail
-        active={active}
-        onSelect={handleSelect}
-        onAdd={onAdd}
-        fanOpen={fanOpen}
-        showAdd={showAdd}
-        showFunds={showFunds}
-        showAchievements={showAchievements}
-        badges={badges}
-        className={className}
-      />
-    );
   }
 
   return (
@@ -147,140 +125,7 @@ export function Dock({
   );
 }
 
-// ── Rail variant (desktop left-column) ──────────────────────────────────────
-
-interface DockRailProps {
-  active: DockTab | null;
-  onSelect: (tab: DockTab) => void;
-  onAdd: () => void;
-  fanOpen: boolean;
-  showAdd: boolean;
-  showFunds: boolean;
-  showAchievements: boolean;
-  badges: DockBadges;
-  className?: string;
-}
-
-function DockRail({
-  active,
-  onSelect,
-  onAdd,
-  fanOpen,
-  showAdd,
-  showFunds,
-  showAchievements,
-  badges,
-  className,
-}: DockRailProps) {
-  return (
-    <nav
-      aria-label="Map sections"
-      className={cn("pointer-events-auto flex flex-col items-center gap-1 py-1", className)}
-    >
-      <RailButton
-        active={active === "journal"}
-        label={LABELS.dock.journal}
-        icon={<Clock className="h-5 w-5" aria-hidden="true" />}
-        badge={badges.journal}
-        onClick={() => onSelect("journal")}
-      />
-      <RailButton
-        active={active === "missions"}
-        label={LABELS.dock.missions}
-        icon={<Trophy className="h-5 w-5" aria-hidden="true" />}
-        badge={badges.missions}
-        onClick={() => onSelect("missions")}
-      />
-      <RailButton
-        active={active === "votes"}
-        label={LABELS.dock.votes}
-        icon={<VoteIcon className="h-5 w-5" aria-hidden="true" />}
-        badge={badges.votes}
-        badgePulsing={badges.votesPulsing}
-        onClick={() => onSelect("votes")}
-      />
-      {showFunds && (
-        <RailButton
-          active={active === "funds"}
-          label={LABELS.dock.funds}
-          icon={<Wallet className="h-5 w-5" aria-hidden="true" />}
-          onClick={() => onSelect("funds")}
-        />
-      )}
-      {showAchievements && (
-        <RailButton
-          active={active === "achievements"}
-          label={LABELS.dock.achievements}
-          icon={<Award className="h-5 w-5" aria-hidden="true" />}
-          badge={badges.achievements}
-          badgePulsing={badges.achievementsPulsing}
-          onClick={() => onSelect("achievements")}
-        />
-      )}
-
-      {/* FAB — push to bottom of rail */}
-      {showAdd && (
-        <div className="mt-auto pt-4">
-          <button
-            type="button"
-            onClick={onAdd}
-            aria-label={fanOpen ? "Close actions" : "Add"}
-            aria-expanded={fanOpen}
-            className={cn(
-              "relative flex h-12 w-12 items-center justify-center rounded-full text-white shadow-[var(--shadow-fab)] transition-transform",
-              fanOpen ? "rotate-45" : "rotate-0",
-            )}
-            style={{ background: "var(--flag)" }}
-          >
-            <Plus className="h-6 w-6" strokeWidth={2.6} aria-hidden="true" />
-          </button>
-        </div>
-      )}
-    </nav>
-  );
-}
-
-interface RailButtonProps {
-  active: boolean;
-  label: string;
-  icon: React.ReactNode;
-  badge?: number;
-  badgePulsing?: boolean;
-  onClick: () => void;
-}
-
-function RailButton({ active, label, icon, badge, badgePulsing, onClick }: RailButtonProps) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      aria-label={label}
-      className={cn(
-        "relative flex h-14 w-14 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[9px] font-semibold transition-colors",
-        active
-          ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
-          : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
-      )}
-    >
-      {icon}
-      <span className="font-[var(--font-mono)] leading-none">{label}</span>
-      {badge && badge > 0 ? (
-        <span
-          className={cn(
-            "absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 font-[var(--font-mono)] text-[9px] font-bold text-white",
-            badgePulsing ? "animate-pulse" : "",
-          )}
-          style={{ background: "var(--flag)" }}
-        >
-          {badge > 9 ? "9+" : badge}
-        </span>
-      ) : null}
-    </button>
-  );
-}
-
-// ── Pill button (shared) ─────────────────────────────────────────────────────
+// ── Pill button ──────────────────────────────────────────────────────────────
 
 interface DockButtonProps {
   active: boolean;

@@ -543,6 +543,14 @@ export default function TripMap({
   const [fanOpen, setFanOpen] = useState(false);
   const isDesktop = useIsDesktop();
 
+  // Re-measure the map canvas when the desktop/mobile layout switches so
+  // MapLibre doesn't show a blank canvas after the container changes size.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const id = requestAnimationFrame(() => { mapRef.current?.resize(); });
+    return () => cancelAnimationFrame(id);
+  }, [isDesktop]);
+
   useTripAudioScenario({
     token,
     role,
@@ -1380,27 +1388,25 @@ export default function TripMap({
         />
       </FeatureBoundary>
 
-      {/* Bottom Dock — hidden on desktop (left rail takes over via DesktopMapFrame) */}
-      {!isDesktop && (
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
-          <Dock
-            active={activeDockTab}
-            onSelect={handleDockSelect}
-            onAdd={handleDockAdd}
-            fanOpen={fanOpen}
-            addLabel={role === "traveler" ? "Add" : `Propose ${TERMS.mission.toLowerCase()}`}
-            showAdd={role === "traveler"}
-            showFunds={false}
-            showAchievements
-            badges={{
-              journal: unreadCount,
-              missions: missionBadgeCount,
-              votes: hasUnseenVote ? 1 : 0,
-              votesPulsing: hasUnseenVote,
-            }}
-          />
-        </div>
-      )}
+      {/* Bottom Dock */}
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
+        <Dock
+          active={activeDockTab}
+          onSelect={handleDockSelect}
+          onAdd={handleDockAdd}
+          fanOpen={fanOpen}
+          addLabel={role === "traveler" ? "Add" : `Propose ${TERMS.mission.toLowerCase()}`}
+          showAdd={role === "traveler"}
+          showFunds={false}
+          showAchievements
+          badges={{
+            journal: unreadCount,
+            missions: missionBadgeCount,
+            votes: hasUnseenVote ? 1 : 0,
+            votesPulsing: hasUnseenVote,
+          }}
+        />
+      </div>
 
       <FanMenu
         open={fanOpen && role === "traveler"}

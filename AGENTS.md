@@ -348,4 +348,8 @@ Non-modal map sheets slide **under** the Dock; modals (Options, Emergency Reset)
 
 ### Desktop layout (DesktopMapFrame)
 
-`src/features/layout/DesktopMapFrame.tsx` wraps the map section in a 3-column CSS grid on viewport ≥ 960 px (left rail 88 px / center 1fr / right rail 380 px). On mobile it is transparent (`<>{children}</>`). The reactive breakpoint is managed by `src/lib/useIsDesktop.ts` (a `matchMedia` listener). The mobile Dock pill in `TripMap.tsx` is hidden via `{!isDesktop && (...)}` when the desktop layout is active — `DesktopMapFrame` renders its own `Dock variant="rail"` in the left rail.
+`src/features/layout/DesktopMapFrame.tsx` wraps the map section in a 3-column CSS grid on viewport ≥ 960 px (left rail 88 px / center 1fr / right rail 380 px). The reactive breakpoint is managed by `src/lib/useIsDesktop.ts` (a `matchMedia` listener).
+
+**Currently disabled**: `DESKTOP_LAYOUT_ENABLED = false` at the top of `DesktopMapFrame.tsx` makes the component a passthrough on all viewports. Flip it to `true` in the desktop showcase PR to activate the grid. The full 3-column implementation is preserved in the file.
+
+When `isDesktop` changes (even while the layout is disabled), `TripMap.tsx` calls `mapRef.current.resize()` via `requestAnimationFrame` so MapLibre remeasures the canvas and doesn't go blank.
