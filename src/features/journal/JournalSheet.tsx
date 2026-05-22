@@ -236,6 +236,7 @@ export default function JournalSheet({
         ref={containerRef}
         side="bottom"
         showBackdrop={false}
+        mapAdjacent
         data-role="journal-sheet"
         className="z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >

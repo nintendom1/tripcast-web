@@ -125,6 +125,8 @@ export function Dock({
   );
 }
 
+// ── Pill button ──────────────────────────────────────────────────────────────
+
 interface DockButtonProps {
   active: boolean;
   label: string;

@@ -1,6 +1,8 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useIsDesktop } from "../../lib/useIsDesktop";
+import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
@@ -539,6 +541,15 @@ export default function TripMap({
   const hasUnseenVote = voteAlert?.hasUnseen ?? false;
 
   const [fanOpen, setFanOpen] = useState(false);
+  const isDesktop = useIsDesktop();
+
+  // Re-measure the map canvas when the desktop/mobile layout switches so
+  // MapLibre doesn't show a blank canvas after the container changes size.
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const id = requestAnimationFrame(() => { mapRef.current?.resize(); });
+    return () => cancelAnimationFrame(id);
+  }, [isDesktop]);
 
   useTripAudioScenario({
     token,
@@ -1221,6 +1232,23 @@ export default function TripMap({
 
   return (
     <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
+      <DesktopMapFrame
+        isDesktop={isDesktop}
+        activeDockTab={activeDockTab}
+        onDockSelect={handleDockSelect}
+        onAdd={handleDockAdd}
+        fanOpen={fanOpen}
+        role={role}
+        badges={{
+          journal: unreadCount,
+          missions: missionBadgeCount,
+          votes: hasUnseenVote ? 1 : 0,
+          votesPulsing: hasUnseenVote,
+        }}
+        addLabel={role === "traveler" ? "Add" : `Propose ${TERMS.mission.toLowerCase()}`}
+        showAdd={role === "traveler"}
+        showAchievements
+      >
       <div ref={mapContainerRef} className={mapClassName} />
 
       {/* Side-effect marker components */}
@@ -1360,8 +1388,8 @@ export default function TripMap({
         />
       </FeatureBoundary>
 
-      {/* Bottom Dock — replaces the bottom-left + bottom-right FAB clusters */}
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[3] tripcast-frame">
+      {/* Bottom Dock */}
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
         <Dock
           active={activeDockTab}
           onSelect={handleDockSelect}
@@ -1556,6 +1584,7 @@ export default function TripMap({
         <SheetContent
           side="bottom"
           showBackdrop={false}
+          mapAdjacent
           className="z-[10] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
           data-role="travel-funds-sheet"
         >
@@ -1699,6 +1728,7 @@ export default function TripMap({
           />
         </FeatureBoundary>
       )}
+      </DesktopMapFrame>
     </section>
   );
 }

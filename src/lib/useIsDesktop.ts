@@ -1,39 +1,28 @@
 import { useEffect, useState } from "react";
 
-/**
- * Desktop breakpoint — the viewport width at which TripCast's chrome stops
- * being phone-shaped and starts looking comically wide on a monitor.
- *
- * Matches the design handoff's desktop stage (handoff renders the prototype
- * at a 960px-wide frame); chosen to be below typical tablet landscape so
- * iPad-class screens get the desktop treatment.
- */
 export const DESKTOP_MIN_WIDTH = 960;
+const DESKTOP_QUERY = `(min-width: ${DESKTOP_MIN_WIDTH}px)`;
 
 /**
- * Reactive `matchMedia('(min-width: 960px)')` subscription. Returns `false`
- * during SSR / first-render-before-effect; the post-mount effect resolves to
- * the live value and re-renders.
+ * Returns true when the viewport is ≥ 960px wide (desktop breakpoint).
+ * Updates reactively on window resize via matchMedia.
  */
 export function useIsDesktop(): boolean {
-  const [isDesktop, setIsDesktop] = useState<boolean>(false);
+  const [match, setMatch] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia(DESKTOP_QUERY).matches,
+  );
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const mql = window.matchMedia(`(min-width: ${DESKTOP_MIN_WIDTH}px)`);
-    const onChange = (event: MediaQueryListEvent | MediaQueryList) => {
-      setIsDesktop(event.matches);
-    };
-    onChange(mql);
-
-    if (typeof mql.addEventListener === "function") {
-      mql.addEventListener("change", onChange);
-      return () => mql.removeEventListener("change", onChange);
-    }
-    // Older Safari fallback — keep the runtime resilient against the API gap.
-    mql.addListener(onChange);
-    return () => mql.removeListener(onChange);
+    const mq = window.matchMedia(DESKTOP_QUERY);
+    const handler = (e: MediaQueryListEvent) => setMatch(e.matches);
+    mq.addEventListener("change", handler);
+    setMatch(mq.matches);
+    return () => mq.removeEventListener("change", handler);
   }, []);
 
-  return isDesktop;
+  return match;
 }
