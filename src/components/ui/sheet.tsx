@@ -204,6 +204,41 @@ const SheetBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>
 );
 SheetBody.displayName = "SheetBody";
 
+interface SheetAccentRailProps extends React.HTMLAttributes<HTMLDivElement> {
+  color?: string;
+}
+
+const SheetAccentRail = ({ color, className, style, ...props }: SheetAccentRailProps) => (
+  <div
+    aria-hidden="true"
+    className={cn("absolute left-0 right-0 top-0 h-1 rounded-t-xl", className)}
+    style={color ? { background: color, ...style } : style}
+    {...props}
+  />
+);
+SheetAccentRail.displayName = "SheetAccentRail";
+
+interface SheetPersonalityTagProps extends React.HTMLAttributes<HTMLDivElement> {
+  motif?: string;
+  tag: string;
+  color?: string;
+}
+
+const SheetPersonalityTag = ({ motif, tag, color, className, style, ...props }: SheetPersonalityTagProps) => (
+  <div
+    className={cn(
+      "inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.14em]",
+      className,
+    )}
+    style={color ? { color, fontFamily: "var(--meadow-font-display)", ...style } : { fontFamily: "var(--meadow-font-display)", ...style }}
+    {...props}
+  >
+    {motif ? <span aria-hidden="true" className="text-xs leading-none">{motif}</span> : null}
+    {tag}
+  </div>
+);
+SheetPersonalityTag.displayName = "SheetPersonalityTag";
+
 export {
   Sheet,
   SheetPortal,
@@ -222,4 +257,6 @@ export {
   SheetTabs,
   SheetTab,
   SheetBody,
+  SheetAccentRail,
+  SheetPersonalityTag,
 };
