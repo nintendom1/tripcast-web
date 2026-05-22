@@ -24,15 +24,14 @@ function BadgeChip({ entry, onSelect }: BadgeChipProps) {
       onClick={() => onSelect(entry)}
       aria-label={earned ? `${entry.name} badge, earned` : "Locked badge"}
       className={cn(
-        // Consistent footprint for earned + unachieved chips.
-        "flex h-[3.25rem] w-full items-center gap-2 rounded-xl border px-3 text-left transition-transform active:scale-[0.98]",
+        "flex h-16 w-full items-center gap-3 rounded-xl border px-3 text-left shadow-sm transition-transform active:scale-[0.98]",
         earned
-          ? BADGE_COLOR[entry.badgeType]
-          : "border-dashed border-[var(--meter-track)] bg-[var(--bg-card)] text-[var(--ink-3)] opacity-70",
+          ? cn(BADGE_COLOR[entry.badgeType], "shadow-[inset_0_-2px_0_rgba(0,0,0,0.08)]")
+          : "border-dashed border-[var(--meter-track)] bg-[var(--bg-card)] text-[var(--ink-3)] opacity-60",
       )}
     >
-      <span className="text-xl leading-none" aria-hidden>
-        {earned ? entry.emoji : "🔒"}
+      <span className={cn("text-2xl leading-none", !earned && "grayscale")} aria-hidden>
+        {earned ? entry.emoji : "🏆"}
       </span>
       <span className="min-w-0 flex-1 truncate text-sm font-semibold">
         {earned ? entry.name : "???"}

@@ -422,7 +422,7 @@ export default function RouteVotePanel({
   }
 
   const showBack = Boolean(selectedVote);
-  const headerTitle = selectedVote ? TERMS.routeVote : TERMS.votes;
+  const headerTitle = selectedVote ? TERMS.routeVote : "Route Votes";
 
   return (
     <Sheet

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Plus, Trophy } from "lucide-react";
+import { FilterButton } from "../../components/ui/FilterButton";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, JournalEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
@@ -14,8 +15,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetTab,
-  SheetTabs,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
@@ -102,6 +101,7 @@ export default function MissionPanel({
   const [selectedMission, setSelectedMission] = useState<SelectedMission | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Mission | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [travelerFilter, setTravelerFilter] = useState<TravelerFilter>("all");
   const music = useMusicSafe();
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
   useActiveUiContext(open, {
@@ -268,6 +268,17 @@ export default function MissionPanel({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {viewMode === "list" && isTraveler ? (
+              <FilterButton
+                options={TRAVELER_FILTERS}
+                value={travelerFilter}
+                defaultValue="all"
+                onChange={(v) => {
+                  log.logInteraction("filter:change", { from: travelerFilter, to: v });
+                  setTravelerFilter(v);
+                }}
+              />
+            ) : null}
             {viewMode === "list" ? (
               <Button
                 size="sm"
@@ -289,6 +300,7 @@ export default function MissionPanel({
             isTraveler ? (
               <TravelerListView
                 token={token}
+                filter={travelerFilter}
                 pendingOpenMissionId={pendingOpenMissionId}
                 onClearPendingMission={onClearPendingMission}
                 onRequestNavigateToMission={onRequestNavigateToMission}
@@ -383,6 +395,7 @@ export default function MissionPanel({
 
 function TravelerListView({
   token,
+  filter,
   pendingOpenMissionId,
   onClearPendingMission,
   onRequestNavigateToMission,
@@ -390,13 +403,13 @@ function TravelerListView({
   onRequestDelete,
 }: {
   token: string;
+  filter: TravelerFilter;
   pendingOpenMissionId?: string | null;
   onClearPendingMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
   onRequestDelete?: (c: Mission) => void;
 }) {
-  const [filter, setFilter] = useState<TravelerFilter>("all");
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
@@ -454,24 +467,7 @@ function TravelerListView({
 
   return (
     <>
-      <SheetTabs aria-label="Mission filters" className="mt-3 gap-1.5 pb-3">
-        {TRAVELER_FILTERS.map((f) => (
-          <SheetTab
-            key={f.value}
-            id={`Mission-tab-${f.value}`}
-            aria-controls="Mission-tabpanel"
-            active={filter === f.value}
-            onClick={() => { log.logInteraction("filter:change", { from: filter, to: f.value }); setFilter(f.value); }}
-          >
-            {f.label}
-          </SheetTab>
-        ))}
-      </SheetTabs>
-
       <SheetBody
-        id="Mission-tabpanel"
-        role="tabpanel"
-        aria-labelledby={`Mission-tab-${filter}`}
         className="min-h-0 space-y-2 px-4 pb-4 pt-3"
       >
         {allMissions === undefined ? (
@@ -737,30 +733,39 @@ function FollowerListView({
 
   return (
     <>
-      <SheetTabs aria-label="Follower mission tabs" className="mt-3 gap-1.5 pb-3">
-        <SheetTab
-          id="follower-tab-active"
-          aria-controls="follower-tabpanel"
-          active={tab === "active"}
+      <div className="flex gap-1.5 px-4 pt-3 pb-1" role="tablist" aria-label="Mission view">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "active"}
           onClick={() => setTab("active")}
+          className={cn(
+            "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+            tab === "active"
+              ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+              : "bg-[var(--bg-card)] text-[var(--ink-3)]",
+          )}
         >
-          Traveler's board
-        </SheetTab>
-        <SheetTab
-          id="follower-tab-mine"
-          aria-controls="follower-tabpanel"
-          active={tab === "mine"}
+          Board
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "mine"}
           onClick={() => setTab("mine")}
+          className={cn(
+            "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+            tab === "mine"
+              ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+              : "bg-[var(--bg-card)] text-[var(--ink-3)]",
+          )}
         >
-          Mine ({mine.length})
-        </SheetTab>
-      </SheetTabs>
+          Mine{mine.length > 0 ? ` (${mine.length})` : ""}
+        </button>
+      </div>
 
       <SheetBody
-        id="follower-tabpanel"
-        role="tabpanel"
-        aria-labelledby={`follower-tab-${tab}`}
-        className="min-h-0 space-y-2 px-4 pb-4 pt-3"
+        className="min-h-0 space-y-2 px-4 pb-4 pt-2"
       >
         {myMissions === undefined ? (
           <PendingNotice label="Loading missions..." />

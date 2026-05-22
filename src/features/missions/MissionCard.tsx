@@ -1,6 +1,6 @@
 import type { Mission } from "../../convex/tripcastApi";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
-import { Clock, DollarSign, MapPin, Trophy, Zap } from "lucide-react";
+import { CheckSquare, Clock, DollarSign, MapPin, Trophy, Zap } from "lucide-react";
 import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type Props = {
@@ -12,10 +12,10 @@ type Props = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  proposed: "Pending review",
-  visible: "Accepted",
-  planned: "Accepted",
-  in_progress: "In progress",
+  proposed: "Proposed",
+  visible: "Unlocked",
+  planned: "Unlocked",
+  in_progress: "Active",
   completed: "Completed",
   dropped: "Dropped",
 };
@@ -30,6 +30,7 @@ const STATUS_STYLES: Record<string, { text: string; background: string; border: 
 };
 
 const MISSION_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
+const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 export default function MissionCard({ Mission, token, isOwn, isHighlighted, onClick }: Props) {
   const statusLabel = STATUS_LABELS[Mission.status] ?? Mission.status;
@@ -79,6 +80,19 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
             {statusLabel}
           </span>
         </span>
+
+        {Mission.source === "route_vote" && (
+          <span
+            className="inline-flex w-fit items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em]"
+            style={{
+              color: VOTES_PERSONALITY.color,
+              background: `color-mix(in oklab, ${VOTES_PERSONALITY.color} 12%, transparent)`,
+            }}
+          >
+            <CheckSquare className="h-2.5 w-2.5" aria-hidden="true" />
+            Via vote
+          </span>
+        )}
 
         {Mission.description && (
           <span className="text-xs leading-snug text-[var(--ink-2)] line-clamp-1">{Mission.description}</span>

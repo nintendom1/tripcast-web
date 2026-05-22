@@ -11,6 +11,7 @@ import {
   Trophy,
   type LucideIcon,
 } from "lucide-react";
+import { FilterButton } from "../../components/ui/FilterButton";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { JournalEvent, JournalEventType, JournalNarrativeLevel, Role } from "../../convex/tripcastApi";
@@ -19,8 +20,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetTab,
-  SheetTabs,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
@@ -37,11 +36,11 @@ import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type FilterTab = "story" | "all" | "entries" | "missions";
 
-const FILTER_TABS: { id: FilterTab; label: string }[] = [
-  { id: "story", label: TERMS.story },
-  { id: "all", label: "All" },
-  { id: "entries", label: "Entries" },
-  { id: "missions", label: TERMS.missions },
+const FILTER_TABS: { value: FilterTab; label: string }[] = [
+  { value: "story", label: TERMS.story },
+  { value: "all", label: "All" },
+  { value: "entries", label: "Entries" },
+  { value: "missions", label: TERMS.missions },
 ];
 
 const EMPTY_COPY: Record<FilterTab, string> = {
@@ -259,6 +258,17 @@ export default function JournalSheet({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {viewMode === "list" && (
+              <FilterButton
+                options={FILTER_TABS}
+                value={activeTab}
+                defaultValue="story"
+                onChange={(v) => {
+                  log.logInteraction("filter:change", { from: activeTab, to: v });
+                  setActiveTab(v);
+                }}
+              />
+            )}
             {isTraveler && viewMode === "list" && (
               <Button
                 size="sm"
@@ -313,27 +323,7 @@ export default function JournalSheet({
           </SheetBody>
         ) : (
           <>
-        <SheetTabs aria-label="Journal filters" className="mt-3">
-          {FILTER_TABS.map((tab) => (
-            <SheetTab
-              key={tab.id}
-              id={`journal-tab-${tab.id}`}
-              aria-controls="journal-tabpanel"
-              active={activeTab === tab.id}
-              onClick={() => {
-                log.logInteraction("filter:change", { from: activeTab, to: tab.id });
-                setActiveTab(tab.id);
-              }}
-            >
-              {tab.label}
-            </SheetTab>
-          ))}
-        </SheetTabs>
-
         <SheetBody
-          id="journal-tabpanel"
-          role="tabpanel"
-          aria-labelledby={`journal-tab-${activeTab}`}
           style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >
           {filtered.length === 0 ? (
@@ -429,72 +419,70 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryR
         onClick={onSelect}
         aria-label={cardLabel}
         className={cn(
-          "group relative mb-2 flex flex-col items-stretch gap-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform",
+          "group relative mb-2 flex flex-col items-stretch overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] text-left shadow-[var(--shadow-card)] transition-transform",
           "active:scale-[0.99]",
         )}
       >
-        <div className="flex items-start justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.1em]">
-          <span className="flex items-center gap-1.5 text-[var(--ink-3)]">
-            {fullKicker}
-            {stateEmoji ? (
-              <span aria-hidden="true" className="text-sm normal-case tracking-normal">
-                {stateEmoji}
-              </span>
-            ) : null}
+        {/* Date tape header */}
+        <div
+          className="flex items-center gap-2 px-3 py-1"
+          style={{ background: visual.tint }}
+          aria-hidden="true"
+        >
+          <span className="font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-white/90">
+            {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </span>
-          <span className="flex shrink-0 items-center gap-1">
-            <span
-              className="rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[10px]"
-              style={{
-                color: visual.tint,
-                background: `color-mix(in oklab, ${visual.tint} 12%, transparent)`,
-              }}
-            >
-              {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
-            </span>
+          {stateEmoji ? (
+            <span className="ml-auto text-sm leading-none">{stateEmoji}</span>
+          ) : null}
+        </div>
+
+        {/* Card body */}
+        <div className="flex flex-col gap-1 px-3 py-2">
+          <div className="flex items-start justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.1em]">
+            <span className="text-[var(--ink-3)]">{fullKicker}</span>
             {isCheckIn ? (
               <ChevronRight
                 aria-hidden="true"
-                className="h-4 w-4 text-[var(--ink-3)] transition-colors group-hover:text-[var(--ink-1)]"
+                className="h-4 w-4 shrink-0 text-[var(--ink-3)] transition-colors group-hover:text-[var(--ink-1)]"
               />
             ) : null}
-          </span>
+          </div>
+
+          {event.title ? (
+            <div className="font-[var(--font-display)] text-sm font-bold leading-snug text-[var(--ink-1)]">
+              {event.title}
+            </div>
+          ) : null}
+
+          {event.body ? (
+            <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)]">
+              {event.body}
+            </p>
+          ) : null}
+
+          {event.type === "story" && event.checkpointId ? (
+            <AttributionPublicLine
+              token={token}
+              sourceType="story"
+              sourceId={event.checkpointId}
+              className="text-[11px] text-[var(--ink-3)]"
+            />
+          ) : null}
+
+          {event.locationLabel ? (
+            <div className="flex items-center gap-1 text-[11px] text-[var(--ink-3)]">
+              <MapPin className="h-3 w-3" aria-hidden="true" />
+              {event.locationLabel}
+            </div>
+          ) : null}
+
+          {actualCostUsd !== undefined && actualCostUsd !== 0 ? (
+            <div className="text-[11px] font-semibold" style={{ color: "var(--green)" }}>
+              Actual cost: {formatUsd(actualCostUsd)}
+            </div>
+          ) : null}
         </div>
-
-        {event.title ? (
-          <div className="font-[var(--font-display)] text-sm font-bold leading-snug text-[var(--ink-1)]">
-            {event.title}
-          </div>
-        ) : null}
-
-        {event.body ? (
-          <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)]">
-            {event.body}
-          </p>
-        ) : null}
-
-        {event.type === "story" && event.checkpointId ? (
-          <AttributionPublicLine
-            token={token}
-            sourceType="story"
-            sourceId={event.checkpointId}
-            className="text-[11px] text-[var(--ink-3)]"
-          />
-        ) : null}
-
-        {event.locationLabel ? (
-          <div className="flex items-center gap-1 text-[11px] text-[var(--ink-3)]">
-            <MapPin className="h-3 w-3" aria-hidden="true" />
-            {event.locationLabel}
-          </div>
-        ) : null}
-
-        {actualCostUsd !== undefined && actualCostUsd !== 0 ? (
-          <div className="text-[11px] font-semibold" style={{ color: "var(--green)" }}>
-            Actual cost: {formatUsd(actualCostUsd)}
-          </div>
-        ) : null}
-
       </button>
     </li>
   );
