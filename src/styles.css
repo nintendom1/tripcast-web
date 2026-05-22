@@ -218,6 +218,24 @@ textarea {
   --shadow-card: 0 1px 0 rgba(27,42,51,0.06), 0 8px 24px -8px rgba(27,42,51,0.18);
   --shadow-fab: 0 2px 0 rgba(27,42,51,0.10), 0 12px 30px -8px rgba(217,83,43,0.55);
 
+  /* Meadow intro tokens for UX Rework 2. These are intentionally UI-only;
+     MapLibre tiles keep their native style with no grain or retinting. */
+  --meadow-bg: #fdf6e3;
+  --meadow-paper: #fffdf4;
+  --meadow-paper-edge: #f0e6c8;
+  --meadow-ink: #3a2e1f;
+  --meadow-ink-soft: #7a6849;
+  --meadow-ink-very: #b8a578;
+  --meadow-primary: #ff8b4a;
+  --meadow-primary-ink: #ffffff;
+  --meadow-gold: #ffb84a;
+  --meadow-royal: #7a9cdc;
+  --meadow-forest: #6dba4a;
+  --meadow-ruby: #f06f7e;
+  --meadow-font-display: "Fredoka", "M PLUS Rounded 1c", system-ui, sans-serif;
+  --meadow-font-body: "Quicksand", "Nunito", system-ui, sans-serif;
+  --meadow-font-mono: "JetBrains Mono", ui-monospace, monospace;
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

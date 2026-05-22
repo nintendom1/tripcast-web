@@ -528,12 +528,12 @@ function OptionsHome({
           </OptionsSection>
 
           <OptionsSection label="Tour">
-            <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the Follower tour" onClick={onReplayFollowerTour} />
+            <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the onboarding intro" onClick={onReplayFollowerTour} />
           </OptionsSection>
         </>
       ) : (
         <OptionsSection label="Trip">
-          <OptionsRow icon={Play} title="Replay welcome tour" detail="See the pixel guide again" onClick={onReplayFollowerTour} />
+          <OptionsRow icon={Play} title="Replay welcome tour" detail="See the onboarding intro again" onClick={onReplayFollowerTour} />
         </OptionsSection>
       )}
 
