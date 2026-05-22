@@ -18,7 +18,11 @@ import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet, { type OptionsView } from "./features/options/OptionsSheet";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
 import { TopBar } from "./features/hud";
-import FollowerLandingTour, { hasSeenFollowerTour, resetFollowerTourSeen } from "./features/onboarding/FollowerLandingTour";
+import {
+  CreateAccountIntroFlow,
+  IntroSequence,
+  markLocalIntroSeen,
+} from "./features/onboarding/IntroSequence";
 import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
 import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
 import { PendingNotice } from "./components/resilience/PendingNotice";
@@ -63,6 +67,13 @@ export default function App({ convexReady }: AppProps) {
       FallbackComponent={FullScreenErrorFallback}
       onError={(error, info) => {
         console.error("Root render failure", error, info);
+        const err = error instanceof Error ? error : null;
+        debugLog("error", "App", "react:root-error", "error", {
+          message: err?.message ?? String(error),
+          name: err?.name ?? typeof error,
+          stack: err?.stack?.slice(0, 400),
+          componentStack: info.componentStack?.slice(0, 400),
+        });
       }}
     >
       <DebugErrorBoundary>
@@ -85,10 +96,8 @@ function ConnectedApp() {
   const [preserveDebugContext, setPreserveDebugContext] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
   const music = useMusicSafe();
-  // Follower first-launch tour visibility — only shown for Follower sessions
-  // that haven't already seen it on this browser. Toggled to false on tour
-  // completion or skip; localStorage persists the seen flag separately.
-  const [isFollowerTourOpen, setIsFollowerTourOpen] = useState(false);
+  const [isIntroReplayOpen, setIsIntroReplayOpen] = useState(false);
+  const [isCreateAccountIntroOpen, setIsCreateAccountIntroOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
   const [sessionRetryNonce, setSessionRetryNonce] = useState(0);
@@ -157,22 +166,6 @@ function ConnectedApp() {
     };
   }, []);
 
-  // First-launch tour for Followers. Derives the role from the session
-  // check (which may be undefined/null while it resolves) so this hook lives
-  // at the top of the function alongside the others — moving it below the
-  // early-return branches below would change the hook count between renders
-  // and trip React's "rendered more hooks than during the previous render"
-  // invariant. The effect itself only does work once a real role lands.
-  const currentRole =
-    activeSessionCheck && typeof activeSessionCheck === "object"
-      ? activeSessionCheck.role
-      : null;
-  useEffect(() => {
-    if (currentRole === "follower" && !hasSeenFollowerTour()) {
-      setIsFollowerTourOpen(true);
-    }
-  }, [currentRole]);
-
   // Daily-visit scoring: fire once per session token after the session
   // validates. Idempotent + no-op server-side when there is no scoring
   // identity (e.g. a Traveler with developer scoring disabled).
@@ -195,11 +188,15 @@ function ConnectedApp() {
     }
   }, [session, activeSessionCheck, recordDailyVisit]);
 
-  function handleSignIn(newSession: StoredSession) {
+  function handleSignIn(
+    newSession: StoredSession,
+    options?: { playCreateAccountIntro?: boolean },
+  ) {
     setStoredSession(newSession);
     setSession(newSession);
     setPendingInviteToken(null);
     setPendingResetToken(null);
+    setIsCreateAccountIntroOpen(Boolean(options?.playCreateAccountIntro));
     history.replaceState({}, "", window.location.pathname);
   }
 
@@ -217,12 +214,16 @@ function ConnectedApp() {
     }
     clearStoredSession();
     setSession(null);
+    setIsCreateAccountIntroOpen(false);
+    setIsIntroReplayOpen(false);
   }
 
   function handleLocalSignOut() {
     clearStoredSession();
     setSession(null);
     setIsOptionsOpen(false);
+    setIsCreateAccountIntroOpen(false);
+    setIsIntroReplayOpen(false);
 
     if (!session) return;
 
@@ -237,6 +238,8 @@ function ConnectedApp() {
     clearStoredSession();
     setSession(null);
     setIsOptionsOpen(false);
+    setIsCreateAccountIntroOpen(false);
+    setIsIntroReplayOpen(false);
   }
 
   function showResetToast(message: string) {
@@ -273,7 +276,7 @@ function ConnectedApp() {
         <motion.div key="invite" {...PANEL_MOTION}>
           <InviteRedemptionScreen
             inviteToken={pendingInviteToken}
-            onSignIn={handleSignIn}
+            onSignIn={(newSession) => handleSignIn(newSession, { playCreateAccountIntro: true })}
             onBack={() => {
               setPendingInviteToken(null);
               history.replaceState({}, "", window.location.pathname);
@@ -415,9 +418,8 @@ function ConnectedApp() {
         }}
         onReplayFollowerTour={() => {
           music.sfx("page");
-          resetFollowerTourSeen();
           setIsOptionsOpen(false);
-          setIsFollowerTourOpen(true);
+          setIsIntroReplayOpen(true);
         }}
         onLoggedOut={handleLoggedOut}
         onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
@@ -457,11 +459,28 @@ function ConnectedApp() {
         </Suspense>
       </ErrorBoundary>
 
-      {isFollowerTourOpen ? (
-        <FollowerLandingTour
+      {isCreateAccountIntroOpen ? (
+        <CreateAccountIntroFlow
+          token={session.token}
+          role={role}
+          accountLabel={followerHandle}
           userHandle={followerHandle ?? "you"}
           travelerName="the Traveler"
-          onDone={() => setIsFollowerTourOpen(false)}
+          onDone={() => setIsCreateAccountIntroOpen(false)}
+        />
+      ) : null}
+
+      {isIntroReplayOpen ? (
+        <IntroSequence
+          role={role}
+          accountLabel={followerHandle}
+          userHandle={followerHandle ?? "you"}
+          travelerName="the Traveler"
+          source="options-replay"
+          onDone={() => {
+            markLocalIntroSeen(role, followerHandle);
+            setIsIntroReplayOpen(false);
+          }}
         />
       ) : null}
 

@@ -225,10 +225,8 @@ textarea {
   --shadow-card: 0 1px 0 rgba(27,42,51,0.06), 0 8px 24px -8px rgba(27,42,51,0.18);
   --shadow-fab: 0 2px 0 rgba(27,42,51,0.10), 0 12px 30px -8px rgba(217,83,43,0.55);
 
-  /* ── Meadow theme tokens ──────────────────────────────────────────────────
-     Sourced from tripcast-handoff/project/src/themes.jsx (meadow entry).
-     Used by redesign feature files and Meadow-styled components; do not
-     repurpose for unrelated features. */
+  /* Meadow theme tokens for redesign surfaces and intro UI.
+     MapLibre tiles keep their native style with no grain or retinting. */
   --meadow-bg: #fdf6e3;
   --meadow-paper: #fffdf4;
   --meadow-paper-edge: #f0e6c8;
@@ -245,6 +243,7 @@ textarea {
   --meadow-radius-lg: 26px;
   --meadow-font-display: "Fredoka", "M PLUS Rounded 1c", system-ui, sans-serif;
   --meadow-font-body: "Quicksand", "Nunito", system-ui, sans-serif;
+  --meadow-font-mono: "JetBrains Mono", ui-monospace, monospace;
 
   /* Meadow sheet personality colors — one accent per panel key */
   --sheet-journal-color: #ff8b4a;

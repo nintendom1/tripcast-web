@@ -905,6 +905,12 @@ export type FollowerSession = {
   membershipStatus: MembershipStatus;
 };
 
+export type IntroSeenPreference = {
+  role: Role;
+  introSeen: boolean;
+  introSeenAt?: number;
+} | null;
+
 export type FollowerInfo = {
   userId: string;
   username: string;
@@ -1391,6 +1397,20 @@ export const tripcastApi = {
       "public",
       { token: string; timeZone: string; source?: "device" | "manual" },
       { updated: boolean }
+    >,
+  },
+  onboarding: {
+    getIntroSeenPreference: (anyApi as any).onboarding.getIntroSeenPreference as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      IntroSeenPreference
+    >,
+    markIntroSeen: (anyApi as any).onboarding.markIntroSeen as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      null
     >,
   },
   journalEvents: {
