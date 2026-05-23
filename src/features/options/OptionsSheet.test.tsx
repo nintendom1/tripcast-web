@@ -59,16 +59,31 @@ const travelerSession: StoredSession = {
   displayName: "Traveler",
 };
 
+const followerSession: StoredSession = {
+  token: "follower-token",
+  role: "follower",
+  sessionType: "follower",
+  username: "f1",
+  displayName: "Follower",
+};
+
 function setupMocks({
   travelerTimeZone = detectedTimeZone,
+  allowFollowersTripPath = false,
   setTimeZoneFn = vi.fn().mockResolvedValue(null),
+  updatePreferencesFn = vi.fn().mockResolvedValue(null),
 }: {
   travelerTimeZone?: string | null;
+  allowFollowersTripPath?: boolean;
   setTimeZoneFn?: ReturnType<typeof vi.fn>;
+  updatePreferencesFn?: ReturnType<typeof vi.fn>;
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
     if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
-      return { travelerTimeZone };
+      return { travelerTimeZone, allowFollowersTripPath };
+    }
+    if (ref === tripcastApi.travelerPreferences.followerGetPreferences) {
+      return { visible: true, travelerTimeZone, allowFollowersTripPath };
     }
     if (ref === tripcastApi.missionSettings.travelerGetMissionSettings) {
       return {
@@ -83,10 +98,13 @@ function setupMocks({
     if (ref === tripcastApi.travelerPreferences.travelerSetTimeZone) {
       return setTimeZoneFn as any;
     }
+    if ((ref as any) === (tripcastApi.travelerPreferences as any).travelerUpdatePreferences) {
+      return updatePreferencesFn as any;
+    }
     return vi.fn().mockResolvedValue(null) as any;
   });
 
-  return { setTimeZoneFn };
+  return { setTimeZoneFn, updatePreferencesFn };
 }
 
 function renderOptions(overrides?: Partial<React.ComponentProps<typeof OptionsSheet>>) {
@@ -151,14 +169,56 @@ describe("OptionsSheet traveler timezone", () => {
   });
 });
 
+describe("OptionsSheet Map Settings", () => {
+  it("shows the 'Show Trip Path' toggle for travelers", () => {
+    setupMocks();
+    renderOptions();
+    expect(screen.getByText("Show Trip Path")).toBeInTheDocument();
+  });
+  it("shows the 'Show Trip Path' toggle for followers", () => {
+    setupMocks();
+    renderOptions({ session: followerSession, role: "follower" });
+    expect(screen.getByText("Show Trip Path")).toBeInTheDocument();
+  });
+
+  it("updates localStorage and dispatches event when 'Show Trip Path' is toggled", async () => {
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+    setupMocks();
+    renderOptions();
+
+    const checkbox = screen.getByLabelText(/Show Trip Path/i);
+    await userEvent.click(checkbox);
+
+    expect(localStorage.getItem("tripcast.showTripPath")).toBe("false");
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.any(Event));
+  });
+
+  it("shows 'Followers can see Trip Path' for Traveler", () => {
+    setupMocks();
+    renderOptions();
+    expect(screen.getByText("Followers can see Trip Path")).toBeInTheDocument();
+  });
+  it("hides 'Followers can see Trip Path' for Follower", () => {
+    setupMocks();
+    renderOptions({ session: followerSession, role: "follower" });
+    expect(screen.queryByText("Followers can see Trip Path")).not.toBeInTheDocument();
+  });
+
+  it("calls travelerUpdatePreferences when 'Followers can see Trip Path' is toggled", async () => {
+    const { updatePreferencesFn } = setupMocks({ allowFollowersTripPath: false });
+    renderOptions();
+
+    const checkbox = screen.getByLabelText(/Followers can see Trip Path/i);
+    await userEvent.click(checkbox);
+
+    expect(updatePreferencesFn).toHaveBeenCalledWith({
+      token: "test-token",
+      allowFollowersTripPath: true,
+    });
+  });
+});
+
 describe("OptionsSheet developer scoring toggle", () => {
-  const followerSession: StoredSession = {
-    token: "follower-token",
-    role: "follower",
-    sessionType: "follower",
-    username: "f1",
-    displayName: "Follower",
-  };
 
   it("shows the Traveler-only 'Earn Follower points as Traveler' toggle for the Traveler", () => {
     setupMocks();

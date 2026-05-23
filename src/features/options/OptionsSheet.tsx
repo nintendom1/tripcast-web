@@ -529,7 +529,7 @@ function MapSettingsSection({ token, role }: { token: string; role: "traveler" |
           <label className="flex cursor-pointer items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-2 mt-1">
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-semibold text-[var(--ink-1)]">Followers can see Trip Path</span>
-              <span className="block text-xs text-[var(--ink-3)]">Allow Support Crew to see your chronological path.</span>
+              <span className="block text-xs text-[var(--ink-3)]">Allow Followers to see your chronological path.</span>
             </span>
             <input type="checkbox" checked={allowFollowers} onChange={(e) => toggleAllowFollowers(e.target.checked)} className="h-4 w-4" style={{ accentColor: "var(--flag)" }} />
           </label>

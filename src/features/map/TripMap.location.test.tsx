@@ -4,6 +4,7 @@ import * as convexReact from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import TripMap from "./TripMap";
+import { useTripPath } from "./useTripPath";
 
 const mapEaseTo = vi.fn();
 const markerElements: HTMLElement[] = [];
@@ -18,6 +19,10 @@ const routeVotePanelProps: Array<{
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
   useQuery: vi.fn(),
+}));
+
+vi.mock("./useTripPath", () => ({
+  useTripPath: vi.fn(),
 }));
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
@@ -114,6 +119,7 @@ vi.mock("../travelfunds/TravelFundsSheet", () => ({
 function setupQueries({
   checkpoints = [],
   travelerLocation = null,
+  allowFollowersTripPath = false,
 }: {
   checkpoints?: Array<{
     _id: string;
@@ -126,11 +132,15 @@ function setupQueries({
     updatedAt: number;
   }>;
   travelerLocation?: { lat: number; lon: number; isSharing: true } | null;
+  allowFollowersTripPath?: boolean;
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((query: unknown) => {
     if (query === tripcastApi.checkpoints.listCheckpoints) return checkpoints;
     if (query === tripcastApi.travelerLocations.getTravelerLocation) {
       return travelerLocation;
+    }
+    if (query === tripcastApi.travelerPreferences.followerGetPreferences) {
+      return { visible: true, allowFollowersTripPath };
     }
     if (query === tripcastApi.travelerState.travelerGetState) {
       return { state: null, visibility: null };
@@ -332,6 +342,50 @@ describe("TripMap location marker", () => {
       expect(stopTravelerLocationSharing).toHaveBeenCalledWith({
         token: "test-token",
       });
+    });
+  });
+
+  it("shows the trip path for traveler based on local storage", async () => {
+    localStorage.setItem("tripcast.showTripPath", "true");
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        true
+      );
+    });
+
+    localStorage.setItem("tripcast.showTripPath", "false");
+    // Dispatch event to trigger update in TripMap
+    window.dispatchEvent(new Event("tripcast.preferencesUpdated"));
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        false
+      );
+    });
+  });
+
+  it("shows the trip path for followers based on traveler preferences", async () => {
+    setupQueries({ allowFollowersTripPath: true });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        null,
+        true
+      );
     });
   });
 });
