@@ -10,6 +10,22 @@ vi.mock("convex/react", () => ({
   useQuery: vi.fn(),
 }));
 
+vi.mock("../../providers/MusicProvider", () => ({
+  useMusicSafe: () => ({
+    sfx: vi.fn(),
+  }),
+}));
+
+vi.mock("../../debug/useActiveUiContext", () => ({
+  useActiveUiContext: vi.fn(),
+}));
+
+vi.mock("../../debug/useDebugLogger", () => ({
+  useDebugLogger: vi.fn(() => ({
+    logUi: vi.fn(),
+  })),
+}));
+
 const validPreview = {
   valid: true,
   maxEntries: 50,
@@ -34,6 +50,11 @@ beforeEach(() => {
 });
 
 describe("BulkImportSheet", () => {
+  it("starts with an empty input", () => {
+    render(<BulkImportSheet open token="test-token" onOpenChange={vi.fn()} />);
+    expect(screen.getByLabelText(/bulk import json/i)).toHaveValue("");
+  });
+
   it("shows a local parse error before preview", async () => {
     render(
       <BulkImportSheet open token="test-token" onOpenChange={vi.fn()} />,
@@ -103,5 +124,31 @@ describe("BulkImportSheet", () => {
       expect(onImported).toHaveBeenCalledWith(expect.objectContaining({ imported: 2 }));
     });
     expect(screen.getByText(/2 entries imported/i)).toBeInTheDocument();
+  });
+
+  it("inserts sample JSON when 'Insert Sample' is clicked", async () => {
+    const user = userEvent.setup();
+    render(<BulkImportSheet open token="test-token" onOpenChange={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /insert sample/i }));
+
+    const textarea = screen.getByLabelText(/bulk import json/i) as HTMLTextAreaElement;
+    expect(textarea.value).not.toBe("");
+    expect(textarea.value).toContain("America/Los_Angeles");
+    expect(textarea.value).toContain("entries");
+  });
+
+  it("copies the schema to clipboard and shows feedback", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    render(<BulkImportSheet open token="test-token" onOpenChange={vi.fn()} />);
+
+    const copyBtn = screen.getByRole("button", { name: /copy schema/i });
+    await user.click(copyBtn);
+
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("TripCast Bulk Import"));
+    expect(screen.getByText("Copied!")).toBeInTheDocument();
   });
 });
