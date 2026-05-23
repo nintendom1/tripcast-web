@@ -15,9 +15,12 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetHeader,
+  SheetGradientHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { cn } from "@/lib/utils";
+import { LocationPickerField } from "../map/MapPicker";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -34,6 +37,8 @@ import {
   STRESS_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
 } from "../travelstate/travelerStateUtils";
+
+const JOURNAL_PERSONALITY = MEADOW_SHEET_PERSONALITIES.journal;
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -118,6 +123,10 @@ type StoryDetailSheetProps = {
   missionTitle?: string;
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
+  /** Enter map coordinate-pick mode; receives a callback invoked with the picked coord. */
+  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  /** True while a map coordinate pick is in progress — hides the sheet so the map is tappable. */
+  isPickingCoordinate?: boolean;
   debugSource?: { source: string; sourceLabel: string };
 };
 
@@ -130,6 +139,8 @@ export default function StoryDetailSheet({
   missionTitle,
   missionId,
   onNavigateToMission,
+  onRequestCoordinatePick,
+  isPickingCoordinate,
   debugSource,
 }: StoryDetailSheetProps) {
   const isNarrative = event?.narrativeLevel === "narrative";
@@ -179,11 +190,12 @@ export default function StoryDetailSheet({
         side="bottom"
         showBackdrop={false}
         mapAdjacent
-        className={
+        className={cn(
           isNarrative
             ? "z-[11] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
-            : "z-[11] shadow-2xl max-h-[50dvh]"
-        }
+            : "z-[11] shadow-2xl max-h-[50dvh]",
+          isPickingCoordinate && "invisible pointer-events-none",
+        )}
         data-role="story-detail"
       >
         {event ? (
@@ -199,6 +211,7 @@ export default function StoryDetailSheet({
               missionTitle={missionTitle}
               missionId={missionId}
               onNavigateToMission={onNavigateToMission}
+              onRequestCoordinatePick={onRequestCoordinatePick}
             />
           ) : (
             <ActivityBody key={event._id} event={event} onClose={onClose} />
@@ -230,6 +243,7 @@ function NarrativeBody({
   missionTitle,
   missionId,
   onNavigateToMission,
+  onRequestCoordinatePick,
 }: {
   event: JournalEvent;
   token?: string;
@@ -240,6 +254,7 @@ function NarrativeBody({
   missionTitle?: string;
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
+  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
 }) {
   const music = useMusicSafe();
   const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
@@ -249,6 +264,8 @@ function NarrativeBody({
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
   const [editLocation, setEditLocation] = useState("");
+  const [editLat, setEditLat] = useState<number | undefined>(undefined);
+  const [editLon, setEditLon] = useState<number | undefined>(undefined);
   const [editShowInStory, setEditShowInStory] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -263,6 +280,8 @@ function NarrativeBody({
     setEditTitle(event.title ?? "");
     setEditBody(event.body ?? "");
     setEditLocation(event.locationLabel ?? "");
+    setEditLat(event.lat);
+    setEditLon(event.lon);
     // A narrative story shown in this sheet is, by definition, in the Story.
     setEditShowInStory(event.narrativeLevel !== "activity");
     setActionError(null);
@@ -287,6 +306,8 @@ function NarrativeBody({
         title: editTitle.trim() ? editTitle : undefined,
         note: editBody.trim() ? editBody : undefined,
         locationLabel: editLocation.trim() ? editLocation : undefined,
+        lat: editLat,
+        lon: editLon,
         showInStory: editShowInStory,
       });
       music.sfx("success");
@@ -324,7 +345,7 @@ function NarrativeBody({
 
   return (
     <>
-      <div className="flex items-start justify-between gap-2 px-5 pt-2">
+      <SheetGradientHeader color={JOURNAL_PERSONALITY.color} bg={JOURNAL_PERSONALITY.bg}>
         <div className="flex min-w-0 flex-col gap-1.5">
           <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold leading-tight tracking-tight text-[var(--ink-1)]">
             {event.title ?? "Story"}
@@ -350,7 +371,7 @@ function NarrativeBody({
           ) : null}
           <SheetCloseButton aria-label="Close story" />
         </div>
-      </div>
+      </SheetGradientHeader>
 
       <SheetBody
         className="px-5"
@@ -388,6 +409,25 @@ function NarrativeBody({
                 type="text"
               />
             </label>
+            {onRequestCoordinatePick && (
+              <LocationPickerField
+                lat={editLat}
+                lon={editLon}
+                onPick={() => {
+                  log("info", "StoryDetailSheet", "coordinate:pick-mode:request", "ui", {
+                    checkpointId: event.checkpointId,
+                  });
+                  onRequestCoordinatePick((coord) => {
+                    setEditLat(coord.lat);
+                    setEditLon(coord.lon);
+                  });
+                }}
+                onClear={() => {
+                  setEditLat(undefined);
+                  setEditLon(undefined);
+                }}
+              />
+            )}
             <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
               Story / Notes
               <Textarea
@@ -548,13 +588,17 @@ function ActivityBody({
 
   return (
     <>
-      <SheetHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">
+      <SheetGradientHeader
+        color={JOURNAL_PERSONALITY.color}
+        bg={JOURNAL_PERSONALITY.bg}
+        className="items-center"
+      >
         <div className="flex flex-col gap-0.5 min-w-0">
           <p className="text-xs text-muted-foreground">
             {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </p>
           <SheetTitle className="text-base font-bold text-navy truncate">
-            {event.title ?? "Story"}
+            {event.title ?? "Check In"}
           </SheetTitle>
           {event.locationLabel && (
             <p className="text-xs text-muted-foreground">{event.locationLabel}</p>
@@ -568,7 +612,7 @@ function ActivityBody({
         >
           <X className="h-4 w-4" />
         </button>
-      </SheetHeader>
+      </SheetGradientHeader>
 
       <div
         className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-4"

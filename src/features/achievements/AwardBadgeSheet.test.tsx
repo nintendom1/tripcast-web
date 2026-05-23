@@ -20,6 +20,7 @@ vi.mock("../../components/ui/sheet", () => ({
   SheetBody: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SheetCloseButton: () => <button type="button">CloseX</button>,
   SheetTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
+  SheetGradientHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
 const BADGES: BadgeAwardContext["badges"] = [

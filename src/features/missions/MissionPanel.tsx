@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Plus, Trophy } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
+import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, JournalEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
@@ -585,29 +586,15 @@ function TravelerCreateForm({
           onChange={(e) => setLocationLabel(e.target.value)}
           maxLength={200}
         />
-        <div className="mt-1 flex items-center gap-2">
-          {onRequestCoordinatePick && (
-            <button
-              type="button"
-              className="text-xs text-[var(--ink-1)] underline"
-              onClick={handlePickOnMap}
-            >
-              ↗ Pick on map
-            </button>
-          )}
-          {lat !== undefined && lon !== undefined && (
-            <span className="text-xs text-[var(--ink-3)]">
-              📍 {lat.toFixed(5)}, {lon.toFixed(5)}
-              <button
-                type="button"
-                className="ml-1 text-[var(--danger)] underline"
-                onClick={() => { setLat(undefined); setLon(undefined); }}
-              >
-                clear
-              </button>
-            </span>
-          )}
-        </div>
+        {onRequestCoordinatePick && (
+          <LocationPickerField
+            className="mt-1"
+            lat={lat}
+            lon={lon}
+            onPick={handlePickOnMap}
+            onClear={() => { setLat(undefined); setLon(undefined); }}
+          />
+        )}
       </div>
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-[var(--ink-3)]">Notes (optional)</label>

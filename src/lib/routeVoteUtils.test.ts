@@ -6,6 +6,7 @@ import {
   getRouteVoteMapBounds,
   haversineDistanceMiles,
   isFiniteRouteCoordinate,
+  matchesVoteStatusFilter,
 } from "./routeVoteUtils";
 
 // ---------------------------------------------------------------------------
@@ -125,5 +126,30 @@ describe("route vote map coordinate helpers", () => {
       [-122.34, 47.61],
       [-122.33, 47.62],
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// matchesVoteStatusFilter
+// ---------------------------------------------------------------------------
+
+describe("matchesVoteStatusFilter", () => {
+  it("matches everything under the All filter", () => {
+    expect(matchesVoteStatusFilter("active", "all")).toBe(true);
+    expect(matchesVoteStatusFilter("archived", "all")).toBe(true);
+  });
+
+  it("treats only active votes as Open", () => {
+    expect(matchesVoteStatusFilter("active", "open")).toBe(true);
+    expect(matchesVoteStatusFilter("closed", "open")).toBe(false);
+    expect(matchesVoteStatusFilter("resolved", "open")).toBe(false);
+  });
+
+  it("treats every non-active status as Closed", () => {
+    expect(matchesVoteStatusFilter("active", "closed")).toBe(false);
+    expect(matchesVoteStatusFilter("closed", "closed")).toBe(true);
+    expect(matchesVoteStatusFilter("resolved", "closed")).toBe(true);
+    expect(matchesVoteStatusFilter("cancelled", "closed")).toBe(true);
+    expect(matchesVoteStatusFilter("archived", "closed")).toBe(true);
   });
 });

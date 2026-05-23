@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
+import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { JournalEvent, JournalEventType, JournalNarrativeLevel, Role } from "../../convex/tripcastApi";
@@ -34,20 +35,18 @@ import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
 import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
-type FilterTab = "story" | "all" | "entries" | "missions";
+type FilterTab = "story" | "all" | "entries";
 
 const FILTER_TABS: { value: FilterTab; label: string }[] = [
   { value: "story", label: TERMS.story },
   { value: "all", label: "All" },
   { value: "entries", label: "Entries" },
-  { value: "missions", label: TERMS.missions },
 ];
 
 const EMPTY_COPY: Record<FilterTab, string> = {
   story: "No story entries yet.",
   all: "No entries.",
   entries: "No entries yet.",
-  missions: "No mission events yet.",
 };
 const JOURNAL_PERSONALITY = MEADOW_SHEET_PERSONALITIES.journal;
 const MISSIONS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
@@ -84,8 +83,6 @@ function filterEvents(events: JournalEvent[], tab: FilterTab): JournalEvent[] {
       return events.filter((e) => !e.type.startsWith("route_vote_"));
     case "entries":
       return events.filter((e) => e.type === "story");
-    case "missions":
-      return events.filter((e) => e.type.startsWith("mission_"));
   }
 }
 
@@ -101,7 +98,7 @@ function visualForEvent(type: JournalEventType, narrativeLevel: JournalNarrative
   if (type === "story") {
     return narrativeLevel === "narrative"
       ? { Icon: Camera, tint: JOURNAL_PERSONALITY.color, kicker: "Story" }
-      : { Icon: MapPin, tint: "var(--ink-1)", kicker: "Story" };
+      : { Icon: MapPin, tint: "var(--ink-1)", kicker: TERMS.checkIn };
   }
   if (type.startsWith("mission_")) {
     return { Icon: Trophy, tint: MISSIONS_PERSONALITY.color, kicker: "Mission" };
@@ -139,23 +136,32 @@ function formatDate(ts: number): string {
 type JournalSheetProps = {
   events: JournalEvent[];
   token: string;
+  /** Controls visibility. Kept mounted while closed so the close transition plays. */
+  open: boolean;
   /** Role gates the "New" create action — Traveler only. */
   role?: Role;
   onClose: () => void;
   onStorySelect: (event: JournalEvent) => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   onMarkAllRead: () => void;
+  /** Enter map coordinate-pick mode; receives a callback invoked with the picked coord. */
+  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  /** True while a map coordinate pick is in progress — hides the sheet so the map is tappable. */
+  isPickingCoordinate?: boolean;
   debugSource?: { source: string; sourceLabel: string };
 };
 
 export default function JournalSheet({
   events,
   token,
+  open,
   role,
   onClose,
   onStorySelect,
   onLocationFocus,
   onMarkAllRead,
+  onRequestCoordinatePick,
+  isPickingCoordinate,
   debugSource,
 }: JournalSheetProps) {
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
@@ -163,13 +169,15 @@ export default function JournalSheet({
   const [storyTitle, setStoryTitle] = useState("");
   const [storyBody, setStoryBody] = useState("");
   const [storyLocation, setStoryLocation] = useState("");
+  const [storyLat, setStoryLat] = useState<number | undefined>(undefined);
+  const [storyLon, setStoryLon] = useState<number | undefined>(undefined);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
+  const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, open ? { token } : "skip");
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
-  useActiveUiContext(true, {
+  useActiveUiContext(open, {
     sheetName: "JournalSheet",
     label: TERMS.journal,
     view: viewMode === "create" ? "create-story" : `list:${activeTab}`,
@@ -178,19 +186,29 @@ export default function JournalSheet({
     file: "src/features/journal/JournalSheet.tsx",
   }, { boundsSelector: "[data-role='journal-sheet']" });
 
+  // Mark events read when the sheet closes (open → false edge) and on unmount
+  // while open. The sheet now stays mounted while closed so its close
+  // animation can play, so we can no longer rely on unmount alone.
+  const wasOpen = useRef(open);
   useEffect(() => {
-    return () => { onMarkAllRead(); };
+    if (wasOpen.current && !open) onMarkAllRead();
+    wasOpen.current = open;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  useEffect(() => {
+    return () => { if (wasOpen.current) onMarkAllRead(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    if (!open) return;
     const id = setTimeout(() => {
       const h = containerRef.current?.getBoundingClientRect().height ?? 0;
       if (h > 0) log.logInteraction("sheet:size", { heightPx: Math.round(h), viewportPx: window.innerHeight });
     }, 300);
     return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [open]);
 
   const filtered = filterEvents(events, activeTab);
   const isTraveler = role === "traveler";
@@ -204,12 +222,16 @@ export default function JournalSheet({
         title: storyTitle.trim() || undefined,
         note: storyBody.trim() || undefined,
         locationLabel: storyLocation.trim() || undefined,
+        lat: storyLat,
+        lon: storyLon,
         showInStory: true,
         source: "inline_form",
       });
       setStoryTitle("");
       setStoryBody("");
       setStoryLocation("");
+      setStoryLat(undefined);
+      setStoryLon(undefined);
       setViewMode("list");
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Something went wrong.");
@@ -221,10 +243,10 @@ export default function JournalSheet({
   return (
     <>
     <Sheet
-      open
+      open={open}
       modal={false}
-      onOpenChange={(open) => {
-        if (!open) {
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
           log.logInteraction("sheet:close", { trigger: "backdrop" });
           onClose();
         }
@@ -236,7 +258,10 @@ export default function JournalSheet({
         showBackdrop={false}
         mapAdjacent
         data-role="journal-sheet"
-        className="z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+        className={cn(
+          "z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+          isPickingCoordinate && "invisible pointer-events-none",
+        )}
       >
         <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: JOURNAL_PERSONALITY.color }} />
         <div
@@ -306,6 +331,23 @@ export default function JournalSheet({
                 onChange={(e) => setStoryLocation(e.target.value)}
                 maxLength={120}
               />
+              {onRequestCoordinatePick && (
+                <LocationPickerField
+                  lat={storyLat}
+                  lon={storyLon}
+                  onPick={() => {
+                    log.logInteraction("coordinate:pick-mode:request", { form: "journal-new-story" });
+                    onRequestCoordinatePick((coord) => {
+                      setStoryLat(coord.lat);
+                      setStoryLon(coord.lon);
+                    });
+                  }}
+                  onClear={() => {
+                    setStoryLat(undefined);
+                    setStoryLon(undefined);
+                  }}
+                />
+              )}
               {createError && (
                 <p className="text-sm text-rose-600" role="alert">{createError}</p>
               )}

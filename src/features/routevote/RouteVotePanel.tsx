@@ -17,11 +17,18 @@ import {
   SheetContent,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { FilterButton } from "../../components/ui/FilterButton";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { ChoiceList, ChoiceItem } from "../../components/rpg/ChoiceList";
 import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
-import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
+import {
+  formatTimeRemaining,
+  getRouteVoteMapBounds,
+  matchesVoteStatusFilter,
+  VOTE_FILTER_OPTIONS,
+  type VoteStatusFilter,
+} from "../../lib/routeVoteUtils";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
@@ -31,6 +38,8 @@ import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type RouteVotePanelProps = {
   token: string;
+  /** Controls visibility. Kept mounted while closed so the close transition plays. */
+  open: boolean;
   onClose: () => void;
   onVoteOverlayChange: (
     overlay: RouteVoteMapOverlay | null,
@@ -385,21 +394,25 @@ function VoteDetail({
 
 export default function RouteVotePanel({
   token,
+  open,
   onClose,
   onVoteOverlayChange,
   onRequestFitMap,
   fallbackOrigin,
   debugSource,
 }: RouteVotePanelProps) {
-  const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, { token });
+  const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, open ? { token } : "skip");
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<VoteStatusFilter>("all");
   const music = useMusicSafe();
   const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
 
   const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
   const openCount = votes?.filter((vote) => vote.effectiveStatus === "active").length ?? 0;
   const closedCount = votes?.filter((vote) => vote.effectiveStatus !== "active").length ?? 0;
-  useActiveUiContext(true, {
+  const filteredVotes =
+    votes?.filter((vote) => matchesVoteStatusFilter(vote.effectiveStatus, statusFilter)) ?? votes;
+  useActiveUiContext(open, {
     sheetName: "RouteVotePanel",
     label: TERMS.votes,
     view: selectedVote ? "detail" : "list",
@@ -426,7 +439,7 @@ export default function RouteVotePanel({
 
   return (
     <Sheet
-      open
+      open={open}
       modal={false}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) onClose();
@@ -469,7 +482,20 @@ export default function RouteVotePanel({
               ) : null}
             </div>
           </div>
-          <SheetCloseButton aria-label={`Close ${TERMS.votes.toLowerCase()} panel`} />
+          <div className="flex items-center gap-2">
+            {!selectedVote && votes ? (
+              <FilterButton
+                options={VOTE_FILTER_OPTIONS}
+                value={statusFilter}
+                defaultValue="all"
+                onChange={(v) => {
+                  log.logInteraction("filter:change", { from: statusFilter, to: v });
+                  setStatusFilter(v);
+                }}
+              />
+            ) : null}
+            <SheetCloseButton aria-label={`Close ${TERMS.votes.toLowerCase()} panel`} />
+          </div>
         </div>
 
         <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 pb-4 pt-3">
@@ -510,8 +536,12 @@ export default function RouteVotePanel({
                   <p className="py-6 text-center text-sm text-[var(--ink-3)]">
                     No votes yet.
                   </p>
+                ) : (filteredVotes ?? []).length === 0 ? (
+                  <p className="py-6 text-center text-sm text-[var(--ink-3)]">
+                    No {statusFilter} votes.
+                  </p>
                 ) : (
-                  votes.map((vote) => (
+                  (filteredVotes ?? []).map((vote) => (
                     <VoteCard
                       key={vote._id}
                       vote={vote}

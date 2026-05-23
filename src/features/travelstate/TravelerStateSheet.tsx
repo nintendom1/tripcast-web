@@ -54,11 +54,14 @@ type TabView = "state" | "visibility" | "auto";
 
 const STATE_PERSONALITY = MEADOW_SHEET_PERSONALITIES.state;
 
+// Matches the shared bottom-sheet curve in components/ui/sheet.tsx and the
+// redesign reference (tripcast-handoff-repair): a 0.34s slide with a slight
+// overshoot so the State panel opens/closes like every other sheet.
 const PANEL_MOTION = {
   initial: { y: "100%" },
   animate: { y: 0 },
   exit: { y: "100%" },
-  transition: { duration: 0.22, ease: "easeOut" as const },
+  transition: { duration: 0.34, ease: [0.22, 0.9, 0.3, 1.05] as const },
 };
 
 function computeCurrentAutoScores(autoState: AutoState | null | undefined) {

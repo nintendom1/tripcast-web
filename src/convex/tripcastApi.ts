@@ -61,6 +61,8 @@ export type UpdateCheckpointArgs = {
   note?: string;
   locationLabel?: string;
   showInStory?: boolean;
+  lat?: number;
+  lon?: number;
 };
 
 export type DeleteCheckpointArgs = {

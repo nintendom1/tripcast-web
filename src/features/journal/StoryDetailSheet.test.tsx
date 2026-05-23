@@ -240,6 +240,8 @@ describe("StoryDetailSheet — inline edit mode", () => {
       title: "Coffee Updated",
       note: "Body text",
       locationLabel: "Seattle",
+      lat: 47.6,
+      lon: -122.3,
       showInStory: true,
     });
   });

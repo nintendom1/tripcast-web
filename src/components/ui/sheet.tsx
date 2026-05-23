@@ -14,7 +14,11 @@ const SheetBackdrop = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <Dialog.Backdrop
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-black/40", className)}
+    className={cn(
+      "fixed inset-0 z-50 bg-black/40 transition-opacity duration-300 ease-out",
+      "data-[ending-style]:opacity-0 data-[starting-style]:opacity-0",
+      className,
+    )}
     {...props}
   />
 ));
@@ -41,7 +45,7 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
           "fixed z-50 flex flex-col bg-background shadow-xl",
           mapAdjacent && "z-[10] pb-[100px]",
           side === "bottom" &&
-            "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t transition-transform duration-200 ease-out data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full",
+            "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t transition-transform duration-[340ms] ease-[cubic-bezier(0.22,0.9,0.3,1.05)] data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full",
           side === "top" &&
             "inset-x-0 top-0 max-h-[85dvh] rounded-b-xl border-b transition-transform duration-200 ease-out data-[ending-style]:-translate-y-full data-[starting-style]:-translate-y-full",
           side === "left" &&
@@ -192,6 +196,42 @@ const SheetAccentRail = ({ color, className, style, ...props }: SheetAccentRailP
 );
 SheetAccentRail.displayName = "SheetAccentRail";
 
+interface SheetGradientHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
+  /** Personality accent color: drives the 1px top rail. */
+  color: string;
+  /** Personality tinted background: top of the 180deg gradient that fades to paper. */
+  bg: string;
+}
+
+/**
+ * Standard sheet header chrome shared across every bottom sheet: a 1px colored
+ * accent rail plus a header bar whose background fades from the personality tint
+ * to `--bg-paper`. Render header content (title, actions) as children.
+ */
+const SheetGradientHeader = ({
+  color,
+  bg,
+  className,
+  style,
+  children,
+  ...props
+}: SheetGradientHeaderProps) => (
+  <>
+    <SheetAccentRail color={color} />
+    <div
+      className={cn(
+        "flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2",
+        className,
+      )}
+      style={{ background: `linear-gradient(180deg, ${bg} 0%, var(--bg-paper) 100%)`, ...style }}
+      {...props}
+    >
+      {children}
+    </div>
+  </>
+);
+SheetGradientHeader.displayName = "SheetGradientHeader";
+
 export {
   Sheet,
   SheetPortal,
@@ -209,4 +249,5 @@ export {
   SheetTab,
   SheetBody,
   SheetAccentRail,
+  SheetGradientHeader,
 };

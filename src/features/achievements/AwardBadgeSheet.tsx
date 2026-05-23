@@ -10,9 +10,13 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
+  SheetGradientHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+
+const AWARDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.awards;
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
@@ -170,14 +174,14 @@ export default function AwardBadgeSheet({
         data-role="award-badge-sheet"
         className="max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
-        <div className="flex items-start justify-between gap-3 px-5 pt-3">
+        <SheetGradientHeader color={AWARDS_PERSONALITY.color} bg={AWARDS_PERSONALITY.bg}>
           <div className="grid gap-1">
             <SheetTitle className="text-base">
               {context?.sourceLabel ?? "Loading…"}
             </SheetTitle>
           </div>
           <SheetCloseButton />
-        </div>
+        </SheetGradientHeader>
 
         <SheetBody className="grid gap-4 px-5">
           {!context ? (

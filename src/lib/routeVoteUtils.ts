@@ -24,6 +24,24 @@ export function computeEffectiveStatusClient(
   return status;
 }
 
+export type VoteStatusFilter = "all" | "open" | "closed";
+
+export const VOTE_FILTER_OPTIONS: { value: VoteStatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "closed", label: "Closed" },
+];
+
+/** Open = live/active; Closed = everything resolved/closed/cancelled/archived. */
+export function matchesVoteStatusFilter(
+  effectiveStatus: RouteVoteStatus,
+  filter: VoteStatusFilter,
+): boolean {
+  if (filter === "all") return true;
+  const isOpen = effectiveStatus === "active";
+  return filter === "open" ? isOpen : !isOpen;
+}
+
 export function formatVotePct(count: number, total: number): string {
   if (total === 0) return "0%";
   return `${Math.round((count / total) * 100)}%`;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, SlidersHorizontal, X } from "lucide-react";
+import { Check, ListFilter, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type FilterOption<T extends string> = {
@@ -52,7 +52,7 @@ export function FilterButton<T extends string>({
             : "border-transparent bg-[var(--ink-1)] text-[var(--ink-on-dark)]",
         )}
       >
-        <SlidersHorizontal className="h-3 w-3 shrink-0" aria-hidden="true" />
+        <ListFilter className="h-3 w-3 shrink-0" aria-hidden="true" />
         {!isDefault && (
           <>
             <span className="max-w-[80px] truncate">{activeLabel}</span>
