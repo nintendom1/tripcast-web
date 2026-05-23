@@ -89,10 +89,12 @@ describe("AchievementsConnected", () => {
     expect(button).toHaveTextContent("3");
   });
 
-  it("renders nothing (no button) when there is no scoring identity", () => {
+  it("renders the score button even when there is no scoring identity (e.g. scoring disabled)", () => {
     setup({ summary: null });
     render(<AchievementsConnected token="t" />);
-    expect(screen.queryByRole("button", { name: /Achievements/ })).not.toBeInTheDocument();
+    const button = screen.getByRole("button", { name: /Achievements\. 0 points\./ });
+    expect(button).toBeInTheDocument();
+    expect(button).toHaveTextContent("0");
   });
 
   it("opens the sheet and marks achievements seen on click", async () => {

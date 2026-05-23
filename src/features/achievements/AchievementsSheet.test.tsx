@@ -1,11 +1,13 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useQuery } from "convex/react";
 
+import { tripcastApi } from "../../convex/tripcastApi";
 import type { AchievementEvent, ScoreSummary } from "../../convex/tripcastApi";
 import AchievementsSheet from "./AchievementsSheet";
 
 vi.mock("convex/react", () => ({
-  useQuery: () => undefined,
+  useQuery: vi.fn(),
   useMutation: () => vi.fn(),
 }));
 
@@ -17,6 +19,20 @@ vi.mock("../../components/ui/sheet", () => ({
   SheetCloseButton: () => <button type="button">Close</button>,
   SheetTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>,
 }));
+
+vi.mock("./BadgeBoard", () => ({
+  __esModule: true,
+  default: ({ badges }: { badges: any[] }) => (
+    <div data-testid="badge-board">
+      {badges.map((b) => (
+        <div key={b.badgeType}>{b.earned ? "Earned" : "Locked"}: {b.name}</div>
+      ))}
+    </div>
+  ),
+  BADGE_COLOR: {},
+}));
+
+const mockUseQuery = vi.mocked(useQuery);
 
 function makeEvent(overrides: Partial<AchievementEvent> = {}): AchievementEvent {
   return {
@@ -54,6 +70,16 @@ function makeSummary(overrides: Partial<ScoreSummary> = {}): ScoreSummary {
 }
 
 describe("AchievementsSheet", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: return empty results to avoid loading states in basic tests
+    mockUseQuery.mockImplementation((api, _args?) => {
+      if (api === tripcastApi.badges.getMyBadges) return { badges: [], isDev: false };
+      if (api === tripcastApi.badges.listBadgeDefinitions) return [];
+      return undefined;
+    });
+  });
+
   it("shows the total score and point log", () => {
     render(
       <AchievementsSheet open summary={makeSummary()} token="t" onOpenChange={vi.fn()} />,
@@ -89,5 +115,58 @@ describe("AchievementsSheet", () => {
       />,
     );
     expect(screen.getByText(/No achievements yet/)).toBeInTheDocument();
+  });
+
+  it("shows loading state for badges", () => {
+    mockUseQuery.mockReturnValue(undefined);
+    render(
+      <AchievementsSheet open summary={makeSummary()} token="t" onOpenChange={vi.fn()} />,
+    );
+    expect(screen.getByText("Loading badges…")).toBeInTheDocument();
+  });
+
+  it("falls back to catalog when user has no scoring identity", () => {
+    mockUseQuery.mockImplementation((api, _args?) => {
+      if (api === tripcastApi.badges.listBadgeDefinitions) {
+        return [{ badgeType: "popular", name: "Popular", emoji: "🔥", description: "Test" }];
+      }
+      return undefined;
+    });
+
+    render(
+      <AchievementsSheet open summary={null} token="t" onOpenChange={vi.fn()} />,
+    );
+
+    // Should skip board query and show catalog as locked
+    expect(screen.getByText("Locked: Popular")).toBeInTheDocument();
+    expect(screen.queryByText("Loading badges…")).not.toBeInTheDocument();
+  });
+
+  it("displays earned badges when board is available", () => {
+    mockUseQuery.mockImplementation((api, _args?) => {
+      if (api === tripcastApi.badges.getMyBadges) {
+        return {
+          isDev: false,
+          badges: [
+            {
+              badgeType: "life_changing",
+              name: "Life Changing",
+              emoji: "✨",
+              description: "Test",
+              earned: true,
+              count: 1,
+              awards: [],
+            },
+          ],
+        };
+      }
+      return [];
+    });
+
+    render(
+      <AchievementsSheet open summary={makeSummary()} token="t" onOpenChange={vi.fn()} />,
+    );
+
+    expect(screen.getByText("Earned: Life Changing")).toBeInTheDocument();
   });
 });
