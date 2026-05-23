@@ -540,7 +540,7 @@ export default function TripMap({
 
   const showPath = role === "traveler"
     ? showTripPathLocal
-    : (followerPreferences?.visible ? (followerPreferences.allowFollowersTripPath ?? false) : false);
+    : (followerPreferences?.visible ? ((followerPreferences as any).allowFollowersTripPath ?? false) : false);
 
   useTripPath(
     mapInstance,

@@ -549,12 +549,13 @@ export type TravelerPreferences = {
   travelerTimeZone?: string;
   travelerTimeZoneSource?: "device" | "manual";
   travelerTimeZoneUpdatedAt?: number;
+  allowFollowersTripPath: boolean;
   updatedAt: number | null;
 };
 
 export type TravelerPreferencesForFollower =
   | { visible: false }
-  | { visible: true; travelerTimeZone?: string };
+  | { visible: true; travelerTimeZone?: string; allowFollowersTripPath: boolean };
 
 export type UpdateTravelerStateArgs = {
   token: string;
@@ -1431,6 +1432,12 @@ export const tripcastApi = {
       "public",
       { token: string; timeZone: string; source?: "device" | "manual" },
       { updated: boolean }
+    >,
+    travelerUpdatePreferences: (anyApi as any).travelerPreferences.travelerUpdatePreferences as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; allowFollowersTripPath?: boolean },
+      null
     >,
   },
   onboarding: {

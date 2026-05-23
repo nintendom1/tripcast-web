@@ -48,29 +48,45 @@ export function useTripPath(
 
     if (coords.length < 2) return null;
 
-    // Split the path into segments to create a fading effect.
-    // More recent segments (end of array) have higher opacity.
     const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
-    const numSegments = 5;
-    const segmentSize = Math.max(1, Math.ceil(coords.length / numSegments));
 
-    for (let i = 0; i < coords.length - 1; i += segmentSize) {
-      const segmentCoords = coords.slice(i, i + segmentSize + 1);
-      if (segmentCoords.length < 2) continue;
+    // Define the "strength" block: the most recent 5 segments (6 points).
+    // This includes the live segment (lastPin -> livePosition) if emitting.
+    const strengthPointCount = 6;
+    const strengthStartIndex = Math.max(0, coords.length - strengthPointCount);
 
-      // Opacity from 0.15 (oldest) to 0.7 (newest)
-      const progress = i / (coords.length - 1);
-      const opacity = 0.15 + progress * 0.55;
+    // 1. Fading Tail: Everything before the strength block
+    if (strengthStartIndex > 0) {
+      const tailCoords = coords.slice(0, strengthStartIndex + 1);
+      const numTailSegments = 4;
+      const tailSegmentSize = Math.max(1, Math.ceil(tailCoords.length / numTailSegments));
 
-      features.push({
-        type: "Feature",
-        properties: { opacity },
-        geometry: {
-          type: "LineString",
-          coordinates: segmentCoords,
-        },
-      });
+      for (let i = 0; i < tailCoords.length - 1; i += tailSegmentSize) {
+        const segment = tailCoords.slice(i, i + tailSegmentSize + 1);
+        if (segment.length < 2) continue;
+
+        // Fade from 0.2 (oldest) up toward 0.95
+        const progress = i / (tailCoords.length - 1);
+        const opacity = 0.2 + progress * (0.95 - 0.2);
+
+        features.push({
+          type: "Feature",
+          properties: { opacity },
+          geometry: { type: "LineString", coordinates: segment },
+        });
+      }
     }
+
+    // 2. Strength Block: Most recent segments at constant high opacity
+    const strengthCoords = coords.slice(strengthStartIndex);
+    features.push({
+      type: "Feature",
+      properties: { opacity: 0.95 },
+      geometry: {
+        type: "LineString",
+        coordinates: strengthCoords,
+      },
+    });
 
     return {
       type: "FeatureCollection",
@@ -105,9 +121,9 @@ export function useTripPath(
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#666666", // Neutral tone
-          "line-width": 2,
-          "line-dasharray": [1.5, 1.5], // Tight dash pattern
+          "line-color": "#444444",
+          "line-width": 3.5,
+          "line-dasharray": [2, 2],
           "line-opacity": ["get", "opacity"],
         },
       });
