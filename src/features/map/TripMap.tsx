@@ -51,6 +51,8 @@ import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
 import AchievementsConnected from "../achievements/AchievementsConnected";
+import { MessagingSheet } from "../messaging/MessagingSheet";
+import { useMessagingUnread } from "../messaging/useMessagingUnread";
 import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -490,6 +492,7 @@ export default function TripMap({
   const [selectedStoryEvent, setSelectedStoryEvent] = useState<JournalEvent | null>(null);
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
+  const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
@@ -551,8 +554,16 @@ export default function TripMap({
     showPath
   );
 
+  const sessionData = useQuery(tripcastApi.auth.currentSession, { token });
+  const followerSession = useQuery(tripcastApi.followers.followerCurrentSession, { token });
+  const currentUserId = sessionData?.userId || followerSession?.userId;
+
   const journalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
+
+  const messages = useQuery(tripcastApi.messages.listMessages, { token }) ?? [];
+  const { unreadCount: messagingUnread, markAllRead: markMessagingRead, lastReadAt } = 
+    useMessagingUnread(messages, currentUserId, role);
 
   const allMissionsForBadge = useQuery(
     tripcastApi.missions.travelerListMissions,
@@ -610,6 +621,7 @@ export default function TripMap({
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
     setIsAchievementsOpen(false);
+    setIsMessagingOpen(false);
   }
   function openMissions(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isMissionsPanelOpen) {
@@ -627,6 +639,7 @@ export default function TripMap({
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
     setIsAchievementsOpen(false);
+    setIsMessagingOpen(false);
   }
   function openVotes(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isVotePanelOpen) {
@@ -644,6 +657,7 @@ export default function TripMap({
     setIsMissionsPanelOpen(false);
     setIsTravelFundsSheetOpen(false);
     setIsAchievementsOpen(false);
+    setIsMessagingOpen(false);
   }
   function openFunds(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isTravelFundsSheetOpen) {
@@ -661,6 +675,22 @@ export default function TripMap({
     setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(false);
     setIsAchievementsOpen(false);
+    setIsMessagingOpen(false);
+  }
+  function openMessaging() {
+    if (isMessagingOpen) {
+      music.sfx("close");
+      setIsMessagingOpen(false);
+      return;
+    }
+    music.sfx("open");
+    markMessagingRead();
+    setIsMessagingOpen(true);
+    setIsJournalOpen(false);
+    setIsMissionsPanelOpen(false);
+    setIsVotePanelOpen(false);
+    setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
   }
   function openAchievements() {
     if (isAchievementsOpen) {
@@ -677,6 +707,7 @@ export default function TripMap({
     setIsMissionsPanelOpen(false);
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
+    setIsMessagingOpen(false);
   }
 
   const forceOpenMissions = useCallback((debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) => {
@@ -686,6 +717,7 @@ export default function TripMap({
     setIsVotePanelOpen(false);
     setIsTravelFundsSheetOpen(false);
     setIsAchievementsOpen(false);
+    setIsMessagingOpen(false);
   }, []);
 
   const activeDockTab: DockTab | null = isJournalOpen
@@ -698,6 +730,8 @@ export default function TripMap({
           ? "funds"
           : isAchievementsOpen
             ? "achievements"
+            : isMessagingOpen
+              ? "messaging"
             : null;
 
   function handleDockSelect(tab: DockTab) {
@@ -707,6 +741,7 @@ export default function TripMap({
     else if (tab === "missions") openMissions({ source: "dock:missions", sourceLabel: "Dock -> Missions" });
     else if (tab === "votes") openVotes({ source: "dock:votes", sourceLabel: "Dock -> Votes" });
     else if (tab === "funds") openFunds({ source: "dock:funds", sourceLabel: "Dock -> Funds" });
+    else if (tab === "messaging") openMessaging();
     else if (tab === "achievements") openAchievements();
   }
 
@@ -852,7 +887,7 @@ export default function TripMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [canWrite, forceOpenMissions, role]);
+  }, [canWrite, forceOpenMissions, role, log]);
 
   useEffect(() => {
     isLocationSharingRef.current = isLocationSharing;
@@ -960,6 +995,23 @@ export default function TripMap({
     stopTravelerLocationSharing({ token }).catch(() => {});
   }
 
+  function handleNavigateToMessageItem(type: string, id: string) {
+    music.sfx("page");
+    setIsMessagingOpen(false);
+    if (type === "mission") {
+      handleNavigateToMissionDetail(id);
+    } else if (type === "checkpoint") {
+      const event = journalEvents.find((e) => e.checkpointId === id);
+      if (event) {
+        setSelectedStoryEvent(event);
+      }
+    } else if (type === "route_vote") {
+      handleNavigateToVote(id);
+    } else if (type === "transaction") {
+      openFunds({ source: "message:link", sourceLabel: "Message Link" });
+    }
+  }
+
   function handleToggleLocationSharing() {
     music.sfx("tap");
     if (isLocationSharing) {
@@ -1022,6 +1074,7 @@ export default function TripMap({
     setIsJournalOpen(false);
     setIsTravelFundsSheetOpen(false);
     setIsAchievementsOpen(false);
+    setIsMessagingOpen(false);
     setPendingOpenDetailMissionId(missionId);
   }
 
@@ -1223,6 +1276,7 @@ export default function TripMap({
     });
   }
 
+
   function handleCenterLocation() {
     music.sfx("tap");
     const currentLocation =
@@ -1305,6 +1359,8 @@ export default function TripMap({
           missions: missionBadgeCount,
           votes: hasUnseenVote ? 1 : 0,
           votesPulsing: hasUnseenVote,
+          messaging: messagingUnread,
+          messagingPulsing: messagingUnread > 0,
         }}
         addLabel={role === "traveler" ? "Add" : `Propose ${TERMS.mission.toLowerCase()}`}
         showAdd={role === "traveler"}
@@ -1511,6 +1567,8 @@ export default function TripMap({
             missions: missionBadgeCount,
             votes: hasUnseenVote ? 1 : 0,
             votesPulsing: hasUnseenVote,
+            messaging: messagingUnread,
+            messagingPulsing: messagingUnread > 0,
           }}
         />
       </div>
@@ -1637,6 +1695,23 @@ export default function TripMap({
           </div>
         )}
       </AnimatePresence>
+
+      <MessagingSheet
+        open={isMessagingOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            music.sfx("close");
+            markMessagingRead();
+          }
+          setIsMessagingOpen(open);
+        }}
+        messages={messages}
+        token={token}
+        userId={currentUserId}
+        role={role}
+        lastReadAt={lastReadAt}
+        onNavigateToItem={handleNavigateToMessageItem}
+      />
 
       <div
         ref={cardsWrapperRef}
