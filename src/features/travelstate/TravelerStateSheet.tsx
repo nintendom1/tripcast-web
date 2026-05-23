@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
@@ -38,7 +38,7 @@ import {
   getStomachLevelFromScore,
 } from "./travelerStateUtils";
 import { formatSaveError } from "./formatSaveError";
-import AutoStateTab from "./AutoStateTab";
+import AutoStateTab, { type AutoStateFooterAction } from "./AutoStateTab";
 import { computeAutoState } from "./autoStateCalc";
 import { TERMS } from "../../copy/terminology";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
@@ -53,6 +53,8 @@ type TravelerStateSheetProps = {
 type TabView = "state" | "visibility" | "auto";
 
 const STATE_PERSONALITY = MEADOW_SHEET_PERSONALITIES.state;
+const BODY_FOOTER_CLEARANCE_CLASS = "pb-28";
+const FOOTER_DOCK_CLEARANCE_CLASS = "pb-[calc(var(--dock-h,76px)+16px+env(safe-area-inset-bottom))]";
 
 // Matches the shared bottom-sheet curve in components/ui/sheet.tsx and the
 // redesign reference (tripcast-handoff-repair): a 0.34s slide with a slight
@@ -243,6 +245,43 @@ function StateSegment({
   );
 }
 
+function SheetSaveFooter({
+  error,
+  savedAt,
+  showSavedAt,
+  children,
+}: {
+  error: string | null;
+  savedAt: number | null;
+  showSavedAt: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-role="traveler-state-sheet-footer"
+      className={cn(
+        "flex-none border-t border-[var(--line-soft)] bg-[var(--bg-paper)] px-4 pt-4 shadow-[0_-8px_20px_rgba(15,23,42,0.06)]",
+        FOOTER_DOCK_CLEARANCE_CLASS,
+      )}
+    >
+      {error && (
+        <p
+          role="alert"
+          className="mb-3 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
+      {savedAt && showSavedAt && !error && (
+        <p className="mb-3 text-sm text-emerald-700" suppressHydrationWarning>
+          Saved {formatRelativeTime(savedAt)}
+        </p>
+      )}
+      {children}
+    </div>
+  );
+}
+
 export default function TravelerStateSheet({ token, onClose, onToast, debugSource }: TravelerStateSheetProps) {
   const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
   const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
@@ -256,6 +295,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [autoFooterAction, setAutoFooterAction] = useState<AutoStateFooterAction | null>(null);
   // State form (no moodScore or scheduleScore — chip-only for those)
   const [stateAt, setStateAt] = useState<string>("");
   const [moodValue, setMoodValue] = useState<TravelerMoodValue | undefined>();
@@ -480,8 +520,13 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     }
   }
 
+  const handleAutoFooterActionChange = useCallback((action: AutoStateFooterAction | null) => {
+    setAutoFooterAction(action);
+  }, []);
+
   const stateEmoji = getStateEmoji({ moodValue });
   const lastUpdated = result?.state?.updatedAt;
+  const footerError = tab === "auto" ? autoFooterAction?.error ?? null : error;
 
   return (
     <motion.div
@@ -567,7 +612,10 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
       </div>
 
       {/* Scrollable body */}
-      <div className="flex-1 overflow-y-auto">
+      <div
+        data-role="traveler-state-sheet-body"
+        className={cn("flex-1 overflow-y-auto", BODY_FOOTER_CLEARANCE_CLASS)}
+      >
         {reviewing && tab === "state" && (() => {
           const prev = result?.state ?? null;
           const prevAt = prev?.updatedAt ?? null;
@@ -870,7 +918,11 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         )}
 
         {tab === "auto" && (
-          <AutoStateTab token={token} onToast={onToast} />
+          <AutoStateTab
+            token={token}
+            onToast={onToast}
+            onFooterActionChange={handleAutoFooterActionChange}
+          />
         )}
 
         {tab === "visibility" && (
@@ -898,20 +950,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
       </div>
 
       {/* Pinned footer (#7) */}
-      <div className="flex-none border-t p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {error && (
-          <p
-            role="alert"
-            className="mb-3 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-          >
-            {error}
-          </p>
-        )}
-        {savedAt && !error && tab === "state" && (
-          <p className="mb-3 text-sm text-emerald-700" suppressHydrationWarning>
-            Saved {formatRelativeTime(savedAt)}
-          </p>
-        )}
+      <SheetSaveFooter error={footerError} savedAt={savedAt} showSavedAt={tab === "state"}>
         {reviewing && tab === "state" ? (
           <div className="flex gap-2">
             <Button
@@ -946,8 +985,17 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
           <Button onClick={handleSaveVisibility} disabled={saving} className="w-full">
             {saving ? "Saving…" : "Save Visibility"}
           </Button>
+        ) : tab === "auto" ? (
+          <Button
+            type="button"
+            onClick={() => autoFooterAction?.onSave()}
+            disabled={!autoFooterAction || autoFooterAction.saving}
+            className="w-full"
+          >
+            {autoFooterAction?.saving ? "Saving…" : "Save Auto settings"}
+          </Button>
         ) : null}
-      </div>
+      </SheetSaveFooter>
     </motion.div>
   );
 }

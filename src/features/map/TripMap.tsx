@@ -663,6 +663,7 @@ export default function TripMap({
 
   function handleDockSelect(tab: DockTab) {
     setFanOpen(false);
+    setIsTravelerStateOpen(false);
     if (tab === "journal") openJournal({ source: "dock:journal", sourceLabel: "Dock -> Journal" });
     else if (tab === "missions") openMissions({ source: "dock:missions", sourceLabel: "Dock -> Missions" });
     else if (tab === "votes") openVotes({ source: "dock:votes", sourceLabel: "Dock -> Votes" });

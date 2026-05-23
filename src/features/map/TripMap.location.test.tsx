@@ -127,6 +127,13 @@ function setupQueries({
     if (query === tripcastApi.travelerLocations.getTravelerLocation) {
       return travelerLocation;
     }
+    if (query === tripcastApi.travelerState.travelerGetState) {
+      return { state: null, visibility: null };
+    }
+    if (query === tripcastApi.travelerAutoState.travelerGetAutoState) return null;
+    if (query === tripcastApi.travelerPreferences.travelerGetPreferences) {
+      return { travelerTimeZone: "UTC" };
+    }
     if (query === tripcastApi.routeVotes.travelerListRouteVotes) return [];
     if (query === tripcastApi.travelFunds.travelerGetConfig) {
       return {
@@ -189,6 +196,22 @@ describe("TripMap location marker", () => {
 
     await waitFor(() => {
       expect(screen.queryByTestId("funds-sheet")).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("journal-sheet")).toBeInTheDocument();
+  });
+
+  it("closes Traveler State when a Dock sheet opens", async () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Traveler status" }));
+    expect(await screen.findByRole("heading", { name: "How are you?" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Journal" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("heading", { name: "How are you?" })).not.toBeInTheDocument();
     });
     expect(screen.getByTestId("journal-sheet")).toBeInTheDocument();
   });
