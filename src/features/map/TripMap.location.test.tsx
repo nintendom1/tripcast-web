@@ -29,6 +29,11 @@ vi.mock("maplibre-gl", () => {
     addControl = vi.fn();
     on = vi.fn();
     remove = vi.fn();
+    getLayer = vi.fn(() => false);
+    removeLayer = vi.fn();
+    getSource = vi.fn(() => false);
+    removeSource = vi.fn();
+    isStyleLoaded = vi.fn(() => true);
     getZoom = vi.fn(() => 12);
     easeTo = mapEaseTo;
   }
