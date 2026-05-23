@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { Check, ChevronLeft, ClipboardList, RotateCcw } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ClipboardList,
+  FileJson,
+  RotateCcw,
+} from "lucide-react";
 import { useMutation, useQuery } from "convex/react";
 
 import {
@@ -99,6 +105,141 @@ const SAMPLE_JSON = `{
   ]
 }`;
 
+const BULK_IMPORT_SCHEMA = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  title: "TripCast Bulk Import",
+  oneOf: [
+    { $ref: "#/definitions/entryArray" },
+    {
+      type: "object",
+      properties: {
+        timeZone: { type: "string" },
+        entries: { $ref: "#/definitions/entryArray" },
+      },
+      required: ["entries"],
+      additionalProperties: false,
+    },
+  ],
+  definitions: {
+    entryArray: {
+      type: "array",
+      items: { $ref: "#/definitions/entry" },
+      maxItems: 50,
+    },
+    timestamp: {
+      oneOf: [
+        { type: "number", description: "Epoch milliseconds" },
+        { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "YYYY-MM-DD" },
+        { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}T.*(?:Z|[+-]\\d{2}:\\d{2})$", description: "ISO 8601 with offset" },
+      ],
+    },
+    entry: {
+      type: "object",
+      required: ["kind"],
+      properties: {
+        kind: { enum: ["checkin", "story", "transaction", "mission", "route_vote", "vote"] },
+        ref: { type: "string", maxLength: 80 },
+        timeZone: { type: "string" },
+        occurredAt: { $ref: "#/definitions/timestamp" },
+        when: { $ref: "#/definitions/timestamp" },
+      },
+      allOf: [
+        {
+          if: { properties: { kind: { enum: ["checkin", "story"] } } },
+          then: {
+            properties: {
+              title: { type: "string", maxLength: 120 },
+              note: { type: "string", maxLength: 1000 },
+              body: { type: "string", maxLength: 1000 },
+              locationLabel: { type: "string", maxLength: 120 },
+              place: { type: "string", maxLength: 120 },
+              lat: { type: "number", minimum: -90, maximum: 90 },
+              lon: { type: "number", minimum: -180, maximum: 180 },
+              showInStory: { type: "boolean" },
+              source: { enum: ["right_click", "tap_add_mode", "long_press", "current_activity"] },
+            },
+            required: ["lat", "lon"],
+          },
+        },
+        {
+          if: { properties: { kind: { const: "transaction" } } },
+          then: {
+            properties: {
+              title: { type: "string", maxLength: 200 },
+              note: { type: "string", maxLength: 500 },
+              category: { enum: ["food", "transport", "lodging", "event", "shopping", "souvenirs", "logistics", "research", "other"] },
+              currencyCode: { type: "string", pattern: "^[A-Z]{3}$" },
+              localAmount: { type: "number" },
+              amount: { type: "number" },
+              localCurrencyPerUsd: { type: "number" },
+              countsTowardMeter: { type: "boolean" },
+              visibility: { enum: ["public", "summary_only", "private"] },
+              linkedToRef: { type: "string", maxLength: 80 },
+            },
+            required: ["title"],
+          },
+        },
+        {
+          if: { properties: { kind: { const: "mission" } } },
+          then: {
+            properties: {
+              title: { type: "string", maxLength: 200 },
+              description: { type: "string", maxLength: 2000 },
+              note: { type: "string", maxLength: 2000 },
+              status: { enum: ["proposed", "visible", "planned", "in_progress", "completed", "dropped"] },
+              locationLabel: { type: "string", maxLength: 120 },
+              loc: { type: "string", maxLength: 120 },
+              lat: { type: "number", minimum: -90, maximum: 90 },
+              lon: { type: "number", minimum: -180, maximum: 180 },
+              estimatedCostUsd: { type: "number" },
+              estimatedDurationMinutes: { type: "number" },
+              estimatedEnergyImpact: { enum: ["low", "medium", "high"] },
+              sourceRouteVoteRef: { type: "string", maxLength: 80 },
+              sourceRouteVoteOptionRef: { type: "string", maxLength: 80 },
+            },
+            required: ["title"],
+          },
+        },
+        {
+          if: { properties: { kind: { enum: ["route_vote", "vote"] } } },
+          then: {
+            properties: {
+              title: { type: "string", maxLength: 200 },
+              description: { type: "string", maxLength: 2000 },
+              status: { enum: ["draft", "active", "closed", "resolved", "cancelled", "archived"] },
+              expiresAt: { $ref: "#/definitions/timestamp" },
+              resultsVisibility: { enum: ["before_voting", "after_voting", "after_close", "traveler_only"] },
+              options: {
+                type: "array",
+                items: {
+                  type: "object",
+                  required: ["title"],
+                  properties: {
+                    ref: { type: "string", maxLength: 80 },
+                    title: { type: "string", maxLength: 200 },
+                    description: { type: "string", maxLength: 2000 },
+                    sub: { type: "string", maxLength: 2000 },
+                    locationLabel: { type: "string", maxLength: 120 },
+                    place: { type: "string", maxLength: 120 },
+                    lat: { type: "number", minimum: -90, maximum: 90 },
+                    lon: { type: "number", minimum: -180, maximum: 180 },
+                    estimatedCostUsd: { type: "number" },
+                    estimatedDurationMinutes: { type: "number" },
+                    estimatedEnergyImpact: { enum: ["low", "medium", "high"] },
+                  },
+                },
+              },
+              confirmedWinningOptionRef: { type: "string", maxLength: 80 },
+              resultingMissionRef: { type: "string", maxLength: 80 },
+            },
+            required: ["title", "options"],
+          },
+        },
+      ],
+    },
+  },
+};
+
 type BulkImportSheetProps = {
   open: boolean;
   token: string;
@@ -141,6 +282,7 @@ export default function BulkImportSheet({
   const [commitError, setCommitError] = useState<string | null>(null);
   const [result, setResult] = useState<BulkImportResult | null>(null);
   const [isCommitting, setIsCommitting] = useState(false);
+  const [isSchemaCopied, setIsSchemaCopied] = useState(false);
   const music = useMusicSafe();
   useActiveUiContext(open, {
     sheetName: "BulkImportSheet",
@@ -179,6 +321,13 @@ export default function BulkImportSheet({
       setEntries(null);
       setParseError(errorText(error));
     }
+  }
+
+  async function copySchema() {
+    music.sfx("tap");
+    await navigator.clipboard.writeText(JSON.stringify(BULK_IMPORT_SCHEMA, null, 2));
+    setIsSchemaCopied(true);
+    setTimeout(() => setIsSchemaCopied(false), 2000);
   }
 
   async function commit() {
@@ -245,6 +394,18 @@ export default function BulkImportSheet({
                 >
                   <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden="true" />
                   Reset sample
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={copySchema}
+                >
+                  {isSchemaCopied ? (
+                    <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                  ) : (
+                    <FileJson className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                  )}
+                  {isSchemaCopied ? "Copied!" : "Copy Schema"}
                 </Button>
                 <Button
                   type="button"
