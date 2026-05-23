@@ -181,6 +181,7 @@ export default function MissionDetailSheet({
     Boolean(c.estimatedEnergyImpact);
 
   function openEditMode() {
+    log.logUi("action:edit-open", { missionId: c!._id });
     log.logForm("form:open");
     setEditTitle(c!.title);
     setEditDesc(c!.description ?? "");
@@ -199,6 +200,7 @@ export default function MissionDetailSheet({
   }
 
   function cancelEditMode() {
+    log.logUi("action:edit-cancel", { missionId: c!._id });
     setIsEditing(false);
     setActionError(null);
   }
@@ -243,6 +245,7 @@ export default function MissionDetailSheet({
   async function handleAccept() {
     if (!Mission) return;
     setIsWorking(true);
+    log.logUi("action:accept", { missionId: Mission._id });
     setActionError(null);
     try {
       await accept({
@@ -262,6 +265,7 @@ export default function MissionDetailSheet({
   async function handleReject() {
     if (!Mission) return;
     setIsWorking(true);
+    log.logUi("action:drop-confirm", { missionId: Mission._id });
     setActionError(null);
     try {
       await drop({
@@ -281,6 +285,7 @@ export default function MissionDetailSheet({
   async function handleDeleteSilently() {
     if (!Mission) return;
     setIsWorking(true);
+    log.logUi("action:delete-silently", { missionId: Mission._id });
     setActionError(null);
     try {
       await deleteSilently({ token, missionId: Mission._id });
@@ -295,6 +300,7 @@ export default function MissionDetailSheet({
   async function handleStart() {
     if (!Mission) return;
     setIsWorking(true);
+    log.logUi("action:start", { missionId: Mission._id });
     setActionError(null);
     try {
       await start({ token, missionId: Mission._id });
@@ -321,6 +327,7 @@ export default function MissionDetailSheet({
         ? completionTxState.value
         : undefined;
     setIsWorking(true);
+    log.logUi("action:complete", { missionId: Mission._id });
     setActionError(null);
     try {
       await complete({
@@ -342,6 +349,7 @@ export default function MissionDetailSheet({
       setActionError(completionTxState.error);
       return;
     }
+    log.logUi("action:complete-story", { missionId: Mission._id });
     const transaction =
       completionTxState && "value" in completionTxState ? completionTxState.value : undefined;
     onCompleteAsStory(Mission, transaction);
@@ -350,6 +358,7 @@ export default function MissionDetailSheet({
   async function handleMarkInProgress() {
     setShowMarkInProgressConfirm(false);
     setIsWorking(true);
+    log.logUi("action:start-confirmed", { missionId: c!._id });
     setActionError(null);
     try {
       await start({ token, missionId: c!._id });
@@ -372,6 +381,7 @@ export default function MissionDetailSheet({
       return;
     }
     setIsWorking(true);
+    log.logUi("action:status-override", { missionId: c!._id, to: overrideStatus });
     setActionError(null);
     log.logMutation("Mission:status:override", { from: c!.status, to: overrideStatus });
     try {
@@ -389,6 +399,7 @@ export default function MissionDetailSheet({
 
   async function handleSetCurrentActivity() {
     setIsWorking(true);
+    log.logUi("action:set-activity", { missionId: c!._id });
     setActionError(null);
     try {
       await setCurrentActivity({
@@ -409,6 +420,7 @@ export default function MissionDetailSheet({
   async function handleTogglePin() {
     if (!Mission) return;
     setIsWorking(true);
+    log.logUi("action:toggle-pin", { missionId: Mission._id, hidden: !Mission.mapHidden });
     setActionError(null);
     try {
       await togglePin({ token, missionId: Mission._id, hidden: !Mission.mapHidden });
@@ -422,6 +434,7 @@ export default function MissionDetailSheet({
   async function handleWithdraw() {
     if (!Mission) return;
     setIsWorking(true);
+    log.logUi("action:withdraw", { missionId: Mission._id });
     setActionError(null);
     try {
       await withdraw({ token, missionId: Mission._id });
@@ -685,7 +698,10 @@ export default function MissionDetailSheet({
             size="sm"
             type="button"
             disabled={!canAct}
-            onClick={() => setShowRejectForm(true)}
+            onClick={() => {
+              log.logUi("action:drop-note-open", { missionId: c._id });
+              setShowRejectForm(true);
+            }}
           >
             Drop with note
           </Button>
@@ -699,7 +715,10 @@ export default function MissionDetailSheet({
             size="sm"
             type="button"
             disabled={!canAct}
-            onClick={() => setShowDeleteConfirm(true)}
+            onClick={() => {
+              log.logUi("action:delete-open", { missionId: c._id });
+              setShowDeleteConfirm(true);
+            }}
             className="border-rose-300 text-rose-700 hover:bg-rose-50"
           >
             Delete silently
