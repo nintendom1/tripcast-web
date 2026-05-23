@@ -131,14 +131,12 @@ export default function AchievementsConnected({
     wasOpenRef.current = open;
   }, [open, summary, token, markSeen]);
 
-  // Still loading, or no scoring identity for the legacy floating trigger.
-  if (summary === undefined || (summary === null && showButton)) {
+  // Still loading. We no longer hide the button/sheet if summary is null (e.g. Traveler with scoring off).
+  if (summary === undefined) {
     return (
       <AchievementToast toast={toast} log={log} />
     );
   }
-
-  const sheetSummary = summary ?? EMPTY_SCORE_SUMMARY;
 
   function handleOpen() {
     music.sfx("open");
@@ -151,8 +149,8 @@ export default function AchievementsConnected({
         <button
           type="button"
           onClick={handleOpen}
-          aria-label={`Achievements. ${sheetSummary.total} points.${
-            sheetSummary.unseenCount > 0 ? ` ${sheetSummary.unseenCount} new.` : ""
+          aria-label={`Achievements. ${summary?.total ?? 0} points.${
+            (summary?.unseenCount ?? 0) > 0 ? ` ${summary?.unseenCount} new.` : ""
           }`}
           className={
             "relative grid h-12 w-12 place-items-center rounded-full bg-[var(--bg-card)] shadow-[var(--shadow-card)] transition-transform active:scale-[0.96] " +
@@ -161,9 +159,9 @@ export default function AchievementsConnected({
         >
           <Trophy className="h-5 w-5 text-[var(--flag)]" aria-hidden />
           <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-[var(--ink-1)] px-1.5 font-[var(--font-mono)] text-[10px] font-bold leading-4 text-[var(--ink-on-dark)]">
-            {sheetSummary.total}
+            {summary?.total ?? 0}
           </span>
-          {sheetSummary.unseenCount > 0 ? (
+          {(summary?.unseenCount ?? 0) > 0 ? (
             <span
               aria-hidden="true"
               className="absolute right-0 top-0 h-3 w-3 rounded-full border-2 border-[var(--bg-card)] bg-[var(--flag)]"
@@ -174,7 +172,7 @@ export default function AchievementsConnected({
 
       <AchievementsSheet
         open={open}
-        summary={sheetSummary}
+        summary={summary}
         token={token}
         onOpenChange={setOpen}
       />
