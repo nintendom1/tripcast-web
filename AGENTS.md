@@ -299,13 +299,17 @@ function openHistory() {
 }
 ```
 
-Each helper closes its siblings and toggles itself closed if already open (tap-to-dismiss). `TravelerState` is a full-height dialog and does not participate in exclusion. The Dock's `activeDockTab` is derived directly from the panel open flags so it stays in sync.
+Each helper closes its siblings and toggles itself closed if already open (tap-to-dismiss). `TravelerState` does not participate in exclusion, but Dock tab selection still closes it before opening the requested Dock sheet. It also follows Dock-clearing sheet behavior: the Dock stays visible above it, the sheet surface extends behind the Dock to avoid a map gap, and pinned actions must sit above the Dock via internal footer padding. The Dock's `activeDockTab` is derived directly from the panel open flags so it stays in sync.
 
 When adding a new panel: write an `open<Panel>` helper, call `set<ExistingPanel>Open(false)` for each existing panel inside it, expose a `DockTab` variant if it belongs in the Dock, and update `activeDockTab`/`handleDockSelect` accordingly.
 
 ### Toast positioning must clear the Dock
 
 The toast lives at `bottom-[112px]` so it sits above the Dock (~76 px tall) plus the bottom gutter. Role no longer matters — the Dock is the same height for Traveler and Follower. Update the constant if the Dock height changes.
+
+### Sheets must clear the Dock
+
+The Dock is the always-visible mobile navigation layer and should remain above map-adjacent sheets. Do not fix covered footer buttons by raising a sheet above the Dock. For Traveler State specifically, keep the sheet anchored to the viewport bottom so the sheet surface continues behind the Dock, then use internal footer padding (`--dock-h` plus a small gap) so pinned actions sit above the Dock without exposing a map gap.
 
 ### MapLibre measurement gotchas
 
@@ -344,6 +348,8 @@ Non-modal map sheets slide **under** the Dock; modals (Options, Emergency Reset)
 | Modal sheets (Options, EmergencyReset, etc.) | z-[50] | above all navigation |
 
 **`mapAdjacent` prop on `SheetContent`** (`src/components/ui/sheet.tsx`): adds `z-[10] pb-[100px]` so the sheet floats under the Dock with 100 px of bottom padding to keep scroll content visible above it. Because `className` is last in `cn()`, tailwind-merge lets the caller's explicit `z-[11]`/`z-[12]` win over `mapAdjacent`'s `z-[10]`.
+
+Never move map-adjacent sheets above `z-[20]` to reveal footer controls; that hides or blocks the Dock. If a pinned footer is covered, keep the Dock on top and compensate inside the sheet with footer/scroll padding so the last controls remain reachable.
 
 **Inline `style` overrides CSS classes.** If a `SheetContent` already has an inline `style={{ paddingBottom: "..." }}`, it will clobber the `pb-[100px]` class from `mapAdjacent`. Fix: embed both in the same inline value: `"calc(100px + env(safe-area-inset-bottom))"`. See `RouteVotePanel.tsx` for an example.
 

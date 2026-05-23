@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -23,9 +23,16 @@ import {
 } from "./travelerStateUtils";
 import { TERMS } from "../../copy/terminology";
 
+export interface AutoStateFooterAction {
+  saving: boolean;
+  error: string | null;
+  onSave: () => void;
+}
+
 interface AutoStateTabProps {
   token: string;
   onToast?: (msg: string) => void;
+  onFooterActionChange?: (action: AutoStateFooterAction | null) => void;
 }
 
 const DEFAULT_AUTO_SETTINGS = {
@@ -156,7 +163,7 @@ function logTooltipOpen(
   log.logUi("tooltip:open", { id, placement });
 }
 
-export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
+export default function AutoStateTab({ token, onToast, onFooterActionChange }: AutoStateTabProps) {
   const log: DebugLogger = useDebugLogger("AutoStateTab", "src/features/travelstate/AutoStateTab.tsx");
 
   const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
@@ -304,7 +311,7 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
     }
   }
 
-  async function handleSaveSettings() {
+  const handleSaveSettings = useCallback(async () => {
     if (saving) return;
     setError(null);
     if (energyMin > energyMax) {
@@ -346,7 +353,29 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
     } finally {
       setSaving(false);
     }
-  }
+  }, [
+    saving,
+    energyMin,
+    energyMax,
+    stomachMin,
+    stomachMax,
+    stomachAboveEvery,
+    stomachBelowEvery,
+    log,
+    updateSettings,
+    token,
+    bedtime,
+    wakeTime,
+    energySleepDelta,
+    energyAwakeDelta,
+    stomachAwakeDelta,
+    onToast,
+  ]);
+
+  useEffect(() => {
+    onFooterActionChange?.({ saving, error, onSave: handleSaveSettings });
+    return () => onFooterActionChange?.(null);
+  }, [onFooterActionChange, saving, error, handleSaveSettings]);
 
   async function handleApplyEstimate() {
     if (applying || !liveEstimate) return;
@@ -426,15 +455,6 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
       <p className="text-xs text-muted-foreground">
         Estimated locally. Not shared as a manual save until applied.
       </p>
-
-      {error && (
-        <p
-          role="alert"
-          className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-        >
-          {error}
-        </p>
-      )}
 
       {tzMismatch && (
         <div className="grid gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -728,14 +748,6 @@ export default function AutoStateTab({ token, onToast }: AutoStateTabProps) {
 
         <div className="text-xs text-muted-foreground">Timezone: {storedTz}</div>
 
-        <Button
-          type="button"
-          onClick={handleSaveSettings}
-          disabled={saving}
-          className="w-full"
-        >
-          {saving ? "Saving…" : "Save Auto settings"}
-        </Button>
       </div>
 
       <Button

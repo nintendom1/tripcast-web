@@ -261,6 +261,24 @@ describe("TravelerStateSheet — State tab", () => {
 });
 
 describe("TravelerStateSheet — segmented redesign", () => {
+  it("keeps the save footer outside the scrollable body", () => {
+    setupMocks();
+    renderSheet();
+
+    const body = document.querySelector("[data-role='traveler-state-sheet-body']");
+    const footer = document.querySelector("[data-role='traveler-state-sheet-footer']");
+    const sheet = document.querySelector("[data-role='traveler-state-sheet']");
+
+    expect(sheet).toHaveClass("z-[10]");
+    expect(sheet).toHaveClass("bottom-0");
+    expect(sheet).toHaveClass("max-h-[90dvh]");
+    expect(body).toHaveClass("overflow-y-auto");
+    expect(body).toHaveClass("pb-28");
+    expect(footer).toHaveClass("flex-none");
+    expect(footer).toHaveClass("pb-[calc(var(--dock-h,76px)+16px+env(safe-area-inset-bottom))]");
+    expect(footer).toContainElement(screen.getByRole("button", { name: "Save State" }));
+  });
+
   it("leads with the Energy/Stomach/Calm bars segment", () => {
     setupMocks();
     renderSheet();
@@ -310,6 +328,15 @@ describe("TravelerStateSheet — Visibility tab", () => {
     expect(screen.getByText("Biometrics")).toBeInTheDocument();
   });
 
+  it("renders Save Visibility in the pinned footer", async () => {
+    setupMocks();
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Visibility" }));
+
+    const footer = document.querySelector("[data-role='traveler-state-sheet-footer']");
+    expect(footer).toContainElement(screen.getByRole("button", { name: "Save Visibility" }));
+  });
+
   it("Save Visibility calls updateVisibility with token, fires onToast, and closes", async () => {
     const { updateVisibilityFn } = setupMocks();
     const onClose = vi.fn();
@@ -350,4 +377,15 @@ describe("TravelerStateSheet — Visibility tab", () => {
     });
   });
 
+});
+
+describe("TravelerStateSheet — Auto State tab", () => {
+  it("renders Save Auto settings in the pinned footer", async () => {
+    setupMocks();
+    renderSheet();
+    await userEvent.click(screen.getByRole("button", { name: "Auto State" }));
+
+    const footer = document.querySelector("[data-role='traveler-state-sheet-footer']");
+    expect(footer).toContainElement(screen.getByRole("button", { name: "Save Auto settings" }));
+  });
 });
