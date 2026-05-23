@@ -887,7 +887,7 @@ export default function TripMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [canWrite, forceOpenMissions, role]);
+  }, [canWrite, forceOpenMissions, role, log]);
 
   useEffect(() => {
     isLocationSharingRef.current = isLocationSharing;
