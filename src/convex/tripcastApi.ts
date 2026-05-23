@@ -967,6 +967,12 @@ export const tripcastApi = {
       { token: string; entries: BulkImportPayload },
       BulkImportResult
     >,
+    travelerExportTripData: (anyApi as any).bulkImport.travelerExportTripData as FunctionReference<
+      "query",
+      "public",
+      { token: string; startMs?: number; endMs?: number },
+      BulkImportPayload
+    >,
   },
   auth: {
     signIn: (anyApi as any).auth.signIn as FunctionReference<

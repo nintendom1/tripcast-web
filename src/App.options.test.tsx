@@ -96,12 +96,13 @@ describe("App: Options sheet — Traveler", () => {
     expect(screen.getByRole("heading", { name: /followers/i })).toBeInTheDocument();
   });
 
-  it("shows Bulk Import in the traveler Data / Dev section", async () => {
+  it("shows Bulk Import and Bulk Export in the traveler Data / Dev section", async () => {
     setupSessionMocks("traveler");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     expect(screen.getByRole("heading", { name: /data \/ dev/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /bulk import/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^bulk import\b/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^bulk export\b/i })).toBeInTheDocument();
   });
 
   it("orders reading speed controls slow to instant and leaves Danger Zone last", async () => {
