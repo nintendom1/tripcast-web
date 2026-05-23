@@ -554,8 +554,22 @@ export type TravelerPreferences = {
 };
 
 export type TravelerPreferencesForFollower =
-  | { visible: false }
-  | { visible: true; travelerTimeZone?: string; allowFollowersTripPath: boolean };
+  | { visible: false } | { visible: true; travelerTimeZone?: string; allowFollowersTripPath: boolean };
+
+export type Message = {
+  _id: string;
+  _creationTime: number;
+  text: string;
+  authorName: string;
+  authorId?: string;
+  role: "traveler" | "follower" | "system";
+  targetUserId?: string;
+  associatedId?: any;
+  associatedType?: "mission" | "checkpoint" | "transaction" | "route_vote";
+  deletedAt?: number;
+};
+
+export type Doc<T extends string> = T extends "messages" ? Message : any;
 
 export type UpdateTravelerStateArgs = {
   token: string;
@@ -1746,6 +1760,26 @@ export const tripcastApi = {
       "public",
       { token: string },
       LinkedCostMap
+    >,
+  },
+  messages: {
+    listMessages: (anyApi as any).messages.listMessages as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Message[]
+    >,
+    sendMessage: (anyApi as any).messages.sendMessage as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; text: string },
+      null
+    >,
+    deleteMessage: (anyApi as any).messages.deleteMessage as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; messageId: string },
+      null
     >,
   },
 } as const;

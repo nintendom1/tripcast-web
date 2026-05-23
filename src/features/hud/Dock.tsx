@@ -1,10 +1,10 @@
 import * as React from "react";
-import { Award, Clock, Plus, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
+import { Award, Clock, MessageSquare, Plus, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { LABELS } from "../../copy/terminology";
 
-export type DockTab = "journal" | "missions" | "votes" | "funds" | "achievements";
+export type DockTab = "journal" | "missions" | "messaging" | "votes" | "funds" | "achievements";
 
 export interface DockBadges {
   journal?: number;
@@ -13,6 +13,8 @@ export interface DockBadges {
   votesPulsing?: boolean;
   achievements?: number;
   achievementsPulsing?: boolean;
+  messaging?: number;
+  messagingPulsing?: boolean;
 }
 
 export interface DockProps {
@@ -76,6 +78,14 @@ export function Dock({
         icon={<Trophy className="h-5 w-5" aria-hidden="true" />}
         badge={badges.missions}
         onClick={() => handleSelect("missions")}
+      />
+      <DockButton
+        active={active === "messaging"}
+        label="Chat"
+        icon={<MessageSquare className="h-5 w-5" aria-hidden="true" />}
+        badge={badges.messaging}
+        badgePulsing={badges.messagingPulsing}
+        onClick={() => handleSelect("messaging")}
       />
 
       {showAdd ? (
