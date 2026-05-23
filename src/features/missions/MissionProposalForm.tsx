@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -12,6 +12,7 @@ type Props = {
   token: string;
   onSuccess: (autoPublished: boolean) => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  prefilledCoordinate?: { lat: number; lon: number } | null;
 };
 
 function friendlyError(error: unknown): string {
@@ -21,18 +22,30 @@ function friendlyError(error: unknown): string {
   return msg || "Unable to submit mission.";
 }
 
-export default function MissionProposalForm({ token, onSuccess, onRequestCoordinatePick }: Props) {
+export default function MissionProposalForm({ 
+  token, 
+  onSuccess, 
+  onRequestCoordinatePick,
+  prefilledCoordinate,
+}: Props) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
-  const [lat, setLat] = useState<number | undefined>(undefined);
-  const [lon, setLon] = useState<number | undefined>(undefined);
+  const [lat, setLat] = useState<number | undefined>(prefilledCoordinate?.lat);
+  const [lon, setLon] = useState<number | undefined>(prefilledCoordinate?.lon);
   const [costStr, setCostStr] = useState("");
   const [durationStr, setDurationStr] = useState("");
   const [energyImpact, setEnergyImpact] = useState<"low" | "medium" | "high" | "">("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showNoLocationConfirm, setShowNoLocationConfirm] = useState(false);
+
+  useEffect(() => {
+    if (prefilledCoordinate) {
+      setLat(prefilledCoordinate.lat);
+      setLon(prefilledCoordinate.lon);
+    }
+  }, [prefilledCoordinate]);
 
   const settings = useQuery(tripcastApi.missionSettings.followerGetMissionSettings, { token });
   const propose = useMutation(tripcastApi.missions.followerProposeMission);

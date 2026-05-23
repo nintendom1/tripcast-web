@@ -501,6 +501,8 @@ export default function TripMap({
   const [storyDebugSource, setStoryDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [checkInDebugSource, setCheckInDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [pendingOpenMissionId, setPendingOpenMissionId] = useState<string | null>(null);
+  const [missionPrefillCoordinate, setMissionPrefillCoordinate] = useState<{ lat: number; lon: number } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; lat: number; lon: number } | null>(null);
   // Mission Complete-as-Story flow: when the Traveler picks the "Complete as story"
   // branch in a mission detail, this prefill seeds AddCheckpointSheet with the
   // mission's title/location and carries the missionId through so we can call
@@ -677,6 +679,15 @@ export default function TripMap({
     setIsTravelFundsSheetOpen(false);
   }
 
+  const forceOpenMissions = useCallback((debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) => {
+    setMissionsDebugSource(debugSource);
+    setIsMissionsPanelOpen(true);
+    setIsJournalOpen(false);
+    setIsVotePanelOpen(false);
+    setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
+  }, []);
+
   const activeDockTab: DockTab | null = isJournalOpen
     ? "journal"
     : isMissionsPanelOpen
@@ -770,18 +781,31 @@ export default function TripMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
 
     map.on("contextmenu", (event) => {
-      if (!canWrite) return;
       event.preventDefault();
-      musicRef.current.sfx("pin");
-      setCheckInDebugSource({ source: "map:right-click", sourceLabel: "Map right-click" });
-      setSelectedCoordinate({
-        lat: event.lngLat.lat,
-        lon: event.lngLat.lng,
-        source: "right_click",
-      });
+      const { lat, lng: lon } = event.lngLat;
+      const point = map.project(event.lngLat);
+      log.logUi("map:context-menu:open", { lat, lon, trigger: "right-click" });
+      setContextMenu({ x: point.x, y: point.y, lat, lon });
     });
 
+    let touchTimer: ReturnType<typeof setTimeout> | null = null;
+    map.on("touchstart", (e) => {
+      if (e.points.length > 1) return;
+      touchTimer = setTimeout(() => {
+        const { lat, lng: lon } = e.lngLat;
+        const point = map.project(e.lngLat);
+        log.logUi("map:context-menu:open", { lat, lon, trigger: "long-press" });
+        setContextMenu({ x: point.x, y: point.y, lat, lon });
+      }, 600);
+    });
+    map.on("touchend", () => touchTimer && clearTimeout(touchTimer));
+    map.on("touchmove", () => touchTimer && clearTimeout(touchTimer));
+    map.on("mousedown", () => setContextMenu(null));
+    map.on("dragstart", () => setContextMenu(null));
+    map.on("zoomstart", () => setContextMenu(null));
+
     map.on("click", (event) => {
+      setContextMenu(null);
       if (isEnabled() && isCategoryEnabled("interaction")) {
         const features = map.queryRenderedFeatures(event.point);
         rawLog("info", "TripMap", "map:click", "interaction", {
@@ -828,9 +852,7 @@ export default function TripMap({
       map.remove();
       mapRef.current = null;
     };
-  // canWrite is stable after mount
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [canWrite, forceOpenMissions, role]);
 
   useEffect(() => {
     isLocationSharingRef.current = isLocationSharing;
@@ -1395,6 +1417,52 @@ export default function TripMap({
         )}
       </AnimatePresence>
 
+      {contextMenu && (
+        <div
+          className="absolute z-[100] min-w-[140px] rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-1 shadow-xl animate-in fade-in zoom-in-95 duration-100"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          {role === "traveler" && (
+            <button
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-[var(--bg-paper-2)] text-[var(--ink-1)]"
+              onClick={(e) => {
+                e.stopPropagation();
+              log.logUi("map:context-menu:add-pin", { lat: contextMenu.lat, lon: contextMenu.lon });
+                musicRef.current.sfx("pin");
+                setCheckInDebugSource({ source: "map:context-menu", sourceLabel: "Context Menu -> Add Pin" });
+                setSelectedCoordinate({
+                  lat: contextMenu.lat,
+                  lon: contextMenu.lon,
+                  source: "right_click",
+                });
+                setContextMenu(null);
+              }}
+            >
+              Add Pin
+            </button>
+          )}
+          <button
+            className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-[var(--bg-paper-2)] text-[var(--ink-1)]"
+            onClick={(e) => {
+              e.stopPropagation();
+              const action = role === "traveler" ? "add-mission" : "propose-mission";
+              log.logUi(`map:context-menu:${action}`, { 
+                lat: contextMenu.lat, 
+                lon: contextMenu.lon 
+              });
+              setMissionPrefillCoordinate({ lat: contextMenu.lat, lon: contextMenu.lon });
+              forceOpenMissions({
+                source: "map:context-menu",
+                sourceLabel: role === "traveler" ? "Context Menu -> Add Mission" : "Context Menu -> Propose Mission",
+              });
+              setContextMenu(null);
+            }}
+          >
+            {role === "traveler" ? "Add Mission" : "Propose Mission"}
+          </button>
+        </div>
+      )}
+
       {/* Music mute indicator — top-right of the map */}
       <MusicMuteIndicator className="absolute right-3 top-3 z-[2]" />
 
@@ -1693,6 +1761,8 @@ export default function TripMap({
           onRequestNavigateToMission={handleNavigateToMission}
           onCompleteAsStory={handleCompleteAsStory}
           pendingOpenDetailMissionId={pendingOpenDetailMissionId}
+          prefilledCoordinate={missionPrefillCoordinate}
+          onClearPrefill={() => setMissionPrefillCoordinate(null)}
           onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
           onRequestNavigateToVote={handleNavigateToVote}
           onOpenLinkedStory={handleOpenLinkedStory}

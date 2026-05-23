@@ -52,6 +52,8 @@ type Props = {
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: JournalEvent) => void;
   debugSource?: { source: string; sourceLabel: string };
+  prefilledCoordinate?: { lat: number; lon: number } | null;
+  onClearPrefill?: () => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -97,6 +99,8 @@ export default function MissionPanel({
   onRequestNavigateToVote,
   onOpenLinkedStory,
   debugSource,
+  prefilledCoordinate,
+  onClearPrefill,
 }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedMission, setSelectedMission] = useState<SelectedMission | null>(null);
@@ -139,9 +143,12 @@ export default function MissionPanel({
     if (!open) {
       setViewMode("list");
       setSelectedMission(null);
+      onClearPrefill?.();
+    } else if (prefilledCoordinate) {
+      setViewMode("create");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, prefilledCoordinate]);
 
   // Pin-driven navigation: the parent passes a Mission id to focus on; we
   // always return the panel to its list view (and trust the parent to recenter
@@ -328,12 +335,14 @@ export default function MissionPanel({
                 <TravelerCreateForm
                   token={token}
                   onRequestCoordinatePick={onRequestCoordinatePick}
+                  prefilledCoordinate={prefilledCoordinate}
                   onSuccess={() => goToList("success")}
                 />
               ) : (
                 <MissionProposalForm
                   token={token}
                   onRequestCoordinatePick={onRequestCoordinatePick}
+                  prefilledCoordinate={prefilledCoordinate}
                   onSuccess={() => goToList("success")}
                 />
               )}
@@ -519,20 +528,29 @@ function TravelerCreateForm({
   token,
   onSuccess,
   onRequestCoordinatePick,
+  prefilledCoordinate,
 }: {
   token: string;
   onSuccess: () => void;
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  prefilledCoordinate?: { lat: number; lon: number } | null;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
-  const [lat, setLat] = useState<number | undefined>(undefined);
-  const [lon, setLon] = useState<number | undefined>(undefined);
+  const [lat, setLat] = useState<number | undefined>(prefilledCoordinate?.lat);
+  const [lon, setLon] = useState<number | undefined>(prefilledCoordinate?.lon);
   const [costStr, setCostStr] = useState("");
   const [durationStr, setDurationStr] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (prefilledCoordinate) {
+      setLat(prefilledCoordinate.lat);
+      setLon(prefilledCoordinate.lon);
+    }
+  }, [prefilledCoordinate]);
 
   const create = useMutation(tripcastApi.missions.travelerCreateMission);
 

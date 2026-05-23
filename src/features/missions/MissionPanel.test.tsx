@@ -151,6 +151,35 @@ describe("MissionPanel sheet layout", () => {
   });
 });
 
+describe("MissionPanel prefilled coordinates", () => {
+  it("jumps to create view when opened with a prefilled coordinate", () => {
+    renderPanel({
+      open: true,
+      prefilledCoordinate: { lat: 10, lon: 20 },
+      onRequestCoordinatePick: vi.fn(),
+    });
+
+    // Verify we are in the create view (TravelerCreateForm is rendered)
+    expect(screen.getByPlaceholderText("Mission title")).toBeInTheDocument();
+    expect(screen.getByText(/10/)).toBeInTheDocument(); // Lat field
+  });
+
+  it("calls onClearPrefill when the panel closes", () => {
+    const onClearPrefill = vi.fn();
+    const { rerender } = render(
+      <MissionPanel open={true} token="test" role="traveler" onClose={vi.fn()} onClearPrefill={onClearPrefill} />
+    );
+
+    expect(onClearPrefill).not.toHaveBeenCalled();
+
+    rerender(
+      <MissionPanel open={false} token="test" role="traveler" onClose={vi.fn()} onClearPrefill={onClearPrefill} />
+    );
+
+    expect(onClearPrefill).toHaveBeenCalled();
+  });
+});
+
 describe("MissionPanel pending mission highlight", () => {
   it("scrolls to the pending traveler mission and clears its highlight", () => {
     vi.useFakeTimers();
