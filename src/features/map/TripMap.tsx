@@ -56,6 +56,7 @@ import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useTripPath } from "./useTripPath";
 import { DebugChip } from "../../debug/DebugChip";
 import { isEnabled, isCategoryEnabled, log as rawLog } from "../../debug/debugLogger";
 import {
@@ -520,6 +521,33 @@ export default function TripMap({
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
   });
+
+  const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
+    const val = localStorage.getItem("tripcast.showTripPath");
+    return val === null ? true : val === "true";
+  });
+
+  useEffect(() => {
+    const handler = () => {
+      const val = localStorage.getItem("tripcast.showTripPath");
+      setShowTripPathLocal(val === null ? true : val === "true");
+    };
+    window.addEventListener("tripcast.preferencesUpdated", handler);
+    return () => window.removeEventListener("tripcast.preferencesUpdated", handler);
+  }, []);
+
+  const followerPreferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
+
+  const showPath = role === "traveler"
+    ? showTripPathLocal
+    : (followerPreferences?.visible ? ((followerPreferences as any).allowFollowersTripPath ?? false) : false);
+
+  useTripPath(
+    mapInstance,
+    checkpoints,
+    livePosition ?? (role === "follower" ? (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null) : null),
+    showPath
+  );
 
   const journalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);

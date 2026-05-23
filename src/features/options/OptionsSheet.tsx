@@ -490,6 +490,55 @@ export default function OptionsSheet({
   );
 }
 
+function MapSettingsSection({ token, role }: { token: string; role: "traveler" | "follower" }) {
+  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, role === "traveler" ? { token } : "skip");
+  const followerPreferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
+  const updatePreferences = useMutation((tripcastApi.travelerPreferences as any).travelerUpdatePreferences);
+
+  const [showTripPath, setShowTripPath] = useState(() => {
+    const val = localStorage.getItem("tripcast.showTripPath");
+    return val === null ? true : val === "true";
+  });
+
+  const toggleShowPath = (checked: boolean) => {
+    setShowTripPath(checked);
+    localStorage.setItem("tripcast.showTripPath", String(checked));
+    window.dispatchEvent(new Event("tripcast.preferencesUpdated"));
+  };
+
+  const allowFollowers = role === "traveler"
+    ? ((preferences as any)?.allowFollowersTripPath ?? false)
+    : (followerPreferences?.visible ? (followerPreferences as any).allowFollowersTripPath : false);
+
+  const toggleAllowFollowers = async (checked: boolean) => {
+    await updatePreferences({ token, allowFollowersTripPath: checked });
+  };
+
+  return (
+    <OptionsSection label="Map Settings">
+      <div className="grid gap-2 rounded-xl bg-[var(--bg-card)] p-3">
+        <label className="flex cursor-pointer items-center justify-between gap-3">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-[var(--ink-1)]">Show Trip Path</span>
+            <span className="block text-xs text-[var(--ink-3)]">Draw a dashed line connecting your pins.</span>
+          </span>
+          <input type="checkbox" checked={showTripPath} onChange={(e) => toggleShowPath(e.target.checked)} className="h-4 w-4" style={{ accentColor: "var(--flag)" }} />
+        </label>
+
+        {role === "traveler" && (
+          <label className="flex cursor-pointer items-center justify-between gap-3 border-t border-[var(--line-soft)] pt-2 mt-1">
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold text-[var(--ink-1)]">Followers can see Trip Path</span>
+              <span className="block text-xs text-[var(--ink-3)]">Allow Followers to see your chronological path.</span>
+            </span>
+            <input type="checkbox" checked={allowFollowers} onChange={(e) => toggleAllowFollowers(e.target.checked)} className="h-4 w-4" style={{ accentColor: "var(--flag)" }} />
+          </label>
+        )}
+      </div>
+    </OptionsSection>
+  );
+}
+
 function OptionsHome({
   role,
   log,
@@ -525,6 +574,8 @@ function OptionsHome({
       <ReadingSection />
 
       <OptionsSection label="Account">
+        <MapSettingsSection token={session.token} role={role} />
+
         <InfoRow
           icon={User}
           title={session.displayName ?? (session.username ? `@${session.username}` : "Signed in")}
