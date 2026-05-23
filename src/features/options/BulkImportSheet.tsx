@@ -26,6 +26,7 @@ import { Button } from "../../components/ui/button";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 const SAMPLE_JSON = `{
   "timeZone": "America/Los_Angeles",
@@ -276,7 +277,7 @@ export default function BulkImportSheet({
   onImported,
 }: BulkImportSheetProps) {
   const [stage, setStage] = useState<Stage>("paste");
-  const [text, setText] = useState(SAMPLE_JSON);
+  const [text, setText] = useState("");
   const [entries, setEntries] = useState<BulkImportPayload | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
@@ -284,6 +285,13 @@ export default function BulkImportSheet({
   const [isCommitting, setIsCommitting] = useState(false);
   const [isSchemaCopied, setIsSchemaCopied] = useState(false);
   const music = useMusicSafe();
+  const log = useDebugLogger("BulkImportSheet", "src/features/options/BulkImportSheet.tsx");
+
+  useEffect(() => {
+    log.logUi(open ? "sheet:open" : "sheet:close");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   useActiveUiContext(open, {
     sheetName: "BulkImportSheet",
     label: "Bulk Import",
@@ -325,6 +333,7 @@ export default function BulkImportSheet({
 
   async function copySchema() {
     music.sfx("tap");
+    log.logUi("action:copy-schema");
     await navigator.clipboard.writeText(JSON.stringify(BULK_IMPORT_SCHEMA, null, 2));
     setIsSchemaCopied(true);
     setTimeout(() => setIsSchemaCopied(false), 2000);
@@ -332,6 +341,7 @@ export default function BulkImportSheet({
 
   async function commit() {
     if (!entries || !preview?.valid || isCommitting) return;
+    log.logUi("action:commit-import", { count: preview?.rows.length });
     setCommitError(null);
     setIsCommitting(true);
     try {
@@ -347,8 +357,13 @@ export default function BulkImportSheet({
     }
   }
 
+  function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen) log.logUi("sheet:close", { trigger: "backdrop" });
+    onOpenChange(nextOpen);
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="bottom"
         data-role="bulk-import-sheet"
@@ -389,11 +404,12 @@ export default function BulkImportSheet({
                   variant="outline"
                   onClick={() => {
                     music.sfx("tap");
+                    log.logUi("action:insert-sample");
                     setText(SAMPLE_JSON);
                   }}
                 >
                   <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                  Reset sample
+                  Insert Sample
                 </Button>
                 <Button
                   type="button"
@@ -411,6 +427,7 @@ export default function BulkImportSheet({
                   type="button"
                   onClick={() => {
                     music.sfx("page");
+                    log.logUi("action:validate-preview");
                     validate();
                   }}
                 >
@@ -458,6 +475,7 @@ export default function BulkImportSheet({
                   variant="outline"
                   onClick={() => {
                     music.sfx("page");
+                    log.logUi("action:back-to-paste");
                     setStage("paste");
                   }}
                 >
@@ -490,6 +508,7 @@ export default function BulkImportSheet({
                 type="button"
                 onClick={() => {
                   music.sfx("page");
+                  log.logUi("action:close-import-done");
                   onOpenChange(false);
                 }}
               >

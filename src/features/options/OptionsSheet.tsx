@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import DebugPanel from "../../debug/DebugPanel";
+import type { DebugLogger } from "../../debug/useDebugLogger";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
@@ -385,7 +386,7 @@ export default function OptionsSheet({
   }
 
   function handleSignOut() {
-    log.logInteraction("sign-out", { role });
+    log.logUi("action:sign-out", { role });
     handleOpenChange(false);
     onSignOut();
   }
@@ -437,6 +438,7 @@ export default function OptionsSheet({
           ) : view === "options" ? (
             <OptionsHome
               role={role}
+              log={log}
               session={session}
               onSignOut={handleSignOut}
               onManageFollowers={onManageFollowers}
@@ -490,6 +492,7 @@ export default function OptionsSheet({
 
 function OptionsHome({
   role,
+  log,
   session,
   onSignOut,
   onManageFollowers,
@@ -503,6 +506,7 @@ function OptionsHome({
   onViewCredits,
 }: {
   role: "traveler" | "follower";
+  log: DebugLogger;
   session: StoredSession;
   onSignOut: () => void;
   onManageFollowers: () => void;
@@ -527,7 +531,14 @@ function OptionsHome({
           detail="Display name"
         />
         {role === "follower" ? <FollowerAttributionToggle token={session.token} /> : null}
-        <OptionsRow icon={LogOut} title="Sign out" onClick={onSignOut} />
+        <OptionsRow 
+          icon={LogOut} 
+          title="Sign out" 
+          onClick={() => {
+            log.logUi("action:sign-out");
+            onSignOut();
+          }} 
+        />
       </OptionsSection>
 
       {role === "traveler" ? (
@@ -540,42 +551,114 @@ function OptionsHome({
               </p>
               <CreateInviteControl token={session.token} />
             </div>
-            <OptionsRow icon={Users} title={TERMS.manageFollowers} detail="Active and pending followers" onClick={onManageFollowers} />
+            <OptionsRow 
+              icon={Users} 
+              title={TERMS.manageFollowers} 
+              detail="Active and pending followers" 
+              onClick={() => {
+                log.logUi("action:manage-followers");
+                onManageFollowers();
+              }} 
+            />
           </OptionsSection>
 
           <TravelerTimezoneSection token={session.token} />
 
           <OptionsSection label={TERMS.travelFunds}>
-            <OptionsRow icon={Wallet} title={`Manage ${TERMS.travelFunds}`} detail="Budget, pace, and transactions" onClick={onTravelFunds} />
+            <OptionsRow 
+              icon={Wallet} 
+              title={`Manage ${TERMS.travelFunds}`} 
+              detail="Budget, pace, and transactions" 
+              onClick={() => {
+                log.logUi("action:manage-travel-funds");
+                onTravelFunds();
+              }} 
+            />
           </OptionsSection>
 
           <MissionSettingsSection token={session.token} />
 
           <OptionsSection label="Data / Dev">
-            <OptionsRow icon={Database} title="Bulk Import" detail="Paste JSON to batch-add pins, funds, missions, and votes" onClick={onBulkImport} />
-            <OptionsRow icon={Download} title="Bulk Export" detail="Export trip history as JSON compatible with Bulk Import" onClick={onBulkExport} />
+            <OptionsRow 
+              icon={Database} 
+              title="Bulk Import" 
+              detail="Paste JSON to batch-add pins, funds, missions, and votes" 
+              onClick={() => {
+                log.logUi("action:bulk-import");
+                onBulkImport();
+              }} 
+            />
+            <OptionsRow 
+              icon={Download} 
+              title="Bulk Export" 
+              detail="Export trip history as JSON compatible with Bulk Import" 
+              onClick={() => {
+                log.logUi("action:bulk-export");
+                onBulkExport();
+              }} 
+            />
           </OptionsSection>
 
           <OptionsSection label="Tour">
-            <OptionsRow icon={Play} title="Replay welcome tour" detail="Preview the onboarding intro" onClick={onReplayFollowerTour} />
+            <OptionsRow 
+              icon={Play} 
+              title="Replay welcome tour" 
+              detail="Preview the onboarding intro" 
+              onClick={() => {
+                log.logUi("action:replay-tour");
+                onReplayFollowerTour();
+              }} 
+            />
           </OptionsSection>
 
           {onEndTrip || onViewCredits ? (
             <OptionsSection label="Finale">
               {onEndTrip ? (
-                <OptionsRow icon={Flag} title="End Trip" detail="Roll the credits and leave a thank-you note" onClick={onEndTrip} />
+                <OptionsRow 
+                  icon={Flag} 
+                  title="End Trip" 
+                  detail="Roll the credits and leave a thank-you note" 
+                  onClick={() => {
+                    log.logUi("action:end-trip");
+                    onEndTrip();
+                  }} 
+                />
               ) : null}
               {onViewCredits ? (
-                <OptionsRow icon={Trophy} title="View trip credits" detail="Roll the finale reel" onClick={onViewCredits} />
+                <OptionsRow 
+                  icon={Trophy} 
+                  title="View trip credits" 
+                  detail="Roll the finale reel" 
+                  onClick={() => {
+                    log.logUi("action:view-credits");
+                    onViewCredits();
+                  }} 
+                />
               ) : null}
             </OptionsSection>
           ) : null}
         </>
       ) : (
         <OptionsSection label="Trip">
-          <OptionsRow icon={Play} title="Replay welcome tour" detail="See the onboarding intro again" onClick={onReplayFollowerTour} />
+          <OptionsRow 
+            icon={Play} 
+            title="Replay welcome tour" 
+            detail="See the onboarding intro again" 
+            onClick={() => {
+              log.logUi("action:replay-tour");
+              onReplayFollowerTour();
+            }} 
+          />
           {onViewCredits ? (
-            <OptionsRow icon={Trophy} title="View trip credits" detail="Roll the finale reel" onClick={onViewCredits} />
+            <OptionsRow 
+              icon={Trophy} 
+              title="View trip credits" 
+              detail="Roll the finale reel" 
+              onClick={() => {
+                log.logUi("action:view-credits");
+                onViewCredits();
+              }} 
+            />
           ) : null}
         </OptionsSection>
       )}

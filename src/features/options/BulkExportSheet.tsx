@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Calendar, Check, Copy, Download, Loader2 } from "lucide-react";
 import { useQuery } from "convex/react";
 
@@ -46,6 +46,11 @@ export default function BulkExportSheet({
   const [copied, setCopied] = useState(false);
   const music = useMusicSafe();
   const log = useDebugLogger("BulkExportSheet", "src/features/options/BulkExportSheet.tsx");
+
+  useEffect(() => {
+    log.logUi(open ? "sheet:open" : "sheet:close");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   useActiveUiContext(open, {
     sheetName: "BulkExportSheet",
@@ -111,13 +116,19 @@ export default function BulkExportSheet({
           <div className="grid gap-4">
             <div className="flex rounded-xl bg-[var(--bg-card)] p-1 shadow-sm">
               <button
-                onClick={() => setRange("all")}
+                onClick={() => {
+                  log.logUi("action:range:all");
+                  setRange("all");
+                }}
                 className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${range === "all" ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]" : "text-[var(--ink-2)]"}`}
               >
                 Export All
               </button>
               <button
-                onClick={() => setRange("custom")}
+                onClick={() => {
+                  log.logUi("action:range:custom");
+                  setRange("custom");
+                }}
                 className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${range === "custom" ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]" : "text-[var(--ink-2)]"}`}
               >
                 Custom Range

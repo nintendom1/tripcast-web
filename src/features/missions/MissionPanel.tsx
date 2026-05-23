@@ -118,6 +118,7 @@ export default function MissionPanel({
   async function handleConfirmDelete() {
     if (!pendingDelete || isDeleting) return;
     setIsDeleting(true);
+    log.logUi("action:confirm-delete", { missionId: pendingDelete._id });
     try {
       await deleteMission({ token, missionId: pendingDelete._id });
       music.sfx("success");
@@ -134,10 +135,12 @@ export default function MissionPanel({
 
   // Reset view when panel closes — the next open should always land on the list
   useEffect(() => {
+    log.logUi(open ? "sheet:open" : "sheet:close");
     if (!open) {
       setViewMode("list");
       setSelectedMission(null);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Pin-driven navigation: the parent passes a Mission id to focus on; we
@@ -197,21 +200,21 @@ export default function MissionPanel({
   }, [viewMode, selectedMission?.Mission._id]);
 
   function goToList(sound: "page" | "success" | null = "page") {
-    log.logInteraction("view:change", { from: viewMode, to: "list" });
+    log.logUi("action:view-list");
     if (sound) music.sfx(sound);
     setViewMode("list");
     setSelectedMission(null);
   }
 
   function goToCreate() {
-    log.logInteraction("view:change", { from: viewMode, to: "create" });
+    log.logUi("action:create-open");
     music.sfx("page");
     setSelectedMission(null);
     setViewMode("create");
   }
 
   function goToDetail(Mission: Mission, isOwn = role === "traveler") {
-    log.logInteraction("view:change", { from: viewMode, to: "detail", missionId: Mission._id, status: Mission.status });
+    log.logUi("action:view-detail", { missionId: Mission._id });
     music.sfx("page");
     setSelectedMission({ Mission, isOwn });
     setViewMode("detail");
@@ -219,6 +222,7 @@ export default function MissionPanel({
 
   function handleOpenChange(nextOpen: boolean) {
     if (!nextOpen && !isPickingCoordinate) {
+      log.logUi("sheet:close", { trigger: "backdrop" });
       onClose();
     }
   }
@@ -251,7 +255,7 @@ export default function MissionPanel({
         >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
-              <SheetBackButton aria-label="Back to missions list" onClick={() => goToList()} />
+            <SheetBackButton aria-label="Back to missions list" onClick={() => { log.logUi("action:back"); goToList(); }} />
             ) : null}
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex items-center gap-2">
@@ -284,7 +288,7 @@ export default function MissionPanel({
               <Button
                 size="sm"
                 type="button"
-                onClick={goToCreate}
+                onClick={() => { log.logUi("action:create-button"); goToCreate(); }}
                 aria-label={isTraveler ? `Create ${TERMS.mission.toLowerCase()}` : `Propose ${TERMS.mission.toLowerCase()}`}
                 className="rounded-full"
               >
@@ -292,7 +296,7 @@ export default function MissionPanel({
                 {isTraveler ? "New" : "Propose"}
               </Button>
             ) : null}
-            <SheetCloseButton aria-label="Close missions panel" />
+            <SheetCloseButton aria-label="Close missions panel" onClick={() => log.logUi("action:close-panel")} />
           </div>
         </div>
 
@@ -668,6 +672,7 @@ function FollowerListView({
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const myMissions = useQuery(tripcastApi.missions.followerListMyMissions, { token });
+  const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   const mine = myMissions?.mine ?? [];
   const publicMissions = myMissions?.public ?? [];
@@ -725,7 +730,7 @@ function FollowerListView({
           type="button"
           role="tab"
           aria-selected={tab === "active"}
-          onClick={() => setTab("active")}
+          onClick={() => { log.logUi("action:tab-change", { tab: "active" }); setTab("active"); }}
           className={cn(
             "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
             tab === "active"
@@ -739,7 +744,7 @@ function FollowerListView({
           type="button"
           role="tab"
           aria-selected={tab === "mine"}
-          onClick={() => setTab("mine")}
+          onClick={() => { log.logUi("action:tab-change", { tab: "mine" }); setTab("mine"); }}
           className={cn(
             "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
             tab === "mine"
