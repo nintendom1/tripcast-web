@@ -24,7 +24,7 @@ import { TERMS } from "../../copy/terminology";
 
 type Props = {
   open: boolean;
-  summary: ScoreSummary;
+  summary: ScoreSummary | null;
   token: string;
   onOpenChange: (open: boolean) => void;
 };
@@ -176,11 +176,15 @@ export default function AchievementsSheet({
 
   const board = useQuery(
     tripcastApi.badges.getMyBadges,
+    open && summary !== null ? { token } : "skip",
+  );
+  const catalog = useQuery(
+    tripcastApi.badges.listBadgeDefinitions,
     open ? { token } : "skip",
   );
   const history = useQuery(
     tripcastApi.scoring.listAchievementHistory,
-    open && tab === "history" ? { token } : "skip",
+    open && tab === "history" && summary !== null ? { token } : "skip",
   );
 
   useEffect(() => {
@@ -193,7 +197,10 @@ export default function AchievementsSheet({
   }, [open]);
 
   useEffect(() => {
-    if (open && board) {
+    if (!open) return;
+    if (board === null) {
+      log.warn("badge:earned:list:missing", "query", { message: "Badge board returned null" });
+    } else if (board) {
       log.logUi("badge:earned:list", {
         earnedCount: board.badges.filter((b) => b.earned).length,
         total: board.badges.length,
@@ -202,6 +209,15 @@ export default function AchievementsSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, board]);
+
+  // Compute the list of badges to display. If the user has a board (earned badges), use it.
+  // Otherwise, fallback to the full catalog shown as unearned (locked).
+  const displayBadges = board?.badges ?? catalog?.map(def => ({
+    ...def,
+    earned: false,
+    count: 0,
+    awards: [],
+  }));
 
   function changeTab(next: Tab) {
     if (next === tab) return;
@@ -219,7 +235,11 @@ export default function AchievementsSheet({
     });
   }
 
-  const recent = summary.recent.slice(0, 3);
+  const recent = summary?.recent.slice(0, 3) ?? [];
+  const totalPoints = summary?.total ?? 0;
+  const isDev = summary?.isDev ?? false;
+  const isBoardLoading = open && summary !== null && board === undefined;
+  const isCatalogLoading = open && catalog === undefined;
 
   return (
     <Sheet open={open} modal={false} onOpenChange={onOpenChange}>
@@ -251,9 +271,9 @@ export default function AchievementsSheet({
               </SheetTitle>
             </div>
             <p className="font-[var(--font-mono)] text-xs font-bold" style={{ color: AWARDS_PERSONALITY.color }}>
-              +{summary.total} {summary.total === 1 ? "point" : "points"}
+              +{totalPoints} {totalPoints === 1 ? "point" : "points"}
             </p>
-            {summary.isDev ? (
+            {isDev ? (
               <p className="text-xs font-semibold" style={{ color: AWARDS_PERSONALITY.color }}>
                 Testing Follower achievements as Traveler
               </p>
@@ -294,11 +314,15 @@ export default function AchievementsSheet({
                   <h3 className="font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">
                     Badges
                   </h3>
-                  {board ? (
-                    <BadgeBoard badges={board.badges} onSelect={openDetail} />
-                  ) : (
+                  {isBoardLoading || isCatalogLoading ? (
                     <p className="rounded-xl bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-3)]">
                       Loading badges…
+                    </p>
+                  ) : displayBadges && displayBadges.length > 0 ? (
+                    <BadgeBoard badges={displayBadges} onSelect={openDetail} />
+                  ) : (
+                    <p className="rounded-xl bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-3)]">
+                      No badges available.
                     </p>
                   )}
                 </section>
@@ -342,7 +366,7 @@ export default function AchievementsSheet({
                 </ul>
               ) : (
                 <p className="rounded-xl bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-3)]">
-                  {history ? "No achievements yet." : "Loading history…"}
+                  {history !== undefined ? "No achievements yet." : "Loading history…"}
                 </p>
               )}
             </section>
