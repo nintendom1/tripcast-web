@@ -554,11 +554,16 @@ export default function TripMap({
     showPath
   );
 
+  const sessionData = useQuery(tripcastApi.auth.currentSession, { token });
+  const followerSession = useQuery(tripcastApi.followers.followerCurrentSession, { token });
+  const currentUserId = sessionData?.userId || followerSession?.userId;
+
   const journalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
 
   const messages = useQuery(tripcastApi.messages.listMessages, { token }) ?? [];
-  const { unreadCount: messagingUnread, markAllRead: markMessagingRead } = useMessagingUnread(messages);
+  const { unreadCount: messagingUnread, markAllRead: markMessagingRead, lastReadAt } = 
+    useMessagingUnread(messages, currentUserId, role);
 
   const allMissionsForBadge = useQuery(
     tripcastApi.missions.travelerListMissions,
@@ -1694,12 +1699,17 @@ export default function TripMap({
       <MessagingSheet
         open={isMessagingOpen}
         onOpenChange={(open) => {
-          if (!open) music.sfx("close");
+          if (!open) {
+            music.sfx("close");
+            markMessagingRead();
+          }
           setIsMessagingOpen(open);
         }}
         messages={messages}
         token={token}
+        userId={currentUserId}
         role={role}
+        lastReadAt={lastReadAt}
         onNavigateToItem={handleNavigateToMessageItem}
       />
 

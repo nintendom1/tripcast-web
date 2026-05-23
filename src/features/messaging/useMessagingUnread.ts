@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState, useEffect } from "react";
-import { type Doc } from "../../convex/tripcastApi";
+import { type Doc, type Role } from "../../convex/tripcastApi";
 
-export function useMessagingUnread(messages: Doc<"messages">[]) {
+export function useMessagingUnread(messages: Doc<"messages">[], userId?: string, role?: Role) {
   const [lastReadAt, setLastReadAt] = useState<number>(() => {
     const stored = localStorage.getItem("tripcast.messagesLastReadAt");
     return stored ? parseInt(stored, 10) : 0;
@@ -10,12 +10,16 @@ export function useMessagingUnread(messages: Doc<"messages">[]) {
   const unreadCount = useMemo(() => {
     if (!messages.length) return 0;
     return messages.filter((m) => {
-      // System messages targeting someone else are already filtered by the query
       const isNew = m._creationTime > lastReadAt;
-      const isNotDeleted = !m.deletedAt;
-      return isNew && isNotDeleted;
+      const isOwnChat = (role === "traveler" && m.role === "traveler") || 
+                        (m.authorId && m.authorId === userId);
+      const isSelfTriggered = m.triggeredByUserId === userId;
+      const isTargetedAtMe = m.targetUserId === userId;
+
+      // Notify if new AND (not my chat message) AND (didn't trigger it OR it's specifically for me)
+      return isNew && !isOwnChat && (!isSelfTriggered || isTargetedAtMe);
     }).length;
-  }, [messages, lastReadAt]);
+  }, [messages, lastReadAt, userId, role]);
 
   const markAllRead = useCallback(() => {
     const now = Date.now();
@@ -34,5 +38,5 @@ export function useMessagingUnread(messages: Doc<"messages">[]) {
     }
   }, [unreadCount]);
 
-  return { unreadCount, markAllRead };
+  return { unreadCount, markAllRead, lastReadAt };
 }

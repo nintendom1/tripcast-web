@@ -564,9 +564,10 @@ export type Message = {
   authorId?: string;
   role: "traveler" | "follower" | "system";
   targetUserId?: string;
+  triggeredByUserId?: string;
+  triggeredBySessionId?: string;
   associatedId?: any;
   associatedType?: "mission" | "checkpoint" | "transaction" | "route_vote";
-  deletedAt?: number;
 };
 
 export type Doc<T extends string> = T extends "messages" ? Message : any;
@@ -1000,7 +1001,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      { role: Role } | null
+      { role: Role; userId?: string } | null
     >,
     signOut: (anyApi as any).auth.signOut as FunctionReference<
       "mutation",
@@ -1633,7 +1634,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      FollowerSession | null
+      (FollowerSession & { userId: string }) | null
     >,
     redeemInvite: (anyApi as any).followers.redeemInvite as FunctionReference<
       "mutation",
