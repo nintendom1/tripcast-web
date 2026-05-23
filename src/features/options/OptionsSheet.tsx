@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clock,
   Database,
+  Download,
   Eye,
   Flag,
   LogOut,
@@ -47,6 +48,7 @@ import CreateInviteControl from "../followers/CreateInviteControl";
 import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import BulkImportSheet from "./BulkImportSheet";
+import BulkExportSheet from "./BulkExportSheet";
 import { TERMS } from "../../copy/terminology";
 
 type OptionsSheetProps = {
@@ -69,7 +71,7 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "bulk-import" | "debug-logs";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "bulk-import" | "bulk-export" | "debug-logs";
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -396,7 +398,7 @@ export default function OptionsSheet({
 
   return (
     <>
-      <Sheet open={open && view !== "bulk-import"} onOpenChange={handleOpenChange}>
+      <Sheet open={open && view !== "bulk-import" && view !== "bulk-export"} onOpenChange={handleOpenChange}>
         <SheetContent
           side="bottom"
           data-role="options-sheet"
@@ -441,6 +443,7 @@ export default function OptionsSheet({
               onReplayFollowerTour={onReplayFollowerTour}
               onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
+              onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
               onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
@@ -467,6 +470,20 @@ export default function OptionsSheet({
           }}
         />
       ) : null}
+
+      {role === "traveler" && open && view === "bulk-export" ? (
+        <BulkExportSheet
+          open={true}
+          token={session.token}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              music.sfx("page");
+              navigateTo("options");
+              onOpenChange(true);
+            }
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -479,6 +496,7 @@ function OptionsHome({
   onReplayFollowerTour,
   onTravelFunds,
   onBulkImport,
+  onBulkExport,
   onEmergencyReset,
   onDebugLogs,
   onEndTrip,
@@ -492,6 +510,7 @@ function OptionsHome({
   onTravelFunds: () => void;
   onDebugLogs: () => void;
   onBulkImport: () => void;
+  onBulkExport: () => void;
   onEmergencyReset: () => void;
   onEndTrip?: () => void;
   onViewCredits?: () => void;
@@ -534,6 +553,7 @@ function OptionsHome({
 
           <OptionsSection label="Data / Dev">
             <OptionsRow icon={Database} title="Bulk Import" detail="Paste JSON to batch-add pins, funds, missions, and votes" onClick={onBulkImport} />
+            <OptionsRow icon={Download} title="Bulk Export" detail="Export trip history as JSON compatible with Bulk Import" onClick={onBulkExport} />
           </OptionsSection>
 
           <OptionsSection label="Tour">

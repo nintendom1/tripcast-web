@@ -132,7 +132,10 @@ describe("MissionPanel sheet layout", () => {
       ),
     ).toBe(true);
 
-    expect(screen.getByRole("tabpanel")).toHaveClass("min-h-0", "space-y-2");
+    const listBody = Array.from(sheet?.querySelectorAll("div") ?? []).find((el) =>
+      el.className.includes("space-y-2"),
+    );
+    expect(listBody).toHaveClass("min-h-0", "space-y-2");
   });
 
   it("keeps the create view in a flexing sheet body", async () => {

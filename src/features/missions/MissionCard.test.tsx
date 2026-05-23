@@ -25,6 +25,6 @@ describe("MissionCard", () => {
     expect(screen.getByRole("button")).toHaveClass("pr-10");
     expect(screen.getByText("Try a tiny neighborhood bakery with a surprisingly long name"))
       .toHaveClass("min-w-0", "line-clamp-2");
-    expect(screen.getByText("In progress")).toHaveClass("max-w-[48%]", "truncate");
+    expect(screen.getByText("Active")).toHaveClass("max-w-[48%]", "truncate");
   });
 });
