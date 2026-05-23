@@ -11,6 +11,8 @@ import {
   Trophy,
   type LucideIcon,
 } from "lucide-react";
+import { FilterButton } from "../../components/ui/FilterButton";
+import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { JournalEvent, JournalEventType, JournalNarrativeLevel, Role } from "../../convex/tripcastApi";
@@ -19,8 +21,6 @@ import {
   SheetBody,
   SheetCloseButton,
   SheetContent,
-  SheetTab,
-  SheetTabs,
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
@@ -35,20 +35,18 @@ import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
 import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
-type FilterTab = "story" | "all" | "entries" | "missions";
+type FilterTab = "story" | "all" | "entries";
 
-const FILTER_TABS: { id: FilterTab; label: string }[] = [
-  { id: "story", label: TERMS.story },
-  { id: "all", label: "All" },
-  { id: "entries", label: "Entries" },
-  { id: "missions", label: TERMS.missions },
+const FILTER_TABS: { value: FilterTab; label: string }[] = [
+  { value: "story", label: TERMS.story },
+  { value: "all", label: "All" },
+  { value: "entries", label: "Entries" },
 ];
 
 const EMPTY_COPY: Record<FilterTab, string> = {
   story: "No story entries yet.",
   all: "No entries.",
   entries: "No entries yet.",
-  missions: "No mission events yet.",
 };
 const JOURNAL_PERSONALITY = MEADOW_SHEET_PERSONALITIES.journal;
 const MISSIONS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
@@ -85,8 +83,6 @@ function filterEvents(events: JournalEvent[], tab: FilterTab): JournalEvent[] {
       return events.filter((e) => !e.type.startsWith("route_vote_"));
     case "entries":
       return events.filter((e) => e.type === "story");
-    case "missions":
-      return events.filter((e) => e.type.startsWith("mission_"));
   }
 }
 
@@ -102,7 +98,7 @@ function visualForEvent(type: JournalEventType, narrativeLevel: JournalNarrative
   if (type === "story") {
     return narrativeLevel === "narrative"
       ? { Icon: Camera, tint: JOURNAL_PERSONALITY.color, kicker: "Story" }
-      : { Icon: MapPin, tint: "var(--ink-1)", kicker: "Story" };
+      : { Icon: MapPin, tint: "var(--ink-1)", kicker: TERMS.checkIn };
   }
   if (type.startsWith("mission_")) {
     return { Icon: Trophy, tint: MISSIONS_PERSONALITY.color, kicker: "Mission" };
@@ -140,23 +136,32 @@ function formatDate(ts: number): string {
 type JournalSheetProps = {
   events: JournalEvent[];
   token: string;
+  /** Controls visibility. Kept mounted while closed so the close transition plays. */
+  open: boolean;
   /** Role gates the "New" create action — Traveler only. */
   role?: Role;
   onClose: () => void;
   onStorySelect: (event: JournalEvent) => void;
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   onMarkAllRead: () => void;
+  /** Enter map coordinate-pick mode; receives a callback invoked with the picked coord. */
+  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  /** True while a map coordinate pick is in progress — hides the sheet so the map is tappable. */
+  isPickingCoordinate?: boolean;
   debugSource?: { source: string; sourceLabel: string };
 };
 
 export default function JournalSheet({
   events,
   token,
+  open,
   role,
   onClose,
   onStorySelect,
   onLocationFocus,
   onMarkAllRead,
+  onRequestCoordinatePick,
+  isPickingCoordinate,
   debugSource,
 }: JournalSheetProps) {
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
@@ -164,13 +169,15 @@ export default function JournalSheet({
   const [storyTitle, setStoryTitle] = useState("");
   const [storyBody, setStoryBody] = useState("");
   const [storyLocation, setStoryLocation] = useState("");
+  const [storyLat, setStoryLat] = useState<number | undefined>(undefined);
+  const [storyLon, setStoryLon] = useState<number | undefined>(undefined);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, { token });
+  const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, open ? { token } : "skip");
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
-  useActiveUiContext(true, {
+  useActiveUiContext(open, {
     sheetName: "JournalSheet",
     label: TERMS.journal,
     view: viewMode === "create" ? "create-story" : `list:${activeTab}`,
@@ -179,19 +186,29 @@ export default function JournalSheet({
     file: "src/features/journal/JournalSheet.tsx",
   }, { boundsSelector: "[data-role='journal-sheet']" });
 
+  // Mark events read when the sheet closes (open → false edge) and on unmount
+  // while open. The sheet now stays mounted while closed so its close
+  // animation can play, so we can no longer rely on unmount alone.
+  const wasOpen = useRef(open);
   useEffect(() => {
-    return () => { onMarkAllRead(); };
+    if (wasOpen.current && !open) onMarkAllRead();
+    wasOpen.current = open;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  useEffect(() => {
+    return () => { if (wasOpen.current) onMarkAllRead(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
+    if (!open) return;
     const id = setTimeout(() => {
       const h = containerRef.current?.getBoundingClientRect().height ?? 0;
       if (h > 0) log.logInteraction("sheet:size", { heightPx: Math.round(h), viewportPx: window.innerHeight });
     }, 300);
     return () => clearTimeout(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [open]);
 
   const filtered = filterEvents(events, activeTab);
   const isTraveler = role === "traveler";
@@ -205,12 +222,16 @@ export default function JournalSheet({
         title: storyTitle.trim() || undefined,
         note: storyBody.trim() || undefined,
         locationLabel: storyLocation.trim() || undefined,
+        lat: storyLat,
+        lon: storyLon,
         showInStory: true,
         source: "inline_form",
       });
       setStoryTitle("");
       setStoryBody("");
       setStoryLocation("");
+      setStoryLat(undefined);
+      setStoryLon(undefined);
       setViewMode("list");
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Something went wrong.");
@@ -222,10 +243,10 @@ export default function JournalSheet({
   return (
     <>
     <Sheet
-      open
+      open={open}
       modal={false}
-      onOpenChange={(open) => {
-        if (!open) {
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
           log.logInteraction("sheet:close", { trigger: "backdrop" });
           onClose();
         }
@@ -237,7 +258,10 @@ export default function JournalSheet({
         showBackdrop={false}
         mapAdjacent
         data-role="journal-sheet"
-        className="z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+        className={cn(
+          "z-[10] max-h-[60dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+          isPickingCoordinate && "invisible pointer-events-none",
+        )}
       >
         <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: JOURNAL_PERSONALITY.color }} />
         <div
@@ -259,6 +283,17 @@ export default function JournalSheet({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {viewMode === "list" && (
+              <FilterButton
+                options={FILTER_TABS}
+                value={activeTab}
+                defaultValue="story"
+                onChange={(v) => {
+                  log.logInteraction("filter:change", { from: activeTab, to: v });
+                  setActiveTab(v);
+                }}
+              />
+            )}
             {isTraveler && viewMode === "list" && (
               <Button
                 size="sm"
@@ -296,6 +331,23 @@ export default function JournalSheet({
                 onChange={(e) => setStoryLocation(e.target.value)}
                 maxLength={120}
               />
+              {onRequestCoordinatePick && (
+                <LocationPickerField
+                  lat={storyLat}
+                  lon={storyLon}
+                  onPick={() => {
+                    log.logInteraction("coordinate:pick-mode:request", { form: "journal-new-story" });
+                    onRequestCoordinatePick((coord) => {
+                      setStoryLat(coord.lat);
+                      setStoryLon(coord.lon);
+                    });
+                  }}
+                  onClear={() => {
+                    setStoryLat(undefined);
+                    setStoryLon(undefined);
+                  }}
+                />
+              )}
               {createError && (
                 <p className="text-sm text-rose-600" role="alert">{createError}</p>
               )}
@@ -313,27 +365,7 @@ export default function JournalSheet({
           </SheetBody>
         ) : (
           <>
-        <SheetTabs aria-label="Journal filters" className="mt-3">
-          {FILTER_TABS.map((tab) => (
-            <SheetTab
-              key={tab.id}
-              id={`journal-tab-${tab.id}`}
-              aria-controls="journal-tabpanel"
-              active={activeTab === tab.id}
-              onClick={() => {
-                log.logInteraction("filter:change", { from: activeTab, to: tab.id });
-                setActiveTab(tab.id);
-              }}
-            >
-              {tab.label}
-            </SheetTab>
-          ))}
-        </SheetTabs>
-
         <SheetBody
-          id="journal-tabpanel"
-          role="tabpanel"
-          aria-labelledby={`journal-tab-${activeTab}`}
           style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
         >
           {filtered.length === 0 ? (
@@ -429,72 +461,70 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryR
         onClick={onSelect}
         aria-label={cardLabel}
         className={cn(
-          "group relative mb-2 flex flex-col items-stretch gap-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform",
+          "group relative mb-2 flex flex-col items-stretch overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] text-left shadow-[var(--shadow-card)] transition-transform",
           "active:scale-[0.99]",
         )}
       >
-        <div className="flex items-start justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.1em]">
-          <span className="flex items-center gap-1.5 text-[var(--ink-3)]">
-            {fullKicker}
-            {stateEmoji ? (
-              <span aria-hidden="true" className="text-sm normal-case tracking-normal">
-                {stateEmoji}
-              </span>
-            ) : null}
+        {/* Date tape header */}
+        <div
+          className="flex items-center gap-2 px-3 py-1"
+          style={{ background: visual.tint }}
+          aria-hidden="true"
+        >
+          <span className="font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-white/90">
+            {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </span>
-          <span className="flex shrink-0 items-center gap-1">
-            <span
-              className="rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[10px]"
-              style={{
-                color: visual.tint,
-                background: `color-mix(in oklab, ${visual.tint} 12%, transparent)`,
-              }}
-            >
-              {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
-            </span>
+          {stateEmoji ? (
+            <span className="ml-auto text-sm leading-none">{stateEmoji}</span>
+          ) : null}
+        </div>
+
+        {/* Card body */}
+        <div className="flex flex-col gap-1 px-3 py-2">
+          <div className="flex items-start justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.1em]">
+            <span className="text-[var(--ink-3)]">{fullKicker}</span>
             {isCheckIn ? (
               <ChevronRight
                 aria-hidden="true"
-                className="h-4 w-4 text-[var(--ink-3)] transition-colors group-hover:text-[var(--ink-1)]"
+                className="h-4 w-4 shrink-0 text-[var(--ink-3)] transition-colors group-hover:text-[var(--ink-1)]"
               />
             ) : null}
-          </span>
+          </div>
+
+          {event.title ? (
+            <div className="font-[var(--font-display)] text-sm font-bold leading-snug text-[var(--ink-1)]">
+              {event.title}
+            </div>
+          ) : null}
+
+          {event.body ? (
+            <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)]">
+              {event.body}
+            </p>
+          ) : null}
+
+          {event.type === "story" && event.checkpointId ? (
+            <AttributionPublicLine
+              token={token}
+              sourceType="story"
+              sourceId={event.checkpointId}
+              className="text-[11px] text-[var(--ink-3)]"
+            />
+          ) : null}
+
+          {event.locationLabel ? (
+            <div className="flex items-center gap-1 text-[11px] text-[var(--ink-3)]">
+              <MapPin className="h-3 w-3" aria-hidden="true" />
+              {event.locationLabel}
+            </div>
+          ) : null}
+
+          {actualCostUsd !== undefined && actualCostUsd !== 0 ? (
+            <div className="text-[11px] font-semibold" style={{ color: "var(--green)" }}>
+              Actual cost: {formatUsd(actualCostUsd)}
+            </div>
+          ) : null}
         </div>
-
-        {event.title ? (
-          <div className="font-[var(--font-display)] text-sm font-bold leading-snug text-[var(--ink-1)]">
-            {event.title}
-          </div>
-        ) : null}
-
-        {event.body ? (
-          <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)]">
-            {event.body}
-          </p>
-        ) : null}
-
-        {event.type === "story" && event.checkpointId ? (
-          <AttributionPublicLine
-            token={token}
-            sourceType="story"
-            sourceId={event.checkpointId}
-            className="text-[11px] text-[var(--ink-3)]"
-          />
-        ) : null}
-
-        {event.locationLabel ? (
-          <div className="flex items-center gap-1 text-[11px] text-[var(--ink-3)]">
-            <MapPin className="h-3 w-3" aria-hidden="true" />
-            {event.locationLabel}
-          </div>
-        ) : null}
-
-        {actualCostUsd !== undefined && actualCostUsd !== 0 ? (
-          <div className="text-[11px] font-semibold" style={{ color: "var(--green)" }}>
-            Actual cost: {formatUsd(actualCostUsd)}
-          </div>
-        ) : null}
-
       </button>
     </li>
   );

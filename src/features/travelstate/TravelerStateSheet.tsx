@@ -2,7 +2,9 @@ import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
-import { X } from "lucide-react";
+import { Heart, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
@@ -50,11 +52,16 @@ type TravelerStateSheetProps = {
 
 type TabView = "state" | "visibility" | "auto";
 
+const STATE_PERSONALITY = MEADOW_SHEET_PERSONALITIES.state;
+
+// Matches the shared bottom-sheet curve in components/ui/sheet.tsx and the
+// redesign reference (tripcast-handoff-repair): a 0.34s slide with a slight
+// overshoot so the State panel opens/closes like every other sheet.
 const PANEL_MOTION = {
   initial: { y: "100%" },
   animate: { y: 0 },
   exit: { y: "100%" },
-  transition: { duration: 0.22, ease: "easeOut" as const },
+  transition: { duration: 0.34, ease: [0.22, 0.9, 0.3, 1.05] as const },
 };
 
 function computeCurrentAutoScores(autoState: AutoState | null | undefined) {
@@ -480,33 +487,51 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     <motion.div
       {...PANEL_MOTION}
       data-role="traveler-state-sheet"
-      className="absolute inset-x-0 bottom-0 z-[10] flex max-h-[90dvh] flex-col rounded-t-xl border bg-background shadow-xl"
+      className="absolute inset-x-0 bottom-0 z-[10] flex max-h-[90dvh] flex-col rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
     >
+      {/* Color accent rail */}
+      <div
+        aria-hidden="true"
+        className="absolute left-0 right-0 top-0 h-1 rounded-t-[var(--radius-sheet)]"
+        style={{ background: STATE_PERSONALITY.color }}
+      />
+
       {/* Header */}
-      <div className="flex flex-none items-center justify-between border-b px-4 py-3">
+      <div
+        className="flex flex-none items-start justify-between border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
+        style={{ background: `linear-gradient(180deg, ${STATE_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+      >
         <div className="flex items-center gap-2">
-          <span className="text-xl" aria-hidden="true">
-            {stateEmoji}
+          <span
+            aria-hidden="true"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+            style={{ background: STATE_PERSONALITY.color }}
+          >
+            <Heart className="h-4 w-4" />
           </span>
-          <h2 className="text-sm font-bold">{TERMS.travelerState}</h2>
-          {lastUpdated && (
-            <span className="text-xs text-muted-foreground" suppressHydrationWarning>
-              · {formatRelativeTime(lastUpdated)}
-            </span>
-          )}
+          <div className="flex flex-col">
+            <h2 className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+              How are you?
+            </h2>
+            {lastUpdated && (
+              <span className="text-[11px] text-[var(--ink-3)]" suppressHydrationWarning>
+                {stateEmoji} {formatRelativeTime(lastUpdated)}
+              </span>
+            )}
+          </div>
         </div>
         <button
           type="button"
           onClick={onClose}
           aria-label="Close Traveler State"
-          className="rounded-md p-1 hover:bg-muted"
+          className="rounded-full p-1.5 text-[var(--ink-3)] hover:bg-[var(--bg-card)] hover:text-[var(--ink-1)]"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
       {/* Tab bar */}
-      <div className="flex flex-none border-b">
+      <div className="flex flex-none gap-1 border-b border-[var(--line-soft)] px-4 py-2">
         {(["state", "visibility", "auto"] as TabView[]).map((t) => (
           <button
             key={t}
@@ -516,16 +541,23 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               setTab(t);
               setError(null);
             }}
-            className={`flex-1 py-2 text-sm font-medium transition-colors ${
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-semibold capitalize transition-colors",
               tab === t
-                ? "border-b-2 border-navy text-navy"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+                ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+                : "bg-[var(--bg-card)] text-[var(--ink-3)]",
+            )}
           >
-            <span className="inline-flex items-center justify-center gap-1">
+            <span className="inline-flex items-center gap-1">
               {t === "state" ? TERMS.state : t === "visibility" ? "Visibility" : TERMS.autoState}
               {t === "auto" && autoState?.autoStateEnabled ? (
-                <span className="rounded-full bg-navy/10 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-navy">
+                <span
+                  className="rounded-full px-1.5 py-px text-[8px] font-bold uppercase tracking-wider"
+                  style={{
+                    background: `color-mix(in oklab, ${STATE_PERSONALITY.color} 20%, transparent)`,
+                    color: STATE_PERSONALITY.color,
+                  }}
+                >
                   AUTO
                 </span>
               ) : null}

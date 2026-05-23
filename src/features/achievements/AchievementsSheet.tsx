@@ -247,9 +247,12 @@ export default function AchievementsSheet({
                 <Medal className="h-4 w-4" />
               </span>
               <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-                {summary.total} {summary.total === 1 ? "point" : "points"}
+                Trophy Case
               </SheetTitle>
             </div>
+            <p className="font-[var(--font-mono)] text-xs font-bold" style={{ color: AWARDS_PERSONALITY.color }}>
+              +{summary.total} {summary.total === 1 ? "point" : "points"}
+            </p>
             {summary.isDev ? (
               <p className="text-xs font-semibold" style={{ color: AWARDS_PERSONALITY.color }}>
                 Testing Follower achievements as Traveler

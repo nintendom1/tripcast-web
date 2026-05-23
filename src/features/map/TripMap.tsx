@@ -997,6 +997,16 @@ export default function TripMap({
     setCoordinatePickMode({ label, callback });
   }
 
+  function handleRequestStoryCoordinatePick(
+    callback: (coord: { lat: number; lon: number }) => void,
+  ) {
+    log.logInteraction("coordinate:pick-mode:enter", { source: "Story" });
+    music.sfx("page");
+    const label = "the story location";
+    coordinatePickModeRef.current = { label, callback };
+    setCoordinatePickMode({ label, callback });
+  }
+
   function handleVoteOverlayChange(
     overlay: RouteVoteMapOverlayType | null,
     optionNumberById?: Record<string, number> | null,
@@ -1439,9 +1449,9 @@ export default function TripMap({
         />
       )}
 
-      {/* Vote panels — hidden (not unmounted) during coordinate pick to preserve form state */}
-      <AnimatePresence>
-        {role === "follower" && isVotePanelOpen && (
+      {/* Vote panels — kept mounted (not unmounted) during coordinate pick to
+          preserve form state, and while closed so the close transition plays. */}
+      {role === "follower" && (
           <FeatureBoundary
             resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
@@ -1456,6 +1466,7 @@ export default function TripMap({
           >
             <RouteVotePanel
               key="follower-vote-panel"
+              open={isVotePanelOpen}
               token={token}
               onClose={() => {
                 music.sfx("close");
@@ -1469,10 +1480,9 @@ export default function TripMap({
               debugSource={votesDebugSource}
             />
           </FeatureBoundary>
-        )}
-      </AnimatePresence>
+      )}
 
-      {role === "traveler" && isVotePanelOpen && (
+      {role === "traveler" && (
         <FeatureBoundary
             resetKeys={[isVotePanelOpen, role, token]}
             onClose={() => {
@@ -1486,6 +1496,7 @@ export default function TripMap({
             fallbackClassName={PANEL_ERROR_CLASS}
           >
             <RouteVoteProgress
+              open={isVotePanelOpen}
               token={token}
               onClose={() => {
                 music.sfx("close");
@@ -1660,19 +1671,18 @@ export default function TripMap({
         />
       </FeatureBoundary>
 
-      <AnimatePresence>
-        {isJournalOpen && (
-          <FeatureBoundary
-            resetKeys={[isJournalOpen, journalEvents.length]}
-            onClose={() => {
-              music.sfx("close");
-              setIsJournalOpen(false);
-            }}
-            title="Journal hit a problem."
-            message="Try again, or close journal and reopen it."
-            fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
-          >
+      <FeatureBoundary
+        resetKeys={[isJournalOpen, journalEvents.length]}
+        onClose={() => {
+          music.sfx("close");
+          setIsJournalOpen(false);
+        }}
+        title="Journal hit a problem."
+        message="Try again, or close journal and reopen it."
+        fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
+      >
             <JournalSheet
+              open={isJournalOpen}
               events={journalEvents}
               token={token}
               role={role}
@@ -1689,11 +1699,11 @@ export default function TripMap({
               }}
               onLocationFocus={handleHistoryLocationFocus}
               onMarkAllRead={markAllRead}
+              onRequestCoordinatePick={handleRequestStoryCoordinatePick}
+              isPickingCoordinate={isPickingCoordinate}
               debugSource={journalDebugSource}
             />
-          </FeatureBoundary>
-        )}
-      </AnimatePresence>
+      </FeatureBoundary>
 
       <StoryDetailSheet
         event={selectedStoryEvent}
@@ -1714,6 +1724,8 @@ export default function TripMap({
         }
         missionId={selectedStoryEvent?.missionId ?? undefined}
         onNavigateToMission={handleOpenMissionFromStory}
+        onRequestCoordinatePick={handleRequestStoryCoordinatePick}
+        isPickingCoordinate={isPickingCoordinate}
         debugSource={storyDebugSource}
       />
 

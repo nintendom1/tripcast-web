@@ -55,6 +55,7 @@ function setupMocks({ detailResult }: { detailResult: unknown }) {
 function renderProgress() {
   return render(
     <RouteVoteProgress
+      open
       token="test-token"
       onClose={vi.fn()}
       onRequestCoordinatePick={vi.fn()}

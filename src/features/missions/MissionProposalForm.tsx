@@ -6,6 +6,7 @@ import { getLocalDateKey } from "../achievements/dateUtils";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
+import { LocationPickerField } from "../map/MapPicker";
 
 type Props = {
   token: string;
@@ -163,29 +164,15 @@ export default function MissionProposalForm({ token, onSuccess, onRequestCoordin
           onChange={(e) => setLocationLabel(e.target.value)}
           maxLength={200}
         />
-        <div className="flex items-center gap-2 mt-1">
-          {onRequestCoordinatePick && (
-            <button
-              type="button"
-              className="text-xs text-navy underline"
-              onClick={handlePickOnMap}
-            >
-              ↗ Pick on map
-            </button>
-          )}
-          {lat !== undefined && lon !== undefined && (
-            <span className="text-xs text-muted-foreground">
-              📍 {lat.toFixed(5)}, {lon.toFixed(5)}
-              <button
-                type="button"
-                className="ml-1 text-rose-500 underline"
-                onClick={() => { setLat(undefined); setLon(undefined); }}
-              >
-                clear
-              </button>
-            </span>
-          )}
-        </div>
+        {onRequestCoordinatePick && (
+          <LocationPickerField
+            className="mt-1"
+            lat={lat}
+            lon={lon}
+            onPick={handlePickOnMap}
+            onClear={() => { setLat(undefined); setLon(undefined); }}
+          />
+        )}
       </div>
 
       <div className="flex gap-3">

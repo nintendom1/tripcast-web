@@ -28,9 +28,17 @@ function makeEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
   };
 }
 
+// The filter is a dropdown (FilterButton), not a tablist: open it, then click
+// the option by its label.
+function selectFilter(name: string) {
+  fireEvent.click(screen.getByRole("button", { name: /filter/i }));
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
 const defaultProps = {
   events: [] as JournalEvent[],
   token: "test-token",
+  open: true,
   onClose: vi.fn(),
   onStorySelect: vi.fn(),
   onLocationFocus: vi.fn(),
@@ -71,7 +79,7 @@ describe("JournalSheet", () => {
       makeEvent({ _id: "b", narrativeLevel: "activity", title: "Activity Mission", type: "mission_visible" }),
     ];
     render(<JournalSheet {...defaultProps} events={events} />);
-    fireEvent.click(screen.getByRole("tab", { name: "All" }));
+    selectFilter("All");
     expect(screen.getByText("Story Event")).toBeInTheDocument();
     expect(screen.getByText("Activity Mission")).toBeInTheDocument();
   });
@@ -82,7 +90,7 @@ describe("JournalSheet", () => {
       makeEvent({ _id: "b", narrativeLevel: "activity", title: "Activity Vote", type: "route_vote_opened" }),
     ];
     render(<JournalSheet {...defaultProps} events={events} />);
-    fireEvent.click(screen.getByRole("tab", { name: "All" }));
+    selectFilter("All");
     expect(screen.getByText("Story Event")).toBeInTheDocument();
     expect(screen.queryByText("Activity Vote")).not.toBeInTheDocument();
   });
@@ -111,7 +119,7 @@ describe("JournalSheet", () => {
         onStorySelect={onStorySelect}
       />,
     );
-    fireEvent.click(screen.getByRole("tab", { name: "All" }));
+    selectFilter("All");
     fireEvent.click(screen.getByRole("button", { name: /check in: quick stop/i }));
     expect(onStorySelect).toHaveBeenCalledWith(event);
   });
@@ -135,7 +143,7 @@ describe("JournalSheet", () => {
       }),
     ];
     render(<JournalSheet {...defaultProps} events={events} onLocationFocus={onLocationFocus} />);
-    fireEvent.click(screen.getByRole("tab", { name: "Missions" }));
+    selectFilter("All");
     fireEvent.click(screen.getByRole("button", { name: /mission accepted/i }));
     expect(onLocationFocus).toHaveBeenCalledWith({ lat: 47.6, lon: -122.3 });
   });

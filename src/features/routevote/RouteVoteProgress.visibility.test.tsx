@@ -69,6 +69,7 @@ function setupMocks() {
 function renderProgress(isPickingCoordinate?: boolean, onClose = vi.fn()) {
   return render(
     <RouteVoteProgress
+      open
       token="test-token"
       onClose={onClose}
       onRequestCoordinatePick={vi.fn()}
@@ -160,6 +161,7 @@ describe("RouteVoteProgress: Visibility during coordinate pick", () => {
     // Re-render with isPickingCoordinate=false
     localRerender(
       <RouteVoteProgress
+        open
         token="test-token"
         onClose={vi.fn()}
         onRequestCoordinatePick={vi.fn()}

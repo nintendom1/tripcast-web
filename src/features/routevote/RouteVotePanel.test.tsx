@@ -83,6 +83,7 @@ function setupMocks() {
 function renderPanel() {
   return render(
     <RouteVotePanel
+      open
       token="test-token"
       onClose={vi.fn()}
       onVoteOverlayChange={vi.fn()}

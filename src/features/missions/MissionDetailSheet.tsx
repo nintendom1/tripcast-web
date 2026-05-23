@@ -6,6 +6,7 @@ import type { Mission, MissionStatus, JournalEvent, Role, TransactionInlineInput
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
+import { LocationPickerField } from "../map/MapPicker";
 import TravelFundsInlineSection, {
   type TravelFundsInlineState,
 } from "../travelfunds/TravelFundsInlineSection";
@@ -482,29 +483,15 @@ export default function MissionDetailSheet({
             onChange={(e) => setEditLocation(e.target.value)}
             maxLength={200}
           />
-          <div className="flex items-center gap-2 mt-1">
-            {onRequestCoordinatePick && (
-              <button
-                type="button"
-                className="text-xs text-navy underline"
-                onClick={handlePickEditCoordinates}
-              >
-                ↗ Pick on map
-              </button>
-            )}
-            {editLat !== undefined && editLon !== undefined && (
-              <span className="text-xs text-muted-foreground">
-                📍 {editLat.toFixed(5)}, {editLon.toFixed(5)}
-                <button
-                  type="button"
-                  className="ml-1 text-rose-500 underline"
-                  onClick={() => { setEditLat(undefined); setEditLon(undefined); }}
-                >
-                  clear
-                </button>
-              </span>
-            )}
-          </div>
+          {onRequestCoordinatePick && (
+            <LocationPickerField
+              className="mt-1"
+              lat={editLat}
+              lon={editLon}
+              onPick={handlePickEditCoordinates}
+              onClear={() => { setEditLat(undefined); setEditLon(undefined); }}
+            />
+          )}
         </div>
 
         <div className="flex gap-3">

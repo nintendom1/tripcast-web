@@ -18,7 +18,14 @@ import {
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { StatBar } from "../../components/rpg/StatBar";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
-import { formatTimeRemaining, getRouteVoteMapBounds } from "../../lib/routeVoteUtils";
+import {
+  formatTimeRemaining,
+  getRouteVoteMapBounds,
+  matchesVoteStatusFilter,
+  VOTE_FILTER_OPTIONS,
+  type VoteStatusFilter,
+} from "../../lib/routeVoteUtils";
+import { FilterButton } from "../../components/ui/FilterButton";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -30,6 +37,8 @@ import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 
 type RouteVoteProgressProps = {
   token: string;
+  /** Controls visibility. Kept mounted while closed so the close transition plays. */
+  open: boolean;
   onClose: () => void;
   onRequestCoordinatePick: (
     optionIndex: number,
@@ -400,6 +409,7 @@ function VoteDetailView({
 
 export default function RouteVoteProgress({
   token,
+  open,
   onClose,
   onRequestCoordinatePick,
   referenceLocation,
@@ -412,7 +422,10 @@ export default function RouteVoteProgress({
   onRequestOpenMissionDetail,
   debugSource,
 }: RouteVoteProgressProps) {
-  const votes = useQuery(tripcastApi.routeVotes.travelerListRouteVotes, { token });
+  const votes = useQuery(
+    tripcastApi.routeVotes.travelerListRouteVotes,
+    open ? { token } : "skip",
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const log = useDebugLogger("RouteVoteProgress", "src/features/routevote/RouteVoteProgress.tsx");
 
@@ -423,8 +436,11 @@ export default function RouteVoteProgress({
   const [view, setView] = useState<View>("list");
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const [actingVoteId, setActingVoteId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<VoteStatusFilter>("all");
+  const filteredVotes =
+    votes?.filter((vote) => matchesVoteStatusFilter(vote.effectiveStatus, statusFilter)) ?? votes;
   const music = useMusicSafe();
-  useActiveUiContext(true, {
+  useActiveUiContext(open, {
     sheetName: "RouteVoteProgress",
     label: TERMS.votes,
     view: isPickingCoordinate ? `${view}:coordinate-pick` : view,
@@ -494,7 +510,7 @@ export default function RouteVoteProgress({
 
   return (
     <Sheet
-      open
+      open={open}
       modal={false}
       disablePointerDismissal={isPickingCoordinate}
       onOpenChange={(nextOpen) => {
@@ -553,7 +569,20 @@ export default function RouteVoteProgress({
               </div>
             </div>
           </div>
-          <SheetCloseButton aria-label="Close route votes" />
+          <div className="flex items-center gap-2">
+            {view === "list" && votes ? (
+              <FilterButton
+                options={VOTE_FILTER_OPTIONS}
+                value={statusFilter}
+                defaultValue="all"
+                onChange={(v) => {
+                  log.logInteraction("filter:change", { from: statusFilter, to: v });
+                  setStatusFilter(v);
+                }}
+              />
+            ) : null}
+            <SheetCloseButton aria-label="Close route votes" />
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -633,8 +662,10 @@ export default function RouteVoteProgress({
                 <PendingNotice label="Loading votes..." />
               ) : votes.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">No active votes.</p>
+              ) : (filteredVotes ?? []).length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">No {statusFilter} votes.</p>
               ) : (
-                votes.map((vote) => (
+                (filteredVotes ?? []).map((vote) => (
                   <VoteListCard
                     key={vote._id}
                     vote={vote}
