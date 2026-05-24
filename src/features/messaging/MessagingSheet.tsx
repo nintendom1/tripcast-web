@@ -136,7 +136,7 @@ export function MessagingSheet({
         >
           <div className="flex items-center gap-2">
             <span
-              className="grid h-8 w-8 place-items-center rounded-full text-white shadow-sm"
+              className="grid h-8 w-8 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
               style={{ background: MESSAGING_PERSONALITY.color }}
             >
               <MessageSquare className="h-4 w-4" />
@@ -165,24 +165,25 @@ export function MessagingSheet({
           ))}
           {messages.length === 0 && (
             <div className="flex h-full flex-col items-center justify-center text-center py-12">
-              <p className="text-sm text-muted-foreground italic">No messages yet. Say hello!</p>
+              <p className="text-sm italic text-[var(--ink-3)]">No messages yet. Say hello!</p>
             </div>
           )}
         </div>
 
-        <form onSubmit={handleSend} className="border-t border-[var(--line-soft)] bg-[var(--bg-paper)] p-4 pb-[calc(100px + env(safe-area-inset-bottom))]">
+        <form onSubmit={handleSend} className="border-t border-[var(--line-soft)] bg-[var(--bg-card)] p-4 pb-[calc(100px + env(safe-area-inset-bottom))]">
           <div className="flex items-center gap-2">
             <input
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value.slice(0, 500))}
               placeholder="Type a message..."
-              className="flex-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] placeholder:text-[var(--ink-3)] px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-[var(--ink-1)]"
+              className="flex-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-paper)] px-4 py-2 text-sm text-[var(--ink-1)] outline-none placeholder:text-[var(--ink-3)] focus:border-[var(--flag)] focus:ring-2 focus:ring-[var(--flag)]"
             />
             <button
               type="submit"
               disabled={!inputText.trim()}
-              className="grid h-10 w-10 place-items-center rounded-full bg-[var(--ink-1)] text-[var(--ink-on-dark)] disabled:opacity-50"
+              className="grid h-10 w-10 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm transition-opacity disabled:opacity-50"
+              style={{ background: MESSAGING_PERSONALITY.color }}
             >
               <Send className="h-5 w-5" />
             </button>
@@ -206,8 +207,8 @@ function MessageItem({ msg, isOwn, isViewerTraveler, onDelete, onNavigate }: {
         id={`msg-${msg._id}`}
         onClick={() => msg.associatedType && msg.associatedId && onNavigate?.(msg.associatedType, msg.associatedId as string)}
         className={cn(
-          "relative mx-auto max-w-[90%] rounded-lg border border-dashed border-[var(--line-strong)] bg-muted/30 p-3 text-center transition-colors",
-          msg.associatedId && "cursor-pointer hover:bg-muted/50"
+          "relative mx-auto max-w-[90%] rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-center shadow-sm transition-colors",
+          msg.associatedId && "cursor-pointer hover:bg-[var(--meter-track)]"
         )}
       >
         <div className="flex items-center justify-center gap-1.5 mb-1">
@@ -246,8 +247,8 @@ function MessageItem({ msg, isOwn, isViewerTraveler, onDelete, onNavigate }: {
             className={cn(
               "rounded-2xl px-3 py-1.5 text-sm shadow-sm break-all",
               isOwn 
-                ? "text-[var(--ink-on-dark)] rounded-tr-none"
-                : (msg.role === 'traveler' ? "text-[var(--ink-on-dark)] rounded-tl-none" : "bg-[var(--bg-card)] text-[var(--ink-1)] border border-[var(--line-soft)] rounded-tl-none")
+                ? "text-[var(--ink-on-brand)] rounded-tr-none"
+                : (msg.role === 'traveler' ? "text-[var(--ink-on-brand)] rounded-tl-none" : "bg-[var(--bg-card)] text-[var(--ink-1)] border border-[var(--line-soft)] rounded-tl-none")
             )}
             style={isOwn 
               ? { backgroundColor: msg.role === 'traveler' ? TRAVELER_COLOR : MESSAGING_PERSONALITY.color } 
