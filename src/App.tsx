@@ -35,6 +35,7 @@ import { getLocalDateKey } from "./features/achievements/dateUtils";
 import { useInteractionLogger } from "./debug/useInteractionLogger";
 import DebugErrorBoundary from "./debug/DebugErrorBoundary";
 import { log as debugLog } from "./debug/debugLogger";
+import { ThemeProvider } from "./providers/ThemeProvider";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -79,7 +80,9 @@ export default function App({ convexReady }: AppProps) {
       }}
     >
       <DebugErrorBoundary>
-        <ConnectedApp />
+        <ThemeProvider>
+          <ConnectedApp />
+        </ThemeProvider>
       </DebugErrorBoundary>
     </ErrorBoundary>
   );

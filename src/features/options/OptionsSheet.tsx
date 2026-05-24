@@ -9,6 +9,7 @@ import {
   Download,
   Eye,
   Flag,
+  Infinity,
   LogOut,
   Play,
   ShieldAlert,
@@ -27,6 +28,7 @@ import DebugPanel from "../../debug/DebugPanel";
 import type { DebugLogger } from "../../debug/useDebugLogger";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { logMapEvent } from "../../debug/debugLogger";
+import { useTheme, type ThemeMode } from "../../providers/ThemeProvider";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -177,59 +179,18 @@ function TravelerTimezoneSection({ token }: { token: string }) {
   );
 }
 
-type ThemeId = "meadow" | "constellation";
-
-const THEME_MAPPINGS: Record<ThemeId, Record<string, string>> = {
-  meadow: {
-    "--bg-paper": "#fdf6e3",
-    "--bg-card": "#fffdf4",
-    "--ink-1": "#3a2e1f",
-    "--ink-2": "#7a6849",
-    "--ink-3": "#b8a578",
-    "--flag": "#ff8b4a",
-    "--line-soft": "rgba(0,0,0,0.06)",
-    "--meter-track": "rgba(0,0,0,0.05)",
-    "--font-display": '"Fredoka", "Quicksand", sans-serif',
-  },
-  constellation: {
-    "--bg-paper": "#1c1f3a",
-    "--bg-card": "#2c2f4f",
-    "--ink-1": "#f0eaff",
-    "--ink-2": "#c2bdee",
-    "--ink-3": "#8a85c2",
-    "--flag": "#ffb24a",
-    "--line-soft": "rgba(255,255,255,0.1)",
-    "--meter-track": "rgba(255,255,255,0.08)",
-    "--font-display": '"Cormorant Garamond", serif',
-  },
-};
-
 function AppearanceSection() {
-  const [theme, setTheme] = useState<ThemeId>(
-    () => (localStorage.getItem("tripcast.theme") as ThemeId) || "meadow"
-  );
-
-  const applyTheme = useCallback((id: ThemeId) => {
-    const mapping = THEME_MAPPINGS[id];
-    const root = document.documentElement;
-    Object.entries(mapping).forEach(([key, value]) => {
-      root.style.setProperty(key, value);
-    });
-    localStorage.setItem("tripcast.theme", id);
-    setTheme(id);
-  }, []);
-
-  // Initialize theme on mount
-  useEffect(() => { applyTheme(theme); }, [applyTheme, theme]);
+  const theme = useTheme();
+  const { mode, setMode, resolvedTheme } = theme;
 
   return (
     <OptionsSection label="Appearance">
-      <div className="grid grid-cols-2 gap-2 rounded-xl bg-[var(--bg-card)] p-2">
+      <div className="grid grid-cols-3 gap-2 rounded-xl bg-[var(--bg-card)] p-2 shadow-sm">
         <button
-          onClick={() => applyTheme("meadow")}
+          onClick={() => setMode("meadow")}
           className={cn(
             "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
-            theme === "meadow" 
+            mode === "meadow" 
               ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm" 
               : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
           )}
@@ -237,17 +198,33 @@ function AppearanceSection() {
           <Sun className="h-4 w-4" /> Meadow
         </button>
         <button
-          onClick={() => applyTheme("constellation")}
+          onClick={() => setMode("constellation")}
           className={cn(
             "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
-            theme === "constellation" 
+            mode === "constellation" 
               ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm" 
               : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
           )}
         >
           <Moon className="h-4 w-4" /> Constellation
         </button>
+        <button
+          onClick={() => setMode("auto")}
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
+            mode === "auto" 
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm" 
+              : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          )}
+        >
+          <Infinity className="h-4 w-4" /> Auto
+        </button>
       </div>
+      {mode === "auto" && (
+        <p className="px-1 text-[10px] font-medium text-[var(--ink-3)]">
+          Currently using {resolvedTheme === "meadow" ? "Meadow" : "Constellation"} based on your local time.
+        </p>
+      )}
     </OptionsSection>
   );
 }
@@ -422,6 +399,17 @@ export default function OptionsSheet({
   onViewCredits,
   preserveDebugContext = false,
 }: OptionsSheetProps) {
+  const [isDebugEnabled, setIsDebugEnabled] = useState(
+    () => localStorage.getItem("tripcast.debug.enabled") === "true"
+  );
+
+  // Watch for debug mode changes if toggled via the DebugPanel or console
+  useEffect(() => {
+    const checkDebug = () => setIsDebugEnabled(localStorage.getItem("tripcast.debug.enabled") === "true");
+    window.addEventListener("storage", checkDebug);
+    return () => window.removeEventListener("storage", checkDebug);
+  }, []);
+
   const [view, setView] = useState<OptionsView>("options");
   const [isEmergencyResetPending, setIsEmergencyResetPending] = useState(false);
   const music = useMusicSafe();
@@ -483,8 +471,9 @@ export default function OptionsSheet({
           side="bottom"
           data-role="options-sheet"
           className={cn(
-            "max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
-            view === "debug-logs" && "h-[88dvh] overflow-hidden",
+            // Set to fixed height to prevent layout shifts when logs populate (Issue 3)
+            "h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+            view === "debug-logs" && "overflow-hidden",
           )}
         >
           {view === "travel-funds" ? (
@@ -519,6 +508,7 @@ export default function OptionsSheet({
               role={role}
               log={log}
               session={session}
+              isDebugEnabled={isDebugEnabled}
               onSignOut={handleSignOut}
               onManageFollowers={onManageFollowers}
               onReplayFollowerTour={onReplayFollowerTour}
@@ -622,6 +612,7 @@ function OptionsHome({
   role,
   log,
   session,
+  isDebugEnabled,
   onSignOut,
   onManageFollowers,
   onReplayFollowerTour,
@@ -636,6 +627,7 @@ function OptionsHome({
   role: "traveler" | "follower";
   log: DebugLogger;
   session: StoredSession;
+  isDebugEnabled: boolean;
   onSignOut: () => void;
   onManageFollowers: () => void;
   onReplayFollowerTour: () => void;
@@ -649,9 +641,14 @@ function OptionsHome({
 }) {
   return (
     <SheetBody className="grid gap-5 px-5">
-      <AppearanceSection />
-      <SoundSection />
-      <ReadingSection />
+      {/* Enforce gating: only mount these sections if debug is enabled to prevent context crashes and layout clutter */}
+      {isDebugEnabled && (
+        <div className="grid gap-5 animate-in fade-in slide-in-from-top-2 duration-300">
+          <AppearanceSection />
+          <SoundSection />
+          <ReadingSection />
+        </div>
+      )}
 
       <OptionsSection label="Account">
         <MapSettingsSection token={session.token} role={role} />
