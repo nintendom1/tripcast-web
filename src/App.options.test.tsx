@@ -107,6 +107,7 @@ describe("App: Options sheet — Traveler", () => {
 
   it("orders reading speed controls slow to instant and leaves Danger Zone last", async () => {
     setupSessionMocks("traveler");
+    localStorage.setItem("tripcast.debug.enabled", "true");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
 

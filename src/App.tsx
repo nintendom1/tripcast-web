@@ -46,6 +46,28 @@ const PANEL_MOTION = {
   transition: { duration: 0.18, ease: "easeOut" as const },
 };
 
+function MapErrorFallback(props: React.ComponentProps<typeof FullScreenErrorFallback>) {
+  useEffect(() => {
+    debugLog("info", "App", "map:fallback:shown", "map", {
+      message: props.error instanceof Error ? props.error.message : String(props.error),
+    });
+  }, [props.error]);
+
+  return (
+    <FullScreenErrorFallback
+      {...props}
+      resetErrorBoundary={() => {
+        debugLog("info", "App", "map:fallback:retry", "map", {
+          message: props.error instanceof Error ? props.error.message : String(props.error),
+        });
+        props.resetErrorBoundary();
+      }}
+      title="The map could not load."
+      message="Try again, or reload the app if the map keeps failing."
+    />
+  );
+}
+
 type AppProps = {
   convexReady: boolean;
 };
@@ -451,13 +473,16 @@ function ConnectedApp() {
 
       <ErrorBoundary
         resetKeys={[session.token, role, locationResetNonce, tripDataResetNonce]}
-        fallbackRender={(props) => (
-          <FullScreenErrorFallback
-            {...props}
-            title="The map could not load."
-            message="Try again, or reload the app if the map keeps failing."
-          />
-        )}
+        onError={(error, info) => {
+          const err = error instanceof Error ? error : null;
+          debugLog("error", "App", "react:map-boundary-error", "error", {
+            message: err?.message ?? String(error),
+            name: err?.name ?? typeof error,
+            stack: err?.stack?.slice(0, 400),
+            componentStack: info.componentStack?.slice(0, 400),
+          });
+        }}
+        fallbackRender={(props) => <MapErrorFallback {...props} />}
       >
         <Suspense
           fallback={

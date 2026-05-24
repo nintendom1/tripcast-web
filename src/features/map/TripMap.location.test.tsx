@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
 import { tripcastApi, type JournalEvent } from "../../convex/tripcastApi";
+import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
+import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
 import { useTripPath } from "./useTripPath";
 
@@ -17,6 +19,7 @@ const mapConstructorOptions: unknown[] = [];
 const mapInstances: Array<{
   handlers: Record<string, (event: any) => void>;
   remove: ReturnType<typeof vi.fn>;
+  setStyle: ReturnType<typeof vi.fn>;
   dragPan: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   scrollZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   boxZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
@@ -58,6 +61,7 @@ vi.mock("maplibre-gl", () => {
     }
 
     addControl = vi.fn();
+    setStyle = vi.fn(() => this);
     on = vi.fn((event: string, handler: (event: any) => void) => {
       this.handlers[event] = handler;
       return this;
@@ -235,10 +239,23 @@ function makeJournalEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
   };
 }
 
+function ThemeToggleTripMap() {
+  const { setMode } = useTheme();
+  return (
+    <>
+      <button type="button" onClick={() => setMode("constellation")}>
+        Constellation theme
+      </button>
+      <TripMap token="test-token" role="traveler" />
+    </>
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
+  clearLogs();
   markerElements.length = 0;
   mapConstructorOptions.length = 0;
   mapInstances.length = 0;
@@ -492,6 +509,62 @@ describe("TripMap location marker", () => {
 
     expect(mapConstructorOptions).toHaveLength(0);
     expect(screen.getByRole("alert")).toHaveTextContent("Map Service Unavailable");
+  });
+
+  it("switches map styles on theme change without recreating MapLibre", async () => {
+    setEnabled(true);
+    localStorage.setItem("tripcast.theme_mode", "meadow");
+    setupQueries();
+
+    render(
+      <ThemeProvider>
+        <ThemeToggleTripMap />
+      </ThemeProvider>
+    );
+
+    await waitFor(() => {
+      expect(mapInstances).toHaveLength(1);
+    });
+    const map = mapInstances[0];
+
+    fireEvent.click(screen.getByRole("button", { name: "Constellation theme" }));
+
+    await waitFor(() => {
+      expect(map.setStyle).toHaveBeenCalledWith(expect.stringContaining("style=fiord"));
+    });
+    expect(mapConstructorOptions).toHaveLength(1);
+    expect(map.remove).not.toHaveBeenCalled();
+    expect(getLogs().some((entry) => entry.action === "map:style-switch:start")).toBe(true);
+    expect(getLogs().some((entry) => entry.action === "map:style-switch:success")).toBe(true);
+  });
+
+  it("logs failed map style switches without showing the full-screen map fallback", async () => {
+    setEnabled(true);
+    localStorage.setItem("tripcast.theme_mode", "meadow");
+    setupQueries();
+
+    render(
+      <ThemeProvider>
+        <ThemeToggleTripMap />
+      </ThemeProvider>
+    );
+
+    await waitFor(() => {
+      expect(mapInstances).toHaveLength(1);
+    });
+    const map = mapInstances[0];
+    map.setStyle.mockImplementationOnce(() => {
+      throw new Error("style failed");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Constellation theme" }));
+
+    await waitFor(() => {
+      expect(getLogs().some((entry) => entry.action === "map:style-switch:error")).toBe(true);
+    });
+    expect(mapConstructorOptions).toHaveLength(1);
+    expect(map.remove).not.toHaveBeenCalled();
+    expect(screen.queryByText("The map could not load.")).not.toBeInTheDocument();
   });
 
   it("trips the circuit breaker on 403 or 429 map errors", async () => {

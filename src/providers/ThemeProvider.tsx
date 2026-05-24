@@ -59,7 +59,7 @@ const THEMES = {
     "--map-forest": "#3a5256",
     "--line-soft": "rgba(255,255,255,0.1)",
     "--meter-track": "rgba(255,255,255,0.08)",
-    "--font-display": '"Cormorant Garamond", serif',
+    "--font-display": '"Fredoka", "Quicksand", sans-serif',
     "--radius-sheet": "18px",
   },
 };
@@ -142,6 +142,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 const FALLBACK_THEME: ThemeContextType = {
   mode: "meadow",
   resolvedTheme: "meadow",
+  resolvedMapBase: "bright",
   setMode: () => console.warn("ThemeProvider missing: theme selection will not persist. Ensure <ThemeProvider> wraps the app root."),
 };
 

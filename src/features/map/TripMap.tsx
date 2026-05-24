@@ -79,7 +79,7 @@ import {
 } from "../travelstate/travelerStateUtils";
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 import { TERMS } from "../../copy/terminology";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import {
   getActiveMapCooldown,
   getMapStyleResolution,
@@ -99,7 +99,7 @@ const BOTTOM_SHEET_ERROR_CLASS =
   "absolute inset-x-0 bottom-0 z-[4] grid gap-3 border-t bg-background p-4 text-sm shadow-lg";
 const CARD_ERROR_CLASS =
   "grid w-56 gap-3 rounded-md border bg-background/95 p-3 text-xs shadow-md backdrop-blur-sm";
-const FUNDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.funds;
+
 
 type CoordinatePickMode = {
   label: string;
@@ -566,6 +566,8 @@ export default function TripMap({
 }: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const activeMapStyleUrlRef = useRef<string | null>(null);
+  const latestMapStyleUrlRef = useRef<string | null>(null);
   const placementModeRef = useRef(false);
   const browserLocationWatchRef = useRef<number | null>(null);
   const isLocationSharingRef = useRef(false);
@@ -626,8 +628,11 @@ export default function TripMap({
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
   const canWrite = role === "traveler";
   const { resolvedMapBase } = useTheme();
+  const sheetPersonalities = useSheetPersonalities();
+  const FUNDS_PERSONALITY = sheetPersonalities.funds;
   const mapStyleResolution = useMemo(() => getMapStyleResolution(resolvedMapBase), [resolvedMapBase]);
   const mapStyleUrl = mapStyleResolution.styleUrl;
+  latestMapStyleUrlRef.current = mapStyleUrl;
   const mapCooldownUntil = mapCooldownState.until;
   const isMapServiceUnavailable = mapCooldownUntil !== null || !mapStyleUrl;
 
@@ -905,6 +910,38 @@ export default function TripMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map || !mapStyleUrl) return;
+    if (activeMapStyleUrlRef.current === null) {
+      activeMapStyleUrlRef.current = mapStyleUrl;
+      return;
+    }
+    if (activeMapStyleUrlRef.current === mapStyleUrl) return;
+
+    const previousStyleUrl = activeMapStyleUrlRef.current;
+    logMapEvent("map:style-switch:start", {
+      previousStyleUrl,
+      styleUrl: mapStyleUrl,
+    });
+    try {
+      map.setStyle(mapStyleUrl);
+      activeMapStyleUrlRef.current = mapStyleUrl;
+      mapLoadedRef.current = false;
+      mapFailureStatsRef.current = createMapFailureStats();
+      logMapEvent("map:style-switch:success", {
+        previousStyleUrl,
+        styleUrl: mapStyleUrl,
+      });
+    } catch (error) {
+      logMapError("map:style-switch:error", {
+        previousStyleUrl,
+        styleUrl: mapStyleUrl,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [mapStyleUrl]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map) return;
     if (isMapServiceUnavailable && !mapInteractionsFrozenRef.current) {
       setMapInteractionsEnabled(map, false);
@@ -1159,6 +1196,7 @@ export default function TripMap({
   // Map init
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
+    const initialMapStyleUrl = latestMapStyleUrlRef.current;
     const activeCooldown = getActiveMapCooldown();
     if (activeCooldown) {
       const activeCooldownState = readMapCooldownState();
@@ -1172,7 +1210,7 @@ export default function TripMap({
       setMapCooldownState(activeCooldownState);
       return;
     }
-    if (!mapStyleUrl) {
+    if (!initialMapStyleUrl) {
       logMapError("map:proxy-url:missing", {
         env: "VITE_CONVEX_SITE_URL",
         devFallback: import.meta.env.DEV,
@@ -1184,11 +1222,11 @@ export default function TripMap({
     mapDiagnosticFetchUrlRef.current = null;
     mapFailureStatsRef.current = createMapFailureStats();
     logMapEvent("map:init:start", {
-      styleUrl: mapStyleUrl,
+      styleUrl: initialMapStyleUrl,
     });
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: mapStyleUrl,
+      style: initialMapStyleUrl,
       center: SEATTLE_CENTER,
       zoom: 11,
       minZoom: 2,
@@ -1199,7 +1237,7 @@ export default function TripMap({
     map.on("load", () => {
       mapLoadedRef.current = true;
       logMapEvent("map:load:success", {
-        styleUrl: mapStyleUrl,
+        styleUrl: activeMapStyleUrlRef.current ?? initialMapStyleUrl,
         zoom: map.getZoom(),
       });
     });
@@ -1315,11 +1353,13 @@ export default function TripMap({
     });
 
     mapRef.current = map;
+    activeMapStyleUrlRef.current = initialMapStyleUrl;
     setMapInstance(map);
 
     return () => {
       map.remove();
       mapRef.current = null;
+      activeMapStyleUrlRef.current = null;
       setMapInstance(null);
       mapLoadedRef.current = false;
       mapInteractionsFrozenRef.current = false;
@@ -1332,7 +1372,6 @@ export default function TripMap({
     log,
     logMapFailureSummary,
     mapInitRetryToken,
-    mapStyleUrl,
     recordMapResourceFailure,
     showToast,
   ]);
