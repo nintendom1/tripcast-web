@@ -1,13 +1,98 @@
-# Agent Instructions
+# TripCast Web: Canonical Contract
 
-## How to Read These Instructions
+## The Four Principles in Detail
 
-Rules here encode **specific failure modes that have already occurred** — in production, in a dev session, or in a prior agent run. They are not a feature checklist.
+### 1. Think Before Coding
 
-- When a rule seems obvious, assume an agent got it wrong in exactly the way the rule prevents.
-- When a component name or constraint is called out explicitly, code once broke in that exact spot.
-- Before touching a documented area, read the relevant **Patterns & Gotchas** entry first. The cost is seconds; re-introducing a known bug costs a full debug round.
-- When you fix a non-obvious bug or discover a constraint that isn't clear from types alone, **add it to Patterns & Gotchas**. The goal is a shrinking bug surface across sessions, not just within them.
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+LLMs often pick an interpretation silently and run with it. This principle forces explicit reasoning:
+
+- **State assumptions explicitly** — If uncertain, ask rather than guess
+- **Present multiple interpretations** — Don't pick silently when ambiguity exists
+- **Push back when warranted** — If a simpler approach exists, say so
+- **Stop when confused** — Name what's unclear and ask for clarification
+
+### 2. Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+Combat the tendency toward overengineering:
+
+- No features beyond what was asked
+- No abstractions for single-use code
+- No "flexibility" or "configurability" that wasn't requested
+- No error handling for impossible scenarios
+- If 200 lines could be 50, rewrite it
+
+**The test:** Would a senior engineer say this is overcomplicated? If yes, simplify.
+
+### 3. Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+
+- Don't "improve" adjacent code, comments, or formatting
+- Don't refactor things that aren't broken
+- Match existing style, even if you'd do it differently
+- If you notice unrelated dead code, mention it — don't delete it
+
+When your changes create orphans:
+
+- Remove imports/variables/functions that YOUR changes made unused
+- Don't remove pre-existing dead code unless asked
+
+**The test:** Every changed line should trace directly to the user's request.
+
+### 4. Goal-Driven Execution
+
+**Define success criteria. Loop until verified.**
+
+Transform imperative tasks into verifiable goals:
+
+| Instead of... | Transform to... |
+|--------------|-----------------|
+| "Add validation" | "Write tests for invalid inputs, then make them pass" |
+| "Fix the bug" | "Write a test that reproduces it, then make it pass" |
+| "Refactor X" | "Ensure tests pass before and after" |
+
+For multi-step tasks, state a brief plan (Use the todo tool if available):
+
+```
+1. [Step] → verify: [check]
+2. [Step] → verify: [check]
+3. [Step] → verify: [check]
+```
+
+Strong success criteria let the LLM loop independently. Weak criteria ("make it work") require constant clarification.
+
+---
+
+## Project Overview
+TripCast Web is the React/Vite frontend using MapLibre GL JS and Base UI.
+- **Roles**: Traveler (Admin) and Follower (View/Vote).
+
+## Setup & Validation
+- **Install**: `npm install` in `tripcast-web/`.
+- **Validation**: `npm run validate` (typecheck → lint → tests).
+- **Testing**: `npm run test` (Vitest with `jsdom`).
+
+## Read-on-demand agent procedures
+Do not read these files by default. Read them only when relevant.
+
+- `docs/agents/commit-and-pr.md`: read when committing or writing PRs.
+- `docs/agents/quiet-mode.md`: read when asked for Quiet Mode.
+- `docs/agents/run-continuously.md`: read when running autonomously.
+- `docs/agents/validation.md`: read before claiming completion.
+- `docs/agents/debug-log.md`: read when changing debug UI or logging.
+- `docs/agents/terminology.md`: read for terminology/UI copy changes.
+- `docs/agents/visual-testing.md`: read for visual tests (Playwright).
+
+## Engineering Standards
+- Use TypeScript strictly.
+- Use `react-error-boundary` for component containment.
+- **Security**: Never commit secrets. Use `Gitleaks` local scanning.
 
 ## Feature Branch Policy
 
@@ -39,10 +124,6 @@ Do not symlink or reuse `node_modules` across worktrees by default, especially o
 - Use MapLibre GL JS and do not add paid or token-based map providers.
 - Do not commit secrets, `.env`, or `.env.local`.
 - Treat secret scanning as part of the normal workflow before commits and PRs.
-- Agents are allowed to install Gitleaks when needed to run local scans.
-- Run `gitleaks git --config .gitleaks.toml --redact --verbose` before pushing when Gitleaks is available.
-- Run `git diff --cached | gitleaks stdin --config .gitleaks.toml --redact --verbose` before committing staged changes when Gitleaks is available.
-- If Gitleaks is unavailable and cannot be installed, say so in the final response and rely on the GitHub Actions Gitleaks workflow as the remote check.
 - Consume Convex through `src/convex/tripcastApi.ts`. Do not hand-write function references — regenerate this file via `npm run export:web-api` in `tripcast-backend` then copy the output.
 - All mutations take an explicit `token` arg for auth. Do not use `clientId`; that field was removed.
 - When the backend returns `null` for a route vote detail query, the frontend shows a deleted-vote recovery state ("This route vote was deleted.") with a "Back to votes" button — do not treat this as a loading state.
@@ -52,133 +133,6 @@ Do not symlink or reuse `node_modules` across worktrees by default, especially o
 - Avoid unnecessary map remounts, style resets, or tile request loops.
 - Backend API changes belong in `tripcast-backend`.
 - If stuck after two failed attempts, stop, summarize what failed, and propose a better next attempt.
-
-## Debug Logging (Required for New Features)
-
-TripCast has a local-only debug logger (`src/debug/`) that is always present but disabled by default. **Every new component or feature must instrument itself using this system.** Do not add `console.log` for diagnostic output — use the logger instead.
-Any new sheet, panel, modal, drawer, or map-adjacent surface must also register active UI context via `useActiveUiContext` so the floating Debug button and copied summary identify it. Include a human label, implementation sheet/panel name, active view/tab when available, source/opened-by label, file path, and bounds selector. If the surface is nested, register the nested surface too so it can temporarily override the primary sheet while open.
-
-### Quick-start
-
-```tsx
-import { useDebugLogger } from "../../debug/useDebugLogger";
-
-export default function MySheet({ ... }) {
-  const log = useDebugLogger("MySheet", "src/features/myfeature/MySheet.tsx");
-  ...
-}
-```
-
-### What to log and which helper to use
-
-| Event | Helper | Category |
-|-------|--------|----------|
-| Sheet or panel opens | `log.logUi("sheet:open", { ... })` | `ui` |
-| Sheet closes (backdrop tap) | `log.logUi("sheet:close", { trigger: "backdrop" })` | `ui` |
-| User taps a button / selects a tab | `log.logUi("action:name", { ... })` | `ui` |
-| Form mount / submit / cancel | `log.logForm("form:open")` / `log.logForm("form:submit")` / `log.logForm("form:cancel")` | `form` |
-| Mutation fired | `log.logMutation("mutation:name", { ... })` | `mutation` |
-| Mutation succeeded | `log.logMutation("mutation:name:success")` | `mutation` |
-| Mutation error | `log.error("mutation:name:error", "mutation", { message: e.message })` | `mutation` |
-| Query error (caught) | `log.error("query:name:error", "query", { ... })` | `query` |
-| Map camera move (programmatic) | `log.logMap("map:camera:move", { lat, lon, trigger })` | `map` |
-| Auth event | `log.logAuth("event:name", { ... })` — details auto-redacted | `auth` |
-| State transition worth tracking | `log.logState("stateName", before, after)` | `state` |
-| Travel-funds change | `log.logFunds("event:name", { ... })` | `funds` |
-| Routing/navigation change | `log.info("route:change", "route", { ... })` | `route` |
-| App initialization / page load | `debugLog("info", "App", "app:init", "ui", { online, viewport, hadStoredSession })` | `ui` |
-| Transient surface appears (toast/banner) | `log.logUi("x:toast:shown", { text, points, placement, dims, viewport })` | `ui` |
-| Tracked domain value changes (score/points/budget) | `log.logUi("x:value:change", { from, to, delta })` (or `log.logState`) | `ui` / `state` |
-
-### Always-in-scope instrumentation for new features
-
-Beyond the per-component basics above, **every new feature must instrument these three lifecycle concerns** — they are the ones most often missing and most useful when debugging on a device you cannot see:
-
-1. **App / feature initialization** — log once on mount / page load (fires on refresh). Include enough context to reconstruct the entry state (viewport, online status, whether a stored session existed, relevant feature flags). See `app:init` in `src/App.tsx`.
-2. **Transient UI surfaces (toasts, banners, popovers)** — log when they *appear*, capturing the **rendered text/values, placement, and measured dimensions** (`getBoundingClientRect()` after commit) plus the viewport. Placement/size bugs on mobile are invisible without this. See `achievement:toast:shown` in `src/features/achievements/AchievementsConnected.tsx`.
-3. **Tracked value changes** — when a feature surfaces a number the user watches (score/points, budget, counts), log every change with `{ from, to, delta }` (and an `:init` entry on first load). See `achievement:points:change`.
-
-### Required instrumentation for every new sheet or panel
-
-```tsx
-useEffect(() => {
-  log.logUi(open ? "sheet:open" : "sheet:close");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [open]);
-
-// Also log backdrop close in onOpenChange:
-function handleOpenChange(nextOpen: boolean) {
-  if (!nextOpen) log.logUi("sheet:close", { trigger: "backdrop" });
-  onOpenChange(nextOpen);
-}
-```
-
-### Rules
-
-- **Always pass the correct category.** Wrong categories break the preset filter (e.g. everything at category `"interaction"` hides behind Interaction Trace only).
-- **Never log secrets.** The redaction regex covers `token|secret|password|auth|apikey|api_key|email|phone|bearer|invite|reset` — do not manually pass these fields. For auth events, use `log.logAuth()` which routes to the `auth` category that is enabled in Normal preset; even with redaction active, keep the payload minimal.
-- **Register the component.** `useDebugLogger(componentName, filePath)` auto-registers the component in the LLM summary map — always pass the real file path as the second argument.
-
----
-
-## Debugging Strategy
-
-### Stop-and-log rule
-If you have made **two failed attempts** to fix a visual or layout bug — especially one that manifests only on device or in a browser you cannot see — stop writing guesses. Instead:
-1. Propose leveraging the debug logger for where the problematic code runs.
-2. Ask the developer to trigger the behavior, copy the log output, and paste it back.
-3. Only then diagnose and implement the fix.
-
-This one logging round almost always costs less time than a third blind attempt.
-
-### Verify wiring before debugging logic
-Before investigating *why* a function produces wrong output, confirm it is actually being called. Put a one-line log at the very **first line** of the function — before any early returns or guards — so a missing call is immediately obvious:
-
-```typescript
-// Put relevant logging here
-const map = mapRef.current;
-if (!map) return;       // ← guard comes after the entry log
-```
-
-A common failure mode: a new handler is defined but the component prop still references the old one. The entry log catches this in one round.
-
-## Commits And PRs
-
-- Conventional Commits prefix, lowercase type/scope (i.e. `feat: `, `fix: `, `docs: `, `chore: `, `refactor: `, `dev: `).
-- Subject after colon: imperative Title Case.
-- For the commit body and PR Before/After, follow this style:
-```text
-Before, <describe the previous state or problem>.
-Now, <describe the new state or outcome>.
-```
-  Apply these rules when writing the Before/After:
-  1. **Cover the full scope.** For a PR, the Before/After must mention every major feature or fix on the branch — not just the most recent commits. Omitting a feature is a deficiency.
-  2. **Name affected roles explicitly.** This app has two distinct roles: Traveler and Follower. When a change affects either role's experience, name the role and describe what they gain or lose. Do not write in a role-neutral voice if the feature is role-specific.
-  3. **Lead with the most impactful perspective.** Put the primary beneficiary — the role whose experience changes most — first in the Before/After. Secondary roles follow.
-  4. **Write a unified narrative, not a list.** The Before/After paragraph should read as a story about what users could and couldn't do, not as a bullet summary of technical changes. Reserve bullets for the Summary section.
-- PR title uses the same style. PR body template:
-```text
-<Before/After commit body style.>
-
-## Summary
-<Up to several technical bullets.>
-
-## Testing
-<Commands run, manual checks performed by you and/or a reviewer, or note why testing was not run.>
-```
-
-## Validation (Required Before Claiming Completion)
-
-Run the full validation suite before reporting a task as done:
-
-```bash
-npm run validate
-```
-
-This runs typecheck → lint → tests in sequence and short-circuits on the first failure.
-Individual scripts are still available: `npm run typecheck`, `npm run lint`, `npm run test`.
-
-**Do not claim a task complete until `npm run validate` passes.**
 
 ## Linting (Rules of Hooks)
 

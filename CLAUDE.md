@@ -1,22 +1,7 @@
-Also read `AGENTS.md` for the full repo-specific agent instructions before
-working in this repo.
+# Claude Adapter
+@AGENTS.md
 
-## Commits And PRs
-
-- Conventional Commits prefix, lowercase type/scope (i.e. `feat: `, `fix: `, `docs: `, `chore: `, `refactor: `, `dev: `).
-- Subject after colon: imperative Title Case.
-- For the commit body, follow this style:
-```text
-Before, <describe the previous state or problem. Focus on the User Experience if applicable>.
-Now, <describe the new state or outcome. Focus on the User Experience if applicable>.
-```
-- PR title uses the same style. PR body template:
-```text
-<Before/After commit body style.>
-
-## Summary
-<Up to several technical bullets.>
-
-## Testing
-<Commands run, manual checks performed by you and/or a reviewer, or note why testing was not run.>
-```
+## Planning Mode Behavior
+- When in planning mode, **ask clarifying questions** to probe for edge cases. Do not finalize a plan until requirements are stable.
+- **Special Technical Gotchas**: For `framer-motion`, use an explicit `motion: { div: ... }` object. Do NOT use a Proxy.
+- Recover: If the user says "Recover", speak normally.
