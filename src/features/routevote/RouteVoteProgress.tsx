@@ -33,7 +33,7 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 import { TERMS } from "../../copy/terminology";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -59,7 +59,6 @@ type RouteVoteProgressProps = {
 };
 
 type View = "list" | "create" | "detail";
-const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function VoteListCard({
   vote,
@@ -74,6 +73,7 @@ function VoteListCard({
   onArchive: () => void;
   isActing: boolean;
 }) {
+  const { votes: votesPersonality } = useSheetPersonalities();
   const status = vote.effectiveStatus;
   const total = vote.totalSubmissions;
 
@@ -83,7 +83,7 @@ function VoteListCard({
         <button type="button" onClick={onViewDetail} className="flex min-w-0 items-start gap-2 text-left">
           <span
             className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
-            style={{ background: VOTES_PERSONALITY.color }}
+            style={{ background: votesPersonality.color }}
             aria-hidden="true"
           >
             <CheckSquare className="h-4 w-4" />
@@ -422,6 +422,7 @@ export default function RouteVoteProgress({
   onRequestOpenMissionDetail,
   debugSource,
 }: RouteVoteProgressProps) {
+  const { votes: votesPersonality } = useSheetPersonalities();
   const votes = useQuery(
     tripcastApi.routeVotes.travelerListRouteVotes,
     open ? { token } : "skip",
@@ -531,10 +532,10 @@ export default function RouteVoteProgress({
         )}
         data-role="route-votes-sheet"
       >
-        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: votesPersonality.color }} />
         <div
           className="sticky top-0 z-[1] flex shrink-0 items-center justify-between border-b border-[var(--line-soft)] px-4 py-3"
-          style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+          style={{ background: `linear-gradient(180deg, ${votesPersonality.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="flex items-center gap-2">
             {(view === "create" || view === "detail") && (
@@ -555,7 +556,7 @@ export default function RouteVoteProgress({
                 <span
                   aria-hidden="true"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
-                  style={{ background: VOTES_PERSONALITY.color }}
+                  style={{ background: votesPersonality.color }}
                 >
                   <CheckSquare className="h-4 w-4" />
                 </span>

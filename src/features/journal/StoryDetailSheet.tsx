@@ -19,7 +19,7 @@ import {
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { LocationPickerField } from "../map/MapPicker";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -36,8 +36,6 @@ import {
   STRESS_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
 } from "../travelstate/travelerStateUtils";
-
-const JOURNAL_PERSONALITY = MEADOW_SHEET_PERSONALITIES.journal;
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -142,6 +140,7 @@ export default function StoryDetailSheet({
   isPickingCoordinate,
   debugSource,
 }: StoryDetailSheetProps) {
+  const { journal: journalPersonality } = useSheetPersonalities();
   const log = useDebugLogger("StoryDetailSheet", "src/features/journal/StoryDetailSheet.tsx");
   const music = useMusicSafe();
   const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
@@ -312,7 +311,7 @@ export default function StoryDetailSheet({
       >
         {displayEvent && (
           <>
-            <SheetGradientHeader color={JOURNAL_PERSONALITY.color} bg={JOURNAL_PERSONALITY.bg}>
+            <SheetGradientHeader color={journalPersonality.color} bg={journalPersonality.bg}>
               <div className="flex min-w-0 flex-col gap-1.5">
                 <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold leading-tight tracking-tight text-[var(--ink-1)]">
                   {displayEvent.title ?? (isNarrative ? "Story" : "Check In")}

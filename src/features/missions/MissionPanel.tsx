@@ -27,7 +27,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 type Props = {
   open: boolean;
@@ -75,7 +75,6 @@ const TITLE_BY_VIEW: Record<ViewMode, { traveler: string; follower: string }> = 
   create: { traveler: `New ${TERMS.mission.toLowerCase()}`, follower: `Propose ${TERMS.mission.toLowerCase()}` },
   detail: { traveler: TERMS.mission, follower: TERMS.mission },
 };
-const MISSIONS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
 
 // ---------------------------------------------------------------------------
 // Main panel — owns the internal list / create / detail nav stack
@@ -102,6 +101,7 @@ export default function MissionPanel({
   prefilledCoordinate,
   onClearPrefill,
 }: Props) {
+  const { missions: missionsPersonality } = useSheetPersonalities();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedMission, setSelectedMission] = useState<SelectedMission | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Mission | null>(null);
@@ -255,10 +255,10 @@ export default function MissionPanel({
         )}
         data-role="missions-sheet"
       >
-        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: MISSIONS_PERSONALITY.color }} />
+          <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: missionsPersonality.color }} />
         <div
           className="relative flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
-          style={{ background: `linear-gradient(180deg, ${MISSIONS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+            style={{ background: `linear-gradient(180deg, ${missionsPersonality.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
@@ -269,7 +269,7 @@ export default function MissionPanel({
                 <span
                   aria-hidden="true"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
-                  style={{ background: MISSIONS_PERSONALITY.color }}
+                  style={{ background: missionsPersonality.color }}
                 >
                   <Trophy className="h-4 w-4" />
                 </span>

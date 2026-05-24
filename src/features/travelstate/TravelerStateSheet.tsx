@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
 import { Heart, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
@@ -52,7 +52,6 @@ type TravelerStateSheetProps = {
 
 type TabView = "state" | "visibility" | "auto";
 
-const STATE_PERSONALITY = MEADOW_SHEET_PERSONALITIES.state;
 const BODY_FOOTER_CLEARANCE_CLASS = "pb-28";
 const FOOTER_DOCK_CLEARANCE_CLASS = "pb-[calc(var(--dock-h,76px)+16px+env(safe-area-inset-bottom))]";
 
@@ -288,6 +287,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
 
+  const { state: statePersonality } = useSheetPersonalities();
   const log = useDebugLogger("TravelerStateSheet", "src/features/travelstate/TravelerStateSheet.tsx");
   const hasPopulatedRef = useRef(false);
   const [tab, setTab] = useState<TabView>("state");
@@ -538,19 +538,19 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
       <div
         aria-hidden="true"
         className="absolute left-0 right-0 top-0 h-1 rounded-t-[var(--radius-sheet)]"
-        style={{ background: STATE_PERSONALITY.color }}
+        style={{ background: statePersonality.color }}
       />
 
       {/* Header */}
       <div
         className="flex flex-none items-start justify-between border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
-        style={{ background: `linear-gradient(180deg, ${STATE_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+        style={{ background: `linear-gradient(180deg, ${statePersonality.bg} 0%, var(--bg-paper) 100%)` }}
       >
         <div className="flex items-center gap-2">
           <span
             aria-hidden="true"
             className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
-            style={{ background: STATE_PERSONALITY.color }}
+            style={{ background: statePersonality.color }}
           >
             <Heart className="h-4 w-4" />
           </span>

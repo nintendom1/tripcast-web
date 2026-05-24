@@ -15,7 +15,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 type TravelFundsSheetProps = {
   token: string;
@@ -31,7 +31,6 @@ const VIEW_TITLES: Record<View, string> = {
   edit: "Edit transaction",
   settings: `${TERMS.funds} settings`,
 };
-const FUNDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.funds;
 
 export default function TravelFundsSheet({ token, onClose, debugSource }: TravelFundsSheetProps) {
   const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
@@ -294,6 +293,7 @@ function SummaryView({
   onSelectTransaction: (tx: Transaction) => void;
   onRequestDelete: (tx: Transaction) => void;
 }) {
+  const { funds: fundsPersonality } = useSheetPersonalities();
   const over = remainingUsd < 0;
   const noBudget = startingBudgetUsd <= 0;
   const fillPct = noBudget
@@ -328,7 +328,7 @@ function SummaryView({
           <div className="flex min-w-0 items-start gap-3">
             <span
               className="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full text-white shadow-sm"
-              style={{ background: FUNDS_PERSONALITY.color }}
+              style={{ background: fundsPersonality.color }}
               aria-hidden="true"
             >
               <DollarSign className="h-[18px] w-[18px]" />

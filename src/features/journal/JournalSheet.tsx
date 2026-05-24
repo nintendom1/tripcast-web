@@ -33,7 +33,7 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities, type SheetPersonality } from "../redesign/sheetPersonality";
 
 type FilterTab = "story" | "all" | "entries";
 
@@ -48,9 +48,6 @@ const EMPTY_COPY: Record<FilterTab, string> = {
   all: "No entries.",
   entries: "No entries yet.",
 };
-const JOURNAL_PERSONALITY = MEADOW_SHEET_PERSONALITIES.journal;
-const MISSIONS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
-const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function filterEvents(events: JournalEvent[], tab: FilterTab): JournalEvent[] {
   switch (tab) {
@@ -94,17 +91,21 @@ type EventVisual = {
   kicker: string;
 };
 
-function visualForEvent(type: JournalEventType, narrativeLevel: JournalNarrativeLevel): EventVisual {
+function visualForEvent(
+  type: JournalEventType,
+  narrativeLevel: JournalNarrativeLevel,
+  personalities: { journal: SheetPersonality; missions: SheetPersonality; votes: SheetPersonality },
+): EventVisual {
   if (type === "story") {
     return narrativeLevel === "narrative"
-      ? { Icon: Camera, tint: JOURNAL_PERSONALITY.color, kicker: "Story" }
+      ? { Icon: Camera, tint: personalities.journal.color, kicker: "Story" }
       : { Icon: MapPin, tint: "var(--ink-1)", kicker: TERMS.checkIn };
   }
   if (type.startsWith("mission_")) {
-    return { Icon: Trophy, tint: MISSIONS_PERSONALITY.color, kicker: "Mission" };
+    return { Icon: Trophy, tint: personalities.missions.color, kicker: "Mission" };
   }
   if (type.startsWith("route_vote_")) {
-    return { Icon: CheckSquare, tint: VOTES_PERSONALITY.color, kicker: "Vote" };
+    return { Icon: CheckSquare, tint: personalities.votes.color, kicker: "Vote" };
   }
   return { Icon: Sparkles, tint: "var(--teal)", kicker: "Event" };
 }
@@ -177,6 +178,7 @@ export default function JournalSheet({
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, open ? { token } : "skip");
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
+  const sheetPersonalities = useSheetPersonalities();
   useActiveUiContext(open, {
     sheetName: "JournalSheet",
     label: TERMS.journal,
@@ -263,17 +265,17 @@ export default function JournalSheet({
           isPickingCoordinate && "invisible pointer-events-none",
         )}
       >
-        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: JOURNAL_PERSONALITY.color }} />
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: sheetPersonalities.journal.color }} />
         <div
           className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
-          style={{ background: `linear-gradient(180deg, ${JOURNAL_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+          style={{ background: `linear-gradient(180deg, ${sheetPersonalities.journal.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="flex flex-col gap-1">
             <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"
                 className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
-                style={{ background: JOURNAL_PERSONALITY.color }}
+                style={{ background: sheetPersonalities.journal.color }}
               >
                 <Clock className="h-4 w-4" />
               </span>
@@ -388,6 +390,7 @@ export default function JournalSheet({
                     token={token}
                     isLast={index === filtered.length - 1}
                     actualCostUsd={actualCostUsd}
+                    personalities={sheetPersonalities}
                     onSelect={() => {
                       log.logInteraction("row:click", { type: event.type, narrativeLevel: event.narrativeLevel });
                       if (event.type === "story") {
@@ -415,11 +418,12 @@ type StoryRailItemProps = {
   token: string;
   isLast: boolean;
   actualCostUsd?: number;
+  personalities: ReturnType<typeof useSheetPersonalities>;
   onSelect: () => void;
 };
 
-function StoryRailItem({ event, token, isLast, actualCostUsd, onSelect }: StoryRailItemProps) {
-  const visual = visualForEvent(event.type, event.narrativeLevel);
+function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onSelect }: StoryRailItemProps) {
+  const visual = visualForEvent(event.type, event.narrativeLevel, personalities);
   const Icon = visual.Icon;
   const isCheckIn = event.type === "story";
   const hasState =

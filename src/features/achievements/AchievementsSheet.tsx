@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import BadgeBoard, { BADGE_COLOR } from "./BadgeBoard";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { TERMS } from "../../copy/terminology";
 
 type Props = {
@@ -30,19 +30,19 @@ type Props = {
 };
 
 type Tab = "badges" | "history";
-const AWARDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.awards;
 
 function formatWhen(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 function HistoryRow({ event }: { event: AchievementEvent }) {
+  const { awards: awardsPersonality } = useSheetPersonalities();
   const isNew = event.seenAt === undefined;
   return (
     <li className="flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)]">
       <div
         className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white"
-        style={{ background: AWARDS_PERSONALITY.color }}
+        style={{ background: awardsPersonality.color }}
       >
         <Award className="h-4 w-4" aria-hidden />
       </div>
@@ -158,6 +158,7 @@ export default function AchievementsSheet({
   token,
   onOpenChange,
 }: Props) {
+  const { awards: awardsPersonality } = useSheetPersonalities();
   const log = useDebugLogger(
     "AchievementsSheet",
     "src/features/achievements/AchievementsSheet.tsx",
@@ -252,17 +253,17 @@ export default function AchievementsSheet({
           "z-[10] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
         )}
       >
-        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: AWARDS_PERSONALITY.color }} />
+          <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: awardsPersonality.color }} />
         <div
           className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 pb-3 pt-3"
-          style={{ background: `linear-gradient(180deg, ${AWARDS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+            style={{ background: `linear-gradient(180deg, ${awardsPersonality.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="grid gap-1">
             <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"
                 className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
-                style={{ background: AWARDS_PERSONALITY.color }}
+                  style={{ background: awardsPersonality.color }}
               >
                 <Medal className="h-4 w-4" />
               </span>
@@ -270,11 +271,11 @@ export default function AchievementsSheet({
                 Trophy Case
               </SheetTitle>
             </div>
-            <p className="font-[var(--font-mono)] text-xs font-bold" style={{ color: AWARDS_PERSONALITY.color }}>
+              <p className="font-[var(--font-mono)] text-xs font-bold" style={{ color: awardsPersonality.color }}>
               +{totalPoints} {totalPoints === 1 ? "point" : "points"}
             </p>
             {isDev ? (
-              <p className="text-xs font-semibold" style={{ color: AWARDS_PERSONALITY.color }}>
+                <p className="text-xs font-semibold" style={{ color: awardsPersonality.color }}>
                 Testing Follower achievements as Traveler
               </p>
             ) : null}

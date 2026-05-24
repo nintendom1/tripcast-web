@@ -34,7 +34,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 type RouteVotePanelProps = {
   token: string;
@@ -54,13 +54,13 @@ type VoteCardProps = {
   vote: VisibleRouteVote;
   onSelect: () => void;
 };
-const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function voteCode(id: string): string {
   return `V-${id.slice(-3).toUpperCase()}`;
 }
 
 function VoteCard({ vote, onSelect }: VoteCardProps) {
+  const { votes: votesPersonality } = useSheetPersonalities();
   const total = vote.totalSubmissions ?? 0;
   const showTallies = vote.optionVoteCounts !== undefined;
   const winner = vote.options.find((option) => option._id === vote.confirmedWinningOptionId);
@@ -77,11 +77,11 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
           <span className="inline-flex items-center gap-1">
             <span
               className="h-1.5 w-1.5 rounded-full"
-              style={{ background: VOTES_PERSONALITY.color, boxShadow: `0 0 0 3px ${VOTES_PERSONALITY.color}33` }}
+              style={{ background: votesPersonality.color, boxShadow: `0 0 0 3px ${votesPersonality.color}33` }}
             />
             <span
               className="font-[var(--font-display)] text-[9px] font-extrabold uppercase tracking-[0.14em]"
-              style={{ color: VOTES_PERSONALITY.color }}
+              style={{ color: votesPersonality.color }}
             >
               Open
             </span>
@@ -103,7 +103,7 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
         <span className="flex min-w-0 items-start gap-2">
           <span
             className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
-            style={{ background: VOTES_PERSONALITY.color }}
+            style={{ background: votesPersonality.color }}
             aria-hidden="true"
           >
             <CheckSquare className="h-4 w-4" />
@@ -127,7 +127,7 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
                 <div
                   aria-hidden="true"
                   className="absolute inset-y-0 left-0"
-                  style={{ width: `${pct}%`, background: `color-mix(in oklab, ${VOTES_PERSONALITY.color} 18%, transparent)` }}
+                  style={{ width: `${pct}%`, background: `color-mix(in oklab, ${votesPersonality.color} 18%, transparent)` }}
                 />
                 <div className="relative flex items-center gap-2">
                   <span className="min-w-0 flex-1">
@@ -136,7 +136,7 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
                       <span className="block truncate text-[10px] text-[var(--ink-3)]">{option.locationLabel}</span>
                     ) : null}
                   </span>
-                  <span className="font-[var(--font-mono)] text-xs font-bold" style={{ color: VOTES_PERSONALITY.color }}>
+                  <span className="font-[var(--font-mono)] text-xs font-bold" style={{ color: votesPersonality.color }}>
                     {count}/{total}
                   </span>
                 </div>
@@ -149,7 +149,7 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
       {isClosed && winner ? (
         <div
           className="mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-[var(--ink-1)]"
-          style={{ background: VOTES_PERSONALITY.bg }}
+          style={{ background: votesPersonality.bg }}
         >
           Winner: <strong>{winner.title}</strong>
           {vote.resultingMissionId ? (
@@ -401,6 +401,7 @@ export default function RouteVotePanel({
   fallbackOrigin,
   debugSource,
 }: RouteVotePanelProps) {
+  const { votes: votesPersonality } = useSheetPersonalities();
   const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, open ? { token } : "skip");
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<VoteStatusFilter>("all");
@@ -453,10 +454,10 @@ export default function RouteVotePanel({
         data-role="route-votes-sheet"
         style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom))" }}
       >
-        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: votesPersonality.color }} />
         <div
           className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
-          style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+          style={{ background: `linear-gradient(180deg, ${votesPersonality.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
@@ -467,7 +468,7 @@ export default function RouteVotePanel({
                 <span
                   aria-hidden="true"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
-                  style={{ background: VOTES_PERSONALITY.color }}
+                  style={{ background: votesPersonality.color }}
                 >
                   <CheckSquare className="h-4 w-4" />
                 </span>

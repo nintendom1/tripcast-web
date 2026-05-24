@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
@@ -399,17 +399,6 @@ export default function OptionsSheet({
   onViewCredits,
   preserveDebugContext = false,
 }: OptionsSheetProps) {
-  const [isDebugEnabled, setIsDebugEnabled] = useState(
-    () => localStorage.getItem("tripcast.debug.enabled") === "true"
-  );
-
-  // Watch for debug mode changes if toggled via the DebugPanel or console
-  useEffect(() => {
-    const checkDebug = () => setIsDebugEnabled(localStorage.getItem("tripcast.debug.enabled") === "true");
-    window.addEventListener("storage", checkDebug);
-    return () => window.removeEventListener("storage", checkDebug);
-  }, []);
-
   const [view, setView] = useState<OptionsView>("options");
   const [isEmergencyResetPending, setIsEmergencyResetPending] = useState(false);
   const music = useMusicSafe();
@@ -511,7 +500,6 @@ export default function OptionsSheet({
               role={role}
               log={log}
               session={session}
-              isDebugEnabled={isDebugEnabled}
               onSignOut={handleSignOut}
               onManageFollowers={onManageFollowers}
               onReplayFollowerTour={onReplayFollowerTour}
@@ -615,7 +603,6 @@ function OptionsHome({
   role,
   log,
   session,
-  isDebugEnabled,
   onSignOut,
   onManageFollowers,
   onReplayFollowerTour,
@@ -630,7 +617,6 @@ function OptionsHome({
   role: "traveler" | "follower";
   log: DebugLogger;
   session: StoredSession;
-  isDebugEnabled: boolean;
   onSignOut: () => void;
   onManageFollowers: () => void;
   onReplayFollowerTour: () => void;
@@ -644,14 +630,11 @@ function OptionsHome({
 }) {
   return (
     <SheetBody className="grid gap-5 px-5">
-      {/* Enforce gating: only mount these sections if debug is enabled to prevent context crashes and layout clutter */}
-      {isDebugEnabled && (
-        <div className="grid gap-5 animate-in fade-in slide-in-from-top-2 duration-300">
-          <AppearanceSection />
-          <SoundSection />
-          <ReadingSection />
-        </div>
-      )}
+      <div className="grid gap-5">
+        <AppearanceSection />
+        <SoundSection />
+        <ReadingSection />
+      </div>
 
       <OptionsSection label="Account">
         <MapSettingsSection token={session.token} role={role} />

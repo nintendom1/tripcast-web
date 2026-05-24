@@ -37,6 +37,7 @@ export default function AwardBadgeSheet({
   sourceId,
   onOpenChange,
 }: Props) {
+  const { awards: awardsPersonality } = useSheetPersonalities();
   const log = useDebugLogger(
     "AwardBadgeSheet",
     "src/features/achievements/AwardBadgeSheet.tsx",
@@ -174,7 +175,7 @@ export default function AwardBadgeSheet({
         data-role="award-badge-sheet"
         className="max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
-        <SheetGradientHeader color={AWARDS_PERSONALITY.color} bg={AWARDS_PERSONALITY.bg}>
+        <SheetGradientHeader color={awardsPersonality.color} bg={awardsPersonality.bg}>
           <div className="grid gap-1">
             <SheetTitle className="text-base">
               {context?.sourceLabel ?? "Loading…"}
