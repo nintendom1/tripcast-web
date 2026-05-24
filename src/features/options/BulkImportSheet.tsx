@@ -270,6 +270,12 @@ function errorText(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+const outlineButtonClass =
+  "border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]";
+
+const primaryButtonClass =
+  "border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90";
+
 export default function BulkImportSheet({
   open,
   token,
@@ -379,7 +385,7 @@ export default function BulkImportSheet({
           <SheetCloseButton aria-label="Close bulk import" />
         </div>
 
-        <SheetBody className="grid gap-4 px-5">
+        <SheetBody className="grid gap-4 px-5 text-[var(--ink-1)]">
           {stage === "paste" ? (
             <>
               <p className="text-sm leading-relaxed text-[var(--ink-2)]">
@@ -388,14 +394,14 @@ export default function BulkImportSheet({
                 Timestamps can be epoch milliseconds, ISO strings with an offset, or YYYY-MM-DD dates.
               </p>
               <textarea
-                className="min-h-64 w-full resize-y rounded-xl border border-[var(--line-soft)] bg-[var(--bg-ink)] p-3 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--ink-on-dark)] outline-none focus:border-[var(--flag)]"
+                className="min-h-64 w-full resize-y rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--ink-1)] shadow-sm outline-none placeholder:text-[var(--ink-3)] focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
                 value={text}
                 onChange={(event) => setText(event.target.value)}
                 spellCheck={false}
                 aria-label="Bulk import JSON"
               />
               {parseError ? (
-                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <p role="alert" className="rounded-xl border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]">
                   {parseError}
                 </p>
               ) : null}
@@ -403,6 +409,7 @@ export default function BulkImportSheet({
                 <Button
                   type="button"
                   variant="outline"
+                  className={outlineButtonClass}
                   onClick={() => {
                     music.sfx("tap");
                     log.logUi("action:insert-sample");
@@ -415,6 +422,7 @@ export default function BulkImportSheet({
                 <Button
                   type="button"
                   variant="outline"
+                  className={outlineButtonClass}
                   onClick={copySchema}
                 >
                   {isSchemaCopied ? (
@@ -426,6 +434,7 @@ export default function BulkImportSheet({
                 </Button>
                 <Button
                   type="button"
+                  className={primaryButtonClass}
                   onClick={() => {
                     music.sfx("page");
                     log.logUi("action:validate-preview");
@@ -447,7 +456,7 @@ export default function BulkImportSheet({
                   {preview.rows.map((row) => (
                     <div
                       key={`${row.index}-${row.ref ?? row.title}`}
-                      className="rounded-xl bg-[var(--bg-card)] p-3 shadow-sm"
+                      className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-sm"
                     >
                       <div className="flex items-start gap-2">
                         <span className="rounded-full bg-[var(--meter-track)] px-2 py-0.5 font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-2)]">
@@ -466,7 +475,7 @@ export default function BulkImportSheet({
                 </div>
               ) : null}
               {commitError ? (
-                <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                <p role="alert" className="rounded-xl border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]">
                   {commitError}
                 </p>
               ) : null}
@@ -474,6 +483,7 @@ export default function BulkImportSheet({
                 <Button
                   type="button"
                   variant="outline"
+                  className={outlineButtonClass}
                   onClick={() => {
                     music.sfx("page");
                     log.logUi("action:back-to-paste");
@@ -483,7 +493,7 @@ export default function BulkImportSheet({
                   <ChevronLeft className="mr-1.5 h-4 w-4" aria-hidden="true" />
                   Back
                 </Button>
-                <Button type="button" disabled={!preview?.valid || isCommitting} onClick={commit}>
+                <Button type="button" disabled={!preview?.valid || isCommitting} className={primaryButtonClass} onClick={commit}>
                   <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
                   {isCommitting ? "Importing..." : `Commit ${preview?.rows.length ?? 0} Entries`}
                 </Button>
@@ -507,6 +517,7 @@ export default function BulkImportSheet({
               </div>
               <Button
                 type="button"
+                className={primaryButtonClass}
                 onClick={() => {
                   music.sfx("page");
                   log.logUi("action:close-import-done");
@@ -525,11 +536,15 @@ export default function BulkImportSheet({
 
 function PreviewSummary({ preview }: { preview: BulkImportPreview | undefined }) {
   if (!preview) {
-    return <p role="status" className="text-sm text-[var(--ink-2)]">Validating...</p>;
+    return (
+      <p role="status" className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--ink-2)]">
+        Validating...
+      </p>
+    );
   }
   if (!preview.valid) {
     return (
-      <div className="grid gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+      <div className="grid gap-2 rounded-xl border border-[var(--ink-danger)] bg-[var(--bg-danger)] p-3 text-sm text-[var(--ink-danger)]">
         <p className="font-semibold">Validation failed</p>
         {preview.errors.map((error, index) => (
           <p key={index}>
@@ -548,7 +563,7 @@ function PreviewSummary({ preview }: { preview: BulkImportPreview | undefined })
         ["Missions", preview.counts.missions],
         ["Votes", preview.counts.routeVotes],
       ].map(([label, value]) => (
-        <div key={label} className={cn("rounded-xl bg-[var(--bg-card)] p-3 text-center shadow-sm")}>
+        <div key={label} className={cn("rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-center shadow-sm")}>
           <p className="font-[var(--font-display)] text-xl font-extrabold text-[var(--ink-1)]">{value}</p>
           <p className="font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
             {label}
