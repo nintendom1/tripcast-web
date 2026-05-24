@@ -905,7 +905,7 @@ function SoundSection() {
                 className={cn(
                   "rounded-full px-2 py-1.5 text-xs font-semibold",
                   music.soundtrack === option.value
-                    ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+                    ? "bg-[var(--ink-1)] text-[var(--bg-paper)]"
                     : "bg-[var(--meter-track)] text-[var(--ink-2)]",
                 )}
               >
@@ -937,7 +937,7 @@ function ReadingSection() {
               className={cn(
                 "rounded-full px-2 py-1.5 text-xs font-semibold capitalize",
                 reading.speed === speed
-                  ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+                  ? "bg-[var(--ink-1)] text-[var(--bg-paper)]"
                   : "bg-[var(--meter-track)] text-[var(--ink-2)]",
               )}
             >
