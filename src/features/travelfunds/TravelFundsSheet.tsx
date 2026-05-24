@@ -32,6 +32,16 @@ const VIEW_TITLES: Record<View, string> = {
   settings: `${TERMS.funds} settings`,
 };
 
+const MAX_STARTING_BUDGET_USD = 10_000_000;
+
+function friendlyTravelFundsError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("startingBudgetUsd must be between 0 and 10000000")) {
+    return "Starting budget must be between $0 and $10,000,000.";
+  }
+  return message || "Unable to save Travel Funds settings.";
+}
+
 export default function TravelFundsSheet({ token, onClose, debugSource }: TravelFundsSheetProps) {
   const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
   const transactions = useQuery(tripcastApi.travelFunds.travelerListTransactions, { token });
@@ -80,7 +90,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       await updateConfig({ token, featureEnabled: next });
       music.sfx("success");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : String(err));
+      setSettingsError(friendlyTravelFundsError(err));
     }
   }
 
@@ -94,6 +104,11 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
         setSavingSettings(false);
         return;
       }
+      if (budget > MAX_STARTING_BUDGET_USD) {
+        setSettingsError("Starting budget must be between $0 and $10,000,000.");
+        setSavingSettings(false);
+        return;
+      }
       await updateConfig({
         token,
         featureEnabled: true,
@@ -103,7 +118,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       music.sfx("success");
       setView("summary");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : String(err));
+      setSettingsError(friendlyTravelFundsError(err));
     } finally {
       setSavingSettings(false);
     }
@@ -604,7 +619,7 @@ function SettingsBody({
       )}
 
       {error && (
-        <p className="text-xs text-[var(--danger)]" role="alert">
+        <p className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-xs text-[var(--ink-danger)]" role="alert">
           {error}
         </p>
       )}

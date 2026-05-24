@@ -18,6 +18,12 @@ import {
   isValidCurrencyCode,
 } from "./currency";
 
+const labelClass = "text-xs font-medium text-[var(--ink-2)]";
+const mutedTextClass = "text-[var(--ink-3)]";
+const selectClass = "w-full rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 py-1.5 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]";
+const previewClass = "rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] px-2.5 py-1 text-xs text-[var(--ink-1)]";
+const errorClass = "text-xs text-[var(--ink-danger)]";
+
 type Prefill = {
   title?: string;
   localAmount?: number;
@@ -167,25 +173,25 @@ export default function TravelFundsInlineSection({
   if (config === undefined) return null;
 
   return (
-    <section className="rounded-md border border-slate-200">
+    <section className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)]">
       <button
         type="button"
-        className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium hover:bg-slate-50"
+        className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm font-medium text-[var(--ink-1)] hover:bg-[var(--meter-track)]"
         onClick={() => setOpen((p) => !p)}
         aria-expanded={open}
       >
-        <Wallet className="h-4 w-4 text-muted-foreground" aria-hidden />
-        <span className="flex-1">Travel Funds <span className="text-muted-foreground font-normal">— optional</span></span>
+        <Wallet className={`h-4 w-4 ${mutedTextClass}`} aria-hidden />
+        <span className="flex-1">Travel Funds <span className={`${mutedTextClass} font-normal`}>— optional</span></span>
         <ChevronDown
-          className={`h-4 w-4 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+          className={`h-4 w-4 ${mutedTextClass} transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden
         />
       </button>
 
       {open && (
-        <div className="border-t px-3 py-3 flex flex-col gap-2">
+        <div className="border-t border-[var(--line-soft)] px-3 py-3 flex flex-col gap-2">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium" htmlFor="tfis-title">Title</label>
+            <label className={labelClass} htmlFor="tfis-title">Title</label>
             <Input
               id="tfis-title"
               value={title}
@@ -195,7 +201,7 @@ export default function TravelFundsInlineSection({
               aria-invalid={Boolean(inlineError && trimmedTitle.length === 0) || undefined}
             />
             {inlineError && (
-              <p role="alert" className="text-xs text-rose-600">
+              <p role="alert" className={errorClass}>
                 {inlineError}
               </p>
             )}
@@ -203,7 +209,7 @@ export default function TravelFundsInlineSection({
 
           <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium" htmlFor="tfis-amount">Amount</label>
+              <label className={labelClass} htmlFor="tfis-amount">Amount</label>
               <Input
                 id="tfis-amount"
                 value={localAmount}
@@ -213,12 +219,12 @@ export default function TravelFundsInlineSection({
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium" htmlFor="tfis-currency">Currency</label>
+              <label className={labelClass} htmlFor="tfis-currency">Currency</label>
               <select
                 id="tfis-currency"
                 value={currencySelect}
                 onChange={(e) => setCurrencySelect(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+                className={selectClass}
               >
                 {COMMON_CURRENCIES.map((c) => (
                   <option key={c.code} value={c.code}>{c.label}</option>
@@ -230,7 +236,7 @@ export default function TravelFundsInlineSection({
 
           {currencySelect === "OTHER" && (
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium" htmlFor="tfis-custom">Currency code</label>
+              <label className={labelClass} htmlFor="tfis-custom">Currency code</label>
               <Input
                 id="tfis-custom"
                 value={customCurrency}
@@ -244,8 +250,8 @@ export default function TravelFundsInlineSection({
 
           {effectiveCurrencyCode !== "USD" && (
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium" htmlFor="tfis-rate">
-                Exchange rate <span className="text-muted-foreground font-normal">— local per 1 USD</span>
+              <label className={labelClass} htmlFor="tfis-rate">
+                Exchange rate <span className={`${mutedTextClass} font-normal`}>— local per 1 USD</span>
               </label>
               <Input
                 id="tfis-rate"
@@ -257,8 +263,8 @@ export default function TravelFundsInlineSection({
             </div>
           )}
 
-          <div className="rounded-md bg-slate-50 px-2.5 py-1 text-xs">
-            <span className="text-muted-foreground">USD: </span>
+          <div className={previewClass}>
+            <span className={mutedTextClass}>USD: </span>
             <span className="font-semibold">
               {usdPreview === null ? "—" : formatUsd(usdPreview)}
             </span>
@@ -266,12 +272,12 @@ export default function TravelFundsInlineSection({
 
           <div className="grid grid-cols-2 gap-2">
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium" htmlFor="tfis-category">Category</label>
+              <label className={labelClass} htmlFor="tfis-category">Category</label>
               <select
                 id="tfis-category"
                 value={category}
                 onChange={(e) => setCategory(e.target.value as TransactionCategory)}
-                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+                className={selectClass}
               >
                 {CATEGORY_OPTIONS.map((c) => (
                   <option key={c.value} value={c.value}>
@@ -281,12 +287,12 @@ export default function TravelFundsInlineSection({
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs font-medium" htmlFor="tfis-visibility">Visibility</label>
+              <label className={labelClass} htmlFor="tfis-visibility">Visibility</label>
               <select
                 id="tfis-visibility"
                 value={visibility}
                 onChange={(e) => handleVisibilityChange(e.target.value as TransactionVisibility)}
-                className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+                className={selectClass}
               >
                 {VISIBILITY_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -306,13 +312,13 @@ export default function TravelFundsInlineSection({
               disabled={visibility === "public"}
               className="mt-0.5"
             />
-            <span className="text-[11px] text-muted-foreground">
+            <span className={`text-[11px] ${mutedTextClass}`}>
               Count toward Travel Funds
             </span>
           </label>
 
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium" htmlFor="tfis-note">Note (optional)</label>
+            <label className={labelClass} htmlFor="tfis-note">Note (optional)</label>
             <Textarea
               id="tfis-note"
               value={note}
