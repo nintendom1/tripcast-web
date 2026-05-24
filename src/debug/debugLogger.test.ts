@@ -9,6 +9,8 @@ import {
   isCategoryEnabled,
   isEnabled,
   log,
+  logMapEvent,
+  logMapError,
   logNote,
   buildLlmSummary,
   setCategoryOverride,
@@ -185,6 +187,39 @@ describe("log() filtering", () => {
     expect(entry.category).toBe("map");
     expect(entry.src).toBe("Test");
     expect(entry.action).toBe("action");
+  });
+
+  it("logs MapLibre errors through the always-on error category", () => {
+    setPreset("minimal");
+    logMapError("map:error", { status: 429, url: "/map/tile/example.pbf" });
+
+    expect(getLogs()).toEqual([
+      expect.objectContaining({
+        src: "MapLibre",
+        action: "map:error",
+        category: "error",
+        details: {
+          status: 429,
+          url: "/map/tile/example.pbf",
+        },
+      }),
+    ]);
+  });
+
+  it("logs MapLibre lifecycle events in the map category", () => {
+    setPreset("normal");
+    logMapEvent("map:init:start", { styleUrl: "/map/style" });
+
+    expect(getLogs()).toEqual([
+      expect.objectContaining({
+        src: "MapLibre",
+        action: "map:init:start",
+        category: "map",
+        details: {
+          styleUrl: "/map/style",
+        },
+      }),
+    ]);
   });
 
   it("redacts token-like keys in details (non-disableable)", () => {

@@ -24,6 +24,7 @@ import {
 import DebugPanel from "../../debug/DebugPanel";
 import type { DebugLogger } from "../../debug/useDebugLogger";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { logMapEvent } from "../../debug/debugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -51,6 +52,7 @@ import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import BulkImportSheet from "./BulkImportSheet";
 import BulkExportSheet from "./BulkExportSheet";
 import { TERMS } from "../../copy/terminology";
+import { triggerMapCooldown } from "../map/mapService";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -717,6 +719,23 @@ function OptionsHome({
       <OptionsSection label="Developer">
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
         {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
+        <OptionsRow
+          icon={ShieldAlert}
+          title="Trigger Map Cooldown"
+          detail="Simulate map service outage"
+          danger
+          onClick={() => {
+            log.logUi("action:trigger-map-cooldown");
+            const cooldown = triggerMapCooldown();
+            logMapEvent("map:cooldown:manual-trigger", {
+              cooldownUntil: cooldown.until,
+              remainingMs: cooldown.until ? Math.max(0, cooldown.until - Date.now()) : 0,
+              strikes: cooldown.strikes,
+              backoffMs: cooldown.backoffMs,
+              source: "options",
+            });
+          }}
+        />
       </OptionsSection>
 
       {role === "traveler" ? (

@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -12,6 +12,19 @@ const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
 const updateTravelerLocation = vi.fn();
 const stopTravelerLocationSharing = vi.fn();
+const fetchMock = vi.fn();
+const mapConstructorOptions: unknown[] = [];
+const mapInstances: Array<{
+  handlers: Record<string, (event: any) => void>;
+  remove: ReturnType<typeof vi.fn>;
+  dragPan: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  scrollZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  boxZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  dragRotate: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  keyboard: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  doubleClickZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  touchZoomRotate: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+}> = [];
 const routeVotePanelProps: Array<{
   fallbackOrigin: { lat: number; lon: number } | null;
 }> = [];
@@ -29,17 +42,35 @@ vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 vi.mock("maplibre-gl", () => {
   class MockMap {
-    constructor() {}
+    handlers: Record<string, (event: any) => void> = {};
+    remove = vi.fn();
+    dragPan = { enable: vi.fn(), disable: vi.fn() };
+    scrollZoom = { enable: vi.fn(), disable: vi.fn() };
+    boxZoom = { enable: vi.fn(), disable: vi.fn() };
+    dragRotate = { enable: vi.fn(), disable: vi.fn() };
+    keyboard = { enable: vi.fn(), disable: vi.fn() };
+    doubleClickZoom = { enable: vi.fn(), disable: vi.fn() };
+    touchZoomRotate = { enable: vi.fn(), disable: vi.fn() };
+
+    constructor(options?: unknown) {
+      mapConstructorOptions.push(options);
+      mapInstances.push(this);
+    }
 
     addControl = vi.fn();
-    on = vi.fn();
-    remove = vi.fn();
+    on = vi.fn((event: string, handler: (event: any) => void) => {
+      this.handlers[event] = handler;
+      return this;
+    });
     getLayer = vi.fn(() => false);
     removeLayer = vi.fn();
     getSource = vi.fn(() => false);
     removeSource = vi.fn();
     isStyleLoaded = vi.fn(() => true);
     getZoom = vi.fn(() => 12);
+    project = vi.fn(() => ({ x: 120, y: 160 }));
+    queryRenderedFeatures = vi.fn(() => []);
+    getContainer = vi.fn(() => ({ clientWidth: 800, clientHeight: 600 }));
     easeTo = mapEaseTo;
   }
 
@@ -78,7 +109,8 @@ vi.mock("maplibre-gl", () => {
 });
 
 vi.mock("./AddCheckpointSheet", () => ({
-  default: () => null,
+  default: (props: { selectedCoordinate?: { lat: number; lon: number } | null }) =>
+    props.selectedCoordinate ? <div data-testid="checkpoint-sheet" /> : null,
 }));
 
 vi.mock("./RouteVoteMapOverlay", () => ({
@@ -160,6 +192,15 @@ function setupQueries({
         budgetLabel: undefined,
       };
     }
+    if (query === tripcastApi.travelFunds.followerGetFundsSummary) {
+      return {
+        enabled: true,
+        featureEnabled: true,
+        remainingUsd: 75,
+        spentUsd: 25,
+        budgetLabel: undefined,
+      };
+    }
     return null;
   });
 }
@@ -172,10 +213,16 @@ function getTravelerMarker() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  sessionStorage.clear();
   markerElements.length = 0;
+  mapConstructorOptions.length = 0;
+  mapInstances.length = 0;
   routeVotePanelProps.length = 0;
   updateTravelerLocation.mockResolvedValue(null);
   stopTravelerLocationSharing.mockResolvedValue(null);
+  fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
 
   (vi.mocked(convexReact.useMutation) as any).mockImplementation((mutation: unknown) => {
     if (mutation === tripcastApi.travelerLocations.updateTravelerLocation) {
@@ -194,6 +241,11 @@ beforeEach(() => {
       clearWatch: geolocationClearWatch,
     },
   });
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("TripMap location marker", () => {
@@ -318,6 +370,217 @@ describe("TripMap location marker", () => {
       lon: -122.34,
       accuracy: undefined,
     });
+  });
+
+  it("throttles repeated traveler location publishes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    let onGeolocationSuccess: ((position: GeolocationPosition) => void) = () => {};
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onGeolocationSuccess = onSuccess;
+      onSuccess({
+        coords: {
+          latitude: 47.62,
+          longitude: -122.34,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+    expect(updateTravelerLocation).toHaveBeenCalledTimes(1);
+
+    onGeolocationSuccess?.({
+      coords: {
+        latitude: 47.63,
+        longitude: -122.35,
+        accuracy: 8,
+      },
+    } as GeolocationPosition);
+    expect(updateTravelerLocation).toHaveBeenCalledTimes(1);
+
+    vi.advanceTimersByTime(15_000);
+    onGeolocationSuccess?.({
+      coords: {
+        latitude: 47.63,
+        longitude: -122.35,
+        accuracy: 8,
+      },
+    } as GeolocationPosition);
+    expect(updateTravelerLocation).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it("does not initialize MapLibre while map cooldown is active", () => {
+    sessionStorage.setItem("tripcast.map_cooldown", String(Date.now() + 15 * 60 * 1000));
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    expect(mapConstructorOptions).toHaveLength(0);
+    expect(screen.getByRole("alert")).toHaveTextContent("Map Service Unavailable");
+  });
+
+  it("trips the circuit breaker on 403 or 429 map errors", async () => {
+    localStorage.setItem("tripcast.debug.enabled", "true");
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    const map = mapInstances[0];
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+          message: "Too many requests",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(sessionStorage.getItem("tripcast.map_cooldown")).not.toBeNull();
+      expect(screen.getByRole("alert")).toHaveTextContent("Map Service Unavailable");
+    });
+    await waitFor(() => {
+      expect(map.dragPan.disable).toHaveBeenCalled();
+      expect(map.scrollZoom.disable).toHaveBeenCalled();
+      expect(map.doubleClickZoom.disable).toHaveBeenCalled();
+    });
+    expect(map.remove).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:triggered");
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:degraded-mode:enter");
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:resource-failure:sample");
+  });
+
+  it("lets travelers place a pin on the visible cached map during cooldown", async () => {
+    setupQueries();
+    render(<TripMap token="test-token" role="traveler" />);
+    const map = mapInstances[0];
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(map.dragPan.disable).toHaveBeenCalled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /check in/i }));
+
+    act(() => {
+      map.handlers.click?.({
+        point: { x: 10, y: 20 },
+        lngLat: { lat: 47.62, lng: -122.34 },
+        originalEvent: {},
+      });
+    });
+
+    expect(await screen.findByTestId("checkpoint-sheet")).toBeInTheDocument();
+  });
+
+  it("does not show a map retry button to followers", async () => {
+    setupQueries();
+    render(<TripMap token="test-token" role="follower" />);
+    const map = mapInstances[0];
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Map Service Unavailable")).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
+  it("resets map cooldown strikes after a successful traveler retry", async () => {
+    localStorage.setItem("tripcast.debug.enabled", "true");
+    setupQueries();
+    render(<TripMap token="test-token" role="traveler" />);
+    const map = mapInstances[0];
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Map Service Unavailable")).not.toBeInTheDocument();
+      expect(sessionStorage.getItem("tripcast.map_cooldown")).toBeNull();
+    });
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:retry-start");
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:retry-success");
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const cooldown = JSON.parse(sessionStorage.getItem("tripcast.map_cooldown") ?? "{}");
+      expect(cooldown.strikes).toBe(1);
+      expect(cooldown.backoffMs).toBe(60_000);
+    });
+  });
+
+  it("keeps map cooldown protective after a failed traveler retry", async () => {
+    localStorage.setItem("tripcast.debug.enabled", "true");
+    fetchMock.mockResolvedValue(new Response("still down", { status: 503 }));
+    setupQueries();
+    render(<TripMap token="test-token" role="traveler" />);
+    const map = mapInstances[0];
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => {
+      const cooldown = JSON.parse(sessionStorage.getItem("tripcast.map_cooldown") ?? "{}");
+      expect(cooldown.strikes).toBe(2);
+      expect(cooldown.backoffMs).toBe(5 * 60_000);
+      expect(screen.getByText("Map Service Unavailable")).toBeInTheDocument();
+    });
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:retry-start");
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:retry-failed");
   });
 
   it("stops location sharing on page hide when the traveler is sharing", async () => {
