@@ -60,7 +60,7 @@ import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useTripPath } from "./useTripPath";
 import { DebugChip } from "../../debug/DebugChip";
-import { isEnabled, isCategoryEnabled, log as rawLog } from "../../debug/debugLogger";
+import { isEnabled, isCategoryEnabled, log as rawLog, logMapError, logMapEvent } from "../../debug/debugLogger";
 import {
   MOOD_LABELS,
   MOOD_VALUES,
@@ -79,9 +79,19 @@ import {
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 import { TERMS } from "../../copy/terminology";
 import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import {
+  clearMapCooldown,
+  getActiveMapCooldown,
+  getMapStyleResolution,
+  MAP_COOLDOWN_EVENT,
+  MAP_COOLDOWN_KEY,
+  readMapCooldownState,
+  triggerMapCooldown,
+  type MapCooldownState,
+} from "./mapService";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
-const OPEN_FREE_MAP_STYLE = "https://tiles.openfreemap.org/styles/bright";
+const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 const PANEL_ERROR_CLASS =
   "absolute bottom-5 left-5 z-[4] grid w-80 max-w-[calc(100%-40px)] gap-3 rounded-md border bg-background p-4 text-sm shadow-lg";
 const BOTTOM_SHEET_ERROR_CLASS =
@@ -109,6 +119,90 @@ function isFiniteLngLatBounds(
   bounds: [[number, number], [number, number]],
 ) {
   return bounds.every(([lon, lat]) => Number.isFinite(lon) && Number.isFinite(lat));
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function getNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function mapLibreErrorDetails(event: unknown) {
+  const eventRecord = asRecord(event);
+  const error = asRecord(eventRecord?.error) ?? eventRecord;
+  const response = asRecord(error?.response);
+  const request = asRecord(error?.request);
+  const resource = asRecord(error?.resource);
+  const status =
+    getNumber(error?.status) ??
+    getNumber(error?.statusCode) ??
+    getNumber(response?.status);
+  const url =
+    getString(error?.url) ??
+    getString(request?.url) ??
+    getString(resource?.url) ??
+    getString(response?.url);
+
+  return {
+    message: getString(error?.message),
+    status,
+    url,
+    component: getString(error?.component),
+  };
+}
+
+function mapResourceKind(url?: string, component?: string): "style" | "tilejson" | "tile" | "asset" | "unknown" {
+  if (component === "style") return "style";
+  if (!url) return "unknown";
+  try {
+    const path = new URL(url, window.location.origin).pathname;
+    if (path.includes("/map/style")) return "style";
+    if (path.includes("/map/tilejson/")) return "tilejson";
+    if (path.includes("/map/tile/")) return "tile";
+    if (path.includes("/map/asset/")) return "asset";
+  } catch {
+    return "unknown";
+  }
+  return "unknown";
+}
+
+function createMapFailureStats() {
+  return {
+    counts: {} as Record<string, number>,
+    sampleKeys: new Set<string>(),
+    samples: [] as Array<{
+      status?: number;
+      url?: string;
+      kind: string;
+      message?: string;
+    }>,
+    total: 0,
+  };
+}
+
+function setMapInteractionsEnabled(map: maplibregl.Map, enabled: boolean) {
+  const handlers = [
+    map.dragPan,
+    map.scrollZoom,
+    map.boxZoom,
+    map.dragRotate,
+    map.keyboard,
+    map.doubleClickZoom,
+    map.touchZoomRotate,
+  ];
+  for (const handler of handlers) {
+    if (enabled) {
+      handler.enable();
+    } else {
+      handler.disable();
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -471,6 +565,12 @@ export default function TripMap({
   const isLocationSharingRef = useRef(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
+  const mapServiceUnavailableRef = useRef(false);
+  const mapCooldownTriggeredRef = useRef(false);
+  const mapDiagnosticFetchUrlRef = useRef<string | null>(null);
+  const mapFailureStatsRef = useRef(createMapFailureStats());
+  const mapLoadedRef = useRef(false);
+  const mapInteractionsFrozenRef = useRef(false);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   const music = useMusicSafe();
@@ -497,6 +597,8 @@ export default function TripMap({
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
   const [journalDebugSource, setJournalDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
+  const [mapCooldownState, setMapCooldownState] = useState<MapCooldownState>(() => readMapCooldownState());
+  const [mapInitRetryToken, setMapInitRetryToken] = useState(0);
   const [missionsDebugSource, setMissionsDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [votesDebugSource, setVotesDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [fundsDebugSource, setFundsDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
@@ -517,6 +619,10 @@ export default function TripMap({
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
   const canWrite = role === "traveler";
+  const mapStyleResolution = useMemo(() => getMapStyleResolution(), []);
+  const mapStyleUrl = mapStyleResolution.styleUrl;
+  const mapCooldownUntil = mapCooldownState.until;
+  const isMapServiceUnavailable = mapCooldownUntil !== null || !mapStyleUrl;
 
   const updateTravelerLocation = useMutation(tripcastApi.travelerLocations.updateTravelerLocation);
   const stopTravelerLocationSharing = useMutation(
@@ -604,6 +710,181 @@ export default function TripMap({
   useEffect(() => {
     musicRef.current = music;
   }, [music]);
+
+  const showToast = useCallback((message: string) => {
+    musicRef.current.sfx("toast");
+    if (toastTimeoutRef.current !== null) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToastMessage(message);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToastMessage(null);
+      toastTimeoutRef.current = null;
+    }, 3200);
+  }, []);
+
+  useEffect(() => {
+    logMapEvent("map:proxy-url:resolved", {
+      source: mapStyleResolution.source,
+      configured: Boolean(mapStyleResolution.baseUrl),
+      styleUrl: mapStyleUrl ?? undefined,
+      convexHost: mapStyleResolution.convexHost,
+    });
+  }, [mapStyleResolution, mapStyleUrl]);
+
+  const logMapFailureSummary = useCallback((action: string) => {
+    const stats = mapFailureStatsRef.current;
+    if (stats.total === 0) return;
+    logMapEvent(action, {
+      total: stats.total,
+      counts: stats.counts,
+      samples: stats.samples,
+    });
+  }, []);
+
+  const handleMapTryAgain = useCallback(() => {
+    const previousCooldown = mapCooldownState;
+    mapCooldownTriggeredRef.current = false;
+    mapDiagnosticFetchUrlRef.current = null;
+    mapFailureStatsRef.current = createMapFailureStats();
+    const nextState = clearMapCooldown();
+    setMapCooldownState(nextState);
+    if (!mapRef.current) {
+      setMapInitRetryToken((value) => value + 1);
+    }
+    logMapEvent("map:cooldown:override", {
+      previousCooldownUntil: previousCooldown.until,
+      preservedStrikes: nextState.strikes,
+      lastFailureAt: nextState.lastFailureAt,
+      source: "unavailable-overlay",
+    });
+    showToast("Retrying map service.");
+  }, [mapCooldownState, showToast]);
+
+  const fetchMapFailureDiagnostic = useCallback((url: string) => {
+    if (mapDiagnosticFetchUrlRef.current !== null) return;
+    mapDiagnosticFetchUrlRef.current = url;
+
+    fetch(url, {
+      method: "GET",
+      cache: "no-store",
+    }).then(async (response) => {
+      const contentType = response.headers.get("Content-Type") ?? undefined;
+      const bodyPreview = /json|text|xml|html/i.test(contentType ?? "")
+        ? (await response.clone().text()).slice(0, 500)
+        : undefined;
+
+      logMapEvent("map:proxy-diagnostic", {
+        url,
+        status: response.status,
+        ok: response.ok,
+        contentType,
+        proxyKind: response.headers.get("X-Tripcast-Map-Proxy-Kind") ?? undefined,
+        proxyRequestId: response.headers.get("X-Tripcast-Map-Request-Id") ?? undefined,
+        upstreamPath: response.headers.get("X-Tripcast-Map-Upstream-Path") ?? undefined,
+        upstreamStatus: response.headers.get("X-Tripcast-Map-Upstream-Status") ?? undefined,
+        upstreamHeaderProfile:
+          response.headers.get("X-Tripcast-Map-Upstream-Header-Profile") ?? undefined,
+        bodyPreview,
+      });
+    }).catch((error) => {
+      logMapError("map:proxy-diagnostic:error", {
+        url,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }, []);
+
+  const recordMapResourceFailure = useCallback((details: ReturnType<typeof mapLibreErrorDetails>) => {
+    const kind = mapResourceKind(details.url, details.component);
+    const statusKey = details.status === undefined ? "unknown" : String(details.status);
+    const countKey = `${kind}:${statusKey}`;
+    const stats = mapFailureStatsRef.current;
+    stats.total += 1;
+    stats.counts[countKey] = (stats.counts[countKey] ?? 0) + 1;
+
+    const sampleKey = `${statusKey}:${details.url ?? details.message ?? kind}`;
+    if (stats.samples.length < 5 && !stats.sampleKeys.has(sampleKey)) {
+      stats.sampleKeys.add(sampleKey);
+      const sample = {
+        status: details.status,
+        url: details.url,
+        kind,
+        message: details.message,
+      };
+      stats.samples.push(sample);
+      logMapEvent("map:resource-failure:sample", sample);
+    }
+
+    return {
+      kind,
+      counts: stats.counts,
+      total: stats.total,
+    };
+  }, []);
+
+  useEffect(() => {
+    mapServiceUnavailableRef.current = isMapServiceUnavailable;
+  }, [isMapServiceUnavailable]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (isMapServiceUnavailable && !mapInteractionsFrozenRef.current) {
+      setMapInteractionsEnabled(map, false);
+      mapInteractionsFrozenRef.current = true;
+      logMapEvent("map:degraded-mode:enter", {
+        hasMapInstance: true,
+        hasLoaded: mapLoadedRef.current,
+        cooldownUntil: mapCooldownState.until,
+        remainingMs: mapCooldownState.until ? Math.max(0, mapCooldownState.until - Date.now()) : null,
+        strikes: mapCooldownState.strikes,
+        backoffMs: mapCooldownState.backoffMs,
+      });
+      logMapFailureSummary("map:resource-failure:summary");
+      return;
+    }
+    if (!isMapServiceUnavailable && mapInteractionsFrozenRef.current) {
+      setMapInteractionsEnabled(map, true);
+      mapInteractionsFrozenRef.current = false;
+      logMapEvent("map:degraded-mode:exit", {
+        hasMapInstance: true,
+        hasLoaded: mapLoadedRef.current,
+        strikes: mapCooldownState.strikes,
+      });
+      mapFailureStatsRef.current = createMapFailureStats();
+    }
+  }, [isMapServiceUnavailable, logMapFailureSummary, mapCooldownState]);
+
+  useEffect(() => {
+    function syncCooldown() {
+      setMapCooldownState(readMapCooldownState());
+    }
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key === MAP_COOLDOWN_KEY) syncCooldown();
+    }
+
+    window.addEventListener(MAP_COOLDOWN_EVENT, syncCooldown);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(MAP_COOLDOWN_EVENT, syncCooldown);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (mapCooldownUntil === null) return;
+    const delay = Math.max(0, mapCooldownUntil - Date.now());
+    const timeout = setTimeout(() => {
+      const nextState = readMapCooldownState();
+      setMapCooldownState(nextState);
+      if (nextState.until === null && !mapRef.current) {
+        setMapInitRetryToken((value) => value + 1);
+      }
+    }, delay);
+    return () => clearTimeout(timeout);
+  }, [mapCooldownUntil]);
 
   function openJournal(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isJournalOpen) {
@@ -802,15 +1083,92 @@ export default function TripMap({
   // Map init
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
+    const activeCooldown = getActiveMapCooldown();
+    if (activeCooldown) {
+      const activeCooldownState = readMapCooldownState();
+      logMapEvent("map:cooldown:active", {
+        cooldownUntil: activeCooldown,
+        remainingMs: Math.max(0, activeCooldown - Date.now()),
+        strikes: activeCooldownState.strikes,
+        backoffMs: activeCooldownState.backoffMs,
+        source: "sessionStorage",
+      });
+      setMapCooldownState(activeCooldownState);
+      return;
+    }
+    if (!mapStyleUrl) {
+      logMapError("map:proxy-url:missing", {
+        env: "VITE_CONVEX_SITE_URL",
+        devFallback: import.meta.env.DEV,
+      });
+      return;
+    }
 
+    mapCooldownTriggeredRef.current = false;
+    mapDiagnosticFetchUrlRef.current = null;
+    mapFailureStatsRef.current = createMapFailureStats();
+    logMapEvent("map:init:start", {
+      styleUrl: mapStyleUrl,
+    });
     const map = new maplibregl.Map({
       container: mapContainerRef.current,
-      style: OPEN_FREE_MAP_STYLE,
+      style: mapStyleUrl,
       center: SEATTLE_CENTER,
       zoom: 11,
       minZoom: 2,
       maxZoom: 18,
       collectResourceTiming: false,
+    });
+
+    map.on("load", () => {
+      mapLoadedRef.current = true;
+      logMapEvent("map:load:success", {
+        styleUrl: mapStyleUrl,
+        zoom: map.getZoom(),
+      });
+    });
+
+    map.on("error", (event) => {
+      const details = mapLibreErrorDetails(event);
+      const resourceFailure = recordMapResourceFailure(details);
+      logMapError("map:error", {
+        ...details,
+        resourceKind: resourceFailure.kind,
+      });
+      if (details.status === 403 || details.status === 429) {
+        if (mapCooldownTriggeredRef.current) {
+          logMapEvent("map:cooldown:duplicate-error", {
+            ...details,
+            resourceKind: resourceFailure.kind,
+            reason: "cooldown-already-triggered",
+          });
+          return;
+        }
+        if (details.url) {
+          fetchMapFailureDiagnostic(details.url);
+        }
+        mapCooldownTriggeredRef.current = true;
+        const cooldownState = triggerMapCooldown(Date.now());
+        const cooldownUntil = cooldownState.until;
+        logMapError("map:cooldown:triggered", {
+          ...details,
+          resourceKind: resourceFailure.kind,
+          cooldownUntil,
+          remainingMs: cooldownUntil ? Math.max(0, cooldownUntil - Date.now()) : 0,
+          strikes: cooldownState.strikes,
+          backoffMs: cooldownState.backoffMs,
+          failureCounts: resourceFailure.counts,
+          failureTotal: resourceFailure.total,
+          reason: "maplibre-error-status",
+        });
+        logMapFailureSummary("map:resource-failure:summary");
+        setMapCooldownState(cooldownState);
+        setContextMenu(null);
+        const minutesRemaining = cooldownUntil
+          ? Math.max(1, Math.ceil((cooldownUntil - Date.now()) / 60_000))
+          : 1;
+        showToast(`Map Service Unavailable. It will attempt to resume in ${minutesRemaining} min.`);
+      }
     });
 
     map.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
@@ -886,8 +1244,22 @@ export default function TripMap({
     return () => {
       map.remove();
       mapRef.current = null;
+      setMapInstance(null);
+      mapLoadedRef.current = false;
+      mapInteractionsFrozenRef.current = false;
     };
-  }, [canWrite, forceOpenMissions, role, log]);
+  }, [
+    canWrite,
+    fetchMapFailureDiagnostic,
+    forceOpenMissions,
+    role,
+    log,
+    logMapFailureSummary,
+    mapInitRetryToken,
+    mapStyleUrl,
+    recordMapResourceFailure,
+    showToast,
+  ]);
 
   useEffect(() => {
     isLocationSharingRef.current = isLocationSharing;
@@ -968,12 +1340,12 @@ export default function TripMap({
   ) {
     const last = lastSentLocationRef.current;
     const now = Date.now();
-    const moved =
-      !last ||
+    const elapsed = last ? now - last.sentAt : Number.POSITIVE_INFINITY;
+    const moved = !last ||
       Math.abs(position.lat - last.lat) > 0.0001 ||
-      Math.abs(position.lon - last.lon) > 0.0001 ||
-      now - last.sentAt > 30_000;
-    if (!moved) return;
+      Math.abs(position.lon - last.lon) > 0.0001;
+    if (last && elapsed < MIN_LOCATION_PUBLISH_INTERVAL_MS) return;
+    if (last && !moved && elapsed < 30_000) return;
 
     lastSentLocationRef.current = {
       lat: position.lat,
@@ -1038,6 +1410,10 @@ export default function TripMap({
 
   function handleNavigateToMission(coord: { lat: number; lon: number }) {
     if (!mapRef.current) return;
+    if (mapServiceUnavailableRef.current) {
+      logMapEvent("map:camera:blocked", { trigger: "Mission:location-focus" });
+      return;
+    }
     log.logInteraction("map:camera:move", { lat: coord.lat, lon: coord.lon, trigger: "Mission:location-focus" });
     // Offset the target so it appears in the visible area to the right of the
     // 320px panel and above the bottom detail sheet (~300px).
@@ -1189,21 +1565,14 @@ export default function TripMap({
   }
 
 
-  function showToast(message: string) {
-    music.sfx("toast");
-    if (toastTimeoutRef.current !== null) {
-      clearTimeout(toastTimeoutRef.current);
-    }
-    setToastMessage(message);
-    toastTimeoutRef.current = setTimeout(() => {
-      setToastMessage(null);
-      toastTimeoutRef.current = null;
-    }, 3200);
-  }
-
   function centerMapOnCoordinate(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
+    if (mapServiceUnavailableRef.current) {
+      logMapEvent("map:camera:blocked", { trigger: "center:location" });
+      showToast("Map movement is paused until the map service resumes.");
+      return;
+    }
     log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "center:location" });
     // Reset any persistent padding set by handleNavigateToMission before easing
     map.easeTo({
@@ -1220,6 +1589,10 @@ export default function TripMap({
   function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
+    if (mapServiceUnavailableRef.current) {
+      logMapEvent("map:camera:blocked", { trigger: "journal:location-focus" });
+      return;
+    }
     log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "journal:location-focus" });
     const mapHeight = map.getContainer().clientHeight;
     map.easeTo({
@@ -1233,6 +1606,10 @@ export default function TripMap({
   function handleStoryDetailLocationFocus(coordinate: { lat: number; lon: number }) {
     const map = mapRef.current;
     if (!map) return;
+    if (mapServiceUnavailableRef.current) {
+      logMapEvent("map:camera:blocked", { trigger: "story-detail:location-focus" });
+      return;
+    }
     log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "story-detail:location-focus" });
     const mapContainer = map.getContainer();
     const mapHeight = mapContainer.clientHeight;
@@ -1304,6 +1681,10 @@ export default function TripMap({
   ) {
     if (!mapRef.current || !bounds) return;
     if (!isFiniteLngLatBounds(bounds)) return;
+    if (mapServiceUnavailableRef.current) {
+      logMapEvent("map:camera:blocked", { trigger: "route-vote" });
+      return;
+    }
     const bottom = paddingBottom ?? 80;
     log.logInteraction("map:camera:fitbounds", {
       sw: { lon: bounds[0][0], lat: bounds[0][1] },
@@ -1326,6 +1707,9 @@ export default function TripMap({
   );
 
   const isPickingCoordinate = coordinatePickMode !== null;
+  const mapCooldownMinutesRemaining = mapCooldownUntil
+    ? Math.max(1, Math.ceil((mapCooldownUntil - Date.now()) / 60_000))
+    : null;
 
   const latestCheckpoint = checkpoints.at(-1) ?? null;
   const latestCheckpointLat = latestCheckpoint?.lat;
@@ -1471,6 +1855,36 @@ export default function TripMap({
             {toastMessage}
           </motion.div>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {isMapServiceUnavailable ? (
+          <motion.div
+            key="map-service-unavailable"
+            initial={{ y: -16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -16, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" as const }}
+            role="alert"
+            className="absolute left-1/2 top-4 z-[7] flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-col rounded-md bg-rose-700 px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+          >
+            <span>Map Service Unavailable</span>
+            <span className="text-xs font-normal opacity-85">
+              {mapCooldownMinutesRemaining
+                ? `It will attempt to resume in ${mapCooldownMinutesRemaining} min.`
+                : "Map proxy is not configured."}
+            </span>
+            {mapCooldownUntil && role === "traveler" ? (
+              <button
+                type="button"
+                className="mt-2 self-start rounded bg-white px-2.5 py-1 text-xs font-semibold text-rose-700"
+                onClick={handleMapTryAgain}
+              >
+                Try again
+              </button>
+            ) : null}
+          </motion.div>
+        ) : null}
       </AnimatePresence>
 
       {contextMenu && (

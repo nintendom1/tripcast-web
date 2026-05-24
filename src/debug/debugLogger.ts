@@ -258,6 +258,22 @@ export function logNote(text: string): void {
   log("info", "user", "user:note", "debug", { note: text.slice(0, 500) });
 }
 
+export function logMapError(
+  action: string,
+  details?: Record<string, unknown>,
+  state?: Record<string, unknown>,
+): void {
+  log("error", "MapLibre", action, "error", details, state);
+}
+
+export function logMapEvent(
+  action: string,
+  details?: Record<string, unknown>,
+  state?: Record<string, unknown>,
+): void {
+  log("info", "MapLibre", action, "map", details, state);
+}
+
 export function getLogs(): DebugEntry[] {
   loadFromStorage();
   return [...buffer];

@@ -128,6 +128,8 @@ function renderOptions(overrides?: Partial<React.ComponentProps<typeof OptionsSh
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  sessionStorage.clear();
 });
 
 describe("OptionsSheet traveler timezone", () => {
@@ -232,5 +234,20 @@ describe("OptionsSheet developer scoring toggle", () => {
     expect(
       screen.queryByText("Earn Follower points as Traveler"),
     ).not.toBeInTheDocument();
+  });
+
+  it("manually triggers map cooldown from Developer options", async () => {
+    localStorage.setItem("tripcast.debug.enabled", "true");
+    const dispatchSpy = vi.spyOn(window, "dispatchEvent");
+    setupMocks();
+    renderOptions();
+
+    await userEvent.click(screen.getByRole("button", { name: /trigger map cooldown/i }));
+
+    expect(sessionStorage.getItem("tripcast.map_cooldown")).not.toBeNull();
+    expect(dispatchSpy).toHaveBeenCalledWith(expect.objectContaining({
+      type: "tripcast.mapCooldownChanged",
+    }));
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:manual-trigger");
   });
 });
