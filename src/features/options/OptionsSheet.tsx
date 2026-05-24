@@ -187,37 +187,40 @@ function AppearanceSection() {
     <OptionsSection label="Appearance">
       <div className="grid grid-cols-3 gap-2 rounded-xl bg-[var(--bg-card)] p-2 shadow-sm">
         <button
+          type="button"
+          onClick={() => setMode("auto")}
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
+            mode === "auto"
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
+              : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          )}
+        >
+          <Infinity className="h-4 w-4" /> Auto
+        </button>
+        <button
+          type="button"
           onClick={() => setMode("meadow")}
           className={cn(
             "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
-            mode === "meadow" 
-              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm" 
+            mode === "meadow"
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
               : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
           )}
         >
           <Sun className="h-4 w-4" /> Meadow
         </button>
         <button
+          type="button"
           onClick={() => setMode("constellation")}
           className={cn(
             "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
-            mode === "constellation" 
-              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm" 
+            mode === "constellation"
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
               : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
           )}
         >
           <Moon className="h-4 w-4" /> Constellation
-        </button>
-        <button
-          onClick={() => setMode("auto")}
-          className={cn(
-            "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
-            mode === "auto" 
-              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm" 
-              : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
-          )}
-        >
-          <Infinity className="h-4 w-4" /> Auto
         </button>
       </div>
       {mode === "auto" && (
