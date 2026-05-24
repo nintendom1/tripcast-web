@@ -369,7 +369,8 @@ export default function BulkImportSheet({
         data-role="bulk-import-sheet"
         className="max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
-        <div className="flex items-start justify-between gap-2 px-5 pt-2">
+        <div className="relative flex items-start justify-between gap-2 px-5 pt-2">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[var(--header-gradient)]" />
           <div className="flex min-w-0 flex-col gap-1.5">
             <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
               Bulk Import

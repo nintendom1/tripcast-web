@@ -472,7 +472,7 @@ export default function OptionsSheet({
           data-role="options-sheet"
           className={cn(
             // Set to fixed height to prevent layout shifts when logs populate (Issue 3)
-            "h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+            "h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-sheet)]",
             view === "debug-logs" && "overflow-hidden",
           )}
         >
@@ -492,7 +492,10 @@ export default function OptionsSheet({
               onPendingChange={setIsEmergencyResetPending}
             />
           ) : view === "debug-logs" ? null : (
-            <OptionsHomeHeader role={role} />
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[var(--header-gradient)]" />
+              <OptionsHomeHeader role={role} />
+            </div>
           )}
 
           {view === "travel-funds" ? (
@@ -1002,20 +1005,20 @@ function OptionsRow({
       onClick={onClick}
       className={cn(
         "flex items-center gap-3 rounded-xl bg-[var(--bg-card)] p-3 text-left shadow-sm",
-        danger && "bg-rose-50 text-rose-900",
+        danger && "bg-[var(--bg-danger)] text-[var(--ink-danger)]",
       )}
     >
       <div
         className={cn(
           "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-2)]",
-          danger && "bg-rose-100 text-rose-700",
+          danger && "bg-[var(--bg-paper)] opacity-80",
         )}
       >
         <Icon className="h-4 w-4" aria-hidden />
       </div>
       <div className="min-w-0 flex-1">
-        <p className={cn("text-sm font-semibold text-[var(--ink-1)]", danger && "text-rose-950")}>{title}</p>
-        {detail ? <p className={cn("text-xs text-[var(--ink-3)]", danger && "text-rose-700")}>{detail}</p> : null}
+        <p className={cn("text-sm font-semibold text-[var(--ink-1)]", danger && "text-[var(--ink-danger)]")}>{title}</p>
+        {detail ? <p className={cn("text-xs text-[var(--ink-3)]", danger && "text-[var(--ink-danger)]")}>{detail}</p> : null}
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ink-3)]" aria-hidden />
     </button>

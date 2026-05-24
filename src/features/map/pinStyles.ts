@@ -89,9 +89,12 @@ export function buildPinMarkerSvg({
   const haloRect = halo
     ? `<circle cx="12" cy="11.6" r="13" fill="${halo}" />`
     : "";
+  // Check-in pins use var(--ink-1), so their inner dot should be var(--bg-paper) for contrast.
+  // Brand pins (story, mission, etc) use var(--ink-on-brand).
+  const innerColor = kind === "checkin" ? "var(--bg-paper)" : "var(--ink-on-brand)";
   const inner = iconSvg
-    ? `<g transform="translate(7 6.5) scale(0.42)" fill="#fff" stroke="#fff">${iconSvg}</g>`
-    : `<circle cx="12" cy="11.6" r="4" fill="#fff" />`;
+    ? `<g transform="translate(7 6.5) scale(0.42)" fill="${innerColor}" stroke="${innerColor}">${iconSvg}</g>`
+    : `<circle cx="12" cy="11.6" r="4" fill="${innerColor}" />`;
   const label = ariaLabel
     ? `<title>${ariaLabel}</title>`
     : "";

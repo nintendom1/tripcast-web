@@ -22,7 +22,16 @@ const THEMES = {
     "--amber": "#ffb84a",
     "--plum": "#f06f7e",
     "--teal": "#7a9cdc",
+    "--bg-danger": "#fff1f2", // rose-50
+    "--ink-danger": "#450a0a", // rose-950
+    "--shadow-sheet": "0 -12px 40px rgba(0,0,0,0.12)",
+    "--header-gradient": "linear-gradient(to bottom, var(--bg-paper), transparent)",
     "--ink-on-dark": "#ffffff",
+    "--ink-on-brand": "#ffffff",
+    "--map-land": "#f4f0dc",
+    "--map-water": "#b3def0",
+    "--map-park": "#daedba",
+    "--map-forest": "#bcd58a",
     "--line-soft": "rgba(0,0,0,0.06)",
     "--meter-track": "rgba(0,0,0,0.05)",
     "--font-display": '"Fredoka", "Quicksand", sans-serif',
@@ -33,12 +42,21 @@ const THEMES = {
     "--bg-card": "#2c2f4f",
     "--ink-1": "#f0eaff",
     "--ink-2": "#c2bdee",
-    "--ink-3": "#8a85c2",
+    "--ink-3": "#9a95d2", // Bumped for better contrast on dark navy
     "--flag": "#ffb24a",
     "--amber": "#ffd86a",
     "--plum": "#ff8aae",
     "--teal": "#7a9aff",
+    "--bg-danger": "rgba(244, 63, 94, 0.2)",
+    "--ink-danger": "#ff8aae",
+    "--shadow-sheet": "none",
+    "--header-gradient": "none", // Removed for Constellation per request
     "--ink-on-dark": "#1c1f3a",
+    "--ink-on-brand": "#1c1f3a",
+    "--map-land": "#2a2e4a",
+    "--map-water": "#1e2440",
+    "--map-park": "#324a48",
+    "--map-forest": "#3a5256",
     "--line-soft": "rgba(255,255,255,0.1)",
     "--meter-track": "rgba(255,255,255,0.08)",
     "--font-display": '"Cormorant Garamond", serif',
@@ -102,11 +120,18 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         :root {
           transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
                       color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-                      border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+                      border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
+                      --map-land 0.6s ease,
+                      --map-water 0.6s ease,
+                      --shadow-sheet 0.6s ease;
         }
         /* Specific transition for sheets and cards */
         [data-role="options-sheet"], .bg-\[var\(--bg-card\)\] {
           transition: background-color 0.6s ease, color 0.6s ease;
+        }
+        .maplibregl-map {
+          background-color: var(--map-land);
+          transition: background-color 0.6s ease;
         }
       `}</style>
       {children}

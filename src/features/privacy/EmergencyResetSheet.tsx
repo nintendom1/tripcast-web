@@ -6,6 +6,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import {
   Sheet,
+  SheetCloseButton,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -13,6 +14,7 @@ import {
 } from "../../components/ui/sheet";
 import { TERMS } from "../../copy/terminology";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
+import { cn } from "@/lib/utils";
 
 type EmergencyResetSheetProps = {
   open: boolean;
@@ -73,7 +75,11 @@ export default function EmergencyResetSheet({
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="bottom">
+      <SheetContent 
+        side="bottom"
+        className="h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-sheet)]"
+        data-role="emergency-reset-sheet"
+      >
         <EmergencyResetContent
           token={token}
           onClose={handleContentClose}

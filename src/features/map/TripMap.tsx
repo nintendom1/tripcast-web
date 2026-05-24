@@ -60,6 +60,7 @@ import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useTripPath } from "./useTripPath";
 import { DebugChip } from "../../debug/DebugChip";
+import { useTheme } from "../../providers/ThemeProvider";
 import { isEnabled, isCategoryEnabled, log as rawLog, logMapError, logMapEvent } from "../../debug/debugLogger";
 import {
   MOOD_LABELS,
@@ -624,7 +625,8 @@ export default function TripMap({
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
   const canWrite = role === "traveler";
-  const mapStyleResolution = useMemo(() => getMapStyleResolution(), []);
+  const { resolvedMapBase } = useTheme();
+  const mapStyleResolution = useMemo(() => getMapStyleResolution(resolvedMapBase), [resolvedMapBase]);
   const mapStyleUrl = mapStyleResolution.styleUrl;
   const mapCooldownUntil = mapCooldownState.until;
   const isMapServiceUnavailable = mapCooldownUntil !== null || !mapStyleUrl;
@@ -2273,9 +2275,12 @@ export default function TripMap({
         >
           <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: FUNDS_PERSONALITY.color }} />
           <div
-            className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
+            className="relative flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
             style={{ background: `linear-gradient(180deg, ${FUNDS_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
           >
+            {/* Overlay the theme-aware gradient variable to allow cancellation in Constellation */}
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-full bg-[var(--header-gradient)]" />
+            
             <div className="flex min-w-0 flex-col gap-1">
               <div className="flex items-center gap-2">
                 <span
