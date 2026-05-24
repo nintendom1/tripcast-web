@@ -29,6 +29,18 @@ const RESPONSE_PRESETS = [
   "Not today",
 ];
 
+const missionLabelClass = "text-xs font-medium text-[var(--ink-3)]";
+const missionHintClass = "text-xs text-[var(--ink-3)]";
+const missionErrorClass = "text-sm text-[var(--ink-danger)]";
+const dangerDividerClass = "flex-1 h-px bg-[var(--bg-danger)] opacity-60";
+const dangerLabelClass = "text-[10px] text-[var(--ink-danger)] font-medium uppercase tracking-wide";
+const dangerButtonClass = "border-[var(--ink-danger)] bg-[var(--bg-danger)] text-[var(--ink-danger)] hover:bg-[var(--bg-danger)] hover:text-[var(--ink-danger)] hover:opacity-90";
+const primaryDangerButtonClass = "border-[var(--ink-danger)] bg-[var(--ink-danger)] text-[var(--bg-paper)] hover:bg-[var(--ink-danger)] hover:opacity-90";
+const missionSelectClass = "h-9 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]";
+const energyChipBaseClass = "rounded-full border px-3 py-1 text-xs transition-colors";
+const energyChipActiveClass = "border-[var(--flag)] bg-[var(--flag)] text-[var(--ink-on-brand)]";
+const energyChipIdleClass = "border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]";
+
 type Props = {
   Mission: Mission | null;
   token: string;
@@ -455,21 +467,21 @@ export default function MissionDetailSheet({
     return (
       <div className="flex flex-col gap-4 p-4 pt-0">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-navy">Edit Mission</span>
+          <span className="text-sm font-semibold text-[var(--ink-1)]">Edit Mission</span>
           <button
             type="button"
-            className="text-xs text-muted-foreground underline"
+            className="text-xs text-[var(--ink-3)] underline hover:text-[var(--ink-1)]"
             onClick={cancelEditMode}
           >
             Cancel
           </button>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className={missionHintClass}>
           The follower will see the edits to the Mission.
         </p>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Title</label>
+          <label className={missionLabelClass}>Title</label>
           <Input
             placeholder="Mission title"
             value={editTitle}
@@ -479,7 +491,7 @@ export default function MissionDetailSheet({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Notes (optional)</label>
+          <label className={missionLabelClass}>Notes (optional)</label>
           <Textarea
             placeholder="Any details…"
             value={editDesc}
@@ -490,7 +502,7 @@ export default function MissionDetailSheet({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Location label (optional)</label>
+          <label className={missionLabelClass}>Location label (optional)</label>
           <Input
             placeholder="Place name"
             value={editLocation}
@@ -510,7 +522,7 @@ export default function MissionDetailSheet({
 
         <div className="flex gap-3">
           <div className="flex flex-col gap-1 flex-1">
-            <label className="text-xs font-medium text-muted-foreground">Est. cost (USD, optional)</label>
+            <label className={missionLabelClass}>Est. cost (USD, optional)</label>
             <Input
               type="number"
               step="0.01"
@@ -520,7 +532,7 @@ export default function MissionDetailSheet({
             />
           </div>
           <div className="flex flex-col gap-1 flex-1">
-            <label className="text-xs font-medium text-muted-foreground">Est. duration (min, optional)</label>
+            <label className={missionLabelClass}>Est. duration (min, optional)</label>
             <Input
               type="number"
               min="1"
@@ -533,17 +545,18 @@ export default function MissionDetailSheet({
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-muted-foreground">Energy impact (optional)</label>
+          <label className={missionLabelClass}>Energy impact (optional)</label>
           <div className="flex gap-2">
             {(["low", "medium", "high"] as const).map((level) => (
               <button
                 key={level}
                 type="button"
-                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                className={cn(
+                  energyChipBaseClass,
                   editEnergy === level
-                    ? "bg-navy text-white border-navy"
-                    : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-                }`}
+                    ? energyChipActiveClass
+                    : energyChipIdleClass,
+                )}
                 onClick={() => setEditEnergy(editEnergy === level ? "" : level)}
               >
                 {level.charAt(0).toUpperCase() + level.slice(1)}
@@ -553,10 +566,10 @@ export default function MissionDetailSheet({
         </div>
 
         {actionError && (
-          <p className="text-sm text-rose-600" role="alert">{actionError}</p>
+          <p className={missionErrorClass} role="alert">{actionError}</p>
         )}
 
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[11px] text-[var(--ink-3)]">
           Lifecycle changes (start, complete, drop, status) live in Next Steps —
           editing here only updates the Mission's details.
         </p>
@@ -637,9 +650,9 @@ export default function MissionDetailSheet({
             Drop with response
           </Button>
           <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1 h-px bg-[var(--bg-danger)] opacity-50" />
-            <span className="text-[10px] text-[var(--ink-danger)] font-medium uppercase tracking-wide">⚠ Danger</span>
-            <div className="flex-1 h-px bg-[var(--bg-danger)] opacity-50" />
+            <div className={dangerDividerClass} />
+            <span className={dangerLabelClass}>⚠ Danger</span>
+            <div className={dangerDividerClass} />
           </div>
           <Button
             variant="outline"
@@ -647,7 +660,7 @@ export default function MissionDetailSheet({
             type="button"
             disabled={!canAct}
             onClick={() => setShowDeleteConfirm(true)}
-            className="border-[var(--bg-danger)] text-[var(--ink-danger)] hover:bg-[var(--bg-danger)]/10"
+            className={dangerButtonClass}
           >
             Delete silently
           </Button>
@@ -655,8 +668,8 @@ export default function MissionDetailSheet({
       )}
 
       {showMarkInProgressConfirm && conflictingMission && (
-        <div className="flex flex-col gap-3 border border-amber-200 rounded-lg p-3 bg-amber-50">
-          <p className="text-sm text-amber-800">
+        <div className="flex flex-col gap-3 rounded-lg border border-[var(--amber)] bg-[color-mix(in_oklab,var(--amber)_14%,transparent)] p-3">
+          <p className="text-sm text-[var(--ink-1)]">
             &ldquo;{conflictingMission.title}&rdquo; is currently in progress. Starting this mission will drop it.
           </p>
           <div className="flex gap-2">
@@ -707,9 +720,9 @@ export default function MissionDetailSheet({
             Drop with note
           </Button>
           <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1 h-px bg-[var(--bg-danger)] opacity-50" />
-            <span className="text-[10px] text-[var(--ink-danger)] font-medium uppercase tracking-wide">⚠ Danger</span>
-            <div className="flex-1 h-px bg-[var(--bg-danger)] opacity-50" />
+            <div className={dangerDividerClass} />
+            <span className={dangerLabelClass}>⚠ Danger</span>
+            <div className={dangerDividerClass} />
           </div>
           <Button
             variant="outline"
@@ -720,7 +733,7 @@ export default function MissionDetailSheet({
               log.logUi("action:delete-open", { missionId: c._id });
               setShowDeleteConfirm(true);
             }}
-            className="border-[var(--bg-danger)] text-[var(--ink-danger)] hover:bg-[var(--bg-danger)]/10"
+            className={dangerButtonClass}
           >
             Delete silently
           </Button>
@@ -740,7 +753,7 @@ export default function MissionDetailSheet({
               Set Current Activity to This Mission
             </Button>
           )}
-          <p className="text-xs text-muted-foreground">
+          <p className={missionHintClass}>
             Completing this Mission will mark the linked Current Activity as done and open the Story form.
           </p>
           {isTraveler && (
@@ -790,9 +803,9 @@ export default function MissionDetailSheet({
             Drop with note
           </Button>
           <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1 h-px bg-rose-200" />
-            <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
-            <div className="flex-1 h-px bg-rose-200" />
+            <div className={dangerDividerClass} />
+            <span className={dangerLabelClass}>⚠ Danger</span>
+            <div className={dangerDividerClass} />
           </div>
           <Button
             variant="outline"
@@ -800,7 +813,7 @@ export default function MissionDetailSheet({
             type="button"
             disabled={!canAct}
             onClick={() => setShowDeleteConfirm(true)}
-            className="border-rose-300 text-rose-700 hover:bg-rose-50"
+            className={dangerButtonClass}
           >
             Delete silently
           </Button>
@@ -808,7 +821,7 @@ export default function MissionDetailSheet({
       )}
 
       {(status === "completed" || status === "dropped") && (
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-[var(--ink-3)]">
           {status === "completed" ? "This Mission is complete." : "This Mission was dropped."}
         </p>
       )}
@@ -820,16 +833,16 @@ export default function MissionDetailSheet({
       {/* Header — status only; Edit lives in the About section so lifecycle
           actions and field edits stay visually separate. */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">
           {statusLabel(status)}
         </span>
       </div>
 
       {/* Title + description */}
       <div className="flex flex-col gap-1.5">
-        <h2 className="text-base font-semibold text-navy">{c.title}</h2>
+        <h2 className="text-base font-semibold text-[var(--ink-1)]">{c.title}</h2>
         {c.description && (
-          <p className="text-sm text-muted-foreground">{c.description}</p>
+          <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
         )}
       </div>
 
@@ -852,7 +865,7 @@ export default function MissionDetailSheet({
         )}
 
         {actionError && (
-          <p className="text-sm text-rose-600" role="alert">{actionError}</p>
+          <p className={missionErrorClass} role="alert">{actionError}</p>
         )}
 
         {/* Reject with response form */}
@@ -900,7 +913,7 @@ export default function MissionDetailSheet({
                 type="button"
                 disabled={!canAct}
                 onClick={handleReject}
-                className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
+                className={primaryDangerButtonClass}
               >
                 {isWorking ? "Dropping…" : "Confirm drop"}
               </Button>
@@ -928,7 +941,7 @@ export default function MissionDetailSheet({
                 type="button"
                 disabled={!canAct}
                 onClick={handleDeleteSilently}
-                className="bg-rose-600 hover:bg-rose-700 text-white border-rose-600"
+                className={primaryDangerButtonClass}
               >
                 {isWorking ? "Deleting…" : "Yes, delete"}
               </Button>
@@ -944,11 +957,11 @@ export default function MissionDetailSheet({
             {/* Manual status override — advanced, lifecycle-only control */}
             {showStatusOverride ? (
               <div className="mt-1 flex flex-col gap-2 rounded-lg border border-[var(--line-soft)] p-3">
-                <label className="text-xs font-medium text-muted-foreground">Set status manually</label>
+                <label className={missionLabelClass}>Set status manually</label>
                 <select
                   value={overrideStatus}
                   onChange={(e) => setOverrideStatus(e.target.value as MissionStatus)}
-                  className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                  className={missionSelectClass}
                 >
                   <option value="proposed">Proposed</option>
                   <option value="planned">Planned</option>
@@ -974,7 +987,7 @@ export default function MissionDetailSheet({
             ) : (
               <button
                 type="button"
-                className="self-start text-xs text-muted-foreground underline"
+                className="self-start text-xs text-[var(--ink-3)] underline hover:text-[var(--ink-1)]"
                 onClick={openStatusOverride}
               >
                 Change status manually
@@ -991,7 +1004,7 @@ export default function MissionDetailSheet({
             type="button"
             disabled={!canAct}
             onClick={handleWithdraw}
-            className="border-rose-300 text-rose-700 hover:bg-rose-50 w-fit"
+            className={cn(dangerButtonClass, "w-fit")}
           >
             Withdraw proposal
           </Button>
@@ -1005,7 +1018,7 @@ export default function MissionDetailSheet({
           {isTraveler && (
             <button
               type="button"
-              className="text-xs text-navy underline"
+              className="text-xs text-[var(--flag)] underline hover:text-[var(--ink-1)]"
               onClick={openEditMode}
             >
               Edit
@@ -1015,7 +1028,7 @@ export default function MissionDetailSheet({
 
         {/* Meta */}
         {hasMeta && (
-          <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+          <div className="flex flex-col gap-1 text-sm text-[var(--ink-3)]">
             {c.locationLabel && <span>📍 {c.locationLabel}</span>}
             {!hasLocation && <span className="text-xs italic">No map location (text-only Mission)</span>}
             {c.estimatedDurationMinutes && (
@@ -1032,15 +1045,15 @@ export default function MissionDetailSheet({
 
         {/* Traveler response (preset + note) — visible to both roles */}
         {(c.travelerResponsePreset || c.travelerResponseNote) && !c.silentDrop && (
-          <div className="rounded-md bg-slate-50 border border-slate-200 p-3 flex flex-col gap-1.5">
-            <p className="text-xs font-medium text-muted-foreground">Traveler's response</p>
+          <div className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 flex flex-col gap-1.5">
+            <p className={missionLabelClass}>Traveler's response</p>
             {c.travelerResponsePreset && (
-              <span className="self-start px-2.5 py-0.5 text-xs rounded-full bg-navy/10 text-navy font-medium">
+              <span className="self-start rounded-full bg-[var(--meter-track)] px-2.5 py-0.5 text-xs font-medium text-[var(--flag)]">
                 {c.travelerResponsePreset}
               </span>
             )}
             {c.travelerResponseNote && (
-              <p className="text-sm text-foreground">{c.travelerResponseNote}</p>
+              <p className="text-sm text-[var(--ink-1)]">{c.travelerResponseNote}</p>
             )}
           </div>
         )}
@@ -1082,10 +1095,10 @@ export default function MissionDetailSheet({
 
           {/* Linked story card — shown when a story has been filed against this mission */}
           {isTraveler && linkedStory && (
-            <div className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Linked story</p>
-              <p className="text-sm font-medium text-navy line-clamp-1">{linkedStory.title ?? "Story"}</p>
-              <p className="text-xs text-muted-foreground">
+            <div className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 flex flex-col gap-2">
+              <p className="text-xs font-medium text-[var(--ink-3)] uppercase tracking-wide">Linked story</p>
+              <p className="text-sm font-medium text-[var(--ink-1)] line-clamp-1">{linkedStory.title ?? "Story"}</p>
+              <p className="text-xs text-[var(--ink-3)]">
                 {new Date(linkedStory.occurredAt).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
               </p>
               {onOpenLinkedStory && (

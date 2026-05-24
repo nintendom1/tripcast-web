@@ -7,6 +7,13 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { LocationPickerField } from "../map/MapPicker";
+import { cn } from "@/lib/utils";
+
+const missionLabelClass = "text-xs font-medium text-[var(--ink-3)]";
+const missionErrorClass = "text-sm text-[var(--ink-danger)]";
+const energyChipBaseClass = "rounded-full border px-3 py-1 text-xs transition-colors";
+const energyChipActiveClass = "border-[var(--flag)] bg-[var(--flag)] text-[var(--ink-on-brand)]";
+const energyChipIdleClass = "border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]";
 
 type Props = {
   token: string;
@@ -111,7 +118,7 @@ export default function MissionProposalForm({
   if (showNoLocationConfirm) {
     return (
       <div className="flex flex-col gap-4 p-4">
-        <p className="text-sm text-foreground">
+        <p className="text-sm text-[var(--ink-1)]">
           There's no location. It will not appear on the map. Are you sure you want to continue?
         </p>
         <div className="flex gap-2">
@@ -139,7 +146,7 @@ export default function MissionProposalForm({
   return (
     <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-title">
+        <label className={missionLabelClass} htmlFor="Mission-title">
           Mission title <span aria-hidden>*</span>
         </label>
         <Input
@@ -153,7 +160,7 @@ export default function MissionProposalForm({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-desc">
+        <label className={missionLabelClass} htmlFor="Mission-desc">
           Notes (optional)
         </label>
         <Textarea
@@ -167,7 +174,7 @@ export default function MissionProposalForm({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-location">
+        <label className={missionLabelClass} htmlFor="Mission-location">
           Location (optional)
         </label>
         <Input
@@ -190,7 +197,7 @@ export default function MissionProposalForm({
 
       <div className="flex gap-3">
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-cost">
+          <label className={missionLabelClass} htmlFor="Mission-cost">
             Est. cost (USD, optional)
           </label>
           <Input
@@ -203,7 +210,7 @@ export default function MissionProposalForm({
           />
         </div>
         <div className="flex flex-col gap-1 flex-1">
-          <label className="text-xs font-medium text-muted-foreground" htmlFor="Mission-duration">
+          <label className={missionLabelClass} htmlFor="Mission-duration">
             Est. duration (min, optional)
           </label>
           <Input
@@ -219,7 +226,7 @@ export default function MissionProposalForm({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-muted-foreground">
+        <label className={missionLabelClass}>
           Energy impact (optional)
         </label>
         <div className="flex gap-2">
@@ -227,11 +234,12 @@ export default function MissionProposalForm({
             <button
               key={level}
               type="button"
-              className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+              className={cn(
+                energyChipBaseClass,
                 energyImpact === level
-                  ? "bg-navy text-white border-navy"
-                  : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-              }`}
+                  ? energyChipActiveClass
+                  : energyChipIdleClass,
+              )}
               onClick={() => setEnergyImpact(energyImpact === level ? "" : level)}
             >
               {level.charAt(0).toUpperCase() + level.slice(1)}
@@ -241,13 +249,13 @@ export default function MissionProposalForm({
       </div>
 
       {error && (
-        <p className="text-sm text-rose-600" role="alert">
+        <p className={missionErrorClass} role="alert">
           {error}
         </p>
       )}
 
       {settings?.moderationMode === "manual_review" && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs text-[var(--ink-3)]">
           Your mission will be sent to the Traveler for review before it appears to others.
         </p>
       )}
