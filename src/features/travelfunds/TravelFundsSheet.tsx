@@ -337,12 +337,12 @@ function SummaryView({
     <>
       <div
         className="flex flex-col gap-2 rounded-2xl border bg-[var(--bg-card)] px-4 py-4 shadow-[var(--shadow-card)]"
-        style={{ borderColor: "color-mix(in oklab, var(--meadow-forest) 38%, var(--line-soft))" }}
+        style={{ borderColor: "color-mix(in oklab, var(--teal) 38%, var(--line-soft))" }}
       >
         <div className="flex items-baseline justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <span
-              className="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full text-white shadow-sm"
+              className="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
               style={{ background: fundsPersonality.color }}
               aria-hidden="true"
             >
@@ -613,7 +613,7 @@ function SettingsBody({
       </div>
 
       {enabled && hasTransactions && (
-        <p className="rounded-md px-2 py-1 text-[11px] text-[var(--amber-2)]" style={{ background: "color-mix(in oklab, var(--amber) 14%, transparent)" }}>
+        <p className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-1)]" style={{ background: "color-mix(in oklab, var(--amber) 14%, transparent)" }}>
           Changing the starting budget recalculates remaining travel funds.
         </p>
       )}

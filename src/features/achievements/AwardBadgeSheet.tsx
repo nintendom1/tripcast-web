@@ -279,12 +279,12 @@ export default function AwardBadgeSheet({
               </section>
 
               {error ? (
-                <p className="text-sm text-rose-600" role="alert">
+                <p className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]" role="alert">
                   {error}
                 </p>
               ) : null}
               {feedback ? (
-                <p className="text-sm font-semibold text-emerald-700" role="status">
+                <p className="text-sm font-semibold text-[var(--teal)]" role="status">
                   {feedback}
                 </p>
               ) : null}

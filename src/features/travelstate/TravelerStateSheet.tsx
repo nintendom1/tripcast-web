@@ -273,13 +273,13 @@ function SheetSaveFooter({
       {error && (
         <p
           role="alert"
-          className="mb-3 rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          className="mb-3 rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]"
         >
           {error}
         </p>
       )}
       {savedAt && showSavedAt && !error && (
-        <p className="mb-3 text-sm text-emerald-700" suppressHydrationWarning>
+        <p className="mb-3 text-sm text-[var(--teal)]" suppressHydrationWarning>
           Saved {formatRelativeTime(savedAt)}
         </p>
       )}
@@ -556,7 +556,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         <div className="flex items-center gap-2">
           <span
             aria-hidden="true"
-            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
             style={{ background: statePersonality.color }}
           >
             <Heart className="h-4 w-4" />

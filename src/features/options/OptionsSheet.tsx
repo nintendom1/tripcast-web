@@ -173,7 +173,7 @@ function TravelerTimezoneSection({ token }: { token: string }) {
           </Button>
         ) : null}
 
-        {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+        {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
       </div>
     </OptionsSection>
   );
@@ -295,7 +295,7 @@ function MissionSettingsSection({ token }: { token: string }) {
         <span className="text-xs font-normal text-[var(--ink-3)]">Hard cap: 300 proposals per trip per day.</span>
       </label>
 
-      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+      {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
     </OptionsSection>
   );
 }
@@ -338,7 +338,7 @@ function DeveloperScoringToggle({ token }: { token: string }) {
           style={{ accentColor: "var(--flag)" }}
         />
       </label>
-      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+      {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
     </div>
   );
 }
@@ -380,7 +380,7 @@ function FollowerAttributionToggle({ token }: { token: string }) {
           style={{ accentColor: "var(--flag)" }}
         />
       </label>
-      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+      {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
     </div>
   );
 }

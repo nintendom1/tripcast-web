@@ -6,6 +6,8 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 
 const INVITE_DISMISS_MS = 60_000;
+const invitePanelClass = "flex items-center gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2";
+const inviteErrorClass = "rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-xs text-[var(--ink-danger)]";
 
 type CreateInviteControlProps = {
   token: string;
@@ -89,9 +91,9 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
     <div className="flex flex-col gap-2">
       {inviteUrl ? (
         <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 rounded-md border bg-muted/50 px-3 py-2">
-            <Link className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="flex-1 font-mono text-xs break-all">{inviteUrl}</span>
+          <div className={invitePanelClass}>
+            <Link className="h-3.5 w-3.5 shrink-0 text-[var(--ink-3)]" aria-hidden />
+            <span className="flex-1 break-all font-mono text-xs text-[var(--ink-1)]">{inviteUrl}</span>
           </div>
           <Button size="sm" variant="outline" type="button" onClick={handleCopy}>
             {copied ? (
@@ -101,7 +103,7 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
             )}
             {copied ? "Copied!" : "Copy invite link"}
           </Button>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs text-[var(--ink-3)]">
             Expires in 24 hours. Link clears automatically after 1 minute.
           </p>
         </div>
@@ -111,7 +113,7 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
         </Button>
       )}
       {error ? (
-        <p role="alert" className="text-xs text-destructive">
+        <p role="alert" className={inviteErrorClass}>
           {error}
         </p>
       ) : null}

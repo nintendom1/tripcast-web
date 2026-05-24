@@ -41,7 +41,7 @@ function HistoryRow({ event }: { event: AchievementEvent }) {
   return (
     <li className="flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)]">
       <div
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-white"
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[var(--ink-on-brand)]"
         style={{ background: awardsPersonality.color }}
       >
         <Award className="h-4 w-4" aria-hidden />
@@ -262,7 +262,7 @@ export default function AchievementsSheet({
             <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
                   style={{ background: awardsPersonality.color }}
               >
                 <Medal className="h-4 w-4" />

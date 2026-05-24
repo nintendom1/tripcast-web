@@ -19,6 +19,9 @@ const ROLE_OPTIONS: { value: AttributionRole; label: string }[] = [
   { value: "proposer", label: "Proposer" },
 ];
 
+const attributionSelectClass = "h-9 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]";
+const attributionErrorClass = "text-xs text-[var(--ink-danger)]";
+
 type DraftAttribution = {
   userId: string;
   role: AttributionRole;
@@ -192,7 +195,7 @@ export default function AttributionBlock({
         <div className="grid gap-2">
           <div className="grid gap-1">
             {draft.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No Followers credited.</p>
+              <p className="text-xs text-[var(--ink-3)]">No Followers credited.</p>
             ) : (
               draft.map((item) => (
                 <div
@@ -204,7 +207,7 @@ export default function AttributionBlock({
                   </span>
                   <button
                     type="button"
-                    className="shrink-0 text-xs text-rose-600 underline"
+                    className="shrink-0 text-xs text-[var(--ink-danger)] underline hover:text-[var(--ink-1)]"
                     onClick={() => removeDraftAttribution(item.userId)}
                   >
                     Remove
@@ -218,7 +221,7 @@ export default function AttributionBlock({
             <select
               value={selectedUserId}
               onChange={(event) => setSelectedUserId(event.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className={attributionSelectClass}
             >
               <option value="">Add Follower</option>
               {availableFollowers.map((follower) => (
@@ -231,7 +234,7 @@ export default function AttributionBlock({
             <select
               value={selectedRole}
               onChange={(event) => setSelectedRole(event.target.value as AttributionRole)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className={attributionSelectClass}
             >
               {ROLE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -248,7 +251,7 @@ export default function AttributionBlock({
             </Button>
           </div>
 
-          {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+          {error ? <p className={attributionErrorClass} role="alert">{error}</p> : null}
           <Button type="button" size="sm" disabled={!canSave} onClick={saveDraft}>
             {isSaving ? "Saving..." : "Save credits"}
           </Button>

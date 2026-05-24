@@ -99,9 +99,9 @@ function StomachBarRow({ level }: { level: string }) {
         <span className="font-semibold text-[var(--ink-1)]">{label}</span>
       </div>
       <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-[var(--bg-paper)] border border-[var(--line-soft)]">
-        <div className="absolute inset-y-0 left-0 bg-orange-500" style={{ width: `${normalFillPct}%` }} />
+        <div className="absolute inset-y-0 left-0 bg-[var(--flag)]" style={{ width: `${normalFillPct}%` }} />
         {overflowFillPct > 0 && (
-          <div className="absolute inset-y-0 bg-amber-700" style={{ left: `${markerPct}%`, width: `${overflowFillPct}%` }} />
+          <div className="absolute inset-y-0 bg-[var(--amber)]" style={{ left: `${markerPct}%`, width: `${overflowFillPct}%` }} />
         )}
         <div className="absolute inset-y-0 w-px bg-[var(--bg-paper)]/60" style={{ left: `${markerPct}%` }} />
       </div>
@@ -327,7 +327,7 @@ export default function StoryDetailSheet({
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {canEdit && !isEditing ? (
-                  <button type="button" className="text-xs text-navy underline" onClick={openEditMode}>
+                  <button type="button" className="text-xs text-[var(--flag)] underline hover:text-[var(--ink-1)]" onClick={openEditMode}>
                     Edit
                   </button>
                 ) : null}
@@ -340,7 +340,7 @@ export default function StoryDetailSheet({
                 <div className="flex flex-col gap-3 pt-1">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-[var(--ink-1)]">Edit {isNarrative ? "Story" : "Check In"}</span>
-                    <button type="button" className="text-xs text-muted-foreground underline" onClick={cancelEditMode}>
+                    <button type="button" className="text-xs text-[var(--ink-3)] underline hover:text-[var(--ink-1)]" onClick={cancelEditMode}>
                       Cancel
                     </button>
                   </div>
@@ -545,7 +545,7 @@ function ActivityContent({ event }: { event: JournalEvent }) {
               label="Energy"
               value={ENERGY_LABELS[event.energyLevel as keyof typeof ENERGY_LABELS] ?? event.energyLevel}
               score={ENERGY_SCORE_FOR_LEVEL[event.energyLevel as keyof typeof ENERGY_SCORE_FOR_LEVEL] ?? 50}
-              colorClass="bg-amber-500"
+              colorClass="bg-[var(--amber)]"
             />
           )}
 
@@ -556,7 +556,7 @@ function ActivityContent({ event }: { event: JournalEvent }) {
               label="Stress"
               value={STRESS_LABELS[event.stressLevel as keyof typeof STRESS_LABELS] ?? event.stressLevel}
               score={STRESS_SCORE_FOR_LEVEL[event.stressLevel as keyof typeof STRESS_SCORE_FOR_LEVEL] ?? 50}
-              colorClass="bg-red-500"
+              colorClass="bg-[var(--plum)]"
             />
           )}
 

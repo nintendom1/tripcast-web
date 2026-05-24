@@ -420,7 +420,7 @@ function ConvexCheckpointSheet({
             key={v}
             type="button"
             onClick={() => onSelect(v)}
-            className={`rounded-full px-2 py-0.5 text-xs font-medium transition-colors ${selected === v ? "bg-navy text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+            className={`rounded-full px-2 py-0.5 text-xs font-medium transition-colors ${selected === v ? "bg-[var(--flag)] text-[var(--ink-on-brand)]" : "bg-[var(--bg-card)] text-[var(--ink-3)] hover:bg-[var(--meter-track)]"}`}
           >
             {labels[v]}
           </button>
@@ -434,48 +434,48 @@ function ConvexCheckpointSheet({
       <button
         type="button"
         onClick={() => setStateOpen((p) => !p)}
-        className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 text-xs font-semibold text-[var(--ink-3)] hover:text-[var(--ink-1)]"
       >
         <span>{stateOpen ? "▾" : "▸"}</span> Also update Traveler State
       </button>
       {stateOpen && (
-        <div className="grid gap-3 rounded-md border bg-muted/20 p-3 text-sm">
+        <div className="grid gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm">
           <div className="grid gap-1">
-            <span className="text-xs text-muted-foreground">Mood</span>
+            <span className="text-xs text-[var(--ink-3)]">Mood</span>
             <Chips values={MOOD_VALUES} labels={MOOD_LABELS} selected={moodValue} onSelect={setMoodValue} />
           </div>
           <div className="grid gap-1">
-            <span className="text-xs text-muted-foreground">Energy</span>
+            <span className="text-xs text-[var(--ink-3)]">Energy</span>
             <Chips values={ENERGY_VALUES} labels={ENERGY_LABELS} selected={energyLevel} onSelect={setEnergyLevel} />
           </div>
           <div className="grid gap-1">
-            <span className="text-xs text-muted-foreground">Stomach</span>
+            <span className="text-xs text-[var(--ink-3)]">Stomach</span>
             <Chips values={STOMACH_VALUES} labels={STOMACH_LABELS} selected={stomachLevel} onSelect={setStomachLevel} />
           </div>
           <div className="grid gap-1">
-            <span className="text-xs text-muted-foreground">Stress</span>
+            <span className="text-xs text-[var(--ink-3)]">Stress</span>
             <Chips values={STRESS_VALUES} labels={STRESS_LABELS} selected={stressLevel} onSelect={setStressLevel} />
           </div>
           <div className="grid gap-1">
-            <span className="text-xs text-muted-foreground">Schedule</span>
+            <span className="text-xs text-[var(--ink-3)]">Schedule</span>
             <Chips values={SCHEDULE_VALUES} labels={SCHEDULE_LABELS} selected={scheduleLevel} onSelect={setScheduleLevel} />
           </div>
           <div className="grid gap-1">
-            <span className="text-xs text-muted-foreground">Note</span>
+            <span className="text-xs text-[var(--ink-3)]">Note</span>
             <textarea
               value={quickNote}
               onChange={(e) => setQuickNote(e.target.value.slice(0, 240))}
               rows={2}
               placeholder="How are you doing?"
-              className="rounded-md border border-input bg-background px-2 py-1.5 text-sm resize-none"
+              className="resize-none rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 py-1.5 text-sm text-[var(--ink-1)] outline-none placeholder:text-[var(--ink-3)] focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
             />
-            <span className="text-right text-xs text-muted-foreground">{quickNote.length}/240</span>
+            <span className="text-right text-xs text-[var(--ink-3)]">{quickNote.length}/240</span>
           </div>
         </div>
       )}
       {isFromMission && (
-        <div className="grid gap-2 rounded-md border bg-muted/20 p-3 text-sm">
-          <span className="text-xs font-semibold text-muted-foreground">
+        <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm">
+          <span className="text-xs font-semibold text-[var(--ink-3)]">
             Award a badge to the creator?{" "}
             <span className="font-normal">(optional)</span>
           </span>
@@ -485,8 +485,8 @@ function ConvexCheckpointSheet({
               onClick={() => setAwardBadgeType(null)}
               className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                 awardBadgeType === null
-                  ? "bg-navy text-white"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  ? "bg-[var(--flag)] text-[var(--ink-on-brand)]"
+                  : "bg-[var(--bg-card)] text-[var(--ink-3)] hover:bg-[var(--meter-track)]"
               }`}
             >
               None
@@ -503,15 +503,15 @@ function ConvexCheckpointSheet({
                 }}
                 className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
                   awardBadgeType === b.badgeType
-                    ? "bg-navy text-white"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    ? "bg-[var(--flag)] text-[var(--ink-on-brand)]"
+                    : "bg-[var(--bg-card)] text-[var(--ink-3)] hover:bg-[var(--meter-track)]"
                 }`}
               >
                 <span aria-hidden>{b.emoji}</span> {b.name}
               </button>
             ))}
           </div>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[11px] text-[var(--ink-3)]">
             The badge is awarded to the Follower(s) credited on this Mission.
           </p>
         </div>
@@ -1932,12 +1932,12 @@ export default function TripMap({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -20, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
-            className="absolute left-1/2 top-4 z-[5] flex -translate-x-1/2 items-center gap-3 bg-navy text-white px-3 py-2.5 rounded-md shadow-lg max-w-[calc(100%-24px)]"
+            className="absolute left-1/2 top-4 z-[5] flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-3 rounded-md bg-[var(--bg-card)] px-3 py-2.5 text-[var(--ink-1)] shadow-lg"
           >
             <span className="text-sm">Tap the map to place a pin.</span>
             <button
               type="button"
-              className="rounded bg-white text-navy px-2.5 py-1 text-sm font-medium"
+              className="rounded bg-[var(--meter-track)] px-2.5 py-1 text-sm font-medium text-[var(--ink-1)]"
               onClick={() => { log.logInteraction("placement:cancel"); setIsPlacementMode(false); }}
             >
               Cancel
@@ -1952,14 +1952,14 @@ export default function TripMap({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -20, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
-            className="absolute left-1/2 top-4 z-[5] flex -translate-x-1/2 items-center gap-3 bg-navy text-white px-3 py-2.5 rounded-md shadow-lg max-w-[calc(100%-24px)]"
+            className="absolute left-1/2 top-4 z-[5] flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-3 rounded-md bg-[var(--bg-card)] px-3 py-2.5 text-[var(--ink-1)] shadow-lg"
           >
             <span className="text-sm">
               Tap the map to set {coordinatePickMode.label}.
             </span>
             <button
               type="button"
-              className="rounded bg-white text-navy px-2.5 py-1 text-sm font-medium"
+              className="rounded bg-[var(--meter-track)] px-2.5 py-1 text-sm font-medium text-[var(--ink-1)]"
               onClick={cancelCoordinatePick}
             >
               Cancel
@@ -1977,7 +1977,7 @@ export default function TripMap({
             exit={{ y: 16, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="status"
-            className="absolute bottom-[112px] left-1/2 z-[6] -translate-x-1/2 rounded-md bg-navy px-4 py-2 text-sm font-medium text-white shadow-lg max-w-[calc(100%-24px)]"
+            className="absolute bottom-[112px] left-1/2 z-[6] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--ink-1)] shadow-lg"
           >
             {toastMessage}
           </motion.div>
@@ -1993,7 +1993,7 @@ export default function TripMap({
             exit={{ y: -16, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="alert"
-            className="absolute left-1/2 top-4 z-[7] flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-col rounded-md bg-rose-700 px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+            className="absolute left-1/2 top-4 z-[7] flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-col rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-4 py-2.5 text-sm font-medium text-[var(--ink-danger)] shadow-lg"
           >
             <span>Map Service Unavailable</span>
             <span className="text-xs font-normal opacity-85">
@@ -2004,7 +2004,7 @@ export default function TripMap({
             {mapCooldownUntil && role === "traveler" ? (
               <button
                 type="button"
-                className="mt-2 self-start rounded bg-white px-2.5 py-1 text-xs font-semibold text-rose-700"
+                className="mt-2 self-start rounded bg-[var(--bg-card)] px-2.5 py-1 text-xs font-semibold text-[var(--ink-danger)]"
                 onClick={handleMapTryAgain}
               >
                 Try again
@@ -2324,7 +2324,7 @@ export default function TripMap({
               <div className="flex items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
                   style={{ background: FUNDS_PERSONALITY.color }}
                 >
                   <DollarSign className="h-4 w-4" />

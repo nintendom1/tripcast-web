@@ -274,7 +274,7 @@ export default function JournalSheet({
             <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"
-                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
                 style={{ background: sheetPersonalities.journal.color }}
               >
                 <Clock className="h-4 w-4" />
@@ -351,7 +351,7 @@ export default function JournalSheet({
                 />
               )}
               {createError && (
-                <p className="text-sm text-rose-600" role="alert">{createError}</p>
+                <p className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]" role="alert">{createError}</p>
               )}
               <Button type="button" disabled={isCreating} onClick={handleCreateStory}>
                 {isCreating ? "Saving…" : "Add to Journal"}
@@ -449,7 +449,7 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
     <li className="grid grid-cols-[28px_1fr] gap-3 py-1.5">
       <div className="flex flex-col items-center">
         <span
-          className="flex h-7 w-7 items-center justify-center rounded-full text-white shadow-sm"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
           style={{ background: visual.tint }}
           aria-hidden="true"
         >
@@ -475,7 +475,7 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
           style={{ background: visual.tint }}
           aria-hidden="true"
         >
-          <span className="font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-white/90">
+          <span className="font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-on-brand)]">
             {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
           </span>
           {stateEmoji ? (

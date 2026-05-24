@@ -38,6 +38,11 @@ const QUICK_ACTIVITIES = [
   { label: "Errands", emoji: "💻" },
 ] as const;
 
+const activityNoticeClass = "mb-3 rounded-md border border-[var(--amber)] bg-[color-mix(in_oklab,var(--amber)_14%,transparent)] px-3 py-2 text-xs text-[var(--ink-1)]";
+const activityChipClass = "rounded-full border border-[var(--line-soft)] px-2.5 py-1 text-xs text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)]";
+const activeActivityChipClass = "border-[var(--flag)] bg-[var(--flag)] text-[var(--ink-on-brand)]";
+const activityErrorClass = "rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-xs text-[var(--ink-danger)]";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -119,7 +124,7 @@ export default function SetActivitySheet({ open, token, onOpenChange, debugSourc
 
         <div className="flex flex-col gap-3 p-4 pt-0 overflow-y-auto">
           {existingActivity && (
-            <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            <div className={activityNoticeClass}>
               Replaces current: <span className="font-medium">{existingActivity.title}</span>
             </div>
           )}
@@ -131,9 +136,7 @@ export default function SetActivitySheet({ open, token, onOpenChange, debugSourc
                 key={a.label}
                 type="button"
                 onClick={() => { setTitle(a.label); setEmoji(a.emoji); }}
-                className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                  title === a.label ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted"
-                }`}
+                className={`${activityChipClass} ${title === a.label ? activeActivityChipClass : ""}`}
               >
                 {a.emoji} {a.label}
               </button>
@@ -171,7 +174,7 @@ export default function SetActivitySheet({ open, token, onOpenChange, debugSourc
               placeholder="Place name (optional)"
             />
 
-            {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+            {error && <p role="alert" className={activityErrorClass}>{error}</p>}
 
             <Button type="submit" disabled={!title.trim() || isSaving} className="w-full">
               {isSaving ? "Saving…" : existingActivity ? "Replace Activity" : "Set Activity"}

@@ -117,7 +117,7 @@ export function SwipeRow({
               onOpenChange(null);
               onDelete?.();
             }}
-            className="flex w-1/2 items-center justify-center gap-1 bg-[var(--danger)] text-xs font-semibold text-white"
+            className="flex w-1/2 items-center justify-center gap-1 bg-[var(--ink-danger)] text-xs font-semibold text-[var(--bg-paper)]"
           >
             <Trash2 className="h-4 w-4" aria-hidden="true" />
             {deleteLabel}

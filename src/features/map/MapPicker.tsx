@@ -89,7 +89,7 @@ export function LocationPickerField({
             <button
               type="button"
               onClick={onClear}
-              className="rounded-full px-2 py-1 text-xs font-semibold text-rose-500 underline transition-colors hover:bg-[var(--meter-track)]"
+              className="rounded-full px-2 py-1 text-xs font-semibold text-[var(--ink-danger)] underline transition-colors hover:bg-[var(--meter-track)]"
             >
               Clear
             </button>
