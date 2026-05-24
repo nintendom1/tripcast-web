@@ -246,6 +246,39 @@ describe("StoryDetailSheet — inline edit mode", () => {
     });
   });
 
+  it("shows saved edits immediately after Save while the parent event is still stale", async () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent()}
+          token="t"
+          role="traveler"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByDisplayValue("Coffee"), {
+      target: { value: "Coffee Updated" },
+    });
+    fireEvent.change(screen.getByDisplayValue("Seattle"), {
+      target: { value: "Portland" },
+    });
+    fireEvent.change(screen.getByDisplayValue("Body text"), {
+      target: { value: "Updated body text" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Save changes" })).not.toBeInTheDocument();
+    });
+    expect(screen.getByText("Coffee Updated")).toBeInTheDocument();
+    expect(screen.getByText("Portland")).toBeInTheDocument();
+    expect(screen.getByLabelText("Updated body text")).toBeInTheDocument();
+  });
+
   it("confirming Delete calls deleteCheckpoint then closes the sheet", async () => {
     const onClose = vi.fn();
     render(

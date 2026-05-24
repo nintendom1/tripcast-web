@@ -542,6 +542,11 @@ function ConvexCheckpointSheet({
 // ---------------------------------------------------------------------------
 
 type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
+type SelectedStoryDetail = {
+  eventId: string;
+  checkpointId?: string;
+  fallbackEvent: JournalEvent;
+};
 
 type TripMapProps = {
   token: string;
@@ -589,7 +594,7 @@ export default function TripMap({
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isJournalOpen, setIsJournalOpen] = useState(false);
-  const [selectedStoryEvent, setSelectedStoryEvent] = useState<JournalEvent | null>(null);
+  const [selectedStoryDetail, setSelectedStoryDetail] = useState<SelectedStoryDetail | null>(null);
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
@@ -664,7 +669,8 @@ export default function TripMap({
   const followerSession = useQuery(tripcastApi.followers.followerCurrentSession, { token });
   const currentUserId = sessionData?.userId || followerSession?.userId;
 
-  const journalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
+  const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
+  const journalEvents = useMemo(() => queriedJournalEvents ?? [], [queriedJournalEvents]);
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
 
   const messages = useQuery(tripcastApi.messages.listMessages, { token }) ?? [];
@@ -684,6 +690,17 @@ export default function TripMap({
       ? (allMissionsForBadge ?? []).filter((c) => c.status === "proposed").length
       : 0;
   const missionsForLookup = role === "traveler" ? allMissionsForBadge : followerMissions;
+  const selectedStoryEvent = useMemo(() => {
+    if (!selectedStoryDetail) return null;
+    const freshEvent = journalEvents.find((event) => event._id === selectedStoryDetail.eventId)
+      ?? (
+        selectedStoryDetail.checkpointId
+          ? journalEvents.find((event) => event.checkpointId === selectedStoryDetail.checkpointId)
+          : undefined
+      );
+    if (freshEvent) return freshEvent;
+    return queriedJournalEvents === undefined ? selectedStoryDetail.fallbackEvent : null;
+  }, [journalEvents, queriedJournalEvents, selectedStoryDetail]);
 
   const voteAlert = useQuery(tripcastApi.routeVotes.getActiveRouteVoteAlert, { token });
   const hasUnseenVote = voteAlert?.hasUnseen ?? false;
@@ -1388,7 +1405,7 @@ export default function TripMap({
     coordinatePickModeRef.current = null;
     setIsJournalOpen(false);
     setIsAchievementsOpen(false);
-    setSelectedStoryEvent(null);
+    setSelectedStoryDetail(null);
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -1432,7 +1449,11 @@ export default function TripMap({
     } else if (type === "checkpoint") {
       const event = journalEvents.find((e) => e.checkpointId === id);
       if (event) {
-        setSelectedStoryEvent(event);
+        setSelectedStoryDetail({
+          eventId: event._id,
+          checkpointId: event.checkpointId,
+          fallbackEvent: event,
+        });
       }
     } else if (type === "route_vote") {
       handleNavigateToVote(id);
@@ -1515,12 +1536,16 @@ export default function TripMap({
     log.logInteraction("panel:navigate", { from: "Missions", to: "story", eventId: event._id });
     music.sfx("page");
     setStoryDebugSource({ source: "missions:linked-story", sourceLabel: "Missions -> Story" });
-    setSelectedStoryEvent(event);
+    setSelectedStoryDetail({
+      eventId: event._id,
+      checkpointId: event.checkpointId,
+      fallbackEvent: event,
+    });
   }
 
   function handleOpenMissionFromStory(missionId: string) {
     log.logInteraction("panel:navigate", { from: "story", to: "Missions", missionId });
-    setSelectedStoryEvent(null);
+    setSelectedStoryDetail(null);
     handleNavigateToMissionDetail(missionId, { source: "story-detail:mission", sourceLabel: "Story detail -> Mission" });
   }
 
@@ -1820,7 +1845,11 @@ export default function TripMap({
           music.sfx("page");
           setStoryOpenedFromJournal(false);
           setStoryDebugSource({ source: "story-pin", sourceLabel: "Story Pin" });
-          setSelectedStoryEvent(event);
+          setSelectedStoryDetail({
+            eventId: event._id,
+            checkpointId: event.checkpointId,
+            fallbackEvent: event,
+          });
         }}
       />
       <TravelerLocationMarker
@@ -2340,7 +2369,11 @@ export default function TripMap({
                 setIsJournalOpen(false);
                 setStoryOpenedFromJournal(true);
                 setStoryDebugSource({ source: "journal:story-select", sourceLabel: "Journal -> Story" });
-                setSelectedStoryEvent(event);
+                setSelectedStoryDetail({
+                  eventId: event._id,
+                  checkpointId: event.checkpointId,
+                  fallbackEvent: event,
+                });
               }}
               onLocationFocus={handleHistoryLocationFocus}
               onMarkAllRead={markAllRead}
@@ -2357,7 +2390,7 @@ export default function TripMap({
         onClose={() => {
           music.sfx(storyOpenedFromJournal ? "page" : "close");
           const returnToJournal = storyOpenedFromJournal;
-          setSelectedStoryEvent(null);
+          setSelectedStoryDetail(null);
           setStoryOpenedFromJournal(false);
           if (returnToJournal) setIsJournalOpen(true);
         }}

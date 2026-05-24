@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
-import { X } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -148,8 +147,6 @@ export default function StoryDetailSheet({
   const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
 
-  const isNarrative = event?.narrativeLevel === "narrative";
-
   const [isEditing, setIsEditing] = useState(false);
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
@@ -162,26 +159,49 @@ export default function StoryDetailSheet({
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [optimisticEvent, setOptimisticEvent] = useState<JournalEvent | null>(null);
+
+  const displayEvent = optimisticEvent?._id === event?._id ? optimisticEvent : event;
+  const isNarrative = displayEvent?.narrativeLevel === "narrative";
 
   const isTraveler = role === "traveler";
-  const canEdit = isTraveler && Boolean(token) && Boolean(event?.checkpointId);
+  const canEdit = isTraveler && Boolean(token) && Boolean(displayEvent?.checkpointId);
 
   useEffect(() => {
     setIsEditing(false);
     setAwardBadgeOpen(false);
     setPendingDelete(false);
     setActionError(null);
+    setOptimisticEvent(null);
   }, [event?._id]);
 
+  useEffect(() => {
+    if (!event) {
+      setOptimisticEvent(null);
+      return;
+    }
+    setOptimisticEvent((current) => {
+      if (!current || current._id !== event._id) return current;
+      const parentCaughtUp =
+        current.title === event.title &&
+        current.body === event.body &&
+        current.locationLabel === event.locationLabel &&
+        current.lat === event.lat &&
+        current.lon === event.lon &&
+        current.narrativeLevel === event.narrativeLevel;
+      return parentCaughtUp ? null : current;
+    });
+  }, [event]);
+
   function openEditMode() {
-    if (!event) return;
-    log.logInteraction("form:open", { checkpointId: event.checkpointId });
-    setEditTitle(event.title ?? "");
-    setEditBody(event.body ?? "");
-    setEditLocation(event.locationLabel ?? "");
-    setEditLat(event.lat);
-    setEditLon(event.lon);
-    setEditShowInStory(event.narrativeLevel !== "activity");
+    if (!displayEvent) return;
+    log.logInteraction("form:open", { checkpointId: displayEvent.checkpointId });
+    setEditTitle(displayEvent.title ?? "");
+    setEditBody(displayEvent.body ?? "");
+    setEditLocation(displayEvent.locationLabel ?? "");
+    setEditLat(displayEvent.lat);
+    setEditLon(displayEvent.lon);
+    setEditShowInStory(displayEvent.narrativeLevel !== "activity");
     setActionError(null);
     setIsEditing(true);
   }
@@ -210,6 +230,15 @@ export default function StoryDetailSheet({
       });
       music.sfx("success");
       log.logInteraction("form:submit:success", {});
+      setOptimisticEvent({
+        ...event,
+        title: editTitle.trim() ? editTitle : undefined,
+        body: editBody.trim() ? editBody : undefined,
+        locationLabel: editLocation.trim() ? editLocation : undefined,
+        lat: editLat,
+        lon: editLon,
+        narrativeLevel: editShowInStory ? "narrative" : "activity",
+      });
       setIsEditing(false);
     } catch (e) {
       log.logInteraction("form:submit:error", { message: String(e) });
@@ -281,19 +310,19 @@ export default function StoryDetailSheet({
         className={cn("z-[11] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]", isPickingCoordinate && "invisible pointer-events-none")}
         data-role="story-detail"
       >
-        {event && (
+        {displayEvent && (
           <>
             <SheetGradientHeader color={JOURNAL_PERSONALITY.color} bg={JOURNAL_PERSONALITY.bg}>
               <div className="flex min-w-0 flex-col gap-1.5">
                 <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold leading-tight tracking-tight text-[var(--ink-1)]">
-                  {event.title ?? (isNarrative ? "Story" : "Check In")}
+                  {displayEvent.title ?? (isNarrative ? "Story" : "Check In")}
                 </SheetTitle>
                 <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-                  {formatDate(event.occurredAt)} · {formatTime(event.occurredAt)}
+                  {formatDate(displayEvent.occurredAt)} · {formatTime(displayEvent.occurredAt)}
                 </p>
-                {event.locationLabel ? (
+                {displayEvent.locationLabel ? (
                   <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-                    {event.locationLabel}
+                    {displayEvent.locationLabel}
                   </p>
                 ) : null}
               </div>
@@ -330,7 +359,7 @@ export default function StoryDetailSheet({
                       lat={editLat}
                       lon={editLon}
                       onPick={() => {
-                        log.logInteraction("coordinate:pick-mode:request", { checkpointId: event.checkpointId });
+                        log.logInteraction("coordinate:pick-mode:request", { checkpointId: displayEvent.checkpointId });
                         onRequestCoordinatePick((coord) => {
                           setEditLat(coord.lat);
                           setEditLon(coord.lon);
@@ -375,9 +404,9 @@ export default function StoryDetailSheet({
                     {isWorking ? "Saving…" : "Save changes"}
                   </Button>
 
-                  {token && event.checkpointId ? (
+                  {token && displayEvent.checkpointId ? (
                     <div className="mt-1 border-t border-[var(--line-soft)] pt-3">
-                      <AttributionBlock token={token} viewerRole={role!} sourceType="story" sourceId={event.checkpointId} />
+                      <AttributionBlock token={token} viewerRole={role!} sourceType="story" sourceId={displayEvent.checkpointId} />
                       <div className="mt-3">
                         <Button
                           size="sm"
@@ -389,7 +418,7 @@ export default function StoryDetailSheet({
                         >
                           🏅 Award Badge
                         </Button>
-                        <AwardBadgeSheet open={awardBadgeOpen} token={token} sourceType="story" sourceId={event.checkpointId} onOpenChange={setAwardBadgeOpen} />
+                        <AwardBadgeSheet open={awardBadgeOpen} token={token} sourceType="story" sourceId={displayEvent.checkpointId} onOpenChange={setAwardBadgeOpen} />
                       </div>
                       <div className="mt-3">
                         <button type="button" className="text-sm font-semibold text-[var(--danger)] underline" onClick={() => setPendingDelete(true)}>
@@ -400,9 +429,9 @@ export default function StoryDetailSheet({
                   ) : null}
                 </div>
               ) : isNarrative ? (
-                <NarrativeContent event={event} token={token} role={role} missionTitle={missionTitle} missionId={missionId} onNavigateToMission={onNavigateToMission} />
+                <NarrativeContent event={displayEvent} token={token} role={role} missionTitle={missionTitle} missionId={missionId} onNavigateToMission={onNavigateToMission} />
               ) : (
-                <ActivityContent event={event} />
+                <ActivityContent event={displayEvent} />
               )}
             </SheetBody>
 
@@ -412,7 +441,7 @@ export default function StoryDetailSheet({
                 if (!open) setPendingDelete(false);
               }}
               title={`Delete this ${isNarrative ? "Story" : "Check In"}?`}
-              itemLabel={event.title ?? undefined}
+              itemLabel={displayEvent.title ?? undefined}
               description="The pin disappears from the map and the journal. Linked transactions are kept but unlinked. This can't be undone."
               onConfirm={handleConfirmDelete}
               pending={isDeleting}
@@ -453,7 +482,10 @@ function NarrativeContent({
   return (
     <>
       {event.body ? (
-        <RevealText text={event.body} className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]" />
+        <RevealText
+          text={event.body}
+          className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]"
+        />
       ) : (
         <p className="text-sm italic text-[var(--ink-3)]">No story body yet.</p>
       )}
@@ -496,7 +528,12 @@ function ActivityContent({ event }: { event: JournalEvent }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {event.body && <RevealText text={event.body} className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]" />}
+      {event.body && (
+        <RevealText
+          text={event.body}
+          className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]"
+        />
+      )}
 
       {hasState && (
         <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-3 grid gap-2 shadow-sm">

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
-import { tripcastApi } from "../../convex/tripcastApi";
+import { tripcastApi, type JournalEvent } from "../../convex/tripcastApi";
 import TripMap from "./TripMap";
 import { useTripPath } from "./useTripPath";
 
@@ -70,7 +70,11 @@ vi.mock("maplibre-gl", () => {
     getZoom = vi.fn(() => 12);
     project = vi.fn(() => ({ x: 120, y: 160 }));
     queryRenderedFeatures = vi.fn(() => []);
-    getContainer = vi.fn(() => ({ clientWidth: 800, clientHeight: 600 }));
+    getContainer = vi.fn(() => ({
+      clientWidth: 800,
+      clientHeight: 600,
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }),
+    }));
     easeTo = mapEaseTo;
   }
 
@@ -150,6 +154,7 @@ vi.mock("../travelfunds/TravelFundsSheet", () => ({
 
 function setupQueries({
   checkpoints = [],
+  journalEvents = [],
   travelerLocation = null,
   allowFollowersTripPath = false,
 }: {
@@ -163,6 +168,7 @@ function setupQueries({
     createdAt: number;
     updatedAt: number;
   }>;
+  journalEvents?: JournalEvent[];
   travelerLocation?: { lat: number; lon: number; isSharing: true } | null;
   allowFollowersTripPath?: boolean;
 } = {}) {
@@ -181,6 +187,7 @@ function setupQueries({
     if (query === tripcastApi.travelerPreferences.travelerGetPreferences) {
       return { travelerTimeZone: "UTC" };
     }
+    if (query === tripcastApi.journalEvents.listJournalEvents) return journalEvents;
     if (query === tripcastApi.routeVotes.travelerListRouteVotes) return [];
     if (query === tripcastApi.travelFunds.travelerGetConfig) {
       return {
@@ -209,6 +216,23 @@ function getTravelerMarker() {
   return markerElements
     .filter((el) => el.className.includes("traveler-location-marker"))
     .at(-1);
+}
+
+function makeJournalEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
+  return {
+    _id: "event-1",
+    _creationTime: 1,
+    type: "story",
+    narrativeLevel: "activity",
+    occurredAt: Date.UTC(2026, 4, 16, 14, 32),
+    createdAt: 1,
+    title: "Original check in",
+    body: "Original body",
+    checkpointId: "checkpoint-1",
+    lat: 47.61,
+    lon: -122.33,
+    ...overrides,
+  };
 }
 
 beforeEach(() => {
@@ -249,6 +273,51 @@ afterEach(() => {
 });
 
 describe("TripMap location marker", () => {
+  it("refreshes an open story detail when journal query data changes", async () => {
+    const checkpoint = {
+      _id: "checkpoint-1",
+      _creationTime: 1,
+      title: "Original check in",
+      lat: 47.61,
+      lon: -122.33,
+      source: "right_click" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const originalEvent = makeJournalEvent();
+    setupQueries({
+      checkpoints: [checkpoint],
+      journalEvents: [originalEvent],
+    });
+
+    const { rerender } = render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(markerElements.find((el) => el.style.cursor === "pointer")).toBeTruthy();
+    });
+    const checkpointMarker = markerElements.find((el) => el.style.cursor === "pointer");
+    fireEvent.click(checkpointMarker!);
+
+    expect(await screen.findByText("Original check in")).toBeInTheDocument();
+    expect(screen.getByLabelText("Original body")).toBeInTheDocument();
+
+    setupQueries({
+      checkpoints: [{ ...checkpoint, title: "Updated check in", updatedAt: 2 }],
+      journalEvents: [
+        makeJournalEvent({
+          title: "Updated check in",
+          body: "Updated body",
+        }),
+      ],
+    });
+    rerender(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Updated check in")).toBeInTheDocument();
+    });
+    expect(screen.getByLabelText("Updated body")).toBeInTheDocument();
+  });
+
   it("keeps Funds off the Dock but closes its sheet when another Dock sheet opens", async () => {
     setupQueries();
 
