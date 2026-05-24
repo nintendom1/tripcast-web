@@ -54,6 +54,10 @@ type TabView = "state" | "visibility" | "auto";
 
 const BODY_FOOTER_CLEARANCE_CLASS = "pb-28";
 const FOOTER_DOCK_CLEARANCE_CLASS = "pb-[calc(var(--dock-h,76px)+16px+env(safe-area-inset-bottom))]";
+const stateInputClass =
+  "rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]";
+const stateLabelClass = "text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]";
+const stateHintClass = "text-xs text-[var(--ink-3)]";
 
 // Matches the shared bottom-sheet curve in components/ui/sheet.tsx and the
 // redesign reference (tripcast-handoff-repair): a 0.34s slide with a slight
@@ -116,11 +120,12 @@ function ChipRow<T extends string>({
           key={v}
           type="button"
           onClick={() => (selected === v ? onDeselect?.() : onSelect(v))}
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+          className={cn(
+            "rounded-full px-3 py-1 text-xs font-medium transition-colors",
             selected === v
-              ? "bg-navy text-white"
-              : "bg-muted text-muted-foreground hover:bg-muted/80"
-          }`}
+              ? "bg-[var(--flag)] text-[var(--ink-on-brand)]"
+              : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)] hover:text-[var(--ink-1)]",
+          )}
         >
           {labels[v]}
         </button>
@@ -151,10 +156,11 @@ function ScoreSlider({
         max={max}
         value={display}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1 accent-navy"
+        className="flex-1"
+        style={{ accentColor: "var(--flag)" }}
       />
-      <span className="w-7 text-right text-xs text-muted-foreground">{display}</span>
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="w-7 text-right text-xs text-[var(--ink-3)]">{display}</span>
+      <span className="text-xs text-[var(--ink-3)]">{label}</span>
     </div>
   );
 }
@@ -182,7 +188,7 @@ function NumberInput({
         const raw = e.target.value;
         onChange(raw === "" ? undefined : Number(raw));
       }}
-      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
+      className={cn("h-8 w-20 px-2 text-sm", stateInputClass)}
       placeholder={placeholder ?? "—"}
     />
   );
@@ -198,7 +204,7 @@ function ToggleRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between rounded-md border bg-background px-3 py-2.5">
+    <label className="flex cursor-pointer items-center justify-between rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-[var(--ink-1)]">
       <span className="text-sm font-medium">{label}</span>
       <button
         type="button"
@@ -206,12 +212,13 @@ function ToggleRow({
         aria-checked={checked}
         aria-label={label}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-          checked ? "bg-navy" : "bg-muted"
-        }`}
+        className={cn(
+          "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+          checked ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]",
+        )}
       >
         <span
-          className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+          className={`inline-block h-4 w-4 transform rounded-full bg-[var(--bg-card)] shadow transition-transform ${
             checked ? "translate-x-4" : "translate-x-0.5"
           }`}
         />
@@ -237,7 +244,7 @@ function StateSegment({
         <h3 className="font-[var(--meadow-font-display)] text-xs font-extrabold uppercase tracking-[0.14em] text-[var(--ink-2)]">
           {title}
         </h3>
-        {hint && <span className="text-[10px] text-muted-foreground">{hint}</span>}
+        {hint && <span className="text-[10px] text-[var(--ink-3)]">{hint}</span>}
       </div>
       {children}
     </section>
@@ -668,24 +675,24 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
           return (
             <div className="grid gap-4 p-4">
-              <p className="text-xs text-muted-foreground" suppressHydrationWarning>
+              <p className="text-xs text-[var(--ink-3)]" suppressHydrationWarning>
                 {prevAt ? `Last entry: ${formatRelativeTime(prevAt)}` : "No previous entry"}
               </p>
               {rows.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No changes from last entry.</p>
+                <p className="text-sm text-[var(--ink-3)]">No changes from last entry.</p>
               ) : (
                 <div className="grid gap-3">
                   {rows.map(({ label, from, to }) => (
                     <div key={label} className="grid gap-0.5">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <span className={stateLabelClass}>
                         {label}
                       </span>
                       <div className="flex flex-wrap items-center gap-1.5 text-sm">
-                        <span className={from ? "text-muted-foreground line-through" : "text-muted-foreground"}>
+                        <span className={from ? "text-[var(--ink-3)] line-through" : "text-[var(--ink-3)]"}>
                           {from ?? "—"}
                         </span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className={to ? "font-medium" : "text-muted-foreground"}>
+                        <span className="text-[var(--ink-3)]">→</span>
+                        <span className={to ? "font-medium text-[var(--ink-1)]" : "text-[var(--ink-3)]"}>
                           {to ?? "—"}
                         </span>
                       </div>
@@ -700,7 +707,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         {!reviewing && tab === "state" && (
           <div className="grid gap-4 p-4">
             {autoState?.autoStateEnabled && (
-              <p className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+              <p className="rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] px-3 py-2 text-xs text-[var(--ink-2)]">
                 Energy and Stomach are being auto-estimated in the HUD. Edits here will re-anchor the Auto base.
               </p>
             )}
@@ -709,7 +716,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
             <StateSegment title="Energy · Stomach · Calm" hint="how you're running">
               {/* Energy */}
               <div className="grid gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className={stateLabelClass}>
                   Energy
                 </label>
                 <ChipRow
@@ -737,7 +744,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
               {/* Stomach */}
               <div className="grid gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className={stateLabelClass}>
                   Stomach
                 </label>
                 <ChipRow
@@ -765,7 +772,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
               {/* Calm — the stress axis runs Calm → Overwhelmed */}
               <div className="grid gap-1.5">
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className={stateLabelClass}>
                   Calm
                 </label>
                 <ChipRow
@@ -794,7 +801,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
             {/* Mood — chip only (#4) */}
             <div className="grid gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <label className={stateLabelClass}>
                 Mood
               </label>
               <ChipRow
@@ -809,13 +816,13 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
             {/* When */}
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className={stateLabelClass}>
                   When
                 </label>
                 <button
                   type="button"
                   onClick={() => setStateAt("")}
-                  className="text-xs text-navy hover:underline"
+                  className="text-xs font-semibold text-[var(--flag)] hover:underline"
                 >
                   Now
                 </button>
@@ -824,13 +831,13 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                 type="datetime-local"
                 value={stateAt || toIsoLocal(Date.now())}
                 onChange={(e) => setStateAt(e.target.value)}
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                className={cn("h-9 px-3 text-sm", stateInputClass)}
               />
             </div>
 
             {/* Schedule — chip only (#4) */}
             <div className="grid gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <label className={stateLabelClass}>
                 Schedule
               </label>
               <ChipRow
@@ -845,23 +852,23 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
             {/* Status note */}
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <label className={stateLabelClass}>
                   Status Note
                 </label>
-                <span className="text-xs text-muted-foreground">{statusNote.length}/240</span>
+                <span className={stateHintClass}>{statusNote.length}/240</span>
               </div>
               <textarea
                 value={statusNote}
                 onChange={(e) => setStatusNote(e.target.value.slice(0, 240))}
                 rows={2}
                 placeholder="How are you doing? (optional)"
-                className="resize-none rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className={cn("resize-none px-3 py-2 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
               />
             </div>
 
             {/* Status emoji */}
             <div className="grid gap-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <label className={stateLabelClass}>
                 Status Emoji
               </label>
               <input
@@ -870,7 +877,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                 onChange={(e) => setStatusEmoji(e.target.value.slice(0, 10))}
                 maxLength={10}
                 placeholder="e.g. 🏔️"
-                className="h-9 w-28 rounded-md border border-input bg-background px-3 text-sm"
+                className={cn("h-9 w-28 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
               />
             </div>
 
@@ -879,13 +886,13 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               <button
                 type="button"
                 onClick={() => setBiometricsOpen((p) => !p)}
-                className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
+                className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)] hover:text-[var(--ink-1)]"
               >
                 <span>{biometricsOpen ? "▾" : "▸"}</span>
                 Biometrics
               </button>
               {biometricsOpen && (
-                <div className="grid gap-3 rounded-md border bg-muted/30 p-3">
+                <div className="grid gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
                   {[
                     { label: "Steps", value: steps, setter: setSteps, min: 0, max: 999999 },
                     { label: "Avg HR (bpm)", value: avgHr, setter: setAvgHr, min: 20, max: 240 },
@@ -901,14 +908,14 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                   <div className="grid gap-1">
                     <div className="flex items-center justify-between">
                       <span className="text-sm">Note</span>
-                      <span className="text-xs text-muted-foreground">{biometricNote.length}/240</span>
+                      <span className={stateHintClass}>{biometricNote.length}/240</span>
                     </div>
                     <textarea
                       value={biometricNote}
                       onChange={(e) => setBiometricNote(e.target.value.slice(0, 240))}
                       rows={2}
                       placeholder="e.g. Worn Fitbit all day"
-                      className="resize-none rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      className={cn("resize-none px-3 py-2 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
                     />
                   </div>
                 </div>
@@ -927,7 +934,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
         {tab === "visibility" && (
           <div className="grid gap-3 p-4">
-            <p className="text-sm text-muted-foreground">Control what Followers can see.</p>
+            <p className="text-sm text-[var(--ink-2)]">Control what Followers can see.</p>
 
             <ToggleRow label="Show Traveler State" checked={showTravelerState} onChange={setShowTravelerState} />
 

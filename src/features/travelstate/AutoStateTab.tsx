@@ -5,6 +5,8 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { useDebugLogger, type DebugLogger } from "../../debug/useDebugLogger";
 import { Button } from "../../components/ui/button";
 import { InfoTooltip, type InfoTooltipPlacement } from "../../components/ui/info-tooltip";
+import { cn } from "@/lib/utils";
+import { useTheme } from "../../providers/ThemeProvider";
 import {
   AUTO_TICK_MS,
   PHASE_META,
@@ -48,6 +50,12 @@ const DEFAULT_AUTO_SETTINGS = {
   autoStomachNightAboveHungryEveryTicks: 2,
   autoStomachNightAtOrBelowHungryEveryTicks: 4,
 };
+
+const autoPanelClass = "rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)]";
+const autoInputClass =
+  "rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]";
+const autoLabelClass = "text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]";
+const autoHintClass = "text-xs text-[var(--ink-3)]";
 
 function detectBrowserTimeZone(): string {
   try {
@@ -110,7 +118,7 @@ function NumberStepper({
         onChange(Math.round(n));
       }}
       aria-label={ariaLabel}
-      className="h-8 w-20 rounded-md border border-input bg-background px-2 text-sm"
+      className={cn("h-8 w-20 px-2 text-sm", autoInputClass)}
     />
   );
 }
@@ -118,7 +126,7 @@ function NumberStepper({
 function AutoChip() {
   return (
     <span
-      className="ml-1 inline-flex items-center rounded-full bg-navy/10 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-navy"
+      className="ml-1 inline-flex items-center rounded-full bg-[var(--meter-track)] px-1.5 py-px text-[8px] font-bold uppercase tracking-wider text-[var(--flag)]"
       aria-label="Auto-estimated"
     >
       AUTO
@@ -165,6 +173,8 @@ function logTooltipOpen(
 
 export default function AutoStateTab({ token, onToast, onFooterActionChange }: AutoStateTabProps) {
   const log: DebugLogger = useDebugLogger("AutoStateTab", "src/features/travelstate/AutoStateTab.tsx");
+  const { resolvedTheme } = useTheme();
+  const nativeInputStyle = { colorScheme: resolvedTheme === "constellation" ? "dark" : "light" } as const;
 
   const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
   const setEnabled = useMutation(tripcastApi.travelerAutoState.travelerSetAutoStateEnabled);
@@ -430,9 +440,9 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
   const loading = autoState === undefined;
 
   return (
-    <div className="grid gap-5 p-4">
+    <div className="grid gap-5 p-4 text-[var(--ink-1)]">
       {/* Toggle */}
-      <div className="flex items-center justify-between rounded-md border bg-background px-3 py-2.5">
+      <div className={cn("flex items-center justify-between px-3 py-2.5", autoPanelClass)}>
         <span className="text-sm font-medium">{TERMS.autoState}</span>
         <button
           type="button"
@@ -440,24 +450,26 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
           aria-checked={enabled}
           disabled={loading || toggling}
           onClick={() => handleToggle(!enabled)}
-          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-            enabled ? "bg-navy" : "bg-muted"
-          } ${loading || toggling ? "opacity-60" : ""}`}
+          className={cn(
+            "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+            enabled ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]",
+            (loading || toggling) && "opacity-60",
+          )}
         >
           <span
-            className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+            className={`inline-block h-4 w-4 transform rounded-full bg-[var(--bg-card)] shadow transition-transform ${
               enabled ? "translate-x-4" : "translate-x-0.5"
             }`}
           />
         </button>
       </div>
 
-      <p className="text-xs text-muted-foreground">
+      <p className={autoHintClass}>
         Estimated locally. Not shared as a manual save until applied.
       </p>
 
       {tzMismatch && (
-        <div className="grid gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+        <div className="grid gap-2 rounded-md border border-[var(--amber)] bg-[color-mix(in_oklab,var(--amber)_14%,transparent)] p-3 text-sm text-[var(--ink-1)]">
           <div className="font-semibold">⚠ Timezone changed</div>
           <div className="text-xs">
             Stored: {storedTz}
@@ -471,7 +483,7 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
             variant="outline"
             disabled={rebasing}
             onClick={handleRebase}
-            className="w-full"
+            className="w-full border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
           >
             {rebasing ? "Rebasing…" : `Rebase ${TERMS.autoState} to ${detectedTz}`}
           </Button>
@@ -479,8 +491,8 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
       )}
 
       {enabled && enabledAt != null && (
-        <div className="grid gap-1.5 rounded-md border bg-background p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className={cn("grid gap-1.5 p-3", autoPanelClass)}>
+          <div className={autoLabelClass}>
             {TERMS.autoEstimated} base
           </div>
           <div className="flex items-center gap-2 text-sm">
@@ -489,15 +501,15 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
           <div className="flex items-center gap-2 text-sm">
             <span>Stomach: {baseStomach ?? "—"}</span>
           </div>
-          <div className="text-xs text-muted-foreground" suppressHydrationWarning>
+          <div className={autoHintClass} suppressHydrationWarning>
             Started: {formatClockTime(enabledAt, storedTz)} ({formatElapsedLong(enabledAt, now)})
           </div>
         </div>
       )}
 
       {enabled && liveEstimate && (
-        <div className="grid gap-1.5 rounded-md border bg-background p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className={cn("grid gap-1.5 p-3", autoPanelClass)}>
+          <div className={autoLabelClass}>
             Estimate now
           </div>
           <div className="flex items-center gap-1 text-sm">
@@ -512,8 +524,8 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
       )}
 
       {enabled && previewEstimate && (
-        <div className="grid gap-2 rounded-md border bg-background p-3">
-          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <div className={cn("grid gap-2 p-3", autoPanelClass)}>
+          <div className={autoLabelClass}>
             24-hour preview
           </div>
           <input
@@ -528,7 +540,8 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
               log.logUi("auto:scrub", { offsetTicks: v });
             }}
             aria-label="24-hour preview scrubber"
-            className="w-full accent-navy"
+            className="w-full"
+            style={{ accentColor: "var(--flag)" }}
           />
           {segments.length > 0 && (
             <div
@@ -541,7 +554,7 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
                   return (
                     <div
                       key={i}
-                      className="bg-muted"
+                      className="bg-[var(--meter-track)]"
                       style={{ width: `${widthPct}%` }}
                     />
                   );
@@ -581,13 +594,13 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
       )}
 
       {/* Settings */}
-      <div className="grid gap-3 rounded-md border bg-background p-3">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <div className={cn("grid gap-3 p-3", autoPanelClass)}>
+        <div className={autoLabelClass}>
           Settings
         </div>
 
         <div className="grid gap-1.5">
-          <label className="text-xs text-muted-foreground" htmlFor="auto-bedtime">
+          <label className={autoHintClass} htmlFor="auto-bedtime">
             Bedtime
           </label>
           <input
@@ -598,13 +611,14 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
               const m = parseTimeOfDay(e.target.value);
               if (m !== null) setBedtime(m);
             }}
-            className="h-9 w-32 rounded-md border border-input bg-background px-3 text-sm"
+            className={cn("h-9 w-32 px-3 text-sm", autoInputClass)}
+            style={nativeInputStyle}
           />
-          <div className="text-[10px] text-muted-foreground">{formatTimeOfDay(bedtime)}</div>
+          <div className="text-[10px] text-[var(--ink-3)]">{formatTimeOfDay(bedtime)}</div>
         </div>
 
         <div className="grid gap-1.5">
-          <label className="text-xs text-muted-foreground" htmlFor="auto-waketime">
+          <label className={autoHintClass} htmlFor="auto-waketime">
             Wake time
           </label>
           <input
@@ -615,13 +629,14 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
               const m = parseTimeOfDay(e.target.value);
               if (m !== null) setWakeTime(m);
             }}
-            className="h-9 w-32 rounded-md border border-input bg-background px-3 text-sm"
+            className={cn("h-9 w-32 px-3 text-sm", autoInputClass)}
+            style={nativeInputStyle}
           />
-          <div className="text-[10px] text-muted-foreground">{formatTimeOfDay(wakeTime)}</div>
+          <div className="text-[10px] text-[var(--ink-3)]">{formatTimeOfDay(wakeTime)}</div>
         </div>
 
         <div className="grid gap-1.5">
-          <span className="text-xs text-muted-foreground">Energy min / max</span>
+          <span className={autoHintClass}>Energy min / max</span>
           <div className="flex items-center gap-2 text-sm">
             <NumberStepper
               value={energyMin}
@@ -642,7 +657,7 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
         </div>
 
         <div className="grid gap-1.5">
-          <span className="text-xs text-muted-foreground">Stomach min / max</span>
+          <span className={autoHintClass}>Stomach min / max</span>
           <div className="flex items-center gap-2 text-sm">
             <NumberStepper
               value={stomachMin}
@@ -664,10 +679,10 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
 
         <div className="grid gap-2">
           <div className="flex items-baseline justify-between gap-2">
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className={autoLabelClass}>
               Rates
             </div>
-            <div className="text-xs text-muted-foreground">1 tick = 15 minutes.</div>
+            <div className={autoHintClass}>1 tick = 15 minutes.</div>
           </div>
           <div className="flex items-center justify-between gap-2 text-sm">
             <span>Energy while asleep (per 15 min)</span>
@@ -746,7 +761,7 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
           </div>
         </div>
 
-        <div className="text-xs text-muted-foreground">Timezone: {storedTz}</div>
+        <div className={autoHintClass}>Timezone: {storedTz}</div>
 
       </div>
 
@@ -755,13 +770,13 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
         variant="outline"
         onClick={handleApplyEstimate}
         disabled={applying || !liveEstimate}
-        className="w-full"
+        className="w-full border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
       >
         {applying ? "Applying…" : "Apply estimate to saved State"}
       </Button>
 
       {enabled && lastUpdatedLine(autoState?.updatedAt) && (
-        <p className="text-[10px] text-muted-foreground" suppressHydrationWarning>
+        <p className="text-[10px] text-[var(--ink-3)]" suppressHydrationWarning>
           Settings last saved {formatRelativeTime(autoState!.updatedAt!)}
         </p>
       )}
