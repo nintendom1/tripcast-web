@@ -35,6 +35,7 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
+import { cn } from "@/lib/utils";
 
 type RouteVotePanelProps = {
   token: string;
@@ -102,7 +103,7 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
       <div className="mt-1.5 flex items-start justify-between gap-2">
         <span className="flex min-w-0 items-start gap-2">
           <span
-            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
+            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--ink-on-brand)]"
             style={{ background: votesPersonality.color }}
             aria-hidden="true"
           >
@@ -284,20 +285,21 @@ function VoteDetail({
   }
 
   const total = vote.totalSubmissions ?? 0;
+  const hintClass = "text-xs text-[var(--ink-3)]";
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">
+        <button type="button" onClick={onBack} className="text-sm text-[var(--ink-3)] hover:text-[var(--ink-1)]">
           ← Back
         </button>
         <StatusBadge status={vote.effectiveStatus} />
-        <span className="ml-auto text-xs text-muted-foreground">{formatTimeRemaining(vote.expiresAt)}</span>
+        <span className="ml-auto text-xs text-[var(--ink-3)]">{formatTimeRemaining(vote.expiresAt)}</span>
       </div>
 
       <DialogueBox title={vote.title}>
         {vote.description && (
-          <p className="text-sm text-muted-foreground mb-3">{vote.description}</p>
+          <p className="mb-3 text-sm text-[var(--ink-3)]">{vote.description}</p>
         )}
         <ChoiceList>
           {vote.options.map((option, i) => {
@@ -319,19 +321,19 @@ function VoteDetail({
                 >
                   <span className="font-medium">{option.title}</span>
                   {option.locationLabel && (
-                    <span className="block text-xs text-muted-foreground">{option.locationLabel}</span>
+                    <span className={cn("block", hintClass)}>{option.locationLabel}</span>
                   )}
                   {option.description && (
-                    <span className="block text-xs text-muted-foreground">{option.description}</span>
+                    <span className={cn("block", hintClass)}>{option.description}</span>
                   )}
                   {option.estimatedCostUsd !== undefined && (
-                    <span className="block text-xs text-muted-foreground">${option.estimatedCostUsd.toFixed(2)}</span>
+                    <span className={cn("block", hintClass)}>${option.estimatedCostUsd.toFixed(2)}</span>
                   )}
                 </ChoiceItem>
                 {vote.optionVoteCounts !== undefined && (
                   <div className="pl-8 pr-3 flex items-center gap-2">
                     <StatBar value={pct} className="flex-1" />
-                    <span className="text-xs text-muted-foreground w-12 text-right">
+                    <span className="w-12 text-right text-xs text-[var(--ink-3)]">
                       {count} {count === 1 ? "vote" : "votes"}
                     </span>
                   </div>
@@ -353,7 +355,7 @@ function VoteDetail({
             className="bg-[var(--bg-card)] border-[var(--line-soft)] text-[var(--ink-1)] placeholder:text-[var(--ink-3)]"
           />
           <div className="flex flex-col gap-1.5">
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <label className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
               <input
                 type="checkbox"
                 checked={commentVisibility === "traveler_only"}
@@ -362,7 +364,7 @@ function VoteDetail({
               Private (traveler only)
             </label>
             {commentVisibility === "public" && (
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <label className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
                 <input
                   type="checkbox"
                   checked={anonymous}
@@ -384,7 +386,7 @@ function VoteDetail({
             </Button>
           </div>
           {error && (
-            <p role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-xs px-3 py-2">
+            <p role="alert" className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-xs text-[var(--ink-danger)]">
               {error}
             </p>
           )}
@@ -393,10 +395,10 @@ function VoteDetail({
 
       {vote.visibleComments.length > 0 && (
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Comments</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">Comments</span>
           {vote.visibleComments.map((c) => (
-            <div key={c.submissionId} className="text-sm border rounded-md px-3 py-2 bg-muted/30 flex flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">{c.author}</span>
+            <div key={c.submissionId} className="flex flex-col gap-0.5 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--ink-1)]">
+              <span className="text-xs text-[var(--ink-3)]">{c.author}</span>
               <span>{c.comment}</span>
             </div>
           ))}
@@ -481,7 +483,7 @@ export default function RouteVotePanel({
               <div className="flex min-w-0 items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
                   style={{ background: votesPersonality.color }}
                 >
                   <CheckSquare className="h-4 w-4" />

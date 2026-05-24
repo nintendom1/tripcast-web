@@ -9,6 +9,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { haversineDistanceMiles } from "../../lib/routeVoteUtils";
 import { TERMS } from "../../copy/terminology";
+import { cn } from "@/lib/utils";
 
 type OptionFormValue = {
   title: string;
@@ -50,6 +51,11 @@ const CLOSE_PRESETS = [
   { label: "12 hours", hours: 12 },
   { label: "72 hours", hours: 72 },
 ] as const;
+
+const routeVoteInputClass =
+  "rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]";
+const routeVoteHintClass = "text-xs text-[var(--ink-3)]";
+const routeVoteErrorClass = "text-xs text-[var(--ink-danger)]";
 
 type CreateRouteVoteFormProps = {
   token: string;
@@ -103,7 +109,7 @@ function DistanceWarning({
   );
   if (dist <= 20) return null;
   return (
-    <p className="text-xs text-amber-600">
+    <p className="text-xs text-[var(--amber)]">
       ⚠ {dist.toFixed(0)} mi from your current location — double-check coordinates
     </p>
   );
@@ -165,16 +171,16 @@ function OptionEditor({
   }
 
   return (
-    <div className="rounded-md border bg-muted/30 p-3 flex flex-col gap-2">
+    <div className="flex flex-col gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        <span className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">
           Option {index + 1}
         </span>
         {canRemove && (
           <button
             type="button"
             onClick={onRemove}
-            className="text-xs text-muted-foreground hover:text-destructive"
+            className="text-xs text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
           >
             Remove
           </button>
@@ -182,10 +188,10 @@ function OptionEditor({
       </div>
 
       {linkableMissions.length > 0 && (
-        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        <label className="flex flex-col gap-1 text-xs text-[var(--ink-3)]">
           Link to an existing mission (optional)
           <select
-            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground"
+            className={cn("h-9 px-3 py-1 text-sm", routeVoteInputClass)}
             value={linkedMissionId ?? ""}
             onChange={(e) => handleLinkMission(e.target.value)}
           >
@@ -208,7 +214,7 @@ function OptionEditor({
         placeholder="Option title"
       />
       {errors.options?.[index]?.title && (
-        <span className="text-destructive text-xs">{errors.options[index]?.title?.message}</span>
+        <span className={routeVoteErrorClass}>{errors.options[index]?.title?.message}</span>
       )}
 
       <Input
@@ -234,7 +240,7 @@ function OptionEditor({
       <button
         type="button"
         onClick={onPickOnMap}
-        className="text-xs text-muted-foreground hover:text-foreground underline text-left"
+        className="text-left text-xs text-[var(--ink-3)] underline hover:text-[var(--ink-1)]"
       >
         ↗ Pick on map
       </button>
@@ -244,14 +250,14 @@ function OptionEditor({
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
-        className="text-xs text-muted-foreground hover:text-foreground underline text-left"
+        className="text-left text-xs text-[var(--ink-3)] underline hover:text-[var(--ink-1)]"
         aria-expanded={isExpanded}
       >
         {isExpanded ? "Hide details" : "More details"}
       </button>
 
       {isExpanded && (
-        <div className="flex flex-col gap-2 border-t pt-2">
+        <div className="flex flex-col gap-2 border-t border-[var(--line-soft)] pt-2">
           <Textarea
             {...register(`options.${index}.description`)}
             rows={2}
@@ -275,7 +281,7 @@ function OptionEditor({
           </div>
 
           <select
-            className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+            className={cn("h-9 px-3 py-1 text-sm", routeVoteInputClass)}
             {...register(`options.${index}.estimatedEnergyImpact`)}
           >
             <option value="">Energy impact (optional)</option>
@@ -386,13 +392,13 @@ export default function CreateRouteVoteForm({
               placeholder={DEFAULT_TITLE}
             />
             {errors.title && (
-              <span className="text-destructive text-xs">{errors.title.message}</span>
+              <span className={routeVoteErrorClass}>{errors.title.message}</span>
             )}
           </label>
 
           <label className="flex flex-col gap-1 text-sm font-medium">
             Description{" "}
-            <span className="font-normal text-muted-foreground">(optional)</span>
+            <span className="font-normal text-[var(--ink-3)]">(optional)</span>
             <Textarea
               {...register("description", {
                 maxLength: { value: 2000, message: "Max 2000 characters" },
@@ -413,8 +419,8 @@ export default function CreateRouteVoteForm({
                     onClick={() => handleClosePreset(preset.hours)}
                     className={`h-8 rounded-md border px-2 text-xs ${
                       selectedClosePreset === preset.hours
-                        ? "border-primary bg-accent text-accent-foreground"
-                        : "border-input bg-background hover:bg-accent/50"
+                        ? "border-[var(--flag)] bg-[var(--flag)] text-[var(--ink-on-brand)]"
+                        : "border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
                     }`}
                   >
                     {preset.label}
@@ -432,7 +438,7 @@ export default function CreateRouteVoteForm({
                 })}
               />
               {errors.expiresAtLocal && (
-                <span className="text-destructive text-xs">
+                <span className={routeVoteErrorClass}>
                   {errors.expiresAtLocal.message}
                 </span>
               )}
@@ -440,7 +446,7 @@ export default function CreateRouteVoteForm({
             <label className="flex flex-col gap-1 text-sm font-medium">
               Results visible
               <select
-                className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm"
+                className={cn("h-9 px-3 py-1 text-sm", routeVoteInputClass)}
                 {...register("resultsVisibility")}
               >
                 <option value="before_voting">Always</option>

@@ -82,7 +82,7 @@ function VoteListCard({
       <div className="flex items-start justify-between gap-2">
         <button type="button" onClick={onViewDetail} className="flex min-w-0 items-start gap-2 text-left">
           <span
-            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
+            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--ink-on-brand)]"
             style={{ background: votesPersonality.color }}
             aria-hidden="true"
           >
@@ -94,7 +94,7 @@ function VoteListCard({
         </button>
         <StatusBadge status={status} />
       </div>
-      <div className="text-xs text-muted-foreground">
+      <div className="text-xs text-[var(--ink-3)]">
         {formatTimeRemaining(vote.expiresAt)} · {total} {total === 1 ? "vote" : "votes"} · {vote.options.length} options
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -208,7 +208,7 @@ function VoteDetailView({
   if (detail === null) {
     return (
       <div className="flex flex-col gap-3 py-4 text-center">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-[var(--ink-3)]">
           This route vote was deleted.
         </p>
         <Button size="sm" variant="outline" onClick={onBack}>
@@ -248,7 +248,7 @@ function VoteDetailView({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">
+        <button type="button" onClick={onBack} className="text-sm text-[var(--ink-3)] hover:text-[var(--ink-1)]">
           ← Back
         </button>
         <StatusBadge status={detail.effectiveStatus} />
@@ -262,7 +262,7 @@ function VoteDetailView({
 
       <DialogueBox title={detail.title}>
         {detail.description && (
-          <p className="text-sm text-muted-foreground mb-3">{detail.description}</p>
+          <p className="mb-3 text-sm text-[var(--ink-3)]">{detail.description}</p>
         )}
         <div className="flex flex-col gap-3">
           {detail.options.map((option) => {
@@ -275,16 +275,19 @@ function VoteDetailView({
             return (
               <div
                 key={option._id}
-                className={`rounded-md border p-2 ${isWinner ? "border-primary bg-accent" : ""}`}
+                className={cn(
+                  "rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-2 text-[var(--ink-1)]",
+                  isWinner && "border-[var(--flag)] bg-[var(--meter-track)]",
+                )}
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div>
                     <span className="font-medium text-sm">{option.title}</span>
                     {option.locationLabel && (
-                      <span className="block text-xs text-muted-foreground">{option.locationLabel}</span>
+                      <span className="block text-xs text-[var(--ink-3)]">{option.locationLabel}</span>
                     )}
                     {option.description && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1 text-xs text-[var(--ink-3)]">
                         <span className="line-clamp-1 flex-1">{option.description}</span>
                         {option.description.length > 60 && (
                           <InfoTooltip label={option.description}>
@@ -294,11 +297,11 @@ function VoteDetailView({
                       </div>
                     )}
                     {isSuggested && !detail.isTied && (
-                      <span className="text-xs text-muted-foreground">(suggested {TERMS.winningOption.toLowerCase()})</span>
+                      <span className="text-xs text-[var(--ink-3)]">(suggested {TERMS.winningOption.toLowerCase()})</span>
                     )}
                     {isWinner && <span className="text-xs font-medium">{TERMS.winningOption}</span>}
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0">
+                  <span className="shrink-0 text-xs text-[var(--ink-3)]">
                     {count} / {total}
                   </span>
                 </div>
@@ -312,7 +315,7 @@ function VoteDetailView({
                   (confirmingOptionId === option._id ? (
                     option.linkedMissionId ? (
                       <div className="mt-2 flex flex-col gap-2">
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-[var(--ink-3)]">
                           This option is linked to an existing mission. On confirm:
                         </span>
                         <div className="flex flex-wrap gap-2">
@@ -354,7 +357,7 @@ function VoteDetailView({
             );
           })}
           {detail.isTied && !detail.confirmedWinningOptionId && (
-            <p className="text-xs text-muted-foreground">Tied — choose a winner manually.</p>
+            <p className="text-xs text-[var(--ink-3)]">Tied — choose a winner manually.</p>
           )}
         </div>
       </DialogueBox>
@@ -369,9 +372,9 @@ function VoteDetailView({
               <StatusBadge status={detail.mission.status} />
             </div>
             {detail.mission.locationLabel && (
-              <p className="text-xs text-muted-foreground">{detail.mission.locationLabel}</p>
+              <p className="text-xs text-[var(--ink-3)]">{detail.mission.locationLabel}</p>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-[var(--ink-3)]">
               Open Missions to view and edit.
             </p>
             {onRequestOpenMissionDetail && (
@@ -389,7 +392,7 @@ function VoteDetailView({
 
       {detail.submissions.some((s) => s.comment) && (
         <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <span className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">
             All Comments
           </span>
           {detail.submissions
@@ -402,17 +405,17 @@ function VoteDetailView({
                 <div>
                   <span>{sub.comment}</span>
                   {sub.commentVisibility === "traveler_only" && (
-                    <span className="ml-2 text-xs text-muted-foreground">(private)</span>
+                    <span className="ml-2 text-xs text-[var(--ink-3)]">(private)</span>
                   )}
                   {sub.publicCommentHidden && (
-                    <span className="ml-2 text-xs text-muted-foreground">(hidden)</span>
+                    <span className="ml-2 text-xs text-[var(--ink-3)]">(hidden)</span>
                   )}
                 </div>
                 {!sub.publicCommentHidden && sub.commentVisibility === "public" && (
                   <button
                     type="button"
                     onClick={() => handleHideComment(sub._id)}
-                    className="text-xs text-muted-foreground hover:text-destructive shrink-0"
+                    className="shrink-0 text-xs text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
                   >
                     Hide
                   </button>
@@ -564,7 +567,7 @@ export default function RouteVoteProgress({
                   setView("list");
                   setSelectedVoteId(null);
                 }}
-                className="text-sm text-muted-foreground hover:text-foreground"
+                className="text-sm text-[var(--ink-3)] hover:text-[var(--ink-1)]"
               >
                 ←
               </button>
@@ -573,7 +576,7 @@ export default function RouteVoteProgress({
               <div className="flex items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
                   style={{ background: votesPersonality.color }}
                 >
                   <CheckSquare className="h-4 w-4" />
@@ -681,9 +684,9 @@ export default function RouteVoteProgress({
               {votes === undefined ? (
                 <PendingNotice label="Loading votes..." />
               ) : votes.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No active votes.</p>
+                <p className="py-4 text-center text-sm text-[var(--ink-3)]">No active votes.</p>
               ) : (filteredVotes ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No {statusFilter} votes.</p>
+                <p className="py-4 text-center text-sm text-[var(--ink-3)]">No {statusFilter} votes.</p>
               ) : (
                 (filteredVotes ?? []).map((vote) => (
                   <VoteListCard
