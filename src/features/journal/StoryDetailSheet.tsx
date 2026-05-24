@@ -388,12 +388,7 @@ export default function StoryDetailSheet({
                   {actionError ? (
                     <p
                       role="alert"
-                      className="rounded-md border px-3 py-2 text-sm"
-                      style={{
-                        borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
-                        background: "color-mix(in oklab, var(--danger) 10%, transparent)",
-                        color: "var(--danger)",
-                      }}
+                      className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]"
                     >
                       {actionError}
                     </p>
@@ -420,7 +415,7 @@ export default function StoryDetailSheet({
                         <AwardBadgeSheet open={awardBadgeOpen} token={token} sourceType="story" sourceId={displayEvent.checkpointId} onOpenChange={setAwardBadgeOpen} />
                       </div>
                       <div className="mt-3">
-                        <button type="button" className="text-sm font-semibold text-[var(--danger)] underline" onClick={() => setPendingDelete(true)}>
+                        <button type="button" className="text-sm font-semibold text-[var(--ink-danger)] underline hover:text-[var(--ink-1)]" onClick={() => setPendingDelete(true)}>
                           Delete {isNarrative ? "Story" : "Check In"}
                         </button>
                       </div>

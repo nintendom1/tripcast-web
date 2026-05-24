@@ -657,7 +657,7 @@ function TravelerCreateForm({
           />
         </div>
       </div>
-      {error && <p className="text-sm text-[var(--danger)]" role="alert">{error}</p>}
+      {error && <p className="text-sm text-[var(--ink-danger)]" role="alert">{error}</p>}
       <Button size="sm" type="submit" disabled={isSaving || !title.trim()}>
         {isSaving ? "Creating…" : "Create mission"}
       </Button>

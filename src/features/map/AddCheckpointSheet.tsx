@@ -243,12 +243,7 @@ export default function AddCheckpointSheet({
           {error ? (
             <p
               role="alert"
-              className="rounded-md border px-3 py-2 text-sm"
-              style={{
-                borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
-                background: "color-mix(in oklab, var(--danger) 10%, transparent)",
-                color: "var(--danger)",
-              }}
+              className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]"
             >
               {error}
             </p>
