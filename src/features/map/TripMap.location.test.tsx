@@ -12,6 +12,7 @@ const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
 const updateTravelerLocation = vi.fn();
 const stopTravelerLocationSharing = vi.fn();
+const fetchMock = vi.fn();
 const mapConstructorOptions: unknown[] = [];
 const mapInstances: Array<{
   handlers: Record<string, (event: any) => void>;
@@ -220,6 +221,8 @@ beforeEach(() => {
   routeVotePanelProps.length = 0;
   updateTravelerLocation.mockResolvedValue(null);
   stopTravelerLocationSharing.mockResolvedValue(null);
+  fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
+  vi.stubGlobal("fetch", fetchMock);
 
   (vi.mocked(convexReact.useMutation) as any).mockImplementation((mutation: unknown) => {
     if (mutation === tripcastApi.travelerLocations.updateTravelerLocation) {
@@ -242,6 +245,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe("TripMap location marker", () => {
@@ -503,6 +507,80 @@ describe("TripMap location marker", () => {
       expect(screen.getByText("Map Service Unavailable")).toBeInTheDocument();
     });
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
+  it("resets map cooldown strikes after a successful traveler retry", async () => {
+    localStorage.setItem("tripcast.debug.enabled", "true");
+    setupQueries();
+    render(<TripMap token="test-token" role="traveler" />);
+    const map = mapInstances[0];
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Map Service Unavailable")).not.toBeInTheDocument();
+      expect(sessionStorage.getItem("tripcast.map_cooldown")).toBeNull();
+    });
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:retry-start");
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:retry-success");
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      const cooldown = JSON.parse(sessionStorage.getItem("tripcast.map_cooldown") ?? "{}");
+      expect(cooldown.strikes).toBe(1);
+      expect(cooldown.backoffMs).toBe(60_000);
+    });
+  });
+
+  it("keeps map cooldown protective after a failed traveler retry", async () => {
+    localStorage.setItem("tripcast.debug.enabled", "true");
+    fetchMock.mockResolvedValue(new Response("still down", { status: 503 }));
+    setupQueries();
+    render(<TripMap token="test-token" role="traveler" />);
+    const map = mapInstances[0];
+
+    act(() => {
+      map.handlers.error?.({
+        error: {
+          status: 429,
+          url: "https://tripcast-site.example.test/map/tile/planet/20260520_001001_pt/9/276/167.pbf",
+        },
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+
+    await waitFor(() => {
+      const cooldown = JSON.parse(sessionStorage.getItem("tripcast.map_cooldown") ?? "{}");
+      expect(cooldown.strikes).toBe(2);
+      expect(cooldown.backoffMs).toBe(5 * 60_000);
+      expect(screen.getByText("Map Service Unavailable")).toBeInTheDocument();
+    });
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:retry-start");
+    expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:retry-failed");
   });
 
   it("stops location sharing on page hide when the traveler is sharing", async () => {

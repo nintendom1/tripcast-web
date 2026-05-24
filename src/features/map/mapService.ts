@@ -229,3 +229,15 @@ export function clearMapCooldown(now = Date.now()): MapCooldownState {
   dispatchCooldownChanged(state);
   return state;
 }
+
+export function resetMapCooldown(): MapCooldownState {
+  const state: MapCooldownState = {
+    until: null,
+    strikes: 0,
+    lastFailureAt: null,
+    backoffMs: null,
+  };
+  writeMapCooldownState(state);
+  dispatchCooldownChanged(state);
+  return state;
+}

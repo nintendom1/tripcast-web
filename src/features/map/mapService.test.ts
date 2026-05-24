@@ -7,6 +7,7 @@ import {
   MAP_COOLDOWN_EVENT,
   MAP_COOLDOWN_KEY,
   readMapCooldownState,
+  resetMapCooldown,
   triggerMapCooldown,
 } from "./mapService";
 
@@ -93,6 +94,20 @@ describe("mapService", () => {
     });
     expect(getActiveMapCooldown(2000)).toBeNull();
     expect(triggerMapCooldown(3000).backoffMs).toBe(5 * 60_000);
+  });
+
+  it("resets cooldown strike history after recovery", () => {
+    triggerMapCooldown(1000);
+    triggerMapCooldown(2000);
+
+    expect(resetMapCooldown()).toEqual({
+      until: null,
+      strikes: 0,
+      lastFailureAt: null,
+      backoffMs: null,
+    });
+    expect(sessionStorage.getItem(MAP_COOLDOWN_KEY)).toBeNull();
+    expect(triggerMapCooldown(3000).backoffMs).toBe(60_000);
   });
 
   it("reads legacy numeric cooldowns", () => {

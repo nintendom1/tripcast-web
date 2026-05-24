@@ -80,12 +80,12 @@ import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
 import { TERMS } from "../../copy/terminology";
 import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
 import {
-  clearMapCooldown,
   getActiveMapCooldown,
   getMapStyleResolution,
   MAP_COOLDOWN_EVENT,
   MAP_COOLDOWN_KEY,
   readMapCooldownState,
+  resetMapCooldown,
   triggerMapCooldown,
   type MapCooldownState,
 } from "./mapService";
@@ -742,24 +742,81 @@ export default function TripMap({
     });
   }, []);
 
-  const handleMapTryAgain = useCallback(() => {
+  const handleMapTryAgain = useCallback(async () => {
     const previousCooldown = mapCooldownState;
     mapCooldownTriggeredRef.current = false;
     mapDiagnosticFetchUrlRef.current = null;
     mapFailureStatsRef.current = createMapFailureStats();
-    const nextState = clearMapCooldown();
-    setMapCooldownState(nextState);
-    if (!mapRef.current) {
-      setMapInitRetryToken((value) => value + 1);
-    }
-    logMapEvent("map:cooldown:override", {
+    logMapEvent("map:cooldown:retry-start", {
       previousCooldownUntil: previousCooldown.until,
-      preservedStrikes: nextState.strikes,
-      lastFailureAt: nextState.lastFailureAt,
-      source: "unavailable-overlay",
+      previousStrikes: previousCooldown.strikes,
+      previousBackoffMs: previousCooldown.backoffMs,
+      styleUrl: mapStyleUrl ?? undefined,
     });
-    showToast("Retrying map service.");
-  }, [mapCooldownState, showToast]);
+
+    try {
+      if (!mapStyleUrl) {
+        throw new Error("Map style URL is not configured.");
+      }
+      const response = await fetch(mapStyleUrl, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (response.ok) {
+        const nextState = resetMapCooldown();
+        setMapCooldownState(nextState);
+        if (!mapRef.current) {
+          setMapInitRetryToken((value) => value + 1);
+        }
+        logMapEvent("map:cooldown:retry-success", {
+          previousCooldownUntil: previousCooldown.until,
+          previousStrikes: previousCooldown.strikes,
+          previousBackoffMs: previousCooldown.backoffMs,
+          status: response.status,
+          resultingStrikes: nextState.strikes,
+          resultingBackoffMs: nextState.backoffMs,
+          resultingCooldownUntil: nextState.until,
+        });
+        showToast("Map service resumed.");
+        return;
+      }
+
+      const nextState = triggerMapCooldown(Date.now());
+      mapCooldownTriggeredRef.current = true;
+      setMapCooldownState(nextState);
+      const remainingMs = nextState.until ? Math.max(0, nextState.until - Date.now()) : 0;
+      logMapError("map:cooldown:retry-failed", {
+        previousCooldownUntil: previousCooldown.until,
+        previousStrikes: previousCooldown.strikes,
+        previousBackoffMs: previousCooldown.backoffMs,
+        status: response.status,
+        resultingStrikes: nextState.strikes,
+        resultingBackoffMs: nextState.backoffMs,
+        resultingCooldownUntil: nextState.until,
+        remainingMs,
+      });
+      const minutesRemaining = Math.max(1, Math.ceil(remainingMs / 60_000));
+      showToast(`Map service is still unavailable. It will attempt to resume in ${minutesRemaining} min.`);
+    } catch (error) {
+      const nextState = triggerMapCooldown(Date.now());
+      mapCooldownTriggeredRef.current = true;
+      setMapCooldownState(nextState);
+      const remainingMs = nextState.until ? Math.max(0, nextState.until - Date.now()) : 0;
+      logMapError("map:cooldown:retry-failed", {
+        previousCooldownUntil: previousCooldown.until,
+        previousStrikes: previousCooldown.strikes,
+        previousBackoffMs: previousCooldown.backoffMs,
+        message: error instanceof Error ? error.message : String(error),
+        resultingStrikes: nextState.strikes,
+        resultingBackoffMs: nextState.backoffMs,
+        resultingCooldownUntil: nextState.until,
+        remainingMs,
+      });
+      const minutesRemaining = Math.max(1, Math.ceil(remainingMs / 60_000));
+      showToast(`Map service is still unavailable. It will attempt to resume in ${minutesRemaining} min.`);
+    }
+  }, [mapCooldownState, mapStyleUrl, showToast]);
 
   const fetchMapFailureDiagnostic = useCallback((url: string) => {
     if (mapDiagnosticFetchUrlRef.current !== null) return;
