@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
@@ -13,6 +13,8 @@ import {
   Play,
   ShieldAlert,
   Trophy,
+  Moon,
+  Sun,
   User,
   UserPlus,
   Users,
@@ -170,6 +172,81 @@ function TravelerTimezoneSection({ token }: { token: string }) {
         ) : null}
 
         {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+      </div>
+    </OptionsSection>
+  );
+}
+
+type ThemeId = "meadow" | "constellation";
+
+const THEME_MAPPINGS: Record<ThemeId, Record<string, string>> = {
+  meadow: {
+    "--bg-paper": "#fdf6e3",
+    "--bg-card": "#fffdf4",
+    "--ink-1": "#3a2e1f",
+    "--ink-2": "#7a6849",
+    "--ink-3": "#b8a578",
+    "--flag": "#ff8b4a",
+    "--line-soft": "rgba(0,0,0,0.06)",
+    "--meter-track": "rgba(0,0,0,0.05)",
+    "--font-display": '"Fredoka", "Quicksand", sans-serif',
+  },
+  constellation: {
+    "--bg-paper": "#1c1f3a",
+    "--bg-card": "#2c2f4f",
+    "--ink-1": "#f0eaff",
+    "--ink-2": "#c2bdee",
+    "--ink-3": "#8a85c2",
+    "--flag": "#ffb24a",
+    "--line-soft": "rgba(255,255,255,0.1)",
+    "--meter-track": "rgba(255,255,255,0.08)",
+    "--font-display": '"Cormorant Garamond", serif',
+  },
+};
+
+function AppearanceSection() {
+  const [theme, setTheme] = useState<ThemeId>(
+    () => (localStorage.getItem("tripcast.theme") as ThemeId) || "meadow"
+  );
+
+  const applyTheme = useCallback((id: ThemeId) => {
+    const mapping = THEME_MAPPINGS[id];
+    const root = document.documentElement;
+    Object.entries(mapping).forEach(([key, value]) => {
+      root.style.setProperty(key, value);
+    });
+    localStorage.setItem("tripcast.theme", id);
+    setTheme(id);
+  }, []);
+
+  // Initialize theme on mount
+  useEffect(() => { applyTheme(theme); }, [applyTheme, theme]);
+
+  return (
+    <OptionsSection label="Appearance">
+      <div className="grid grid-cols-2 gap-2 rounded-xl bg-[var(--bg-card)] p-2">
+        <button
+          onClick={() => applyTheme("meadow")}
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
+            theme === "meadow" 
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm" 
+              : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          )}
+        >
+          <Sun className="h-4 w-4" /> Meadow
+        </button>
+        <button
+          onClick={() => applyTheme("constellation")}
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
+            theme === "constellation" 
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm" 
+              : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          )}
+        >
+          <Moon className="h-4 w-4" /> Constellation
+        </button>
       </div>
     </OptionsSection>
   );
@@ -572,6 +649,7 @@ function OptionsHome({
 }) {
   return (
     <SheetBody className="grid gap-5 px-5">
+      <AppearanceSection />
       <SoundSection />
       <ReadingSection />
 
