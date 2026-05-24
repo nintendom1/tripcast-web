@@ -34,7 +34,8 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
+import { cn } from "@/lib/utils";
 
 type RouteVotePanelProps = {
   token: string;
@@ -54,13 +55,13 @@ type VoteCardProps = {
   vote: VisibleRouteVote;
   onSelect: () => void;
 };
-const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function voteCode(id: string): string {
   return `V-${id.slice(-3).toUpperCase()}`;
 }
 
 function VoteCard({ vote, onSelect }: VoteCardProps) {
+  const { votes: votesPersonality, missions: missionPersonality } = useSheetPersonalities();
   const total = vote.totalSubmissions ?? 0;
   const showTallies = vote.optionVoteCounts !== undefined;
   const winner = vote.options.find((option) => option._id === vote.confirmedWinningOptionId);
@@ -77,11 +78,11 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
           <span className="inline-flex items-center gap-1">
             <span
               className="h-1.5 w-1.5 rounded-full"
-              style={{ background: VOTES_PERSONALITY.color, boxShadow: `0 0 0 3px ${VOTES_PERSONALITY.color}33` }}
+              style={{ background: votesPersonality.color, boxShadow: `0 0 0 3px ${votesPersonality.color}33` }}
             />
             <span
               className="font-[var(--font-display)] text-[9px] font-extrabold uppercase tracking-[0.14em]"
-              style={{ color: VOTES_PERSONALITY.color }}
+              style={{ color: votesPersonality.color }}
             >
               Open
             </span>
@@ -102,8 +103,8 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
       <div className="mt-1.5 flex items-start justify-between gap-2">
         <span className="flex min-w-0 items-start gap-2">
           <span
-            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
-            style={{ background: VOTES_PERSONALITY.color }}
+            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--ink-on-brand)]"
+            style={{ background: votesPersonality.color }}
             aria-hidden="true"
           >
             <CheckSquare className="h-4 w-4" />
@@ -122,12 +123,12 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
             return (
               <div
                 key={option._id}
-                className="relative overflow-hidden rounded-lg bg-[var(--bg-paper)] px-2.5 py-2"
+                className="relative overflow-hidden rounded-lg bg-[var(--meter-track)] px-2.5 py-2"
               >
                 <div
                   aria-hidden="true"
                   className="absolute inset-y-0 left-0"
-                  style={{ width: `${pct}%`, background: `color-mix(in oklab, ${VOTES_PERSONALITY.color} 18%, transparent)` }}
+                  style={{ width: `${pct}%`, background: `color-mix(in oklab, ${votesPersonality.color} 18%, transparent)` }}
                 />
                 <div className="relative flex items-center gap-2">
                   <span className="min-w-0 flex-1">
@@ -136,7 +137,7 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
                       <span className="block truncate text-[10px] text-[var(--ink-3)]">{option.locationLabel}</span>
                     ) : null}
                   </span>
-                  <span className="font-[var(--font-mono)] text-xs font-bold" style={{ color: VOTES_PERSONALITY.color }}>
+                  <span className="font-[var(--font-mono)] text-xs font-bold" style={{ color: votesPersonality.color }}>
                     {count}/{total}
                   </span>
                 </div>
@@ -149,11 +150,17 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
       {isClosed && winner ? (
         <div
           className="mt-2 flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-[var(--ink-1)]"
-          style={{ background: VOTES_PERSONALITY.bg }}
+          style={{ background: votesPersonality.bg }}
         >
           Winner: <strong>{winner.title}</strong>
           {vote.resultingMissionId ? (
-            <span className="ml-auto rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[9px] font-extrabold uppercase tracking-[0.1em]" style={{ color: MEADOW_SHEET_PERSONALITIES.missions.color, background: `color-mix(in oklab, ${MEADOW_SHEET_PERSONALITIES.missions.color} 16%, transparent)` }}>
+            <span
+              className="ml-auto rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[9px] font-extrabold uppercase tracking-[0.1em]"
+              style={{
+                color: missionPersonality.color,
+                background: `color-mix(in oklab, ${missionPersonality.color} 16%, transparent)`,
+              }}
+            >
               Mission
             </span>
           ) : null}
@@ -196,6 +203,7 @@ function VoteDetail({
   const markSeen = useMutation(tripcastApi.routeVotes.markRouteVoteSeen);
   const music = useMusicSafe();
   const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
+  const { votes: votesPersonality } = useSheetPersonalities();
 
   const [selectedOptionIds, setSelectedOptionIds] = useState<Set<string>>(
     () => new Set(vote.mySubmission?.selectedOptionIds ?? []),
@@ -277,20 +285,21 @@ function VoteDetail({
   }
 
   const total = vote.totalSubmissions ?? 0;
+  const hintClass = "text-xs text-[var(--ink-3)]";
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">
+        <button type="button" onClick={onBack} className="text-sm text-[var(--ink-3)] hover:text-[var(--ink-1)]">
           ← Back
         </button>
         <StatusBadge status={vote.effectiveStatus} />
-        <span className="ml-auto text-xs text-muted-foreground">{formatTimeRemaining(vote.expiresAt)}</span>
+        <span className="ml-auto text-xs text-[var(--ink-3)]">{formatTimeRemaining(vote.expiresAt)}</span>
       </div>
 
       <DialogueBox title={vote.title}>
         {vote.description && (
-          <p className="text-sm text-muted-foreground mb-3">{vote.description}</p>
+          <p className="mb-3 text-sm text-[var(--ink-3)]">{vote.description}</p>
         )}
         <ChoiceList>
           {vote.options.map((option, i) => {
@@ -312,19 +321,19 @@ function VoteDetail({
                 >
                   <span className="font-medium">{option.title}</span>
                   {option.locationLabel && (
-                    <span className="block text-xs text-muted-foreground">{option.locationLabel}</span>
+                    <span className={cn("block", hintClass)}>{option.locationLabel}</span>
                   )}
                   {option.description && (
-                    <span className="block text-xs text-muted-foreground">{option.description}</span>
+                    <span className={cn("block", hintClass)}>{option.description}</span>
                   )}
                   {option.estimatedCostUsd !== undefined && (
-                    <span className="block text-xs text-muted-foreground">${option.estimatedCostUsd.toFixed(2)}</span>
+                    <span className={cn("block", hintClass)}>${option.estimatedCostUsd.toFixed(2)}</span>
                   )}
                 </ChoiceItem>
                 {vote.optionVoteCounts !== undefined && (
                   <div className="pl-8 pr-3 flex items-center gap-2">
                     <StatBar value={pct} className="flex-1" />
-                    <span className="text-xs text-muted-foreground w-12 text-right">
+                    <span className="w-12 text-right text-xs text-[var(--ink-3)]">
                       {count} {count === 1 ? "vote" : "votes"}
                     </span>
                   </div>
@@ -343,9 +352,10 @@ function VoteDetail({
             maxLength={1000}
             rows={2}
             placeholder="Add a comment… (optional)"
+            className="bg-[var(--bg-card)] border-[var(--line-soft)] text-[var(--ink-1)] placeholder:text-[var(--ink-3)]"
           />
           <div className="flex flex-col gap-1.5">
-            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <label className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
               <input
                 type="checkbox"
                 checked={commentVisibility === "traveler_only"}
@@ -354,7 +364,7 @@ function VoteDetail({
               Private (traveler only)
             </label>
             {commentVisibility === "public" && (
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <label className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
                 <input
                   type="checkbox"
                   checked={anonymous}
@@ -365,12 +375,18 @@ function VoteDetail({
             )}
           </div>
           <div className="flex justify-end">
-            <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
+            <Button
+              size="sm"
+              disabled={!canSubmit}
+              onClick={handleSubmit}
+              className="border-0 text-[var(--ink-on-brand)]"
+              style={{ background: votesPersonality.color }}
+            >
               {isSubmitting ? "Submitting…" : vote.mySubmission ? "Update Vote" : "Submit Vote"}
             </Button>
           </div>
           {error && (
-            <p role="alert" className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-xs px-3 py-2">
+            <p role="alert" className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-xs text-[var(--ink-danger)]">
               {error}
             </p>
           )}
@@ -379,10 +395,10 @@ function VoteDetail({
 
       {vote.visibleComments.length > 0 && (
         <div className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Comments</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">Comments</span>
           {vote.visibleComments.map((c) => (
-            <div key={c.submissionId} className="text-sm border rounded-md px-3 py-2 bg-muted/30 flex flex-col gap-0.5">
-              <span className="text-xs text-muted-foreground">{c.author}</span>
+            <div key={c.submissionId} className="flex flex-col gap-0.5 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--ink-1)]">
+              <span className="text-xs text-[var(--ink-3)]">{c.author}</span>
               <span>{c.comment}</span>
             </div>
           ))}
@@ -401,6 +417,7 @@ export default function RouteVotePanel({
   fallbackOrigin,
   debugSource,
 }: RouteVotePanelProps) {
+  const { votes: votesPersonality } = useSheetPersonalities();
   const votes = useQuery(tripcastApi.routeVotes.listVisibleRouteVotes, open ? { token } : "skip");
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<VoteStatusFilter>("all");
@@ -453,10 +470,10 @@ export default function RouteVotePanel({
         data-role="route-votes-sheet"
         style={{ paddingBottom: "calc(100px + env(safe-area-inset-bottom))" }}
       >
-        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: votesPersonality.color }} />
         <div
           className="flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
-          style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+          style={{ background: `linear-gradient(180deg, ${votesPersonality.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
@@ -466,8 +483,8 @@ export default function RouteVotePanel({
               <div className="flex min-w-0 items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
-                  style={{ background: VOTES_PERSONALITY.color }}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
+                  style={{ background: votesPersonality.color }}
                 >
                   <CheckSquare className="h-4 w-4" />
                 </span>

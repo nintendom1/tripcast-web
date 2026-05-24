@@ -13,11 +13,11 @@ export function FullScreenErrorFallback({
   message = "Try again, or reload the app if the problem keeps happening.",
 }: FullScreenErrorFallbackProps) {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-muted/30 px-4">
-      <div role="alert" className="grid w-full max-w-sm gap-4 rounded-md border bg-background p-5 shadow-lg">
+    <div className="flex min-h-dvh items-center justify-center bg-[var(--bg-paper)] px-4">
+      <div role="alert" className="grid w-full max-w-sm gap-4 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 shadow-lg">
         <div className="grid gap-1">
-          <h1 className="text-lg font-semibold">{title}</h1>
-          <p className="text-sm text-muted-foreground">{message}</p>
+          <h1 className="text-lg font-semibold text-[var(--ink-1)]">{title}</h1>
+          <p className="text-sm text-[var(--ink-3)]">{message}</p>
         </div>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={resetErrorBoundary}>
@@ -49,14 +49,14 @@ export function FeatureErrorFallback({
   return (
     <div
       role="alert"
-      className={
-        className ??
-        "grid gap-3 rounded-md border bg-background/95 p-3 text-sm shadow-lg backdrop-blur-sm"
+        className={
+          className ??
+        "grid gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm shadow-lg backdrop-blur-sm"
       }
     >
       <div className="grid gap-1">
-        <p className="font-medium">{title}</p>
-        <p className="text-muted-foreground">{message}</p>
+        <p className="font-medium text-[var(--ink-1)]">{title}</p>
+        <p className="text-[var(--ink-3)]">{message}</p>
       </div>
       <div className="flex justify-end gap-2">
         {onClose ? (

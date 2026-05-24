@@ -4,11 +4,11 @@ import { cn } from "@/lib/utils";
 // Per-Badge chip color. Earned chips use the tinted background; unachieved
 // chips fall back to a neutral greyed treatment regardless of type.
 const BADGE_COLOR: Record<BadgeType, string> = {
-  life_changing: "bg-violet-100 text-violet-900 border-violet-200",
-  tasty: "bg-amber-100 text-amber-900 border-amber-200",
-  entertained: "bg-fuchsia-100 text-fuchsia-900 border-fuchsia-200",
-  refreshing: "bg-emerald-100 text-emerald-900 border-emerald-200",
-  popular: "bg-rose-100 text-rose-900 border-rose-200",
+  life_changing: "border-[var(--plum)] bg-[color-mix(in_oklab,var(--plum)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  tasty: "border-[var(--amber)] bg-[color-mix(in_oklab,var(--amber)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  entertained: "border-[var(--flag)] bg-[color-mix(in_oklab,var(--flag)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  refreshing: "border-[var(--teal)] bg-[color-mix(in_oklab,var(--teal)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  popular: "border-[var(--plum)] bg-[color-mix(in_oklab,var(--plum)_18%,var(--bg-card))] text-[var(--ink-1)]",
 };
 
 type BadgeChipProps = {

@@ -1,7 +1,7 @@
 import type { Mission } from "../../convex/tripcastApi";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
 import { CheckSquare, Clock, DollarSign, MapPin, Trophy, Zap } from "lucide-react";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 type Props = {
   Mission: Mission;
@@ -29,10 +29,8 @@ const STATUS_STYLES: Record<string, { text: string; background: string; border: 
   dropped: { text: "var(--ink-3)", background: "var(--bg-paper-2)", border: "var(--line-soft)" },
 };
 
-const MISSION_PERSONALITY = MEADOW_SHEET_PERSONALITIES.missions;
-const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
-
 export default function MissionCard({ Mission, token, isOwn, isHighlighted, onClick }: Props) {
+  const { missions: missionPersonality, votes: votesPersonality } = useSheetPersonalities();
   const statusLabel = STATUS_LABELS[Mission.status] ?? Mission.status;
   const statusStyle = STATUS_STYLES[Mission.status] ?? STATUS_STYLES.proposed;
 
@@ -44,10 +42,10 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
         isHighlighted ? "ring-2" : ""
       }`}
       style={{
-        borderColor: isHighlighted ? MISSION_PERSONALITY.color : "var(--line-soft)",
-        background: isHighlighted ? MISSION_PERSONALITY.bg : "var(--bg-card)",
+        borderColor: isHighlighted ? missionPersonality.color : "var(--line-soft)",
+        background: isHighlighted ? missionPersonality.bg : "var(--bg-card)",
         boxShadow: isHighlighted
-          ? `0 0 0 2px color-mix(in oklab, ${MISSION_PERSONALITY.color} 28%, transparent), var(--shadow-card)`
+          ? `0 0 0 2px color-mix(in oklab, ${missionPersonality.color} 28%, transparent), var(--shadow-card)`
           : undefined,
       }}
       onClick={onClick}
@@ -55,7 +53,7 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
       <span
         className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border"
         style={{
-          color: MISSION_PERSONALITY.color,
+          color: missionPersonality.color,
           background: "color-mix(in oklab, var(--meadow-gold) 18%, var(--bg-paper))",
           borderColor: "color-mix(in oklab, var(--meadow-gold) 45%, var(--line-soft))",
         }}
@@ -85,8 +83,8 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
           <span
             className="inline-flex w-fit items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.1em]"
             style={{
-              color: VOTES_PERSONALITY.color,
-              background: `color-mix(in oklab, ${VOTES_PERSONALITY.color} 12%, transparent)`,
+              color: votesPersonality.color,
+              background: `color-mix(in oklab, ${votesPersonality.color} 12%, transparent)`,
             }}
           >
             <CheckSquare className="h-2.5 w-2.5" aria-hidden="true" />

@@ -6,6 +6,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import {
   Sheet,
+  SheetCloseButton,
   SheetContent,
   SheetDescription,
   SheetHeader,
@@ -73,7 +74,11 @@ export default function EmergencyResetSheet({
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent side="bottom">
+      <SheetContent
+        side="bottom"
+        className="h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-sheet)]"
+        data-role="emergency-reset-sheet"
+      >
         <EmergencyResetContent
           token={token}
           onClose={handleContentClose}
@@ -152,9 +157,9 @@ export function EmergencyResetContent({
 
   return (
     <>
-        <SheetHeader>
-          <SheetTitle>{TERMS.emergencyReset}</SheetTitle>
-          <SheetDescription>
+        <SheetHeader className="text-[var(--ink-1)]">
+          <SheetTitle className="text-[var(--ink-1)]">{TERMS.emergencyReset}</SheetTitle>
+          <SheetDescription className="text-[var(--ink-3)]">
             Traveler-only privacy controls.
           </SheetDescription>
         </SheetHeader>
@@ -163,7 +168,7 @@ export function EmergencyResetContent({
           {error ? (
             <p
               role="alert"
-              className="rounded-md border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]"
             >
               {error}
             </p>
@@ -171,32 +176,32 @@ export function EmergencyResetContent({
 
           {isConfirming ? (
             <div className="grid gap-4">
-              <div className="rounded-md border bg-muted/40 p-3">
-                <h3 className="text-sm font-semibold">Emergency Reset</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
+              <div className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+                <h3 className="text-sm font-semibold text-[var(--ink-1)]">Emergency Reset</h3>
+                <p className="mt-1 text-sm text-[var(--ink-2)]">
                   This will delete shared trip data, including checkpoints, live location,
                   route votes, traveler state, current activity, and journal entries.
                 </p>
                 {includeAuthSessions ? (
-                  <p className="mt-2 text-sm text-muted-foreground">
+                  <p className="mt-2 text-sm text-[var(--ink-2)]">
                     Every active TripCast session will also be revoked.
                   </p>
                 ) : (
-                  <p className="mt-2 text-sm text-muted-foreground">
+                  <p className="mt-2 text-sm text-[var(--ink-2)]">
                     Active TripCast sessions will stay signed in.
                   </p>
                 )}
               </div>
 
               {includeAuthSessions ? (
-                <div className="grid gap-2 rounded-md border p-3 text-sm">
-                  <p className="font-medium">Before sharing new passcodes:</p>
-                  <p className="text-muted-foreground">
+                <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
+                  <p className="font-medium text-[var(--ink-1)]">Before sharing new passcodes:</p>
+                  <p className="text-[var(--ink-2)]">
                     Update <code>TRIPCAST_TRAVELER_CODE</code> and{" "}
                     <code>TRIPCAST_SUPPORT_CODE</code> in the Convex deployment
                     environment.
                   </p>
-                  <p className="text-muted-foreground">
+                  <p className="text-[var(--ink-2)]">
                     Changing passcodes only affects future sign-ins. To invalidate old
                     sessions without this button, bump <code>TRIPCAST_AUTH_VERSION</code>.
                   </p>
@@ -216,7 +221,7 @@ export function EmergencyResetContent({
                   disabled={isPending}
                   type="button"
                   variant="outline"
-                  className="border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100 dark:hover:bg-rose-950/60"
+                  className="border-[var(--ink-danger)] bg-[var(--bg-danger)] text-[var(--ink-danger)] hover:bg-[var(--bg-danger)] hover:text-[var(--ink-danger)] hover:opacity-90"
                   onClick={runEmergencyReset}
                 >
                   {isPending ? "Working..." : "Confirm shared data deletion"}
@@ -226,10 +231,10 @@ export function EmergencyResetContent({
           ) : (
             <div className="grid gap-4">
               <div className="grid grid-cols-[auto_1fr] items-start gap-3 px-1">
-                <ShieldAlert className="mt-0.5 h-4 w-4 text-rose-700 dark:text-rose-300" aria-hidden="true" />
+                <ShieldAlert className="mt-0.5 h-4 w-4 text-[var(--ink-danger)]" aria-hidden="true" />
                 <div className="grid gap-1">
-                  <h3 className="text-sm font-semibold">Delete Shared Trip Data</h3>
-                  <p className="text-sm text-muted-foreground">
+                  <h3 className="text-sm font-semibold text-[var(--ink-1)]">Delete Shared Trip Data</h3>
+                  <p className="text-sm text-[var(--ink-2)]">
                     Remove checkpoints, live location, route votes, traveler state,
                     current activity, and journal entries in one reset request. Sessions are
                     only revoked when selected below.
@@ -237,11 +242,12 @@ export function EmergencyResetContent({
                 </div>
               </div>
 
-              <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-md border p-3 text-sm">
+              <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
                 <input
                   checked={includeAuthSessions}
-                  className="mt-1 h-4 w-4 accent-rose-700 dark:accent-rose-400"
+                  className="mt-1 h-4 w-4"
                   disabled={isPending}
+                  style={{ accentColor: "var(--ink-danger)" }}
                   type="checkbox"
                   onChange={(event) => setIncludeAuthSessions(event.currentTarget.checked)}
                 />
@@ -250,7 +256,7 @@ export function EmergencyResetContent({
                     <LogOut className="h-4 w-4" aria-hidden="true" />
                     Log everyone off too
                   </span>
-                  <span className="text-muted-foreground">
+                  <span className="text-[var(--ink-2)]">
                     Revoke every active TripCast session, including this traveler session.
                   </span>
                 </span>
@@ -261,7 +267,7 @@ export function EmergencyResetContent({
                   disabled={isPending}
                   type="button"
                   variant="outline"
-                  className="border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100 dark:hover:bg-rose-950/60"
+                  className="border-[var(--ink-danger)] bg-[var(--bg-danger)] text-[var(--ink-danger)] hover:bg-[var(--bg-danger)] hover:text-[var(--ink-danger)] hover:opacity-90"
                   onClick={() => {
                     setIsConfirming(true);
                     setError(null);

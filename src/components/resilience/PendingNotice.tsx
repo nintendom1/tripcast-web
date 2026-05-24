@@ -10,7 +10,7 @@ type PendingNoticeProps = {
 export function PendingNotice({
   label,
   pending = true,
-  className = "text-sm text-muted-foreground py-4 text-center",
+  className = "py-4 text-center text-sm text-[var(--ink-3)]",
 }: PendingNoticeProps) {
   const showDelayed = useDelayedPending(pending);
   const isOnline = useOnlineStatus();

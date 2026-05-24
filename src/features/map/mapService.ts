@@ -98,13 +98,16 @@ export function getMapStyleUrl(): string | null {
   return `${baseUrl}/map/style?base=${encodeURIComponent(baseUrl)}`;
 }
 
-export function getMapStyleResolution(): MapProxyBaseResolution & { styleUrl: string | null } {
+export function getMapStyleResolution(style?: string): MapProxyBaseResolution & { styleUrl: string | null } {
   const resolution = getMapProxyBaseResolution();
+  if (!resolution.baseUrl) {
+    return { ...resolution, styleUrl: null };
+  }
+  const base = encodeURIComponent(resolution.baseUrl);
+  const styleQuery = style ? `&style=${encodeURIComponent(style)}` : "";
   return {
     ...resolution,
-    styleUrl: resolution.baseUrl
-      ? `${resolution.baseUrl}/map/style?base=${encodeURIComponent(resolution.baseUrl)}`
-      : null,
+    styleUrl: `${resolution.baseUrl}/map/style?base=${base}${styleQuery}`,
   };
 }
 

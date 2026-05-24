@@ -16,6 +16,10 @@ type ConfirmAction = {
   username: string;
 } | null;
 
+const followerErrorClass = "rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]";
+const followerPanelClass = "flex flex-col gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3";
+const followerDangerButtonClass = "border-[var(--ink-danger)] bg-[var(--bg-danger)] text-[var(--ink-danger)] hover:bg-[var(--bg-danger)] hover:text-[var(--ink-danger)] hover:opacity-90";
+
 export default function FollowerManagementPanel({ token }: FollowerManagementPanelProps) {
   const followers = useQuery(tripcastApi.followerAdmin.listFollowers, { token });
   const banUser = useMutation(tripcastApi.followerAdmin.banUser);
@@ -110,7 +114,7 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
 
   if (followers.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground py-4 text-center">
+      <p className="py-4 text-center text-sm text-[var(--ink-3)]">
         No followers yet. Create an invite link to get started.
       </p>
     );
@@ -121,16 +125,16 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
       {error ? (
         <p
           role="alert"
-          className="rounded-md bg-destructive/10 border border-destructive/20 text-destructive text-sm px-3 py-2"
+          className={followerErrorClass}
         >
           {error}
         </p>
       ) : null}
 
       {resetUrl && resetForUserId ? (
-        <div className="flex flex-col gap-2 rounded-md border bg-muted/50 p-3">
-          <p className="text-sm font-medium">Password reset link</p>
-          <span className="font-mono text-xs break-all">{resetUrl}</span>
+        <div className={followerPanelClass}>
+          <p className="text-sm font-medium text-[var(--ink-1)]">Password reset link</p>
+          <span className="break-all font-mono text-xs text-[var(--ink-1)]">{resetUrl}</span>
           <div className="flex gap-2">
             <Button size="sm" variant="outline" type="button" onClick={handleCopyReset}>
               {copied ? "Copied!" : "Copy link"}
@@ -149,7 +153,7 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
               Dismiss
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">Expires in 24 hours.</p>
+          <p className="text-xs text-[var(--ink-3)]">Expires in 24 hours.</p>
         </div>
       ) : null}
 
@@ -162,7 +166,7 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
         />
       ) : null}
 
-      <ul className="flex flex-col divide-y">
+      <ul className="flex flex-col divide-y divide-[var(--line-soft)]">
         {followers.map((follower) => (
           <FollowerRow
             key={follower.userId}
@@ -186,8 +190,8 @@ function FollowerRow({
     <li className="flex flex-col gap-2 py-3">
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-col min-w-0">
-          <span className="text-sm font-medium truncate">{follower.displayName}</span>
-          <span className="text-xs text-muted-foreground">@{follower.username}</span>
+          <span className="truncate text-sm font-medium text-[var(--ink-1)]">{follower.displayName}</span>
+          <span className="text-xs text-[var(--ink-3)]">@{follower.username}</span>
         </div>
         {follower.isBanned ? (
           <Badge variant="destructive" className="text-xs shrink-0">
@@ -233,7 +237,7 @@ function FollowerRow({
           size="sm"
           variant="outline"
           type="button"
-          className="border-rose-300 text-rose-800 hover:bg-rose-50 hover:text-rose-900 dark:text-rose-200 dark:hover:bg-rose-950/40"
+          className={followerDangerButtonClass}
           onClick={() =>
             onAction({ type: "delete", userId: follower.userId, username: follower.username })
           }
@@ -267,8 +271,8 @@ function ConfirmationCard({
   const message = CONFIRM_MESSAGES[action.type]?.(action.username) ?? "Are you sure?";
 
   return (
-    <div className="rounded-md border bg-muted/30 p-3 flex flex-col gap-3">
-      <p className="text-sm">{message}</p>
+    <div className={followerPanelClass}>
+      <p className="text-sm text-[var(--ink-1)]">{message}</p>
       <div className="flex gap-2 justify-end">
         <Button
           size="sm"
@@ -286,7 +290,7 @@ function ConfirmationCard({
           disabled={isPending}
           className={
             isDestructive
-              ? "border-rose-300 bg-rose-50 text-rose-950 hover:bg-rose-100 hover:text-rose-950 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100"
+              ? followerDangerButtonClass
               : ""
           }
           onClick={onConfirm}

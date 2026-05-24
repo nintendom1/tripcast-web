@@ -15,7 +15,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 type TravelFundsSheetProps = {
   token: string;
@@ -31,7 +31,16 @@ const VIEW_TITLES: Record<View, string> = {
   edit: "Edit transaction",
   settings: `${TERMS.funds} settings`,
 };
-const FUNDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.funds;
+
+const MAX_STARTING_BUDGET_USD = 10_000_000;
+
+function friendlyTravelFundsError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (message.includes("startingBudgetUsd must be between 0 and 10000000")) {
+    return "Starting budget must be between $0 and $10,000,000.";
+  }
+  return message || "Unable to save Travel Funds settings.";
+}
 
 export default function TravelFundsSheet({ token, onClose, debugSource }: TravelFundsSheetProps) {
   const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
@@ -81,7 +90,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       await updateConfig({ token, featureEnabled: next });
       music.sfx("success");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : String(err));
+      setSettingsError(friendlyTravelFundsError(err));
     }
   }
 
@@ -95,6 +104,11 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
         setSavingSettings(false);
         return;
       }
+      if (budget > MAX_STARTING_BUDGET_USD) {
+        setSettingsError("Starting budget must be between $0 and $10,000,000.");
+        setSavingSettings(false);
+        return;
+      }
       await updateConfig({
         token,
         featureEnabled: true,
@@ -104,7 +118,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       music.sfx("success");
       setView("summary");
     } catch (err) {
-      setSettingsError(err instanceof Error ? err.message : String(err));
+      setSettingsError(friendlyTravelFundsError(err));
     } finally {
       setSavingSettings(false);
     }
@@ -294,6 +308,7 @@ function SummaryView({
   onSelectTransaction: (tx: Transaction) => void;
   onRequestDelete: (tx: Transaction) => void;
 }) {
+  const { funds: fundsPersonality } = useSheetPersonalities();
   const over = remainingUsd < 0;
   const noBudget = startingBudgetUsd <= 0;
   const fillPct = noBudget
@@ -322,13 +337,13 @@ function SummaryView({
     <>
       <div
         className="flex flex-col gap-2 rounded-2xl border bg-[var(--bg-card)] px-4 py-4 shadow-[var(--shadow-card)]"
-        style={{ borderColor: "color-mix(in oklab, var(--meadow-forest) 38%, var(--line-soft))" }}
+        style={{ borderColor: "color-mix(in oklab, var(--teal) 38%, var(--line-soft))" }}
       >
         <div className="flex items-baseline justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
             <span
-              className="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full text-white shadow-sm"
-              style={{ background: FUNDS_PERSONALITY.color }}
+              className="mt-1 grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
+              style={{ background: fundsPersonality.color }}
               aria-hidden="true"
             >
               <DollarSign className="h-[18px] w-[18px]" />
@@ -598,13 +613,13 @@ function SettingsBody({
       </div>
 
       {enabled && hasTransactions && (
-        <p className="rounded-md px-2 py-1 text-[11px] text-[var(--amber-2)]" style={{ background: "color-mix(in oklab, var(--amber) 14%, transparent)" }}>
+        <p className="rounded-md px-2 py-1 text-[11px] text-[var(--ink-1)]" style={{ background: "color-mix(in oklab, var(--amber) 14%, transparent)" }}>
           Changing the starting budget recalculates remaining travel funds.
         </p>
       )}
 
       {error && (
-        <p className="text-xs text-[var(--danger)]" role="alert">
+        <p className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-xs text-[var(--ink-danger)]" role="alert">
           {error}
         </p>
       )}

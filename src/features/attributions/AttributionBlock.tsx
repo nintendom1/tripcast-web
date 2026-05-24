@@ -19,6 +19,9 @@ const ROLE_OPTIONS: { value: AttributionRole; label: string }[] = [
   { value: "proposer", label: "Proposer" },
 ];
 
+const attributionSelectClass = "h-9 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]";
+const attributionErrorClass = "text-xs text-[var(--ink-danger)]";
+
 type DraftAttribution = {
   userId: string;
   role: AttributionRole;
@@ -125,17 +128,17 @@ export default function AttributionBlock({
   }
 
   return (
-    <section className="grid gap-1.5 rounded-lg border border-slate-200 bg-white p-2">
+    <section className="grid gap-1.5 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--ink-3)]">
             <UserRound className="h-3 w-3" aria-hidden />
             Attribution
           </p>
           {data?.publicCopy ? (
             <p className="mt-0.5 text-xs text-[var(--ink-1)]">{data.publicCopy}</p>
           ) : (
-            <p className="mt-0.5 text-xs text-muted-foreground">
+            <p className="mt-0.5 text-xs text-[var(--ink-3)]">
               {isTraveler ? "No public attribution yet." : ""}
             </p>
           )}
@@ -143,7 +146,7 @@ export default function AttributionBlock({
         {isTraveler && editable ? (
           <button
             type="button"
-            className="text-xs text-navy underline"
+            className="text-xs text-[var(--ink-1)] underline"
             onClick={() => {
               log.logUi(isEditing ? "attribution:edit:cancel" : "attribution:edit:open", { sourceType });
               setIsEditing((current) => !current);
@@ -156,7 +159,7 @@ export default function AttributionBlock({
       </div>
 
       {isTraveler && !isEditing ? (
-        <div className="grid gap-0.5 text-[11px] text-muted-foreground">
+        <div className="grid gap-0.5 text-[11px] text-[var(--ink-3)]">
           {(data?.attributions ?? []).map((item) => (
             <span key={item._id} className="flex items-center gap-1.5">
               <span>
@@ -174,7 +177,7 @@ export default function AttributionBlock({
       ) : null}
 
       {!isTraveler ? (
-        <div className="grid gap-0.5 text-xs text-[var(--ink-2)]">
+        <div className="grid gap-0.5 text-xs text-[var(--ink-3)]">
           {(data?.attributions ?? [])
             .filter((item) => item.displayName && item.badges.length > 0)
             .map((item) => (
@@ -192,19 +195,19 @@ export default function AttributionBlock({
         <div className="grid gap-2">
           <div className="grid gap-1">
             {draft.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No Followers credited.</p>
+              <p className="text-xs text-[var(--ink-3)]">No Followers credited.</p>
             ) : (
               draft.map((item) => (
                 <div
                   key={item.userId}
-                  className="flex items-center justify-between gap-2 rounded-md bg-slate-50 px-2 py-1 text-xs"
+                  className="flex items-center justify-between gap-2 rounded-md bg-[var(--bg-card)] px-2 py-1 text-xs"
                 >
                   <span className="min-w-0 truncate">
                     {displayNameFor(item.userId)} · {roleLabel(item.role)}
                   </span>
                   <button
                     type="button"
-                    className="shrink-0 text-xs text-rose-600 underline"
+                    className="shrink-0 text-xs text-[var(--ink-danger)] underline hover:text-[var(--ink-1)]"
                     onClick={() => removeDraftAttribution(item.userId)}
                   >
                     Remove
@@ -218,7 +221,7 @@ export default function AttributionBlock({
             <select
               value={selectedUserId}
               onChange={(event) => setSelectedUserId(event.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className={attributionSelectClass}
             >
               <option value="">Add Follower</option>
               {availableFollowers.map((follower) => (
@@ -231,7 +234,7 @@ export default function AttributionBlock({
             <select
               value={selectedRole}
               onChange={(event) => setSelectedRole(event.target.value as AttributionRole)}
-              className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+              className={attributionSelectClass}
             >
               {ROLE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -248,7 +251,7 @@ export default function AttributionBlock({
             </Button>
           </div>
 
-          {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+          {error ? <p className={attributionErrorClass} role="alert">{error}</p> : null}
           <Button type="button" size="sm" disabled={!canSave} onClick={saveDraft}>
             {isSaving ? "Saving..." : "Save credits"}
           </Button>

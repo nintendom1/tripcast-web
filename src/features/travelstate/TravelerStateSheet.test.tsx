@@ -152,12 +152,13 @@ describe("TravelerStateSheet — State tab", () => {
     expect(chips.at(-1)).toHaveTextContent("Ahead");
   });
 
-  it("clicking a mood chip selects it (adds bg-navy class)", async () => {
+  it("clicking a mood chip selects it with the active theme token class", async () => {
     setupMocks();
     renderSheet();
     const roughChip = screen.getByRole("button", { name: "Rough" });
     await userEvent.click(roughChip);
-    expect(roughChip).toHaveClass("bg-navy");
+    expect(roughChip).toHaveClass("bg-[var(--flag)]");
+    expect(roughChip).toHaveClass("text-[var(--ink-on-brand)]");
   });
 
   it("clicking a selected chip deselects it", async () => {
@@ -165,9 +166,9 @@ describe("TravelerStateSheet — State tab", () => {
     renderSheet();
     const roughChip = screen.getByRole("button", { name: "Rough" });
     await userEvent.click(roughChip);
-    expect(roughChip).toHaveClass("bg-navy");
+    expect(roughChip).toHaveClass("bg-[var(--flag)]");
     await userEvent.click(roughChip);
-    expect(roughChip).not.toHaveClass("bg-navy");
+    expect(roughChip).not.toHaveClass("bg-[var(--flag)]");
   });
 
   it("Clear All deselects all selected chips", async () => {

@@ -9,10 +9,13 @@ import {
   Download,
   Eye,
   Flag,
+  Infinity,
   LogOut,
   Play,
   ShieldAlert,
   Trophy,
+  Moon,
+  Sun,
   User,
   UserPlus,
   Users,
@@ -25,6 +28,7 @@ import DebugPanel from "../../debug/DebugPanel";
 import type { DebugLogger } from "../../debug/useDebugLogger";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { logMapEvent } from "../../debug/debugLogger";
+import { useTheme, type ThemeMode } from "../../providers/ThemeProvider";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -169,8 +173,61 @@ function TravelerTimezoneSection({ token }: { token: string }) {
           </Button>
         ) : null}
 
-        {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+        {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
       </div>
+    </OptionsSection>
+  );
+}
+
+function AppearanceSection() {
+  const theme = useTheme();
+  const { mode, setMode, resolvedTheme } = theme;
+
+  return (
+    <OptionsSection label="Appearance">
+      <div className="grid grid-cols-3 gap-2 rounded-xl bg-[var(--bg-card)] p-2 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setMode("auto")}
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
+            mode === "auto"
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
+              : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          )}
+        >
+          <Infinity className="h-4 w-4" /> Auto
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("meadow")}
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
+            mode === "meadow"
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
+              : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          )}
+        >
+          <Sun className="h-4 w-4" /> Meadow
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("constellation")}
+          className={cn(
+            "flex items-center justify-center gap-2 rounded-lg py-2 text-sm font-semibold transition-all",
+            mode === "constellation"
+              ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
+              : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          )}
+        >
+          <Moon className="h-4 w-4" /> Constellation
+        </button>
+      </div>
+      {mode === "auto" && (
+        <p className="px-1 text-[10px] font-medium text-[var(--ink-3)]">
+          Currently using {resolvedTheme === "meadow" ? "Meadow" : "Constellation"} based on your local time.
+        </p>
+      )}
     </OptionsSection>
   );
 }
@@ -238,7 +295,7 @@ function MissionSettingsSection({ token }: { token: string }) {
         <span className="text-xs font-normal text-[var(--ink-3)]">Hard cap: 300 proposals per trip per day.</span>
       </label>
 
-      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+      {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
     </OptionsSection>
   );
 }
@@ -281,7 +338,7 @@ function DeveloperScoringToggle({ token }: { token: string }) {
           style={{ accentColor: "var(--flag)" }}
         />
       </label>
-      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+      {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
     </div>
   );
 }
@@ -323,7 +380,7 @@ function FollowerAttributionToggle({ token }: { token: string }) {
           style={{ accentColor: "var(--flag)" }}
         />
       </label>
-      {error ? <p className="text-xs text-rose-600" role="alert">{error}</p> : null}
+      {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
     </div>
   );
 }
@@ -406,8 +463,9 @@ export default function OptionsSheet({
           side="bottom"
           data-role="options-sheet"
           className={cn(
-            "max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
-            view === "debug-logs" && "h-[88dvh] overflow-hidden",
+            // Set to fixed height to prevent layout shifts when logs populate (Issue 3)
+            "h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-sheet)]",
+            view === "debug-logs" && "overflow-hidden",
           )}
         >
           {view === "travel-funds" ? (
@@ -426,7 +484,10 @@ export default function OptionsSheet({
               onPendingChange={setIsEmergencyResetPending}
             />
           ) : view === "debug-logs" ? null : (
-            <OptionsHomeHeader role={role} />
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[var(--header-gradient)]" />
+              <OptionsHomeHeader role={role} />
+            </div>
           )}
 
           {view === "travel-funds" ? (
@@ -572,8 +633,11 @@ function OptionsHome({
 }) {
   return (
     <SheetBody className="grid gap-5 px-5">
-      <SoundSection />
-      <ReadingSection />
+      <div className="grid gap-5">
+        <AppearanceSection />
+        <SoundSection />
+        <ReadingSection />
+      </div>
 
       <OptionsSection label="Account">
         <MapSettingsSection token={session.token} role={role} />
@@ -830,7 +894,7 @@ function SoundSection() {
                 className={cn(
                   "rounded-full px-2 py-1.5 text-xs font-semibold",
                   music.soundtrack === option.value
-                    ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+                    ? "bg-[var(--ink-1)] text-[var(--bg-paper)]"
                     : "bg-[var(--meter-track)] text-[var(--ink-2)]",
                 )}
               >
@@ -862,7 +926,7 @@ function ReadingSection() {
               className={cn(
                 "rounded-full px-2 py-1.5 text-xs font-semibold capitalize",
                 reading.speed === speed
-                  ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
+                  ? "bg-[var(--ink-1)] text-[var(--bg-paper)]"
                   : "bg-[var(--meter-track)] text-[var(--ink-2)]",
               )}
             >
@@ -927,20 +991,20 @@ function OptionsRow({
       onClick={onClick}
       className={cn(
         "flex items-center gap-3 rounded-xl bg-[var(--bg-card)] p-3 text-left shadow-sm",
-        danger && "bg-rose-50 text-rose-900",
+        danger && "bg-[var(--bg-danger)] text-[var(--ink-danger)]",
       )}
     >
       <div
         className={cn(
           "grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-[var(--meter-track)] text-[var(--ink-2)]",
-          danger && "bg-rose-100 text-rose-700",
+          danger && "bg-[var(--bg-paper)] opacity-80",
         )}
       >
         <Icon className="h-4 w-4" aria-hidden />
       </div>
       <div className="min-w-0 flex-1">
-        <p className={cn("text-sm font-semibold text-[var(--ink-1)]", danger && "text-rose-950")}>{title}</p>
-        {detail ? <p className={cn("text-xs text-[var(--ink-3)]", danger && "text-rose-700")}>{detail}</p> : null}
+        <p className={cn("text-sm font-semibold text-[var(--ink-1)]", danger && "text-[var(--ink-danger)]")}>{title}</p>
+        {detail ? <p className={cn("text-xs text-[var(--ink-3)]", danger && "text-[var(--ink-danger)]")}>{detail}</p> : null}
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ink-3)]" aria-hidden />
     </button>

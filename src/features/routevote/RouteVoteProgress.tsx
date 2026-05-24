@@ -33,7 +33,7 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 import { TERMS } from "../../copy/terminology";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 type RouteVoteProgressProps = {
   token: string;
@@ -59,7 +59,6 @@ type RouteVoteProgressProps = {
 };
 
 type View = "list" | "create" | "detail";
-const VOTES_PERSONALITY = MEADOW_SHEET_PERSONALITIES.votes;
 
 function VoteListCard({
   vote,
@@ -74,6 +73,7 @@ function VoteListCard({
   onArchive: () => void;
   isActing: boolean;
 }) {
+  const { votes: votesPersonality } = useSheetPersonalities();
   const status = vote.effectiveStatus;
   const total = vote.totalSubmissions;
 
@@ -82,8 +82,8 @@ function VoteListCard({
       <div className="flex items-start justify-between gap-2">
         <button type="button" onClick={onViewDetail} className="flex min-w-0 items-start gap-2 text-left">
           <span
-            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
-            style={{ background: VOTES_PERSONALITY.color }}
+            className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-[var(--ink-on-brand)]"
+            style={{ background: votesPersonality.color }}
             aria-hidden="true"
           >
             <CheckSquare className="h-4 w-4" />
@@ -94,20 +94,38 @@ function VoteListCard({
         </button>
         <StatusBadge status={status} />
       </div>
-      <div className="text-xs text-muted-foreground">
+      <div className="text-xs text-[var(--ink-3)]">
         {formatTimeRemaining(vote.expiresAt)} · {total} {total === 1 ? "vote" : "votes"} · {vote.options.length} options
       </div>
       <div className="flex flex-wrap gap-1.5">
-        <Button size="sm" variant="outline" onClick={onViewDetail} disabled={isActing}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onViewDetail}
+          disabled={isActing}
+          className="border-[var(--line-soft)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+        >
           Details
         </Button>
         {(status === "active" || status === "closed") && (
-          <Button size="sm" variant="outline" onClick={onCancel} disabled={isActing}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isActing}
+            className="border-[var(--line-soft)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          >
             Cancel
           </Button>
         )}
         {(status === "resolved" || status === "cancelled") && (
-          <Button size="sm" variant="outline" onClick={onArchive} disabled={isActing}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onArchive}
+            disabled={isActing}
+            className="border-[var(--line-soft)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          >
             Archive
           </Button>
         )}
@@ -190,7 +208,7 @@ function VoteDetailView({
   if (detail === null) {
     return (
       <div className="flex flex-col gap-3 py-4 text-center">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-[var(--ink-3)]">
           This route vote was deleted.
         </p>
         <Button size="sm" variant="outline" onClick={onBack}>
@@ -230,7 +248,7 @@ function VoteDetailView({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onBack} className="text-sm text-muted-foreground hover:text-foreground">
+        <button type="button" onClick={onBack} className="text-sm text-[var(--ink-3)] hover:text-[var(--ink-1)]">
           ← Back
         </button>
         <StatusBadge status={detail.effectiveStatus} />
@@ -244,7 +262,7 @@ function VoteDetailView({
 
       <DialogueBox title={detail.title}>
         {detail.description && (
-          <p className="text-sm text-muted-foreground mb-3">{detail.description}</p>
+          <p className="mb-3 text-sm text-[var(--ink-3)]">{detail.description}</p>
         )}
         <div className="flex flex-col gap-3">
           {detail.options.map((option) => {
@@ -257,16 +275,19 @@ function VoteDetailView({
             return (
               <div
                 key={option._id}
-                className={`rounded-md border p-2 ${isWinner ? "border-primary bg-accent" : ""}`}
+                className={cn(
+                  "rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-2 text-[var(--ink-1)]",
+                  isWinner && "border-[var(--flag)] bg-[var(--meter-track)]",
+                )}
               >
                 <div className="flex items-start justify-between gap-2 mb-1">
                   <div>
                     <span className="font-medium text-sm">{option.title}</span>
                     {option.locationLabel && (
-                      <span className="block text-xs text-muted-foreground">{option.locationLabel}</span>
+                      <span className="block text-xs text-[var(--ink-3)]">{option.locationLabel}</span>
                     )}
                     {option.description && (
-                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1 text-xs text-[var(--ink-3)]">
                         <span className="line-clamp-1 flex-1">{option.description}</span>
                         {option.description.length > 60 && (
                           <InfoTooltip label={option.description}>
@@ -276,11 +297,11 @@ function VoteDetailView({
                       </div>
                     )}
                     {isSuggested && !detail.isTied && (
-                      <span className="text-xs text-muted-foreground">(suggested {TERMS.winningOption.toLowerCase()})</span>
+                      <span className="text-xs text-[var(--ink-3)]">(suggested {TERMS.winningOption.toLowerCase()})</span>
                     )}
                     {isWinner && <span className="text-xs font-medium">{TERMS.winningOption}</span>}
                   </div>
-                  <span className="text-xs text-muted-foreground shrink-0">
+                  <span className="shrink-0 text-xs text-[var(--ink-3)]">
                     {count} / {total}
                   </span>
                 </div>
@@ -294,7 +315,7 @@ function VoteDetailView({
                   (confirmingOptionId === option._id ? (
                     option.linkedMissionId ? (
                       <div className="mt-2 flex flex-col gap-2">
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-xs text-[var(--ink-3)]">
                           This option is linked to an existing mission. On confirm:
                         </span>
                         <div className="flex flex-wrap gap-2">
@@ -336,7 +357,7 @@ function VoteDetailView({
             );
           })}
           {detail.isTied && !detail.confirmedWinningOptionId && (
-            <p className="text-xs text-muted-foreground">Tied — choose a winner manually.</p>
+            <p className="text-xs text-[var(--ink-3)]">Tied — choose a winner manually.</p>
           )}
         </div>
       </DialogueBox>
@@ -345,15 +366,15 @@ function VoteDetailView({
         <DialogueBox title="Mission Created">
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-navy line-clamp-1">
+              <p className="text-sm font-medium text-[var(--ink-1)] line-clamp-1">
                 {detail.mission.title}
               </p>
               <StatusBadge status={detail.mission.status} />
             </div>
             {detail.mission.locationLabel && (
-              <p className="text-xs text-muted-foreground">{detail.mission.locationLabel}</p>
+              <p className="text-xs text-[var(--ink-3)]">{detail.mission.locationLabel}</p>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-[var(--ink-3)]">
               Open Missions to view and edit.
             </p>
             {onRequestOpenMissionDetail && (
@@ -371,7 +392,7 @@ function VoteDetailView({
 
       {detail.submissions.some((s) => s.comment) && (
         <div className="flex flex-col gap-2">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <span className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">
             All Comments
           </span>
           {detail.submissions
@@ -379,22 +400,22 @@ function VoteDetailView({
             .map((sub) => (
               <div
                 key={sub._id}
-                className="border rounded-md px-3 py-2 text-sm flex items-start justify-between gap-2"
+                className="border border-[var(--line-soft)] rounded-md px-3 py-2 bg-[var(--bg-card)] text-[var(--ink-1)] text-sm flex items-start justify-between gap-2"
               >
                 <div>
                   <span>{sub.comment}</span>
                   {sub.commentVisibility === "traveler_only" && (
-                    <span className="ml-2 text-xs text-muted-foreground">(private)</span>
+                    <span className="ml-2 text-xs text-[var(--ink-3)]">(private)</span>
                   )}
                   {sub.publicCommentHidden && (
-                    <span className="ml-2 text-xs text-muted-foreground">(hidden)</span>
+                    <span className="ml-2 text-xs text-[var(--ink-3)]">(hidden)</span>
                   )}
                 </div>
                 {!sub.publicCommentHidden && sub.commentVisibility === "public" && (
                   <button
                     type="button"
                     onClick={() => handleHideComment(sub._id)}
-                    className="text-xs text-muted-foreground hover:text-destructive shrink-0"
+                    className="shrink-0 text-xs text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
                   >
                     Hide
                   </button>
@@ -422,6 +443,7 @@ export default function RouteVoteProgress({
   onRequestOpenMissionDetail,
   debugSource,
 }: RouteVoteProgressProps) {
+  const { votes: votesPersonality } = useSheetPersonalities();
   const votes = useQuery(
     tripcastApi.routeVotes.travelerListRouteVotes,
     open ? { token } : "skip",
@@ -531,10 +553,10 @@ export default function RouteVoteProgress({
         )}
         data-role="route-votes-sheet"
       >
-        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: VOTES_PERSONALITY.color }} />
+        <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: votesPersonality.color }} />
         <div
           className="sticky top-0 z-[1] flex shrink-0 items-center justify-between border-b border-[var(--line-soft)] px-4 py-3"
-          style={{ background: `linear-gradient(180deg, ${VOTES_PERSONALITY.bg} 0%, var(--bg-paper) 100%)` }}
+          style={{ background: `linear-gradient(180deg, ${votesPersonality.bg} 0%, var(--bg-paper) 100%)` }}
         >
           <div className="flex items-center gap-2">
             {(view === "create" || view === "detail") && (
@@ -545,7 +567,7 @@ export default function RouteVoteProgress({
                   setView("list");
                   setSelectedVoteId(null);
                 }}
-                className="text-sm text-muted-foreground hover:text-foreground"
+                className="text-sm text-[var(--ink-3)] hover:text-[var(--ink-1)]"
               >
                 ←
               </button>
@@ -554,8 +576,8 @@ export default function RouteVoteProgress({
               <div className="flex items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white shadow-sm"
-                  style={{ background: VOTES_PERSONALITY.color }}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
+                  style={{ background: votesPersonality.color }}
                 >
                   <CheckSquare className="h-4 w-4" />
                 </span>
@@ -653,7 +675,8 @@ export default function RouteVoteProgress({
                   log.logInteraction("view:change", { from: view, to: "create" });
                   setView("create");
                 }}
-                className="w-full"
+                className="w-full border-0 text-[var(--ink-on-brand)]"
+                style={{ background: votesPersonality.color }}
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 Propose new route
@@ -661,9 +684,9 @@ export default function RouteVoteProgress({
               {votes === undefined ? (
                 <PendingNotice label="Loading votes..." />
               ) : votes.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No active votes.</p>
+                <p className="py-4 text-center text-sm text-[var(--ink-3)]">No active votes.</p>
               ) : (filteredVotes ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No {statusFilter} votes.</p>
+                <p className="py-4 text-center text-sm text-[var(--ink-3)]">No {statusFilter} votes.</p>
               ) : (
                 (filteredVotes ?? []).map((vote) => (
                   <VoteListCard

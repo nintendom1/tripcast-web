@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import * as authLib from "./lib/auth";
 import App from "./App";
+import { clearLogs, getLogs, setEnabled } from "./debug/debugLogger";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -24,6 +25,8 @@ vi.mock("./features/map/TripMap", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
+  clearLogs();
   vi.mocked(authLib.getStoredSession).mockReturnValue({
     token: "test-token",
     role: "traveler",
@@ -35,10 +38,13 @@ beforeEach(() => {
 
 describe("App map boundary", () => {
   it("shows map recovery UI when the lazy map subtree fails", async () => {
+    setEnabled(true);
     render(<App convexReady={true} />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("The map could not load.");
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /reload app/i })).toBeInTheDocument();
+    expect(getLogs().some((entry) => entry.action === "react:map-boundary-error")).toBe(true);
+    expect(getLogs().some((entry) => entry.action === "map:fallback:shown")).toBe(true);
   });
 });

@@ -174,7 +174,8 @@ export default function AddCheckpointSheet({
         className="z-[12] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
         data-role="add-checkpoint-sheet"
       >
-        <div className="flex items-start justify-between gap-2 px-4 pt-2">
+        <div className="relative flex items-start justify-between gap-2 px-4 pt-2">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[var(--header-gradient)]" />
           <div className="flex min-w-0 flex-col gap-1">
             <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
               {titleText}
@@ -242,12 +243,7 @@ export default function AddCheckpointSheet({
           {error ? (
             <p
               role="alert"
-              className="rounded-md border px-3 py-2 text-sm"
-              style={{
-                borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
-                background: "color-mix(in oklab, var(--danger) 10%, transparent)",
-                color: "var(--danger)",
-              }}
+              className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]"
             >
               {error}
             </p>

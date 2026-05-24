@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Calendar, Check, Copy, Download, Loader2 } from "lucide-react";
+import { Check, Copy, Download, Loader2 } from "lucide-react";
 import { useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -14,6 +14,8 @@ import { Button } from "../../components/ui/button";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useTheme } from "../../providers/ThemeProvider";
+import { cn } from "@/lib/utils";
 
 type BulkExportSheetProps = {
   open: boolean;
@@ -45,7 +47,9 @@ export default function BulkExportSheet({
   const [endDate, setEndDate] = useState("");
   const [copied, setCopied] = useState(false);
   const music = useMusicSafe();
+  const { resolvedTheme } = useTheme();
   const log = useDebugLogger("BulkExportSheet", "src/features/options/BulkExportSheet.tsx");
+  const dateInputStyle = { colorScheme: resolvedTheme === "constellation" ? "dark" : "light" } as const;
 
   useEffect(() => {
     log.logUi(open ? "sheet:open" : "sheet:close");
@@ -112,38 +116,51 @@ export default function BulkExportSheet({
           <SheetCloseButton aria-label="Close bulk export" />
         </div>
 
-        <SheetBody className="grid gap-6 px-5 py-4">
+        <SheetBody className="grid gap-6 px-5 py-4 text-[var(--ink-1)]">
           <div className="grid gap-4">
-            <div className="flex rounded-xl bg-[var(--bg-card)] p-1 shadow-sm">
+            <div className="flex rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1 shadow-sm">
               <button
+                type="button"
                 onClick={() => {
                   log.logUi("action:range:all");
                   setRange("all");
                 }}
-                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${range === "all" ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]" : "text-[var(--ink-2)]"}`}
+                className={cn(
+                  "flex-1 rounded-lg py-2 text-sm font-semibold transition-colors",
+                  range === "all"
+                    ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
+                    : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+                )}
               >
                 Export All
               </button>
               <button
+                type="button"
                 onClick={() => {
                   log.logUi("action:range:custom");
                   setRange("custom");
                 }}
-                className={`flex-1 rounded-lg py-2 text-sm font-semibold transition-colors ${range === "custom" ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]" : "text-[var(--ink-2)]"}`}
+                className={cn(
+                  "flex-1 rounded-lg py-2 text-sm font-semibold transition-colors",
+                  range === "custom"
+                    ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
+                    : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+                )}
               >
                 Custom Range
               </button>
             </div>
 
             {range === "custom" && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
                 <label className="grid gap-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Start Date</span>
                   <input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]"
+                    className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
+                    style={dateInputStyle}
                   />
                 </label>
                 <label className="grid gap-1">
@@ -152,14 +169,15 @@ export default function BulkExportSheet({
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]"
+                    className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
+                    style={dateInputStyle}
                   />
                 </label>
               </div>
             )}
           </div>
 
-          <div className="grid gap-3 rounded-2xl bg-[var(--bg-card)] p-4 text-center">
+          <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
             {!data ? (
               <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -171,11 +189,20 @@ export default function BulkExportSheet({
                   {data.entries.length} items ready for export
                 </p>
                 <div className="flex gap-2">
-                  <Button onClick={handleCopy} variant="outline" className="flex-1">
+                  <Button
+                    type="button"
+                    onClick={handleCopy}
+                    variant="outline"
+                    className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
+                  >
                     {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
                     {copied ? "Copied" : "Copy JSON"}
                   </Button>
-                  <Button onClick={handleDownload} className="flex-1">
+                  <Button
+                    type="button"
+                    onClick={handleDownload}
+                    className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
+                  >
                     <Download className="mr-2 h-4 w-4" />
                     Download .json
                   </Button>

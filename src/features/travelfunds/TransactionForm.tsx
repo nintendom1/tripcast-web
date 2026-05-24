@@ -19,6 +19,13 @@ import {
   isValidCurrencyCode,
 } from "./currency";
 
+const labelClass = "text-xs font-medium text-[var(--ink-2)]";
+const mutedTextClass = "text-[var(--ink-3)]";
+const selectClass = "w-full rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 py-1.5 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]";
+const previewClass = "rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] px-2.5 py-1.5 text-xs text-[var(--ink-1)]";
+const errorClass = "text-xs text-[var(--ink-danger)]";
+const dangerGhostClass = "text-[var(--ink-danger)] hover:bg-[var(--bg-danger)] hover:text-[var(--ink-danger)]";
+
 export type TransactionFormValues = {
   title: string;
   note?: string;
@@ -188,7 +195,7 @@ export default function TransactionForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium" htmlFor="tx-title">Title</label>
+        <label className={labelClass} htmlFor="tx-title">Title</label>
         <Input
           id="tx-title"
           value={title}
@@ -201,7 +208,7 @@ export default function TransactionForm({
 
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium" htmlFor="tx-amount">Amount</label>
+          <label className={labelClass} htmlFor="tx-amount">Amount</label>
           <Input
             id="tx-amount"
             value={localAmount}
@@ -210,16 +217,16 @@ export default function TransactionForm({
             placeholder="0.00"
           />
           {isNegative && (
-            <span className="text-[10px] text-emerald-700">Refund / credit</span>
+            <span className="text-[10px] text-[var(--teal)]">Refund / credit</span>
           )}
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium" htmlFor="tx-currency">Currency</label>
+          <label className={labelClass} htmlFor="tx-currency">Currency</label>
           <select
             id="tx-currency"
             value={currencySelect}
             onChange={(e) => setCurrencySelect(e.target.value)}
-            className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+            className={selectClass}
           >
             {COMMON_CURRENCIES.map((c) => (
               <option key={c.code} value={c.code}>{c.label}</option>
@@ -231,7 +238,7 @@ export default function TransactionForm({
 
       {currencySelect === "OTHER" && (
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium" htmlFor="tx-custom-currency">Currency code</label>
+          <label className={labelClass} htmlFor="tx-custom-currency">Currency code</label>
           <Input
             id="tx-custom-currency"
             value={customCurrency}
@@ -245,8 +252,8 @@ export default function TransactionForm({
 
       {effectiveCurrencyCode !== "USD" && (
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium" htmlFor="tx-rate">
-            Exchange rate <span className="text-muted-foreground font-normal">— local currency per 1 USD</span>
+          <label className={labelClass} htmlFor="tx-rate">
+            Exchange rate <span className={`${mutedTextClass} font-normal`}>— local currency per 1 USD</span>
           </label>
           <Input
             id="tx-rate"
@@ -255,26 +262,26 @@ export default function TransactionForm({
             inputMode="decimal"
             placeholder="e.g. 150"
           />
-          <p className="text-[10px] text-muted-foreground">
+          <p className={`text-[10px] ${mutedTextClass}`}>
             This rate is saved with the transaction and will not change automatically later.
           </p>
         </div>
       )}
 
-      <div className="rounded-md bg-slate-50 px-2.5 py-1.5 text-xs">
-        <span className="text-muted-foreground">USD: </span>
+      <div className={previewClass}>
+        <span className={mutedTextClass}>USD: </span>
         <span className="font-semibold">
           {usdPreview === null ? "—" : formatUsd(usdPreview)}
         </span>
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium" htmlFor="tx-category">Category</label>
+        <label className={labelClass} htmlFor="tx-category">Category</label>
         <select
           id="tx-category"
           value={category}
           onChange={(e) => setCategory(e.target.value as TransactionCategory)}
-          className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm bg-white"
+          className={selectClass}
         >
           {CATEGORY_OPTIONS.map((c) => (
             <option key={c.value} value={c.value}>
@@ -285,7 +292,7 @@ export default function TransactionForm({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium" htmlFor="tx-note">Note (optional)</label>
+        <label className={labelClass} htmlFor="tx-note">Note (optional)</label>
         <Textarea
           id="tx-note"
           value={note}
@@ -296,8 +303,8 @@ export default function TransactionForm({
         />
       </div>
 
-      <fieldset className="flex flex-col gap-1.5 rounded-md border border-slate-200 px-2.5 py-2">
-        <legend className="text-xs font-medium px-1">Visibility</legend>
+      <fieldset className="flex flex-col gap-1.5 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-2.5 py-2">
+        <legend className={labelClass}>Visibility</legend>
         {VISIBILITY_OPTIONS.map((opt) => (
           <label key={opt.value} className="flex items-start gap-2 cursor-pointer">
             <input
@@ -309,8 +316,8 @@ export default function TransactionForm({
               className="mt-0.5"
             />
             <span className="flex flex-col">
-              <span className="text-sm">{opt.label}</span>
-              <span className="text-[11px] text-muted-foreground">{opt.desc}</span>
+              <span className="text-sm text-[var(--ink-1)]">{opt.label}</span>
+              <span className={`text-[11px] ${mutedTextClass}`}>{opt.desc}</span>
             </span>
           </label>
         ))}
@@ -325,8 +332,8 @@ export default function TransactionForm({
           className="mt-0.5"
         />
         <span className="flex flex-col">
-          <span className="text-sm">Counts toward Travel Funds</span>
-          <span className="text-[11px] text-muted-foreground">
+          <span className="text-sm text-[var(--ink-1)]">Counts toward Travel Funds</span>
+          <span className={`text-[11px] ${mutedTextClass}`}>
             Public transactions always count. Uncheck for informational entries (only available for summary/private).
           </span>
         </span>
@@ -341,8 +348,8 @@ export default function TransactionForm({
             className="mt-0.5"
           />
           <span className="flex flex-col">
-            <span className="text-sm">Link to current activity</span>
-            <span className="text-[11px] text-muted-foreground truncate">
+            <span className="text-sm text-[var(--ink-1)]">Link to current activity</span>
+            <span className={`text-[11px] ${mutedTextClass} truncate`}>
               {activity.emoji ?? "⚡"} {activity.title}
             </span>
           </span>
@@ -350,7 +357,7 @@ export default function TransactionForm({
       )}
 
       {error && (
-        <p className="text-xs text-rose-600" role="alert">{error}</p>
+        <p className={errorClass} role="alert">{error}</p>
       )}
 
       <div className="flex justify-between gap-2 pt-1">
@@ -358,7 +365,7 @@ export default function TransactionForm({
           <Button
             type="button"
             variant="ghost"
-            className="text-rose-600 hover:text-rose-700"
+            className={dangerGhostClass}
             onClick={handleDelete}
             disabled={isDeleting || isSubmitting}
           >

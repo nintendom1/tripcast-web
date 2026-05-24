@@ -14,9 +14,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
-
-const AWARDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.awards;
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
@@ -37,6 +35,7 @@ export default function AwardBadgeSheet({
   sourceId,
   onOpenChange,
 }: Props) {
+  const { awards: awardsPersonality } = useSheetPersonalities();
   const log = useDebugLogger(
     "AwardBadgeSheet",
     "src/features/achievements/AwardBadgeSheet.tsx",
@@ -174,7 +173,7 @@ export default function AwardBadgeSheet({
         data-role="award-badge-sheet"
         className="max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
-        <SheetGradientHeader color={AWARDS_PERSONALITY.color} bg={AWARDS_PERSONALITY.bg}>
+        <SheetGradientHeader color={awardsPersonality.color} bg={awardsPersonality.bg}>
           <div className="grid gap-1">
             <SheetTitle className="text-base">
               {context?.sourceLabel ?? "Loading…"}
@@ -280,12 +279,12 @@ export default function AwardBadgeSheet({
               </section>
 
               {error ? (
-                <p className="text-sm text-rose-600" role="alert">
+                <p className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]" role="alert">
                   {error}
                 </p>
               ) : null}
               {feedback ? (
-                <p className="text-sm font-semibold text-emerald-700" role="status">
+                <p className="text-sm font-semibold text-[var(--teal)]" role="status">
                   {feedback}
                 </p>
               ) : null}

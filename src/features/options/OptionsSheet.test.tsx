@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
@@ -249,5 +249,20 @@ describe("OptionsSheet developer scoring toggle", () => {
       type: "tripcast.mapCooldownChanged",
     }));
     expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:manual-trigger");
+  });
+});
+
+describe("OptionsSheet appearance", () => {
+  it("orders theme choices as Auto, Meadow, Constellation", () => {
+    setupMocks();
+    renderOptions();
+
+    const appearanceSection = screen.getByText("Appearance").closest("section");
+    expect(appearanceSection).not.toBeNull();
+    const labels = within(appearanceSection!).getAllByRole("button").map((button) =>
+      button.textContent?.trim(),
+    );
+
+    expect(labels).toEqual(["Auto", "Meadow", "Constellation"]);
   });
 });

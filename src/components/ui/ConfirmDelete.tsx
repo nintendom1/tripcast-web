@@ -19,7 +19,7 @@ export interface ConfirmDeleteProps {
  * ConfirmDelete is the destructive-action modal used across the rework.
  *
  * All destructive flows funnel through here — no inline confirms, no silent deletes.
- * The Trail palette's danger color (--danger) drives the primary button.
+ * The active theme's danger tokens drive the icon and primary button.
  */
 export function ConfirmDelete({
   open,
@@ -47,8 +47,8 @@ export function ConfirmDelete({
         >
           <div className="flex items-start gap-3">
             <div
-              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--danger)]"
-              style={{ background: "color-mix(in oklab, var(--danger) 14%, transparent)" }}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[var(--ink-danger)]"
+              style={{ background: "var(--bg-danger)" }}
             >
               <AlertTriangle className="h-5 w-5" aria-hidden="true" />
             </div>
@@ -76,8 +76,8 @@ export function ConfirmDelete({
               type="button"
               onClick={onConfirm}
               disabled={pending}
-              className="rounded-full px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-60"
-              style={{ background: "var(--danger)" }}
+              className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--bg-paper)] transition-opacity disabled:opacity-60"
+              style={{ background: "var(--ink-danger)" }}
             >
               {pending ? "Deleting…" : confirmLabel}
             </button>
