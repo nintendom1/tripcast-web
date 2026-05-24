@@ -15,6 +15,7 @@ import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
+import { cn } from "@/lib/utils";
 
 
 const RESPONSE_PRESETS = [
@@ -71,7 +72,7 @@ function friendlyError(e: unknown): string {
  *  Next Steps / About / Linked areas. */
 function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em] text-[var(--ink-3)]">
+    <div className="font-[var(--font-display)] text-[10px] font-extrabold uppercase tracking-[0.14em] text-[var(--ink-3)]">
       {children}
     </div>
   );
@@ -636,9 +637,9 @@ export default function MissionDetailSheet({
             Drop with response
           </Button>
           <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1 h-px bg-rose-200" />
-            <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
-            <div className="flex-1 h-px bg-rose-200" />
+            <div className="flex-1 h-px bg-[var(--bg-danger)] opacity-50" />
+            <span className="text-[10px] text-[var(--ink-danger)] font-medium uppercase tracking-wide">⚠ Danger</span>
+            <div className="flex-1 h-px bg-[var(--bg-danger)] opacity-50" />
           </div>
           <Button
             variant="outline"
@@ -646,7 +647,7 @@ export default function MissionDetailSheet({
             type="button"
             disabled={!canAct}
             onClick={() => setShowDeleteConfirm(true)}
-            className="border-rose-300 text-rose-700 hover:bg-rose-50"
+            className="border-[var(--bg-danger)] text-[var(--ink-danger)] hover:bg-[var(--bg-danger)]/10"
           >
             Delete silently
           </Button>
@@ -706,9 +707,9 @@ export default function MissionDetailSheet({
             Drop with note
           </Button>
           <div className="flex items-center gap-2 pt-1">
-            <div className="flex-1 h-px bg-rose-200" />
-            <span className="text-[10px] text-rose-400 font-medium uppercase tracking-wide">⚠ Danger</span>
-            <div className="flex-1 h-px bg-rose-200" />
+            <div className="flex-1 h-px bg-[var(--bg-danger)] opacity-50" />
+            <span className="text-[10px] text-[var(--ink-danger)] font-medium uppercase tracking-wide">⚠ Danger</span>
+            <div className="flex-1 h-px bg-[var(--bg-danger)] opacity-50" />
           </div>
           <Button
             variant="outline"
@@ -719,7 +720,7 @@ export default function MissionDetailSheet({
               log.logUi("action:delete-open", { missionId: c._id });
               setShowDeleteConfirm(true);
             }}
-            className="border-rose-300 text-rose-700 hover:bg-rose-50"
+            className="border-[var(--bg-danger)] text-[var(--ink-danger)] hover:bg-[var(--bg-danger)]/10"
           >
             Delete silently
           </Button>
@@ -764,7 +765,7 @@ export default function MissionDetailSheet({
               type="button"
               disabled={!canAct}
               onClick={handleCompleteAsStory}
-              className="border-[var(--plum)] text-white"
+              className="border-[var(--plum)] text-[var(--ink-on-brand)]"
               style={{ background: "var(--plum)" }}
             >
               Complete as story
@@ -775,7 +776,7 @@ export default function MissionDetailSheet({
             type="button"
             disabled={!canAct}
             onClick={handleComplete}
-            className="bg-green-600 hover:bg-green-700 text-white border-green-600"
+            className="bg-[var(--teal)] hover:opacity-90 text-[var(--ink-on-brand)] border-[var(--teal)]"
           >
             {onCompleteAsStory ? "Mark complete (no story)" : "Complete Mission"}
           </Button>
@@ -843,7 +844,7 @@ export default function MissionDetailSheet({
             type="button"
             disabled={!canAct}
             onClick={handleCompleteAsStory}
-            className="border-[var(--plum)] text-white w-fit"
+            className="border-[var(--plum)] text-[var(--ink-on-brand)] w-fit"
             style={{ background: "var(--plum)" }}
           >
             Add a story
@@ -856,17 +857,18 @@ export default function MissionDetailSheet({
 
         {/* Reject with response form */}
         {isTraveler && showRejectForm && (
-          <div className="flex flex-col gap-3 border border-slate-200 rounded-lg p-3">
+          <div className="flex flex-col gap-3 border border-[var(--line-soft)] rounded-lg p-3 bg-[var(--bg-card)]">
             <div className="flex flex-wrap gap-2">
               {RESPONSE_PRESETS.map((preset) => (
                 <button
                   key={preset}
                   type="button"
-                  className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                  className={cn(
+                    "px-2.5 py-1 text-xs rounded-full border transition-colors",
                     selectedPreset === preset
-                      ? "bg-navy text-white border-navy"
-                      : "bg-white text-navy border-slate-300 hover:bg-slate-50"
-                  }`}
+                      ? "bg-[var(--ink-1)] text-[var(--bg-paper)] border-[var(--ink-1)]"
+                      : "bg-[var(--bg-paper)] text-[var(--ink-2)] border-[var(--line-soft)] hover:bg-[var(--meter-track)]"
+                  )}
                   onClick={() => setSelectedPreset(selectedPreset === preset ? "" : preset)}
                 >
                   {preset}
@@ -908,8 +910,8 @@ export default function MissionDetailSheet({
 
         {/* Delete silently confirmation */}
         {isTraveler && showDeleteConfirm && (
-          <div className="flex flex-col gap-3 border border-rose-200 rounded-lg p-3 bg-rose-50">
-            <p className="text-sm text-rose-800">
+          <div className="flex flex-col gap-3 border border-[var(--bg-danger)] rounded-lg p-3 bg-[var(--bg-danger)]">
+            <p className="text-sm text-[var(--ink-danger)]">
               This permanently deletes the Mission — the proposer will no longer see it. Are you sure?
             </p>
             <div className="flex gap-2">

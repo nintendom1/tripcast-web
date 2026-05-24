@@ -599,8 +599,8 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                 <span
                   className="rounded-full px-1.5 py-px text-[8px] font-bold uppercase tracking-wider"
                   style={{
-                    background: `color-mix(in oklab, ${STATE_PERSONALITY.color} 20%, transparent)`,
-                    color: STATE_PERSONALITY.color,
+                    background: `color-mix(in oklab, ${statePersonality.color} 20%, transparent)`,
+                    color: statePersonality.color,
                   }}
                 >
                   AUTO

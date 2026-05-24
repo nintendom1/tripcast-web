@@ -26,13 +26,13 @@ export function ChoiceItem({ index, selected, disabled, onClick, children }: Cho
       onKeyDown={(e) => e.key === "Enter" && onClick?.()}
       disabled={disabled}
       className={cn(
-        "flex items-start gap-3 border-l-2 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 disabled:cursor-not-allowed",
+        "flex items-start gap-3 border-l-2 px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50",
         selected
-          ? "border-l-primary bg-accent text-accent-foreground"
-          : "border-l-transparent hover:border-l-muted-foreground hover:bg-accent/50",
+          ? "border-l-[var(--flag)] bg-[var(--meter-track)] text-[var(--ink-1)]"
+          : "border-l-transparent text-[var(--ink-2)] hover:border-l-[var(--ink-3)] hover:bg-[var(--meter-track)]",
       )}
     >
-      <span className="w-5 shrink-0 text-sm font-medium text-muted-foreground">{index}.</span>
+      <span className="w-5 shrink-0 text-sm font-medium text-[var(--ink-3)]">{index}.</span>
       <span>{children}</span>
     </button>
   );

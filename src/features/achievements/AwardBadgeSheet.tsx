@@ -14,9 +14,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { MEADOW_SHEET_PERSONALITIES } from "../redesign/sheetPersonality";
-
-const AWARDS_PERSONALITY = MEADOW_SHEET_PERSONALITIES.awards;
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 

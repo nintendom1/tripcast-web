@@ -37,15 +37,15 @@ export default function RouteVoteSourceCard({ sourceVoteId, sourceOptionId, toke
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 flex flex-col gap-2">
+    <div className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 flex flex-col gap-2">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+        <p className="text-xs font-medium text-[var(--ink-3)] uppercase tracking-wide">
           {heading}
         </p>
         <StatusBadge status={vote.effectiveStatus} />
       </div>
 
-      <p className="text-sm font-medium text-navy">{vote.title}</p>
+      <p className="text-sm font-medium text-[var(--ink-1)]">{vote.title}</p>
 
       {winningOption && (
         <div className="text-xs text-muted-foreground">

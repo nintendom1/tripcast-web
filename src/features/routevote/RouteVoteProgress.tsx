@@ -98,16 +98,34 @@ function VoteListCard({
         {formatTimeRemaining(vote.expiresAt)} · {total} {total === 1 ? "vote" : "votes"} · {vote.options.length} options
       </div>
       <div className="flex flex-wrap gap-1.5">
-        <Button size="sm" variant="outline" onClick={onViewDetail} disabled={isActing}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onViewDetail}
+          disabled={isActing}
+          className="border-[var(--line-soft)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+        >
           Details
         </Button>
         {(status === "active" || status === "closed") && (
-          <Button size="sm" variant="outline" onClick={onCancel} disabled={isActing}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isActing}
+            className="border-[var(--line-soft)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          >
             Cancel
           </Button>
         )}
         {(status === "resolved" || status === "cancelled") && (
-          <Button size="sm" variant="outline" onClick={onArchive} disabled={isActing}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onArchive}
+            disabled={isActing}
+            className="border-[var(--line-soft)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
+          >
             Archive
           </Button>
         )}
@@ -345,7 +363,7 @@ function VoteDetailView({
         <DialogueBox title="Mission Created">
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-navy line-clamp-1">
+              <p className="text-sm font-medium text-[var(--ink-1)] line-clamp-1">
                 {detail.mission.title}
               </p>
               <StatusBadge status={detail.mission.status} />
@@ -379,7 +397,7 @@ function VoteDetailView({
             .map((sub) => (
               <div
                 key={sub._id}
-                className="border rounded-md px-3 py-2 text-sm flex items-start justify-between gap-2"
+                className="border border-[var(--line-soft)] rounded-md px-3 py-2 bg-[var(--bg-card)] text-[var(--ink-1)] text-sm flex items-start justify-between gap-2"
               >
                 <div>
                   <span>{sub.comment}</span>
@@ -654,7 +672,8 @@ export default function RouteVoteProgress({
                   log.logInteraction("view:change", { from: view, to: "create" });
                   setView("create");
                 }}
-                className="w-full"
+                className="w-full border-0 text-[var(--ink-on-brand)]"
+                style={{ background: votesPersonality.color }}
               >
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                 Propose new route

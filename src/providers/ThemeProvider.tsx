@@ -14,6 +14,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 const THEMES = {
   meadow: {
     "--bg-paper": "#fdf6e3",
+    "--bg-paper-2": "#f0e6c8",
     "--bg-card": "#fffdf4",
     "--ink-1": "#3a2e1f",
     "--ink-2": "#7a6849",
@@ -34,11 +35,31 @@ const THEMES = {
     "--map-forest": "#bcd58a",
     "--line-soft": "rgba(0,0,0,0.06)",
     "--meter-track": "rgba(0,0,0,0.05)",
+    "--background": "#fdf6e3",
+    "--foreground": "#3a2e1f",
+    "--card": "#fffdf4",
+    "--card-foreground": "#3a2e1f",
+    "--popover": "#fffdf4",
+    "--popover-foreground": "#3a2e1f",
+    "--primary": "#3a2e1f",
+    "--primary-foreground": "#fffdf4",
+    "--secondary": "#fff0dc",
+    "--secondary-foreground": "#3a2e1f",
+    "--muted": "#f0e6c8",
+    "--muted-foreground": "#7a6849",
+    "--accent": "#fff0dc",
+    "--accent-foreground": "#3a2e1f",
+    "--destructive": "#d92332",
+    "--destructive-foreground": "#ffffff",
+    "--border": "rgba(0,0,0,0.08)",
+    "--input": "rgba(0,0,0,0.14)",
+    "--ring": "#ff8b4a",
     "--font-display": '"Fredoka", "Quicksand", sans-serif',
     "--radius-sheet": "26px",
   },
   constellation: {
     "--bg-paper": "#1c1f3a",
+    "--bg-paper-2": "#242746",
     "--bg-card": "#2c2f4f",
     "--ink-1": "#f0eaff",
     "--ink-2": "#c2bdee",
@@ -59,10 +80,46 @@ const THEMES = {
     "--map-forest": "#3a5256",
     "--line-soft": "rgba(255,255,255,0.1)",
     "--meter-track": "rgba(255,255,255,0.08)",
+    "--background": "#1c1f3a",
+    "--foreground": "#f0eaff",
+    "--card": "#2c2f4f",
+    "--card-foreground": "#f0eaff",
+    "--popover": "#2c2f4f",
+    "--popover-foreground": "#f0eaff",
+    "--primary": "#f0eaff",
+    "--primary-foreground": "#1c1f3a",
+    "--secondary": "#242746",
+    "--secondary-foreground": "#f0eaff",
+    "--muted": "#242746",
+    "--muted-foreground": "#c2bdee",
+    "--accent": "#34385a",
+    "--accent-foreground": "#f0eaff",
+    "--destructive": "#ff8aae",
+    "--destructive-foreground": "#1c1f3a",
+    "--border": "rgba(255,255,255,0.12)",
+    "--input": "rgba(255,255,255,0.18)",
+    "--ring": "#7a9aff",
     "--font-display": '"Fredoka", "Quicksand", sans-serif',
     "--radius-sheet": "18px",
   },
 };
+
+function applyThemeVariables(theme: "meadow" | "constellation") {
+  const root = document.documentElement;
+  const mapping = THEMES[theme];
+
+  Object.entries(mapping).forEach(([key, value]) => {
+    root.style.setProperty(key, value);
+  });
+
+  if (theme === "constellation") {
+    root.classList.add("theme-dark");
+    root.classList.add("dark");
+  } else {
+    root.classList.remove("theme-dark");
+    root.classList.remove("dark");
+  }
+}
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>(
@@ -82,20 +139,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const current = getResolvedTheme();
     setResolvedTheme(current);
-    
-    const root = document.documentElement;
-    const mapping = THEMES[current];
-    
-    Object.entries(mapping).forEach(([key, value]) => {
-      root.style.setProperty(key, value);
-    });
-
-    // Add a global class for conditional styling (e.g., .theme-dark)
-    if (current === "constellation") {
-      root.classList.add("theme-dark");
-    } else {
-      root.classList.remove("theme-dark");
-    }
+    applyThemeVariables(current);
   }, [getResolvedTheme]);
 
   // Handle Auto-switch timer
@@ -103,7 +147,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (mode !== "auto") return;
     const interval = setInterval(() => {
       const next = getResolvedTheme();
-      if (next !== resolvedTheme) setResolvedTheme(next);
+      if (next !== resolvedTheme) {
+        setResolvedTheme(next);
+        applyThemeVariables(next);
+      }
     }, 60000); // Check every minute
     return () => clearInterval(interval);
   }, [mode, resolvedTheme, getResolvedTheme]);

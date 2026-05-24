@@ -60,7 +60,7 @@ function voteCode(id: string): string {
 }
 
 function VoteCard({ vote, onSelect }: VoteCardProps) {
-  const { votes: votesPersonality } = useSheetPersonalities();
+  const { votes: votesPersonality, missions: missionPersonality } = useSheetPersonalities();
   const total = vote.totalSubmissions ?? 0;
   const showTallies = vote.optionVoteCounts !== undefined;
   const winner = vote.options.find((option) => option._id === vote.confirmedWinningOptionId);
@@ -122,7 +122,7 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
             return (
               <div
                 key={option._id}
-                className="relative overflow-hidden rounded-lg bg-[var(--bg-paper)] px-2.5 py-2"
+                className="relative overflow-hidden rounded-lg bg-[var(--meter-track)] px-2.5 py-2"
               >
                 <div
                   aria-hidden="true"
@@ -153,7 +153,13 @@ function VoteCard({ vote, onSelect }: VoteCardProps) {
         >
           Winner: <strong>{winner.title}</strong>
           {vote.resultingMissionId ? (
-            <span className="ml-auto rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[9px] font-extrabold uppercase tracking-[0.1em]" style={{ color: MEADOW_SHEET_PERSONALITIES.missions.color, background: `color-mix(in oklab, ${MEADOW_SHEET_PERSONALITIES.missions.color} 16%, transparent)` }}>
+            <span
+              className="ml-auto rounded px-1.5 py-0.5 font-[var(--font-mono)] text-[9px] font-extrabold uppercase tracking-[0.1em]"
+              style={{
+                color: missionPersonality.color,
+                background: `color-mix(in oklab, ${missionPersonality.color} 16%, transparent)`,
+              }}
+            >
               Mission
             </span>
           ) : null}
@@ -196,6 +202,7 @@ function VoteDetail({
   const markSeen = useMutation(tripcastApi.routeVotes.markRouteVoteSeen);
   const music = useMusicSafe();
   const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
+  const { votes: votesPersonality } = useSheetPersonalities();
 
   const [selectedOptionIds, setSelectedOptionIds] = useState<Set<string>>(
     () => new Set(vote.mySubmission?.selectedOptionIds ?? []),
@@ -343,6 +350,7 @@ function VoteDetail({
             maxLength={1000}
             rows={2}
             placeholder="Add a comment… (optional)"
+            className="bg-[var(--bg-card)] border-[var(--line-soft)] text-[var(--ink-1)] placeholder:text-[var(--ink-3)]"
           />
           <div className="flex flex-col gap-1.5">
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -365,7 +373,13 @@ function VoteDetail({
             )}
           </div>
           <div className="flex justify-end">
-            <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
+            <Button
+              size="sm"
+              disabled={!canSubmit}
+              onClick={handleSubmit}
+              className="border-0 text-[var(--ink-on-brand)]"
+              style={{ background: votesPersonality.color }}
+            >
               {isSubmitting ? "Submitting…" : vote.mySubmission ? "Update Vote" : "Submit Vote"}
             </Button>
           </div>
