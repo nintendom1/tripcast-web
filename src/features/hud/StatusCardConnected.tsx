@@ -184,6 +184,11 @@ function formatPercent(value: number): string {
   return `${Math.round(value)}%`;
 }
 
+function formatActivitySince(startedAt: number, now: number): string {
+  const elapsed = formatElapsed(startedAt, now);
+  return elapsed === "just now" ? elapsed : `for ${elapsed}`;
+}
+
 /**
  * StatusCard wired to live Convex data — replaces the legacy stacked
  * TravelerStateCard + CurrentActivityCard pair.
@@ -412,7 +417,7 @@ export function StatusCardConnected({
       ? "Status update"
       : "Waiting for status";
   const activityEmoji = activity?.emoji ?? stateFacts?.statusEmoji ?? getStateEmoji(stateFacts);
-  const activitySince = activity ? `for ${formatElapsed(activity.startedAt, now)}` : null;
+  const activitySince = activity ? formatActivitySince(activity.startedAt, now) : null;
   const statusMeta = [
     scheduleLabel ? `Schedule: ${scheduleLabel}` : null,
     !activity && stateUpdatedAgo ? `Updated ${stateUpdatedAgo}` : null,

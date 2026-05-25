@@ -163,6 +163,56 @@ describe("StatusCardConnected", () => {
     expect(screen.queryByText(/Updated/)).not.toBeInTheDocument();
   });
 
+  it("shows just now without a for prefix for a new activity", () => {
+    const now = Date.UTC(2024, 0, 1, 20, 7, 0);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
+      if (ref === tripcastApi.travelerState.travelerGetState) {
+        return {
+          state: {
+            energyScore: 60,
+            stomachScore: 80,
+            stressScore: 20,
+            updatedAt: now,
+          },
+          visibility: null,
+        };
+      }
+      if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) {
+        return {
+          _id: "activity-1",
+          _creationTime: now,
+          status: "active",
+          title: "Museum",
+          startedAt: now - 20_000,
+          createdAt: now - 20_000,
+          updatedAt: now - 20_000,
+          createdBySessionId: "session-1",
+          updatedBySessionId: "session-1",
+        };
+      }
+      if (ref === tripcastApi.travelerAutoState.travelerGetAutoState) {
+        return {
+          autoStateEnabled: false,
+          autoTimeZone: "UTC",
+          updatedAt: null,
+          updatedBySessionId: null,
+        };
+      }
+      if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
+        return { updatedAt: null };
+      }
+      return null;
+    });
+
+    render(<StatusCardConnected token="token" role="traveler" onOpenState={vi.fn()} />);
+
+    expect(screen.getByText(/just now/)).toBeInTheDocument();
+    expect(screen.queryByText(/for just now/)).not.toBeInTheDocument();
+  });
+
   it("shows the Traveler's saved timezone clock inside the status card", () => {
     const now = Date.UTC(2024, 0, 1, 20, 7, 0);
     vi.useFakeTimers();
