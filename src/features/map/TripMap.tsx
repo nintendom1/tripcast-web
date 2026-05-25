@@ -699,6 +699,7 @@ type TripMapProps = {
   role: Role;
   locationResetNonce?: number;
   tripDataResetNonce?: number;
+  finaleReplayActive?: boolean;
   onOpenDebugPanel?: () => void;
 };
 
@@ -707,6 +708,7 @@ export default function TripMap({
   role,
   locationResetNonce = 0,
   tripDataResetNonce = 0,
+  finaleReplayActive = false,
   onOpenDebugPanel,
 }: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -730,6 +732,7 @@ export default function TripMap({
   const mapLoadedRef = useRef(false);
   const mapInteractionsFrozenRef = useRef(false);
   const snappedReplayEventRef = useRef<string | null>(null);
+  const finaleReplayStartedRef = useRef(false);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   const music = useMusicSafe();
@@ -1011,6 +1014,33 @@ export default function TripMap({
       padding: { top: 80, right: 60, bottom: 230, left: 60 },
     });
   }, [log, replayActive, replayPins, replayPlayheadTime]);
+
+  useEffect(() => {
+    if (!finaleReplayActive) {
+      if (finaleReplayStartedRef.current) {
+        finaleReplayStartedRef.current = false;
+        snappedReplayEventRef.current = null;
+        setReplayActive(false);
+        setReplayPlayheadTime(null);
+        log.logInteraction("finale:map-replay:stop");
+      }
+      return;
+    }
+
+    if (!canReplayTrip || replayStartTime === null) return;
+    if (!finaleReplayStartedRef.current) {
+      snappedReplayEventRef.current = null;
+      finaleReplayStartedRef.current = true;
+      setReplaySpeed((speed) => Math.max(speed, 2));
+      log.logInteraction("finale:map-replay:start", {
+        totalPins: replayPins.length,
+        startAt: replayStartTime,
+        endAt: replayEndTime,
+      });
+    }
+    setReplayActive(true);
+    setReplayPlayheadTime(replayStartTime);
+  }, [canReplayTrip, finaleReplayActive, log, replayEndTime, replayPins.length, replayStartTime]);
 
   useEffect(() => {
     logMapEvent("map:proxy-url:resolved", {

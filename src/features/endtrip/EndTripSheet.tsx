@@ -60,6 +60,10 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
   async function handleEnd() {
     setWorking(true);
     setError(null);
+    log.logMutation("endTrip:confirm", {
+      ended,
+      noteLength: note.trim().length,
+    });
     log.logMutation("endTrip:submit");
     try {
       await endTrip({ token, thankYouNote: note.trim() || undefined });
@@ -98,7 +102,7 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
         <div className="flex items-start justify-between gap-2 px-5 pt-2">
           <div className="flex min-w-0 flex-col gap-1.5">
             <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              End Trip
+              Trip Complete
             </SheetTitle>
           </div>
           <SheetCloseButton aria-label="Close End Trip" />
@@ -106,8 +110,8 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
 
         <SheetBody className="grid gap-4 px-5">
           <p className="text-sm text-[var(--ink-3)]">
-            Ending the trip rolls the credits for everyone. It does not lock the
-            app — you can keep posting, and reopen the trip any time.
+            Ending the trip launches the finale for everyone and marks the trip as
+            complete. Traveler controls stay available so the trip can be reopened.
           </p>
 
           <div className="grid gap-1.5">
