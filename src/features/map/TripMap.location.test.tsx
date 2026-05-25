@@ -997,13 +997,11 @@ describe("TripMap location marker", () => {
     });
   });
 
-  it("lets the Traveler start, pause, show, hide, and delete Live Trail", async () => {
-    setEnabled(true);
-    deleteRecentLiveTrail.mockResolvedValueOnce({ deleted: 2 });
+  it("keeps Live Trail settings out of the map HUD while indicating enabled state on Live GPS", () => {
     setupQueries({
       liveTrailStatus: {
-        enabled: false,
-        visibleToFollowers: false,
+        enabled: true,
+        visibleToFollowers: true,
         sampleCount: 2,
         samples: [
           { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
@@ -1014,45 +1012,62 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Start Live Trail" }));
+    expect(screen.getByRole("button", { name: /Live Trail is enabled/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Start Live Trail/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Delete recent Live Trail trace/i })).not.toBeInTheDocument();
+    expect(setLiveTrailEnabled).not.toHaveBeenCalled();
+    expect(setLiveTrailVisibility).not.toHaveBeenCalled();
+    expect(deleteRecentLiveTrail).not.toHaveBeenCalled();
+  });
+
+  it("does not emit Live Trail breadcrumbs while Live GPS is off", () => {
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: true,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    expect(geolocationWatchPosition).not.toHaveBeenCalled();
+    expect(recordLiveTrailSample).not.toHaveBeenCalled();
+  });
+
+  it("keeps Live GPS publishes separate from Live Trail when breadcrumbs are disabled", async () => {
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({
+        coords: {
+          latitude: 47.62,
+          longitude: -122.34,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries({
+      liveTrailStatus: {
+        enabled: false,
+        visibleToFollowers: false,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: "Start sharing live location" }));
 
     await waitFor(() => {
-      expect(setLiveTrailEnabled).toHaveBeenCalledWith({
+      expect(updateTravelerLocation).toHaveBeenCalledWith({
         token: "test-token",
-        enabled: true,
+        lat: 47.62,
+        lon: -122.34,
+        accuracy: 9,
       });
     });
-    expect(screen.getByText("Live Trail ON")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Show Live Trail to Followers" }));
-    expect(setLiveTrailVisibility).toHaveBeenCalledWith({
-      token: "test-token",
-      visibleToFollowers: true,
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Hide Live Trail from Followers" }));
-    expect(setLiveTrailVisibility).toHaveBeenLastCalledWith({
-      token: "test-token",
-      visibleToFollowers: false,
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Delete recent Live Trail trace" }));
-    await waitFor(() => {
-      expect(deleteRecentLiveTrail).toHaveBeenCalledWith({ token: "test-token" });
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Pause Live Trail" }));
-    expect(setLiveTrailEnabled).toHaveBeenLastCalledWith({
-      token: "test-token",
-      enabled: false,
-    });
-
-    await waitFor(() => {
-      expect(getLogs().some((entry) => entry.action === "live-trail:tracking:start")).toBe(true);
-      expect(getLogs().some((entry) => entry.action === "live-trail:tracking:pause")).toBe(true);
-      expect(getLogs().some((entry) => entry.action === "live-trail:visibility:update")).toBe(true);
-      expect(getLogs().some((entry) => entry.action === "live-trail:delete-recent")).toBe(true);
-    });
+    expect(recordLiveTrailSample).not.toHaveBeenCalled();
   });
 
   it("logs Live Trail permission without precise raw location payloads", async () => {
@@ -1067,11 +1082,18 @@ describe("TripMap location marker", () => {
       });
       return 42;
     });
-    setupQueries();
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: false,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Start Live Trail" }));
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location.*Live Trail is enabled/i }));
 
     await waitFor(() => {
       expect(recordLiveTrailSample).toHaveBeenCalledWith(
@@ -1107,10 +1129,17 @@ describe("TripMap location marker", () => {
       });
       return 42;
     });
-    setupQueries();
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: false,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
 
     render(<TripMap token="test-token" role="traveler" />);
-    fireEvent.click(screen.getByRole("button", { name: "Start Live Trail" }));
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location.*Live Trail is enabled/i }));
 
     await waitFor(() => {
       expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
