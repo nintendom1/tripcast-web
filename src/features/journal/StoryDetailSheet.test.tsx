@@ -47,6 +47,7 @@ describe("StoryDetailSheet", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     window.localStorage.clear();
+    vi.mocked(useQuery).mockReturnValue(undefined as any);
   });
 
   afterEach(() => {
@@ -117,6 +118,27 @@ describe("StoryDetailSheet", () => {
       "instant",
     );
     expect(screen.getByText(/no story body yet/i)).toBeInTheDocument();
+  });
+
+  it("renders a Story photo in a magazine-style floated layout", () => {
+    (vi.mocked(useQuery) as any).mockImplementation((ref: unknown) =>
+      ref === tripcastApi.checkpoints.getStoryImageUrl
+        ? "https://signed.example.test/story-image"
+        : undefined,
+    );
+    renderSheet(
+      <StoryDetailSheet
+        event={makeStoryEvent({ imageId: "image-1" })}
+        token="t"
+        onClose={vi.fn()}
+        onLocationFocus={vi.fn()}
+      />,
+      "instant",
+    );
+
+    const image = document.querySelector("img");
+    expect(image).toHaveClass("sm:float-right");
+    expect(image).toHaveClass("w-full");
   });
 
   it("renders Prev and Next story controls with boundary states", () => {
@@ -267,6 +289,31 @@ describe("StoryDetailSheet — inline edit mode", () => {
       lon: -122.3,
       showInStory: true,
     });
+  });
+
+  it("can remove an existing Story photo while editing", () => {
+    (vi.mocked(useQuery) as any).mockImplementation((ref: unknown) =>
+      ref === tripcastApi.checkpoints.getStoryImageUrl
+        ? "https://signed.example.test/story-image"
+        : undefined,
+    );
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={editableEvent({ imageId: "image-1" })}
+          token="t"
+          role="traveler"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(updateSpy).toHaveBeenCalledWith(expect.objectContaining({ clearImage: true }));
   });
 
   it("shows saved edits immediately after Save while the parent event is still stale", async () => {

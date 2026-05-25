@@ -5,10 +5,12 @@ import {
   CheckSquare,
   ChevronRight,
   Clock,
+  ImagePlus,
   MapPin,
   Plus,
   Sparkles,
   Trophy,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
@@ -34,6 +36,7 @@ import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
 import { useSheetPersonalities, type SheetPersonality } from "../redesign/sheetPersonality";
+import { uploadStoryImage, validateStoryImageFile } from "./storyImageUpload";
 
 type FilterTab = "story" | "all" | "entries";
 
@@ -172,11 +175,14 @@ export default function JournalSheet({
   const [storyLocation, setStoryLocation] = useState("");
   const [storyLat, setStoryLat] = useState<number | undefined>(undefined);
   const [storyLon, setStoryLon] = useState<number | undefined>(undefined);
+  const [storyImageFile, setStoryImageFile] = useState<File | null>(null);
+  const [storyImagePreviewUrl, setStoryImagePreviewUrl] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, open ? { token } : "skip");
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
+  const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
   const sheetPersonalities = useSheetPersonalities();
   useActiveUiContext(open, {
@@ -201,7 +207,14 @@ export default function JournalSheet({
     if (open) return;
     setViewMode("list");
     setCreateError(null);
+    setStoryImageFile(null);
+    setStoryImagePreviewUrl(null);
   }, [open]);
+  useEffect(() => {
+    return () => {
+      if (storyImagePreviewUrl) URL.revokeObjectURL(storyImagePreviewUrl);
+    };
+  }, [storyImagePreviewUrl]);
   useEffect(() => {
     return () => { if (wasOpen.current) onMarkAllRead(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -220,10 +233,54 @@ export default function JournalSheet({
   const filtered = filterEvents(events, activeTab);
   const isTraveler = role === "traveler";
 
+  function handleStoryImageChange(file: File | undefined) {
+    if (!file) return;
+    try {
+      validateStoryImageFile(file);
+      setStoryImageFile(file);
+      setStoryImagePreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return URL.createObjectURL(file);
+      });
+      setCreateError(null);
+      log.logInteraction("story-image:attach", {
+        bytes: file.size,
+        contentType: file.type || "unknown",
+      });
+    } catch (imageError) {
+      log.error("story-image:attach:error", "interaction", {
+        message: imageError instanceof Error ? imageError.message : String(imageError),
+      });
+      setCreateError(imageError instanceof Error ? imageError.message : "Unable to attach image.");
+    }
+  }
+
+  function clearStoryImageDraft() {
+    setStoryImageFile(null);
+    setStoryImagePreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+    log.logInteraction("story-image:remove-draft");
+  }
+
   async function handleCreateStory() {
     setIsCreating(true);
     setCreateError(null);
     try {
+      const imageId = storyImageFile
+        ? await (async () => {
+            log.logInteraction("story-image:upload:start", {
+              bytes: storyImageFile.size,
+              contentType: storyImageFile.type || "unknown",
+            });
+            const uploadedImageId = await uploadStoryImage(storyImageFile, () =>
+              generateStoryImageUploadUrl({ token }),
+            );
+            log.logInteraction("story-image:upload:success", { hasImage: true });
+            return uploadedImageId;
+          })()
+        : undefined;
       await addCheckpoint({
         token,
         title: storyTitle.trim() || undefined,
@@ -231,6 +288,7 @@ export default function JournalSheet({
         locationLabel: storyLocation.trim() || undefined,
         lat: storyLat,
         lon: storyLon,
+        imageId,
         showInStory: true,
         source: "inline_form",
       });
@@ -239,8 +297,14 @@ export default function JournalSheet({
       setStoryLocation("");
       setStoryLat(undefined);
       setStoryLon(undefined);
+      setStoryImageFile(null);
+      setStoryImagePreviewUrl(null);
       setViewMode("list");
     } catch (e) {
+      log.error("create-story:error", "mutation", {
+        message: e instanceof Error ? e.message : String(e),
+        hadImage: Boolean(storyImageFile),
+      });
       setCreateError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
       setIsCreating(false);
@@ -333,6 +397,41 @@ export default function JournalSheet({
                 rows={4}
                 maxLength={1000}
               />
+              <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-[var(--ink-1)]">Photo</span>
+                  {storyImageFile ? (
+                    <button
+                      type="button"
+                      onClick={clearStoryImageDraft}
+                      className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-[var(--ink-danger)] hover:bg-[var(--bg-danger)]"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
+                {storyImagePreviewUrl ? (
+                  <img
+                    src={storyImagePreviewUrl}
+                    alt=""
+                    className="max-h-48 w-full rounded-md object-cover"
+                    onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
+                    onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
+                  />
+                ) : (
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--bg-paper-2)]">
+                    <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                    Add photo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      onChange={(event) => handleStoryImageChange(event.currentTarget.files?.[0])}
+                    />
+                  </label>
+                )}
+              </div>
               <Input
                 placeholder="Location (optional)"
                 value={storyLocation}

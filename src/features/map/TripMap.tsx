@@ -49,6 +49,7 @@ import {
 } from "../../components/ui/sheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
+import { uploadStoryImage } from "../journal/storyImageUpload";
 import AchievementsConnected from "../achievements/AchievementsConnected";
 import { MessagingSheet } from "../messaging/MessagingSheet";
 import { useMessagingUnread } from "../messaging/useMessagingUnread";
@@ -455,6 +456,7 @@ function ConvexCheckpointSheet({
 }) {
   const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
+  const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
   const completeMissionAsStory = useMutation(
     tripcastApi.missions.travelerCompleteMissionAsStory,
   );
@@ -513,6 +515,7 @@ function ConvexCheckpointSheet({
         lat: args.lat,
         lon: args.lon,
         source: args.source,
+        imageId: args.imageId,
         transaction: inlineTransaction,
         awardBadgeType: awardBadgeType ?? undefined,
       });
@@ -529,6 +532,7 @@ function ConvexCheckpointSheet({
       stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
       schedulePressureLevel: scheduleLevel,
       statusNote: quickNote.trim() || undefined,
+      imageId: args.imageId,
       transaction: inlineTransaction,
     });
   }
@@ -654,6 +658,7 @@ function ConvexCheckpointSheet({
       prefill={prefill}
       onCheckpointCreated={onCheckpointCreated}
       onBack={onBack}
+      onUploadImage={(file) => uploadStoryImage(file, () => generateStoryImageUploadUrl({ token }))}
       debugSource={debugSource}
     />
   );

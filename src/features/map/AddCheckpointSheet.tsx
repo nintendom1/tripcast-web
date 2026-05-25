@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, ImagePlus, Trash2 } from "lucide-react";
 
 import type { AddCheckpointArgs, CheckpointSource, TransactionInlineInput } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -14,6 +14,7 @@ import {
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
+import { validateStoryImageFile } from "../journal/storyImageUpload";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -54,6 +55,7 @@ type AddCheckpointSheetProps = {
    *  still flows through `onClose` and just closes the sheet without
   *  navigating back to the mission. */
   onBack?: () => void;
+  onUploadImage?: (file: File) => Promise<string>;
   debugSource?: { source: string; sourceLabel: string };
 };
 
@@ -78,6 +80,7 @@ export default function AddCheckpointSheet({
   prefill,
   onCheckpointCreated,
   onBack,
+  onUploadImage,
   debugSource,
 }: AddCheckpointSheetProps) {
   const [title, setTitle] = useState("");
@@ -86,6 +89,8 @@ export default function AddCheckpointSheet({
   const [showInStory, setShowInStory] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const music = useMusicSafe();
 
   const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
@@ -102,24 +107,66 @@ export default function AddCheckpointSheet({
   }, { boundsSelector: "[data-role='add-checkpoint-sheet']" });
 
   useEffect(() => {
-    if (selectedCoordinate) {
-      log.logInteraction("sheet:open", {
-        source: selectedCoordinate.source,
-        hasPrefill: Boolean(prefill),
-        isFromMission,
-      });
-      performance.mark("tripcast:debug:addCheckpoint:open");
-      setTitle(prefill?.title ?? "");
-      setNote(prefill?.note ?? "");
-      setLocationLabel(prefill?.locationLabel ?? "");
-      // Mission completions always go to the Story feed — the whole point of the
-      // "Complete as Story" branch is to land a narrative entry.
-      setShowInStory(true);
-      setError(null);
-      setIsSaving(false);
+    if (!selectedCoordinate) {
+      setImageFile(null);
+      setImagePreviewUrl(null);
+      return;
     }
+    log.logInteraction("sheet:open", {
+      source: selectedCoordinate.source,
+      hasPrefill: Boolean(prefill),
+      isFromMission,
+    });
+    performance.mark("tripcast:debug:addCheckpoint:open");
+    setTitle(prefill?.title ?? "");
+    setNote(prefill?.note ?? "");
+    setLocationLabel(prefill?.locationLabel ?? "");
+    // Mission completions always go to the Story feed — the whole point of the
+    // "Complete as Story" branch is to land a narrative entry.
+    setShowInStory(true);
+    setError(null);
+    setIsSaving(false);
+    setImageFile(null);
+    setImagePreviewUrl(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCoordinate, prefill]);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    };
+  }, [imagePreviewUrl]);
+
+  function handleImageChange(file: File | undefined) {
+    if (!file) return;
+    try {
+      validateStoryImageFile(file);
+      setImageFile(file);
+      setImagePreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return URL.createObjectURL(file);
+      });
+      setError(null);
+      log.logInteraction("story-image:attach", {
+        bytes: file.size,
+        contentType: file.type || "unknown",
+      });
+    } catch (imageError) {
+      log.error("story-image:attach:error", "interaction", {
+        message: imageError instanceof Error ? imageError.message : String(imageError),
+      });
+      setError(friendlyError(imageError));
+    }
+  }
+
+  function clearImageDraft() {
+    setImageFile(null);
+    setImagePreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+    log.logInteraction("story-image:remove-draft");
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -137,6 +184,18 @@ export default function AddCheckpointSheet({
     log.logInteraction("form:submit", { isFromMission, showInStory, source: selectedCoordinate.source });
 
     try {
+      const imageId = imageFile
+        ? await (async () => {
+            if (!onUploadImage) throw new Error("Image upload is unavailable.");
+            log.logInteraction("story-image:upload:start", {
+              bytes: imageFile.size,
+              contentType: imageFile.type || "unknown",
+            });
+            const uploadedImageId = await onUploadImage(imageFile);
+            log.logInteraction("story-image:upload:success", { hasImage: true });
+            return uploadedImageId;
+          })()
+        : undefined;
       const checkpointId = await onSave({
         title: title.trim() ? title : undefined,
         note: note.trim() ? note : undefined,
@@ -144,6 +203,7 @@ export default function AddCheckpointSheet({
         showInStory,
         lat: selectedCoordinate.lat,
         lon: selectedCoordinate.lon,
+        imageId,
         source: selectedCoordinate.source,
         missionId: prefill?.missionId,
       });
@@ -218,6 +278,43 @@ export default function AddCheckpointSheet({
               value={note}
             />
           </label>
+          {onUploadImage ? (
+            <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-[var(--ink-1)]">Photo</span>
+                {imageFile ? (
+                  <button
+                    type="button"
+                    onClick={clearImageDraft}
+                    className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-[var(--ink-danger)] hover:bg-[var(--bg-danger)]"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+              {imagePreviewUrl ? (
+                <img
+                  src={imagePreviewUrl}
+                  alt=""
+                  className="max-h-48 w-full rounded-md object-cover"
+                  onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
+                  onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
+                />
+              ) : (
+                <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--bg-paper-2)]">
+                  <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                  Add photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={(event) => handleImageChange(event.currentTarget.files?.[0])}
+                  />
+                </label>
+              )}
+            </div>
+          ) : null}
           <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[var(--ink-1)]">
             <input
               type="checkbox"

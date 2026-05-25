@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as convexReact from "convex/react";
 import JournalSheet from "./JournalSheet";
-import type { JournalEvent } from "../../convex/tripcastApi";
+import { tripcastApi, type JournalEvent } from "../../convex/tripcastApi";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -207,6 +207,14 @@ describe("JournalSheet", () => {
       mutationFn = vi.fn().mockResolvedValue("new-cp-id");
       vi.mocked(convexReact.useMutation).mockReturnValue(mutationFn as any);
       vi.mocked(convexReact.useQuery).mockReturnValue(undefined as any);
+      Object.defineProperty(URL, "createObjectURL", {
+        configurable: true,
+        value: vi.fn(() => "blob:story-image"),
+      });
+      Object.defineProperty(URL, "revokeObjectURL", {
+        configurable: true,
+        value: vi.fn(),
+      });
     });
 
     it('shows "+ New" button for traveler role', () => {
@@ -305,6 +313,34 @@ describe("JournalSheet", () => {
           source: "inline_form",
         }),
       );
+    });
+
+    it("uploads a photo before creating an inline Story", async () => {
+      const user = userEvent.setup();
+      const addCheckpoint = vi.fn().mockResolvedValue("new-cp-id");
+      const generateUploadUrl = vi.fn().mockResolvedValue("https://upload.example.test");
+      vi.mocked(convexReact.useMutation).mockImplementation((ref: unknown) => {
+        if (ref === tripcastApi.checkpoints.generateStoryImageUploadUrl) {
+          return generateUploadUrl as any;
+        }
+        return addCheckpoint as any;
+      });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ storageId: "image-1" }),
+      }));
+
+      render(<JournalSheet {...defaultProps} role="traveler" />);
+      await user.click(screen.getByRole("button", { name: "New" }));
+      await user.upload(
+        screen.getByLabelText("Add photo"),
+        new File(["image-bytes"], "story.png", { type: "image/png" }),
+      );
+      await user.click(screen.getByRole("button", { name: "Add to Journal" }));
+
+      expect(generateUploadUrl).toHaveBeenCalledWith({ token: "test-token" });
+      expect(addCheckpoint).toHaveBeenCalledWith(expect.objectContaining({ imageId: "image-1" }));
+      vi.unstubAllGlobals();
     });
   });
 
