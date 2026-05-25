@@ -1,6 +1,6 @@
 # Quiet Mode
 
-- **Initialization**: Send a short message: "Quiet mode."
+- **Initialization**: Send a short message: "Quiet mode. In the meantime, [Recommend that I do a small household task or chore]"
 - **Updates**: Only send (brief, caveman-style) updates when:
   1. Blocked.
   2. Asking for approval.

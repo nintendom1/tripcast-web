@@ -126,6 +126,12 @@ function renderOptions(overrides?: Partial<React.ComponentProps<typeof OptionsSh
   );
 }
 
+function optionSectionLabels() {
+  return screen.getAllByRole("heading", { level: 3 }).map((heading) =>
+    heading.textContent?.trim() ?? "",
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -249,6 +255,25 @@ describe("OptionsSheet developer scoring toggle", () => {
       type: "tripcast.mapCooldownChanged",
     }));
     expect(localStorage.getItem("tripcast.debug.logs")).toContain("map:cooldown:manual-trigger");
+  });
+
+  it("keeps Developer options at the top for a Traveler", () => {
+    setupMocks();
+    renderOptions();
+
+    const labels = optionSectionLabels();
+
+    expect(labels.indexOf("Developer")).toBeLessThan(labels.indexOf("Appearance"));
+  });
+
+  it("moves Developer options to the bottom for a Follower", () => {
+    setupMocks();
+    renderOptions({ session: followerSession, role: "follower" });
+
+    const labels = optionSectionLabels();
+
+    expect(labels.at(-1)).toBe("Developer");
+    expect(labels.indexOf("Developer")).toBeGreaterThan(labels.indexOf("Trip"));
   });
 });
 

@@ -5,6 +5,7 @@ const LS_LOG_KEY = "tripcast.debug.logs";
 const LS_PRESET_KEY = "tripcast.debug.preset";
 const LS_OVERRIDES_KEY = "tripcast.debug.category-overrides";
 const LS_LOCATION_REDACT_KEY = "tripcast.debug.redact-location";
+const LS_CONSOLE_MIRROR_KEY = "tripcast.debug.console-mirror";
 const MAX_ENTRIES = 500;
 const DROP_BATCH = 100;
 const MAX_BYTES = 256 * 1024;
@@ -35,6 +36,21 @@ export interface DebugEntry {
   route?: string;
   details?: Record<string, unknown>;
   state?: Record<string, unknown>;
+}
+
+type TripcastConsoleApi = {
+  addLog?: (message: string) => boolean;
+  enableLogs?: () => true;
+  disableLogs?: () => true;
+  enableConsoleLogs?: () => true;
+  disableConsoleLogs?: () => true;
+  [key: string]: unknown;
+};
+
+declare global {
+  interface Window {
+    tripcast?: TripcastConsoleApi;
+  }
 }
 
 const PRESET_CATEGORIES: Record<DebugPreset, Set<DebugCategory>> = {
@@ -217,9 +233,56 @@ export function setLocationRedact(on: boolean): void {
   notifySubscribers();
 }
 
+export function getConsoleMirror(): boolean {
+  return localStorage.getItem(LS_CONSOLE_MIRROR_KEY) !== "false";
+}
+
+export function setConsoleMirror(on: boolean): void {
+  localStorage.setItem(LS_CONSOLE_MIRROR_KEY, on ? "true" : "false");
+  notifySubscribers();
+}
+
 // ---------------------------------------------------------------------------
 // Core log function
 // ---------------------------------------------------------------------------
+
+function mirrorToConsole(entry: DebugEntry): void {
+  if (!getConsoleMirror()) return;
+
+  const method = console[entry.level] ?? console.log;
+  method(`[Tripcast] ${entry.category} ${entry.src} · ${entry.action}`, entry);
+}
+
+function createEntry(
+  level: DebugLevel,
+  src: string,
+  action: string,
+  category: DebugCategory,
+  details?: Record<string, unknown>,
+  state?: Record<string, unknown>,
+): DebugEntry {
+  return {
+    ts: new Date().toISOString(),
+    elapsed: Math.round(performance.now() - SESSION_START),
+    sid: SESSION_ID,
+    level,
+    category,
+    src,
+    action,
+    route: currentRoute(),
+    details: details ? (redact(details) as Record<string, unknown>) : undefined,
+    state: state ? (redact(state) as Record<string, unknown>) : undefined,
+  };
+}
+
+function appendEntry(entry: DebugEntry): void {
+  loadFromStorage();
+  buffer.push(entry);
+  if (buffer.length > MAX_ENTRIES) buffer.splice(0, buffer.length - MAX_ENTRIES);
+  mirrorToConsole(entry);
+  persist();
+  notifySubscribers();
+}
 
 export function log(
   level: DebugLevel,
@@ -233,30 +296,50 @@ export function log(
   if (!isCategoryEnabled(category)) return;
   // In "normal" preset, query category only logs errors
   if (category === "query" && getPreset() === "normal" && level !== "error") return;
-  loadFromStorage();
 
-  const entry: DebugEntry = {
-    ts: new Date().toISOString(),
-    elapsed: Math.round(performance.now() - SESSION_START),
-    sid: SESSION_ID,
-    level,
-    category,
-    src,
-    action,
-    route: currentRoute(),
-    details: details ? (redact(details) as Record<string, unknown>) : undefined,
-    state: state ? (redact(state) as Record<string, unknown>) : undefined,
-  };
-
-  buffer.push(entry);
-  if (buffer.length > MAX_ENTRIES) buffer.splice(0, buffer.length - MAX_ENTRIES);
-  persist();
-  notifySubscribers();
+  appendEntry(createEntry(level, src, action, category, details, state));
 }
 
-export function logNote(text: string): void {
-  log("info", "user", "user:note", "debug", { note: text.slice(0, 500) });
+export function logNote(text: string): boolean {
+  if (!isEnabled()) return false;
+  if (typeof text !== "string") return false;
+
+  appendEntry(createEntry("info", "user", "user:note", "debug", { note: text.slice(0, 500) }));
+  return true;
 }
+
+function enableLogs(): true {
+  setEnabled(true);
+  return true;
+}
+
+function disableLogs(): true {
+  setEnabled(false);
+  return true;
+}
+
+function enableConsoleLogs(): true {
+  setConsoleMirror(true);
+  return true;
+}
+
+function disableConsoleLogs(): true {
+  setConsoleMirror(false);
+  return true;
+}
+
+function installTripcastConsoleApi(): void {
+  if (typeof window === "undefined") return;
+  const tripcast = window.tripcast ?? {};
+  tripcast.addLog = logNote;
+  tripcast.enableLogs = enableLogs;
+  tripcast.disableLogs = disableLogs;
+  tripcast.enableConsoleLogs = enableConsoleLogs;
+  tripcast.disableConsoleLogs = disableConsoleLogs;
+  window.tripcast = tripcast;
+}
+
+installTripcastConsoleApi();
 
 export function logMapError(
   action: string,

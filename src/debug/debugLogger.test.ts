@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearLogs,
   clearCategoryOverride,
   getCategoryOverrides,
+  getConsoleMirror,
   getLogs,
   getLocationRedact,
   getPreset,
@@ -14,6 +15,7 @@ import {
   logNote,
   buildLlmSummary,
   setCategoryOverride,
+  setConsoleMirror,
   setEnabled,
   setLocationRedact,
   setPreset,
@@ -25,6 +27,10 @@ beforeEach(() => {
   localStorage.clear();
   clearLogs();
   resetActiveUiContextForTests();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // ---------------------------------------------------------------------------
@@ -240,6 +246,47 @@ describe("log() filtering", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Browser console mirroring
+// ---------------------------------------------------------------------------
+
+describe("console mirroring", () => {
+  beforeEach(() => {
+    setEnabled(true);
+    setPreset("normal");
+  });
+
+  it("defaults browser console mirroring on", () => {
+    expect(getConsoleMirror()).toBe(true);
+  });
+
+  it("mirrors captured logs to the matching browser console level with Tripcast prefix", () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    log("info", "TestSrc", "action:mirror", "ui", { x: 1 });
+
+    expect(infoSpy).toHaveBeenCalledWith(
+      "[Tripcast] ui TestSrc · action:mirror",
+      expect.objectContaining({
+        src: "TestSrc",
+        action: "action:mirror",
+        category: "ui",
+        details: { x: 1 },
+      }),
+    );
+  });
+
+  it("does not mirror logs when browser console mirroring is off", () => {
+    const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    setConsoleMirror(false);
+
+    log("info", "TestSrc", "action:no-mirror", "ui");
+
+    expect(getLogs()).toHaveLength(1);
+    expect(infoSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // clearLogs notifies subscribers
 // ---------------------------------------------------------------------------
 
@@ -266,12 +313,36 @@ describe("logNote()", () => {
   it("adds a user:note entry to the log when enabled", () => {
     setEnabled(true);
     setPreset("verbose"); // "debug" category active
-    logNote("hello world");
+    expect(logNote("hello world")).toBe(true);
     const logs = getLogs();
     expect(logs).toHaveLength(1);
     expect(logs[0].action).toBe("user:note");
     expect(logs[0].details?.note).toBe("hello world");
     expect(logs[0].category).toBe("debug");
+  });
+
+  it("captures manual notes even when the debug category is filtered out", () => {
+    setEnabled(true);
+    setPreset("minimal");
+
+    expect(logNote("manual checkpoint")).toBe(true);
+
+    expect(getLogs()).toEqual([
+      expect.objectContaining({
+        src: "user",
+        action: "user:note",
+        category: "debug",
+        details: { note: "manual checkpoint" },
+      }),
+    ]);
+  });
+
+  it("does not add a user:note entry when debug logging is disabled", () => {
+    setEnabled(false);
+
+    expect(logNote("hidden checkpoint")).toBe(false);
+
+    expect(getLogs()).toHaveLength(0);
   });
 
   it("truncates long notes (redact MAX_STR = 200 applies)", () => {
@@ -283,6 +354,60 @@ describe("logNote()", () => {
     const note = entry.details?.note as string;
     expect(note.length).toBeLessThanOrEqual(201); // 200 chars + "…"
     expect(note).toMatch(/…$/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Browser console API
+// ---------------------------------------------------------------------------
+
+describe("window.tripcast.addLog()", () => {
+  it("adds a manual note from the browser console helper", () => {
+    setEnabled(true);
+    setPreset("minimal");
+
+    expect(window.tripcast?.addLog).toBeTypeOf("function");
+    expect(window.tripcast?.addLog?.("console checkpoint")).toBe(true);
+
+    expect(getLogs()).toEqual([
+      expect.objectContaining({
+        src: "user",
+        action: "user:note",
+        category: "debug",
+        details: { note: "console checkpoint" },
+      }),
+    ]);
+  });
+
+  it("ignores non-string console helper calls", () => {
+    setEnabled(true);
+    const addLog = window.tripcast?.addLog as unknown as (message: unknown) => boolean;
+
+    expect(addLog({ message: "not supported" })).toBe(false);
+
+    expect(getLogs()).toHaveLength(0);
+  });
+});
+
+describe("window.tripcast log controls", () => {
+  it("toggles debug logging from browser console helpers", () => {
+    setEnabled(false);
+
+    expect(window.tripcast?.enableLogs?.()).toBe(true);
+    expect(isEnabled()).toBe(true);
+
+    expect(window.tripcast?.disableLogs?.()).toBe(true);
+    expect(isEnabled()).toBe(false);
+  });
+
+  it("toggles browser console mirroring from browser console helpers", () => {
+    setConsoleMirror(false);
+
+    expect(window.tripcast?.enableConsoleLogs?.()).toBe(true);
+    expect(getConsoleMirror()).toBe(true);
+
+    expect(window.tripcast?.disableConsoleLogs?.()).toBe(true);
+    expect(getConsoleMirror()).toBe(false);
   });
 });
 

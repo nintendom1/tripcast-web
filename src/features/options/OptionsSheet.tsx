@@ -631,8 +631,35 @@ function OptionsHome({
   onEndTrip?: () => void;
   onViewCredits?: () => void;
 }) {
+  const developerSection = (
+    <OptionsSection label="Developer">
+      <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
+      {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
+      <OptionsRow
+        icon={ShieldAlert}
+        title="Trigger Map Cooldown"
+        detail="Simulate map service outage"
+        danger
+        onClick={() => {
+          log.logUi("action:trigger-map-cooldown");
+          const cooldown = triggerMapCooldown();
+          logMapEvent("map:cooldown:manual-trigger", {
+            cooldownUntil: cooldown.until,
+            remainingMs: cooldown.until ? Math.max(0, cooldown.until - Date.now()) : 0,
+            strikes: cooldown.strikes,
+            backoffMs: cooldown.backoffMs,
+            source: "options",
+          });
+        }}
+      />
+    </OptionsSection>
+  );
+
   return (
     <SheetBody className="grid gap-5 px-5">
+
+      {role === "traveler" ? developerSection : null}
+
       <div className="grid gap-5">
         <AppearanceSection />
         <SoundSection />
@@ -780,33 +807,13 @@ function OptionsHome({
         </OptionsSection>
       )}
 
-      <OptionsSection label="Developer">
-        <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
-        {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
-        <OptionsRow
-          icon={ShieldAlert}
-          title="Trigger Map Cooldown"
-          detail="Simulate map service outage"
-          danger
-          onClick={() => {
-            log.logUi("action:trigger-map-cooldown");
-            const cooldown = triggerMapCooldown();
-            logMapEvent("map:cooldown:manual-trigger", {
-              cooldownUntil: cooldown.until,
-              remainingMs: cooldown.until ? Math.max(0, cooldown.until - Date.now()) : 0,
-              strikes: cooldown.strikes,
-              backoffMs: cooldown.backoffMs,
-              source: "options",
-            });
-          }}
-        />
-      </OptionsSection>
-
       {role === "traveler" ? (
         <OptionsSection label={TERMS.dangerZone}>
           <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
         </OptionsSection>
       ) : null}
+
+      {role === "follower" ? developerSection : null}
 
     </SheetBody>
   );

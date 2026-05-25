@@ -2,7 +2,13 @@ import { act } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DebugPanel from "./DebugPanel";
-import { clearLogs, getLogs, setEnabled, setPreset } from "./debugLogger";
+import {
+  clearLogs,
+  getLogs,
+  setConsoleMirror,
+  setEnabled,
+  setPreset,
+} from "./debugLogger";
 import {
   getFloatingDebugSettings,
   resetActiveUiContextForTests,
@@ -30,6 +36,7 @@ describe("DebugPanel", () => {
     render(<DebugPanel onBack={vi.fn()} />);
 
     expect(screen.getByRole("switch", { name: /debug logging/i })).not.toBeDisabled();
+    expect(screen.getByRole("switch", { name: /browser console logs/i })).toBeDisabled();
     expect(screen.getByRole("switch", { name: /redact location in copies/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /minimal/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /normal/i })).toBeDisabled();
@@ -46,12 +53,65 @@ describe("DebugPanel", () => {
     setEnabled(true);
     render(<DebugPanel onBack={vi.fn()} />);
 
+    expect(screen.getByRole("switch", { name: /browser console logs/i })).not.toBeDisabled();
     expect(screen.getByRole("switch", { name: /redact location in copies/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /minimal/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /refresh/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /copy debug summary/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /copy current context/i })).not.toBeDisabled();
     expect(screen.getByLabelText(/ui/i)).not.toBeDisabled();
+  });
+
+  it("shows browser console command examples", () => {
+    setEnabled(true);
+    render(<DebugPanel onBack={vi.fn()} />);
+
+    expect(screen.getByText('tripcast.addLog("Checkpoint")')).toBeInTheDocument();
+    expect(screen.getByText("tripcast.enableLogs() / tripcast.disableLogs()")).toBeInTheDocument();
+    expect(screen.getByText("tripcast.enableConsoleLogs() / tripcast.disableConsoleLogs()")).toBeInTheDocument();
+  });
+
+  it("syncs open panel state when browser console helpers change debug settings", () => {
+    setEnabled(false);
+    setConsoleMirror(false);
+    render(<DebugPanel onBack={vi.fn()} />);
+
+    const debugSwitch = screen.getByRole("switch", { name: /debug logging/i });
+    const consoleSwitch = screen.getByRole("switch", { name: /browser console logs/i });
+    expect(debugSwitch).toHaveAttribute("aria-checked", "false");
+    expect(consoleSwitch).toBeDisabled();
+
+    act(() => {
+      window.tripcast?.enableLogs?.();
+    });
+
+    expect(debugSwitch).toHaveAttribute("aria-checked", "true");
+    expect(consoleSwitch).not.toBeDisabled();
+    expect(consoleSwitch).toHaveAttribute("aria-checked", "false");
+
+    act(() => {
+      window.tripcast?.enableConsoleLogs?.();
+    });
+
+    expect(consoleSwitch).toHaveAttribute("aria-checked", "true");
+
+    act(() => {
+      window.tripcast?.disableLogs?.();
+    });
+
+    expect(debugSwitch).toHaveAttribute("aria-checked", "false");
+    expect(consoleSwitch).toBeDisabled();
+  });
+
+  it("syncs open panel logs when browser console helper adds a manual note", () => {
+    setEnabled(true);
+    render(<DebugPanel onBack={vi.fn()} />);
+
+    act(() => {
+      window.tripcast?.addLog?.("manual checkpoint");
+    });
+
+    expect(screen.getByText(/manual checkpoint/i)).toBeInTheDocument();
   });
 
   it("updates floating Debug button settings", () => {
