@@ -335,6 +335,101 @@ describe("TripMap location marker", () => {
     expect(screen.getByLabelText("Updated body")).toBeInTheDocument();
   });
 
+  it("navigates Story detail chronologically and refocuses the map", async () => {
+    setEnabled(true);
+    const checkpoints = [
+      {
+        _id: "checkpoint-old",
+        _creationTime: 1,
+        title: "Old story",
+        lat: 47.61,
+        lon: -122.31,
+        source: "right_click" as const,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "checkpoint-middle",
+        _creationTime: 2,
+        title: "Middle story",
+        lat: 47.62,
+        lon: -122.32,
+        source: "right_click" as const,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      {
+        _id: "checkpoint-new",
+        _creationTime: 3,
+        title: "New story",
+        lat: 47.63,
+        lon: -122.33,
+        source: "right_click" as const,
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ];
+    setupQueries({
+      checkpoints,
+      journalEvents: [
+        makeJournalEvent({
+          _id: "event-new",
+          checkpointId: "checkpoint-new",
+          title: "New story",
+          occurredAt: 3000,
+          lat: 47.63,
+          lon: -122.33,
+        }),
+        makeJournalEvent({
+          _id: "event-middle",
+          checkpointId: "checkpoint-middle",
+          title: "Middle story",
+          occurredAt: 2000,
+          lat: 47.62,
+          lon: -122.32,
+        }),
+        makeJournalEvent({
+          _id: "event-old",
+          checkpointId: "checkpoint-old",
+          title: "Old story",
+          occurredAt: 1000,
+          lat: 47.61,
+          lon: -122.31,
+        }),
+      ],
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(markerElements.filter((el) => el.style.cursor === "pointer")).toHaveLength(3);
+    });
+    fireEvent.click(markerElements.filter((el) => el.style.cursor === "pointer")[1]);
+
+    expect(await screen.findByText("Middle story")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Previous story" })).toHaveAttribute("aria-disabled", "false");
+    expect(screen.getByRole("button", { name: "Next story" })).toHaveAttribute("aria-disabled", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next story" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("New story")).toBeInTheDocument();
+    });
+    await waitFor(() => {
+      expect(mapEaseTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ center: [-122.33, 47.63] }),
+      );
+    });
+    expect(screen.getByRole("button", { name: "Next story" })).toHaveAttribute("aria-disabled", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next story" }));
+
+    await waitFor(() => {
+      expect(getLogs().some((entry) => entry.action === "story:navigate:index-shift")).toBe(true);
+      expect(getLogs().some((entry) => entry.action === "story:navigate:boundary")).toBe(true);
+    });
+  });
+
   it("keeps Funds off the Dock but closes its sheet when another Dock sheet opens", async () => {
     setupQueries();
 

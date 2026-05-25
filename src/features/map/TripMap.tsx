@@ -548,6 +548,8 @@ type SelectedStoryDetail = {
   fallbackEvent: JournalEvent;
 };
 
+type StoryNavigationDirection = "previous" | "next";
+
 type TripMapProps = {
   token: string;
   role: Role;
@@ -708,6 +710,29 @@ export default function TripMap({
     if (freshEvent) return freshEvent;
     return queriedJournalEvents === undefined ? selectedStoryDetail.fallbackEvent : null;
   }, [journalEvents, queriedJournalEvents, selectedStoryDetail]);
+  const storyNavigation = useMemo(() => {
+    if (!selectedStoryEvent || selectedStoryEvent.type !== "story") return null;
+    const chronologicalStories = journalEvents
+      .filter((event) => event.type === "story")
+      .slice()
+      .sort((a, b) => {
+        const occurredDelta = a.occurredAt - b.occurredAt;
+        if (occurredDelta !== 0) return occurredDelta;
+        return a._creationTime - b._creationTime;
+      });
+    const currentIndex = chronologicalStories.findIndex((event) =>
+      event._id === selectedStoryEvent._id ||
+      (event.checkpointId !== undefined && event.checkpointId === selectedStoryEvent.checkpointId)
+    );
+    if (currentIndex < 0) return null;
+    return {
+      events: chronologicalStories,
+      currentIndex,
+      total: chronologicalStories.length,
+      hasPrevious: currentIndex > 0,
+      hasNext: currentIndex < chronologicalStories.length - 1,
+    };
+  }, [journalEvents, selectedStoryEvent]);
 
   const voteAlert = useQuery(tripcastApi.routeVotes.getActiveRouteVoteAlert, { token });
   const hasUnseenVote = voteAlert?.hasUnseen ?? false;
@@ -1584,6 +1609,42 @@ export default function TripMap({
     handleNavigateToMissionDetail(missionId, { source: "story-detail:mission", sourceLabel: "Story detail -> Mission" });
   }
 
+  function handleNavigateStoryDetail(direction: StoryNavigationDirection) {
+    if (!storyNavigation) {
+      log.logInteraction("story:navigate:boundary", { direction, reason: "navigation-unavailable" });
+      return;
+    }
+    const targetIndex =
+      direction === "previous" ? storyNavigation.currentIndex - 1 : storyNavigation.currentIndex + 1;
+    const target = storyNavigation.events[targetIndex];
+    if (!target) {
+      log.logInteraction("story:navigate:boundary", {
+        direction,
+        currentIndex: storyNavigation.currentIndex,
+        total: storyNavigation.total,
+      });
+      return;
+    }
+    log.logInteraction("story:navigate:index-shift", {
+      direction,
+      fromIndex: storyNavigation.currentIndex,
+      toIndex: targetIndex,
+      total: storyNavigation.total,
+      fromEventId: selectedStoryEvent?._id,
+      toEventId: target._id,
+    });
+    music.sfx("page");
+    setStoryDebugSource({
+      source: `story-detail:${direction}`,
+      sourceLabel: direction === "previous" ? "Story detail -> Previous" : "Story detail -> Next",
+    });
+    setSelectedStoryDetail({
+      eventId: target._id,
+      checkpointId: target.checkpointId,
+      fallbackEvent: target,
+    });
+  }
+
   function handleRequestMissionCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
   ) {
@@ -2445,6 +2506,17 @@ export default function TripMap({
         onNavigateToMission={handleOpenMissionFromStory}
         onRequestCoordinatePick={handleRequestStoryCoordinatePick}
         isPickingCoordinate={isPickingCoordinate}
+        navigation={
+          storyNavigation
+            ? {
+                currentIndex: storyNavigation.currentIndex,
+                total: storyNavigation.total,
+                hasPrevious: storyNavigation.hasPrevious,
+                hasNext: storyNavigation.hasNext,
+              }
+            : null
+        }
+        onNavigateStory={handleNavigateStoryDetail}
         debugSource={storyDebugSource}
       />
 

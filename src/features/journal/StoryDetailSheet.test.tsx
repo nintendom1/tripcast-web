@@ -118,6 +118,29 @@ describe("StoryDetailSheet", () => {
     );
     expect(screen.getByText(/no story body yet/i)).toBeInTheDocument();
   });
+
+  it("renders Prev and Next story controls with boundary states", () => {
+    const onNavigateStory = vi.fn();
+    renderSheet(
+      <StoryDetailSheet
+        event={makeStoryEvent()}
+        onClose={vi.fn()}
+        onLocationFocus={vi.fn()}
+        navigation={{ currentIndex: 0, total: 3, hasPrevious: false, hasNext: true }}
+        onNavigateStory={onNavigateStory}
+      />,
+      "instant",
+    );
+
+    expect(screen.getByRole("button", { name: "Previous story" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Next story" })).toHaveAttribute("aria-disabled", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous story" }));
+    expect(onNavigateStory).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Next story" }));
+    expect(onNavigateStory).toHaveBeenCalledWith("next");
+  });
 });
 
 describe("StoryDetailSheet — inline edit mode", () => {
