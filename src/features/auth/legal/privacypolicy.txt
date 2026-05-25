@@ -1,0 +1,210 @@
+TRIPCAST PRIVACY POLICY
+Effective date: [TODO: add date]
+
+This Privacy Policy explains how TripCast collects, uses, stores, and shares information for private, invite-only trip sharing.
+
+This policy is written as a practical placeholder for private use. It should be reviewed before TripCast is offered more broadly.
+
+1. What TripCast is
+
+TripCast is an invite-only app that lets a Traveler share trip activity with invited Followers.
+
+TripCast may include live location, map pins, Stories, photos, messages, Missions, Route Votes, Travel Funds, Traveler state, achievements, badges, and debug tools.
+
+2. Who should use TripCast
+
+TripCast is not intended for minors. People under 18 should not use TripCast.
+
+If you believe a minor has used TripCast, contact the Traveler who invited them or follow the contact instructions provided with the trip.
+
+3. Information collected
+
+TripCast may collect and store the following types of information:
+
+Account and access information:
+- username;
+- email address if used;
+- password or password-related authentication information;
+- display name;
+- invite or membership information;
+- role, such as Traveler or Follower.
+
+Trip content:
+- Stories;
+- photos and media;
+- messages;
+- activity feed events;
+- Missions;
+- Route Votes;
+- comments, reactions, and participation;
+- achievements, badges, points, and attribution.
+
+Location information:
+- live GPS location from the Traveler if enabled or implemented;
+- map pins;
+- Story locations;
+- Mission locations;
+- Route Vote locations;
+- Trail Lines or route-related map data.
+
+Traveler state information:
+- mood;
+- energy;
+- fullness or food-related state;
+- local time;
+- estimated or forecasted state values.
+
+Travel Funds information:
+- costs;
+- estimated costs;
+- transaction notes;
+- categories;
+- currencies;
+- budget-related entries.
+
+Device and app storage:
+- localStorage and sessionStorage data used to keep app preferences, local state, debug settings, read/unread state, and similar app behavior.
+
+Debug information:
+- local debug logs created in the browser;
+- copied or exported debug summaries if a user chooses to share them.
+
+4. Live location
+
+TripCast may collect and store the Traveler’s live GPS location in the backend.
+
+Live location may be shared with invited Followers inside the trip.
+
+Live location can be sensitive. Followers should not misuse it, share it outside the trip, or use it to pressure, stalk, harass, or endanger the Traveler.
+
+Location may be inaccurate, delayed, unavailable, or incomplete.
+
+5. Photos and media
+
+Photos and media added to Stories or other trip content may be uploaded to backend storage.
+
+Photos and media may be visible to authorized trip members.
+
+Users should avoid uploading sensitive images, private documents, identification documents, financial records, or anything they would not want trip members to see.
+
+6. Messages and activity feed
+
+Messages and activity feed items may be stored persistently.
+
+They may be visible to all authorized trip members.
+
+Deleted messages may be removed from the visible app experience where supported, but true deletion of all related backend records, backups, or already-viewed copies may not be available yet.
+
+7. Travel Funds and financial entries
+
+Travel Funds entries may be real financial notes or informal budget notes.
+
+TripCast does not process payments, store payment cards, connect to bank accounts, or complete purchases.
+
+Users should not enter payment card numbers, bank account numbers, Social Security numbers, tax IDs, or other highly sensitive financial information.
+
+8. Debug logs
+
+TripCast debug logs are intended to be local to the user’s browser.
+
+TripCast does not intentionally send debug logs to the backend.
+
+A user may choose to copy, export, or share debug logs. Users should review debug logs before sharing them.
+
+9. Browser storage
+
+TripCast may use localStorage and sessionStorage for app preferences, interface state, read/unread state, debug settings, local cache, and similar features.
+
+TripCast does not use analytics or tracking services beyond the app behavior described in this policy.
+
+10. Third-party services
+
+TripCast may rely on third-party services to operate the app, including:
+
+- Convex for backend data, functions, and storage;
+- GitHub Pages for hosting;
+- MapLibre for map rendering;
+- OpenFreeMap or other map tile providers for map data;
+- backend storage services used for photos or media.
+
+These services may process information as needed to provide hosting, backend, storage, and map functionality.
+
+11. How information is used
+
+TripCast uses information to:
+
+- provide access to private trips;
+- show trip content to authorized members;
+- display live location and map features;
+- support Stories, photos, messages, Missions, Route Votes, and Travel Funds;
+- show Traveler state and estimated status;
+- support achievements, badges, participation, and attribution;
+- maintain app preferences and read/unread state;
+- diagnose bugs when users choose to use debug tools;
+- protect access and prevent misuse.
+
+12. Who can see trip information
+
+Authorized trip members may see content inside the trip.
+
+Travelers may be able to manage, edit, remove, or control trip content and Follower access.
+
+Followers may see Traveler-shared content, messages, trip activity, location information, Stories, photos, Missions, Route Votes, achievements, and other trip information depending on the app’s current features and settings.
+
+If a Follower is removed from a trip, their access is cut off.
+
+13. Sharing outside the trip
+
+TripCast is designed for private trip groups.
+
+Users should not copy, screenshot, repost, export, or share another person’s private trip content outside the trip without permission.
+
+TripCast may still rely on service providers listed above to operate the app.
+
+14. Deletion, hiding, and access requests
+
+Some content may be deleteable or hideable in the app.
+
+Some participation may be obscured where the app supports that behavior.
+
+True deletion is not yet fully self-service.
+
+For removal, access, or deletion requests beyond what the app supports, contact the Traveler who invited you or follow the contact instructions provided with the trip.
+
+Deletion may not remove information from screenshots, exports, copied debug logs, backups, cached files, or content already seen or saved by other trip members.
+
+15. Data retention
+
+TripCast keeps information for as long as needed to operate the trip, provide app features, maintain the trip archive, troubleshoot issues, or support access control.
+
+Specific retention periods have not yet been finalized.
+
+[TODO: confirm retention periods before public launch.]
+
+16. Security
+
+TripCast uses app and backend controls intended to limit trip access to authorized users.
+
+No app can guarantee perfect security.
+
+Users should avoid entering highly sensitive information into TripCast and should protect their account credentials and invite links.
+
+17. Children and minors
+
+TripCast is not intended for minors and should not be used by anyone under 18.
+
+TripCast does not knowingly invite or target minors.
+
+If a minor has access, their access should be removed and a request should be made to remove related information where possible.
+
+18. Changes to this policy
+
+This Privacy Policy may be updated as TripCast changes.
+
+If the app changes how it collects, uses, stores, or shares information, this policy should be updated to match the app’s actual behavior.
+
+19. Questions or requests
+
+For questions, access requests, removal requests, or privacy concerns, contact the Traveler who invited you or follow the contact instructions provided with the trip.
+
+Do not send highly sensitive personal information unless it is necessary for the request.
