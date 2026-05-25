@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -124,6 +125,13 @@ type StoryDetailSheetProps = {
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   /** True while a map coordinate pick is in progress — hides the sheet so the map is tappable. */
   isPickingCoordinate?: boolean;
+  navigation?: {
+    currentIndex: number;
+    total: number;
+    hasPrevious: boolean;
+    hasNext: boolean;
+  } | null;
+  onNavigateStory?: (direction: "previous" | "next") => void;
   debugSource?: { source: string; sourceLabel: string };
 };
 
@@ -138,6 +146,8 @@ export default function StoryDetailSheet({
   onNavigateToMission,
   onRequestCoordinatePick,
   isPickingCoordinate,
+  navigation,
+  onNavigateStory,
   debugSource,
 }: StoryDetailSheetProps) {
   const { journal: journalPersonality } = useSheetPersonalities();
@@ -209,6 +219,25 @@ export default function StoryDetailSheet({
     log.logInteraction("form:cancel", {});
     setIsEditing(false);
     setActionError(null);
+  }
+
+  function handleStoryNavigation(direction: "previous" | "next") {
+    const canNavigate =
+      direction === "previous" ? navigation?.hasPrevious === true : navigation?.hasNext === true;
+    if (!canNavigate) {
+      log.logInteraction("story:navigate:boundary", {
+        direction,
+        currentIndex: navigation?.currentIndex,
+        total: navigation?.total,
+      });
+      return;
+    }
+    log.logInteraction("story:navigate:click", {
+      direction,
+      currentIndex: navigation?.currentIndex,
+      total: navigation?.total,
+    });
+    onNavigateStory?.(direction);
   }
 
   async function handleSaveEdit() {
@@ -292,7 +321,7 @@ export default function StoryDetailSheet({
     }
     // Focus map when story opens; onLocationFocus is stable
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [event?._id]);
+  }, [event?._id, event?.lat, event?.lon]);
 
   return (
     <Sheet
@@ -325,7 +354,38 @@ export default function StoryDetailSheet({
                   </p>
                 ) : null}
               </div>
-              <div className="flex shrink-0 items-center gap-3">
+              <div className="flex shrink-0 items-center gap-2">
+                {navigation && navigation.total > 1 ? (
+                  <div className="flex items-center gap-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] px-1 py-0.5 shadow-sm">
+                    <button
+                      type="button"
+                      aria-label="Previous story"
+                      aria-disabled={!navigation.hasPrevious}
+                      onClick={() => handleStoryNavigation("previous")}
+                      className={cn(
+                        "grid h-7 w-7 place-items-center rounded-full text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]",
+                        !navigation.hasPrevious && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-[var(--ink-2)]",
+                      )}
+                    >
+                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    <span className="min-w-8 text-center font-[var(--font-mono)] text-[10px] font-semibold text-[var(--ink-3)]">
+                      {navigation.currentIndex + 1}/{navigation.total}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Next story"
+                      aria-disabled={!navigation.hasNext}
+                      onClick={() => handleStoryNavigation("next")}
+                      className={cn(
+                        "grid h-7 w-7 place-items-center rounded-full text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]",
+                        !navigation.hasNext && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-[var(--ink-2)]",
+                      )}
+                    >
+                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </div>
+                ) : null}
                 {canEdit && !isEditing ? (
                   <button type="button" className="text-xs text-[var(--flag)] underline hover:text-[var(--ink-1)]" onClick={openEditMode}>
                     Edit
