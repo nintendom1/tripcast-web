@@ -10,7 +10,8 @@ export function useTripPath(
   map: maplibregl.Map | null,
   checkpoints: Checkpoint[],
   livePosition: { lat: number; lon: number } | null,
-  visible: boolean
+  visible: boolean,
+  playheadTime: number | null = null,
 ) {
   const [mapLoaded, setMapLoaded] = useState(false);
 
@@ -37,12 +38,13 @@ export function useTripPath(
     // Filter pins with coordinates and sort by creation time
     const validPins = checkpoints
       .filter((cp) => cp.lat !== undefined && cp.lon !== undefined)
+      .filter((cp) => playheadTime === null || cp.createdAt <= playheadTime)
       .sort((a, b) => a._creationTime - b._creationTime)
       .slice(-100);
 
     const coords = validPins.map((cp) => [cp.lon!, cp.lat!]);
 
-    if (livePosition) {
+    if (livePosition && playheadTime === null) {
       coords.push([livePosition.lon, livePosition.lat]);
     }
 
@@ -92,7 +94,7 @@ export function useTripPath(
       type: "FeatureCollection",
       features,
     } as GeoJSON.FeatureCollection<GeoJSON.LineString>;
-  }, [checkpoints, livePosition, visible]);
+  }, [checkpoints, livePosition, visible, playheadTime]);
 
   useEffect(() => {
     if (!map || !mapLoaded) return;

@@ -6,7 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { DollarSign } from "lucide-react";
+import { DollarSign, Play, RotateCcw } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -110,6 +110,13 @@ type DebugOpenSource = {
   sourceLabel: string;
 };
 
+type ReplayPin = {
+  eventId: string;
+  occurredAt: number;
+  lat: number;
+  lon: number;
+};
+
 const UNKNOWN_DEBUG_SOURCE: DebugOpenSource = {
   source: "unknown",
   sourceLabel: "Unknown",
@@ -131,6 +138,28 @@ function getNumber(value: unknown): number | undefined {
 
 function getString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
+}
+
+function isFiniteReplayCoordinate(event: JournalEvent): event is JournalEvent & { lat: number; lon: number } {
+  return (
+    typeof event.lat === "number" &&
+    Number.isFinite(event.lat) &&
+    typeof event.lon === "number" &&
+    Number.isFinite(event.lon)
+  );
+}
+
+function formatReplayTime(timestamp: number) {
+  return new Date(timestamp).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function roundedCoordinate(value: number) {
+  return Number(value.toFixed(4));
 }
 
 function mapLibreErrorDetails(event: unknown) {
@@ -305,6 +334,99 @@ function TravelerLocationMarker({
   }, [map, position, isPulsing]);
 
   return null;
+}
+
+function TripReplayHud({
+  playheadTime,
+  startTime,
+  endTime,
+  speed,
+  onScrub,
+  onSpeedChange,
+  onShuttleStart,
+  onShuttleEnd,
+  onBackToLive,
+}: {
+  playheadTime: number;
+  startTime: number;
+  endTime: number;
+  speed: number;
+  onScrub: (time: number) => void;
+  onSpeedChange: (speed: number) => void;
+  onShuttleStart: () => void;
+  onShuttleEnd: () => void;
+  onBackToLive: () => void;
+}) {
+  const duration = Math.max(1, endTime - startTime);
+  const progress = Math.round(((playheadTime - startTime) / duration) * 100);
+
+  return (
+    <motion.div
+      key="trip-replay"
+      initial={{ y: 16, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 16, opacity: 0 }}
+      transition={{ duration: 0.18, ease: "easeOut" as const }}
+      className="pointer-events-auto absolute bottom-[186px] left-1/2 z-[6] w-[calc(100%-24px)] max-w-[390px] -translate-x-1/2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-3 text-[var(--ink-1)] shadow-[var(--shadow-card)]"
+      role="group"
+      aria-label="Trip Replay"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+            Trip Replay
+          </p>
+          <p className="truncate text-xs font-semibold text-[var(--ink-1)]">
+            {formatReplayTime(playheadTime)}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onBackToLive}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+        >
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+          Back to Live
+        </button>
+      </div>
+
+      <label className="mt-3 grid gap-1.5">
+        <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+          <span>Timeline</span>
+          <span>{progress}%</span>
+        </span>
+        <input
+          type="range"
+          min={startTime}
+          max={endTime}
+          step={Math.max(1, Math.round(duration / 200))}
+          value={Math.min(endTime, Math.max(startTime, playheadTime))}
+          onChange={(event) => onScrub(Number(event.currentTarget.value))}
+          className="h-2 w-full accent-[var(--flag)]"
+          aria-label="Replay timeline"
+        />
+      </label>
+
+      <label className="mt-3 grid gap-1.5">
+        <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+          <span>Shuttle</span>
+          <span>{speed}x</span>
+        </span>
+        <input
+          type="range"
+          min={1}
+          max={4}
+          step={1}
+          value={speed}
+          onPointerDown={onShuttleStart}
+          onPointerUp={onShuttleEnd}
+          onChange={(event) => onSpeedChange(Number(event.currentTarget.value))}
+          className="h-2 w-full accent-[var(--flag)]"
+          aria-label="Replay speed"
+        />
+      </label>
+    </motion.div>
+  );
 }
 
 function ConvexCheckpointSheet({
@@ -580,6 +702,7 @@ export default function TripMap({
   const mapFailureStatsRef = useRef(createMapFailureStats());
   const mapLoadedRef = useRef(false);
   const mapInteractionsFrozenRef = useRef(false);
+  const snappedReplayEventRef = useRef<string | null>(null);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   const music = useMusicSafe();
@@ -626,6 +749,9 @@ export default function TripMap({
   // view (the four-button action set the Traveler expects to return to).
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
+  const [replayActive, setReplayActive] = useState(false);
+  const [replayPlayheadTime, setReplayPlayheadTime] = useState<number | null>(null);
+  const [replaySpeed, setReplaySpeed] = useState(1);
   const canWrite = role === "traveler";
   const { resolvedMapBase } = useTheme();
   const sheetPersonalities = useSheetPersonalities();
@@ -669,7 +795,8 @@ export default function TripMap({
     mapInstance,
     checkpoints,
     livePosition ?? (role === "follower" ? (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null) : null),
-    showPath
+    showPath,
+    replayActive ? replayPlayheadTime : null,
   );
 
   const sessionData = useQuery(tripcastApi.auth.currentSession, { token });
@@ -679,6 +806,20 @@ export default function TripMap({
 
   const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
   const journalEvents = useMemo(() => queriedJournalEvents ?? [], [queriedJournalEvents]);
+  const replayPins = useMemo<ReplayPin[]>(() => {
+    return journalEvents
+      .filter(isFiniteReplayCoordinate)
+      .map((event) => ({
+        eventId: event._id,
+        occurredAt: event.occurredAt,
+        lat: event.lat,
+        lon: event.lon,
+      }))
+      .sort((a, b) => a.occurredAt - b.occurredAt);
+  }, [journalEvents]);
+  const replayStartTime = replayPins[0]?.occurredAt ?? null;
+  const replayEndTime = replayPins.at(-1)?.occurredAt ?? null;
+  const canReplayTrip = replayPins.length > 1 && replayStartTime !== null && replayEndTime !== null;
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
 
   const messages = useQuery(tripcastApi.messages.listMessages, { token }) ?? [];
@@ -771,6 +912,62 @@ export default function TripMap({
       toastTimeoutRef.current = null;
     }, 3200);
   }, []);
+
+  useEffect(() => {
+    if (!replayActive || replayStartTime === null || replayEndTime === null) return;
+    if (replayPlayheadTime === null) {
+      setReplayPlayheadTime(replayStartTime);
+      return;
+    }
+    if (replayPlayheadTime >= replayEndTime) return;
+
+    const duration = Math.max(1, replayEndTime - replayStartTime);
+    const baseStepMs = Math.max(30_000, Math.round(duration / 120));
+    const interval = window.setInterval(() => {
+      setReplayPlayheadTime((current) => {
+        const currentTime = current ?? replayStartTime;
+        return Math.min(replayEndTime, currentTime + baseStepMs * replaySpeed);
+      });
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [replayActive, replayEndTime, replayPlayheadTime, replaySpeed, replayStartTime]);
+
+  useEffect(() => {
+    if (!replayActive || replayPlayheadTime === null || replayPins.length === 0) return;
+    let targetIndex = -1;
+    for (let index = replayPins.length - 1; index >= 0; index -= 1) {
+      if (replayPins[index].occurredAt <= replayPlayheadTime) {
+        targetIndex = index;
+        break;
+      }
+    }
+    const target = replayPins[Math.max(0, targetIndex)];
+    if (!target || snappedReplayEventRef.current === target.eventId) return;
+    snappedReplayEventRef.current = target.eventId;
+
+    const map = mapRef.current;
+    if (!map || mapServiceUnavailableRef.current) {
+      log.logInteraction("replay:coordinate-snap:blocked", {
+        eventId: target.eventId,
+        reason: map ? "map-service-unavailable" : "map-unavailable",
+      });
+      return;
+    }
+
+    log.logInteraction("replay:coordinate-snap", {
+      eventId: target.eventId,
+      index: Math.max(0, targetIndex),
+      total: replayPins.length,
+      lat: roundedCoordinate(target.lat),
+      lon: roundedCoordinate(target.lon),
+    });
+    map.easeTo({
+      center: [target.lon, target.lat],
+      zoom: Math.max(map.getZoom(), 13),
+      duration: 550,
+      padding: { top: 80, right: 60, bottom: 230, left: 60 },
+    });
+  }, [log, replayActive, replayPins, replayPlayheadTime]);
 
   useEffect(() => {
     logMapEvent("map:proxy-url:resolved", {
@@ -1466,6 +1663,9 @@ export default function TripMap({
     setIsJournalOpen(false);
     setIsAchievementsOpen(false);
     setSelectedStoryDetail(null);
+    snappedReplayEventRef.current = null;
+    setReplayActive(false);
+    setReplayPlayheadTime(null);
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -1532,6 +1732,73 @@ export default function TripMap({
       if (livePosition) {
         publishTravelerLocation(livePosition);
       }
+    }
+  }
+
+  function handleStartReplay() {
+    if (!canReplayTrip || replayStartTime === null) {
+      log.logInteraction("replay:start:boundary", { reason: "no-coordinate-pins" });
+      showToast("Trip Replay needs at least one located journal event.");
+      return;
+    }
+    music.sfx("page");
+    snappedReplayEventRef.current = null;
+    setReplayActive(true);
+    setReplayPlayheadTime(replayStartTime);
+    log.logInteraction("replay:start", {
+      totalPins: replayPins.length,
+      startAt: replayStartTime,
+      endAt: replayEndTime,
+      speed: replaySpeed,
+    });
+  }
+
+  function handleReplayScrub(time: number) {
+    if (replayStartTime === null || replayEndTime === null) return;
+    const nextTime = Math.min(replayEndTime, Math.max(replayStartTime, time));
+    setReplayPlayheadTime(nextTime);
+    log.logInteraction("replay:timeline:scrub", {
+      playheadTime: nextTime,
+      progress:
+        replayEndTime === replayStartTime
+          ? 100
+          : Math.round(((nextTime - replayStartTime) / (replayEndTime - replayStartTime)) * 100),
+    });
+  }
+
+  function handleReplaySpeedChange(speed: number) {
+    const nextSpeed = Math.min(4, Math.max(1, Math.round(speed)));
+    setReplaySpeed((currentSpeed) => {
+      if (currentSpeed !== nextSpeed) {
+        log.logInteraction("replay:speed-shift", {
+          fromSpeed: currentSpeed,
+          toSpeed: nextSpeed,
+        });
+      }
+      return nextSpeed;
+    });
+  }
+
+  function handleReplayShuttleStart() {
+    log.logInteraction("replay:shuttle:drag-start", { speed: replaySpeed });
+  }
+
+  function handleReplayShuttleEnd() {
+    log.logInteraction("replay:shuttle:drag-end", { speed: replaySpeed });
+  }
+
+  function handleBackToLive() {
+    music.sfx("close");
+    snappedReplayEventRef.current = null;
+    setReplayActive(false);
+    setReplayPlayheadTime(null);
+    log.logInteraction("replay:back-to-live", { speed: replaySpeed });
+    const liveCoordinate =
+      role === "traveler"
+        ? (livePosition ?? storedTravelerLocation ?? null)
+        : (storedTravelerLocation ?? null);
+    if (liveCoordinate) {
+      centerMapOnCoordinate(liveCoordinate);
     }
   }
 
@@ -2040,6 +2307,22 @@ export default function TripMap({
       </AnimatePresence>
 
       <AnimatePresence>
+        {replayActive && replayPlayheadTime !== null && replayStartTime !== null && replayEndTime !== null ? (
+          <TripReplayHud
+            playheadTime={replayPlayheadTime}
+            startTime={replayStartTime}
+            endTime={replayEndTime}
+            speed={replaySpeed}
+            onScrub={handleReplayScrub}
+            onSpeedChange={handleReplaySpeedChange}
+            onShuttleStart={handleReplayShuttleStart}
+            onShuttleEnd={handleReplayShuttleEnd}
+            onBackToLive={handleBackToLive}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {isMapServiceUnavailable ? (
           <motion.div
             key="map-service-unavailable"
@@ -2338,6 +2621,16 @@ export default function TripMap({
           ) : (
             <span aria-hidden="true" />
           )}
+          <button
+            type="button"
+            onClick={handleStartReplay}
+            disabled={!canReplayTrip}
+            aria-pressed={replayActive}
+            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+            {replayActive ? `${replaySpeed}x Replay` : "Replay"}
+          </button>
           <FeatureBoundary
             resetKeys={[token, role, "hud-funds-compact"]}
             title="Funds chip hit a problem."
