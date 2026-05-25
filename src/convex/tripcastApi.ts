@@ -943,6 +943,8 @@ export type MembershipStatus = "active" | "revoked";
 
 export type FollowerSession = {
   role: Role;
+  userId: string;
+  sessionId: string;
   displayName: string;
   username: string;
   showAttribution: boolean;
@@ -1001,7 +1003,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      { role: Role; userId?: string } | null
+      { role: Role; userId?: string; sessionId: string } | null
     >,
     signOut: (anyApi as any).auth.signOut as FunctionReference<
       "mutation",
@@ -1634,7 +1636,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      (FollowerSession & { userId: string }) | null
+      FollowerSession | null
     >,
     redeemInvite: (anyApi as any).followers.redeemInvite as FunctionReference<
       "mutation",
