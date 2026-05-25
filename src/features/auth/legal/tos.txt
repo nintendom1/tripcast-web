@@ -1,0 +1,156 @@
+TRIPCAST TERMS OF SERVICE
+Effective date: [TODO: add date]
+
+These Terms explain the basic rules for using TripCast. TripCast is a private, invite-only travel sharing app that lets a Traveler share trip updates with invited Followers.
+
+These Terms are written as a practical placeholder for private use. They should be reviewed before TripCast is offered more broadly.
+
+1. Who may use TripCast
+
+TripCast is invite-only. You may use TripCast only if you were invited to a trip or authorized to create or manage a trip.
+
+TripCast is not intended for minors. You may not use TripCast if you are under 18.
+
+If you receive access by mistake, do not use the app.
+
+2. Roles
+
+A “Traveler” is the person sharing a trip.
+
+A “Follower” is a person invited to view or participate in a trip.
+
+TripCast may allow Travelers and Followers to post Stories, messages, Missions, Route Votes, reactions, photos, media, location updates, Travel Funds entries, achievements, or other trip content depending on the features enabled.
+
+3. Private trip spaces
+
+TripCast is meant for private trip groups. Content inside a trip may be visible to other trip members.
+
+Do not assume that anything you post in a trip is private from the Traveler or other authorized trip members.
+
+If a Traveler removes a Follower from a trip, that Follower’s access to the trip is cut off.
+
+4. Location sharing
+
+TripCast may collect, store, and share the Traveler’s live GPS location with invited Followers.
+
+TripCast may also show map pins, Trail Lines, Stories, Missions, Route Votes, Route Forecasts, and other location-linked content.
+
+Location information can be sensitive. Do not use TripCast to stalk, harass, track, pressure, or endanger anyone. Do not share someone else’s private location without permission.
+
+TripCast is not an emergency service, safety service, rescue service, or guaranteed real-time tracking service. Location may be delayed, inaccurate, missing, or unavailable.
+
+5. User content
+
+You are responsible for the content you add to TripCast.
+
+This may include messages, Stories, photos, media, Missions, Route Votes, comments, reactions, Travel Funds entries, state updates, or other information.
+
+Do not post content that is illegal, harassing, threatening, hateful, exploitative, sexually explicit, invasive of privacy, or intended to harm another person.
+
+Do not post another person’s private information without permission.
+
+Do not upload content that you do not have the right to share.
+
+6. Photos and media
+
+TripCast may allow photos or other media to be attached to Stories or other trip content.
+
+Photos and media may be stored in backend storage and may be visible to authorized trip members.
+
+Do not upload sensitive images, private documents, financial information, identification documents, or other material that should not be shared with trip members.
+
+7. Messages and activity feed
+
+TripCast may include persistent chat messages and activity feed updates.
+
+Messages and activity updates may be visible to all authorized trip members.
+
+Do not use messages to harass, threaten, spam, impersonate, or pressure anyone.
+
+8. Travel Funds and financial entries
+
+TripCast may allow users to enter Travel Funds, costs, transaction notes, estimates, categories, or other budget-related information.
+
+These entries may reflect real expenses or informal planning notes.
+
+TripCast does not process payments, store payment cards, connect to bank accounts, or complete purchases.
+
+Do not enter payment card numbers, bank account numbers, Social Security numbers, tax IDs, or other highly sensitive financial information.
+
+9. State, vitals, and estimates
+
+TripCast may show Traveler state information such as mood, energy, fullness, local time, or estimated status.
+
+Some state information may be manually entered, and some may be estimated by the app.
+
+These estimates may be wrong. They are for casual trip context only and should not be used for medical, emergency, safety, or wellness decisions.
+
+10. Achievements, badges, and participation
+
+TripCast may include achievements, badges, points, attribution, participation history, and similar game-like features.
+
+These features are for fun and trip engagement. They have no cash value.
+
+Some participation may be public to trip members. Some participation may be hidden or obscured where the app supports that behavior.
+
+11. Deleting and hiding content
+
+Some content, such as messages or participation visibility, may be deleteable or hideable inside the app.
+
+True deletion of all related data is not yet self-service.
+
+If you want content or access removed beyond what the app currently supports, make a request to the Traveler who invited you or follow the contact instructions provided with the trip.
+
+Deletion may not remove content from screenshots, exports, backups, logs, or copies already seen or saved by other trip members.
+
+12. Debug logs
+
+TripCast may include local debug tools that help diagnose app behavior.
+
+Debug logs are intended to stay in the browser unless a user copies, exports, or shares them.
+
+Do not paste secrets, passwords, private messages, exact sensitive locations, or other confidential information into debug notes.
+
+13. Acceptable use
+
+You agree not to:
+
+- use TripCast for stalking, harassment, coercion, surveillance, or doxxing;
+- access a trip without permission;
+- share invite links or access credentials with unauthorized people;
+- interfere with the app or backend systems;
+- upload malware or harmful content;
+- impersonate another person;
+- post illegal or harmful content;
+- misuse location, financial, or personal information;
+- use TripCast with or for minors.
+
+14. Invite and account security
+
+Keep your account, invite link, and login information secure.
+
+If you believe someone has accessed a trip without permission, tell the Traveler or follow the contact instructions provided with the trip.
+
+15. Changes to TripCast
+
+TripCast may change over time. Features may be added, removed, renamed, interrupted, or changed.
+
+Because TripCast is a private invite-only app, it may sometimes be unavailable, incomplete, experimental, or under active development.
+
+16. No guarantee
+
+TripCast is provided as-is.
+
+TripCast may contain bugs, incomplete features, inaccurate data, missing location updates, delayed messages, or unavailable services.
+
+Do not rely on TripCast for emergencies, safety-critical decisions, medical decisions, legal decisions, financial decisions, or real-time location accuracy.
+
+17. Ending access
+
+Access may be removed at any time, including if a trip ends, a Traveler removes a Follower, an invite is revoked, or these Terms are violated.
+
+18. Questions or requests
+
+For questions, access requests, or removal requests, contact the Traveler who invited you or follow the contact instructions provided with the trip.
+
+Do not send sensitive personal information unless it is necessary for the request.
