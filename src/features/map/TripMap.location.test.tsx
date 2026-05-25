@@ -358,13 +358,13 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Traveler status" }));
-    expect(await screen.findByRole("heading", { name: "How are you?" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Traveler status/ }));
+    expect(await screen.findByRole("heading", { name: "Update Status" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Journal" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: "How are you?" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("heading", { name: "Update Status" })).not.toBeInTheDocument();
     });
     expect(screen.getByTestId("journal-sheet")).toBeInTheDocument();
   });

@@ -9,6 +9,7 @@ import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
   AutoState,
+  CurrentActivity,
   TravelerMoodValue,
   TravelerEnergyLevel,
   TravelerStomachLevel,
@@ -51,6 +52,16 @@ type TravelerStateSheetProps = {
 };
 
 type TabView = "state" | "visibility" | "auto";
+
+const QUICK_ACTIVITIES = [
+  { label: "Walking", emoji: "🚶" },
+  { label: "Eating", emoji: "🍽️" },
+  { label: "Taking train", emoji: "🚆" },
+  { label: "Resting", emoji: "🪑" },
+  { label: "Exploring", emoji: "🧭" },
+  { label: "Shopping", emoji: "🛒" },
+  { label: "Errands", emoji: "💻" },
+] as const;
 
 const BODY_FOOTER_CLEARANCE_CLASS = "pb-28";
 const FOOTER_DOCK_CLEARANCE_CLASS = "pb-[calc(var(--dock-h,76px)+16px+env(safe-area-inset-bottom))]";
@@ -98,6 +109,11 @@ function computeCurrentAutoScores(autoState: AutoState | null | undefined) {
     energyScore: hasEnergy ? estimate.estimatedEnergy : undefined,
     stomachScore: hasStomach ? estimate.estimatedStomach : undefined,
   };
+}
+
+function normalizeOptionalText(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function ChipRow<T extends string>({
@@ -291,14 +307,16 @@ function SheetSaveFooter({
 export default function TravelerStateSheet({ token, onClose, onToast, debugSource }: TravelerStateSheetProps) {
   const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
   const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
+  const currentActivity = useQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
+  const setActivity = useMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
 
   const { state: statePersonality } = useSheetPersonalities();
   const log = useDebugLogger("TravelerStateSheet", "src/features/travelstate/TravelerStateSheet.tsx");
   const hasPopulatedRef = useRef(false);
+  const hasPopulatedActivityRef = useRef(false);
   const [tab, setTab] = useState<TabView>("state");
-  const [reviewing, setReviewing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -315,6 +333,10 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [scheduleLevel, setScheduleLevel] = useState<TravelerSchedulePressureLevel | undefined>();
   const [statusNote, setStatusNote] = useState("");
   const [statusEmoji, setStatusEmoji] = useState("");
+  const [activityTitle, setActivityTitle] = useState("");
+  const [activityEmoji, setActivityEmoji] = useState("");
+  const [activityNote, setActivityNote] = useState("");
+  const [activityLocationLabel, setActivityLocationLabel] = useState("");
   const [biometricsOpen, setBiometricsOpen] = useState(false);
   const [steps, setSteps] = useState<number | undefined>();
   const [avgHr, setAvgHr] = useState<number | undefined>();
@@ -335,8 +357,8 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [showBiometrics, setShowBiometrics] = useState(DEFAULT_VISIBILITY.showBiometrics);
   useActiveUiContext(true, {
     sheetName: "TravelerStateSheet",
-    label: TERMS.travelerState,
-    view: reviewing && tab === "state" ? "state-review" : tab,
+    label: "Update Status",
+    view: tab,
     source: debugSource?.source ?? "unknown",
     sourceLabel: debugSource?.sourceLabel ?? "Unknown",
     file: "src/features/travelstate/TravelerStateSheet.tsx",
@@ -422,6 +444,16 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     }
   }, [result, autoState]);
 
+  useEffect(() => {
+    if (currentActivity === undefined || hasPopulatedActivityRef.current) return;
+    hasPopulatedActivityRef.current = true;
+    if (!currentActivity) return;
+    setActivityTitle(currentActivity.title);
+    setActivityEmoji(currentActivity.emoji ?? "");
+    setActivityNote(currentActivity.note ?? "");
+    setActivityLocationLabel(currentActivity.locationLabel ?? "");
+  }, [currentActivity]);
+
   function toIsoLocal(ts: number) {
     const d = new Date(ts);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -452,22 +484,28 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     setSavedAt(null);
   }
 
-  function handleReviewState() {
-    setError(null);
-    setReviewing(true);
-    log.logUi("state:review:open", {
-      mood: moodValue,
-      energy: energyScore,
-      stomach: stomachScore,
-      calm: stressScore,
-    });
+  function hasActivityChanges(existingActivity: CurrentActivity | null | undefined): boolean {
+    const nextTitle = activityTitle.trim();
+    if (!nextTitle) return false;
+    if (!existingActivity) return true;
+    return (
+      nextTitle !== existingActivity.title ||
+      normalizeOptionalText(activityEmoji) !== existingActivity.emoji ||
+      normalizeOptionalText(activityNote) !== existingActivity.note ||
+      normalizeOptionalText(activityLocationLabel) !== existingActivity.locationLabel
+    );
   }
 
-  async function handleConfirmSave() {
+  async function handleSaveStatus() {
     if (saving) return;
     setSaving(true);
     setError(null);
-    log.logInteraction("state:submit", { mood: moodValue, energy: energyLevel, stress: stressLevel });
+    log.logInteraction("status:submit", {
+      mood: moodValue,
+      energy: energyLevel,
+      stress: stressLevel,
+      activityChanged: hasActivityChanges(currentActivity),
+    });
     try {
       await updateState({
         token,
@@ -480,22 +518,30 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         stressLevel,
         stressScore,
         schedulePressureLevel: scheduleLevel,
-        statusNote: statusNote || undefined,
-        statusEmoji: statusEmoji || undefined,
+        statusNote: normalizeOptionalText(statusNote),
+        statusEmoji: normalizeOptionalText(statusEmoji),
         biometricSteps: steps,
         biometricAverageHeartRate: avgHr,
         biometricRestingHeartRate: restHr,
         biometricSleepHours: sleepHours,
         biometricActiveMinutes: activeMin,
-        biometricNote: biometricNote || undefined,
+        biometricNote: normalizeOptionalText(biometricNote),
         biometricSource: steps !== undefined || avgHr !== undefined ? "manual" : undefined,
       });
-      log.logInteraction("submit:success", { action: "updateState" });
+      if (hasActivityChanges(currentActivity)) {
+        await setActivity({
+          token,
+          title: activityTitle.trim(),
+          emoji: normalizeOptionalText(activityEmoji),
+          note: normalizeOptionalText(activityNote),
+          locationLabel: normalizeOptionalText(activityLocationLabel),
+        });
+      }
+      log.logInteraction("submit:success", { action: "saveStatus" });
       onClose();
     } catch (e) {
       log.error("submit:error", "mutation", { message: e instanceof Error ? e.message : String(e) });
       setError(formatSaveError(e));
-      setReviewing(false);
     } finally {
       setSaving(false);
     }
@@ -563,7 +609,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
           </span>
           <div className="flex flex-col">
             <h2 className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              How are you?
+              Update Status
             </h2>
             {lastUpdated && (
               <span className="text-[11px] text-[var(--ink-3)]" suppressHydrationWarning>
@@ -575,7 +621,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close Traveler State"
+          aria-label="Close Update Status"
           className="rounded-full p-1.5 text-[var(--ink-3)] hover:bg-[var(--bg-card)] hover:text-[var(--ink-1)]"
         >
           <X className="h-4 w-4" />
@@ -601,7 +647,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
             )}
           >
             <span className="inline-flex items-center gap-1">
-              {t === "state" ? TERMS.state : t === "visibility" ? "Visibility" : TERMS.autoState}
+              {t === "state" ? "Status" : t === "visibility" ? "Visibility" : TERMS.autoState}
               {t === "auto" && autoState?.autoStateEnabled ? (
                 <span
                   className="rounded-full px-1.5 py-px text-[8px] font-bold uppercase tracking-wider"
@@ -623,88 +669,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         data-role="traveler-state-sheet-body"
         className={cn("flex-1 overflow-y-auto", BODY_FOOTER_CLEARANCE_CLASS)}
       >
-        {reviewing && tab === "state" && (() => {
-          const prev = result?.state ?? null;
-          const prevAt = prev?.updatedAt ?? null;
-
-          function fmtLevel(label: string, score: number | undefined) {
-            return score !== undefined ? `${label} (${Math.round(score)})` : label;
-          }
-          function fmtNum(n: number | undefined) {
-            return n !== undefined ? String(n) : undefined;
-          }
-          function fmtText(s: string) {
-            if (!s) return undefined;
-            return s.length > 50 ? `"${s.slice(0, 50)}…"` : `"${s}"`;
-          }
-
-          type DiffEntry = { label: string; from: string | undefined; to: string | undefined };
-          const rows: DiffEntry[] = [];
-          function add(label: string, from: string | undefined, to: string | undefined) {
-            if ((from ?? "") !== (to ?? "")) rows.push({ label, from, to });
-          }
-
-          add("Mood",
-            prev?.moodValue ? MOOD_LABELS[prev.moodValue] : undefined,
-            moodValue ? MOOD_LABELS[moodValue] : undefined,
-          );
-          add("Energy",
-            prev?.energyLevel ? fmtLevel(ENERGY_LABELS[prev.energyLevel], prev.energyScore) : undefined,
-            energyLevel ? fmtLevel(ENERGY_LABELS[energyLevel], energyScore) : undefined,
-          );
-          add("Stomach",
-            prev?.stomachLevel ? fmtLevel(STOMACH_LABELS[prev.stomachLevel], prev.stomachScore) : undefined,
-            stomachLevel ? fmtLevel(STOMACH_LABELS[stomachLevel], stomachScore) : undefined,
-          );
-          add("Stress",
-            prev?.stressLevel ? fmtLevel(STRESS_LABELS[prev.stressLevel], prev.stressScore) : undefined,
-            stressLevel ? fmtLevel(STRESS_LABELS[stressLevel], stressScore) : undefined,
-          );
-          add("Schedule",
-            prev?.schedulePressureLevel ? SCHEDULE_LABELS[prev.schedulePressureLevel] : undefined,
-            scheduleLevel ? SCHEDULE_LABELS[scheduleLevel] : undefined,
-          );
-          add("Note", fmtText(prev?.statusNote ?? ""), fmtText(statusNote));
-          add("Emoji", prev?.statusEmoji || undefined, statusEmoji || undefined);
-          add("Steps", fmtNum(prev?.biometricSteps), fmtNum(steps));
-          add("Avg HR", fmtNum(prev?.biometricAverageHeartRate), fmtNum(avgHr));
-          add("Resting HR", fmtNum(prev?.biometricRestingHeartRate), fmtNum(restHr));
-          add("Sleep", fmtNum(prev?.biometricSleepHours), fmtNum(sleepHours));
-          add("Active min", fmtNum(prev?.biometricActiveMinutes), fmtNum(activeMin));
-          add("Bio note", fmtText(prev?.biometricNote ?? ""), fmtText(biometricNote));
-
-          return (
-            <div className="grid gap-4 p-4">
-              <p className="text-xs text-[var(--ink-3)]" suppressHydrationWarning>
-                {prevAt ? `Last entry: ${formatRelativeTime(prevAt)}` : "No previous entry"}
-              </p>
-              {rows.length === 0 ? (
-                <p className="text-sm text-[var(--ink-3)]">No changes from last entry.</p>
-              ) : (
-                <div className="grid gap-3">
-                  {rows.map(({ label, from, to }) => (
-                    <div key={label} className="grid gap-0.5">
-                      <span className={stateLabelClass}>
-                        {label}
-                      </span>
-                      <div className="flex flex-wrap items-center gap-1.5 text-sm">
-                        <span className={from ? "text-[var(--ink-3)] line-through" : "text-[var(--ink-3)]"}>
-                          {from ?? "—"}
-                        </span>
-                        <span className="text-[var(--ink-3)]">→</span>
-                        <span className={to ? "font-medium text-[var(--ink-1)]" : "text-[var(--ink-3)]"}>
-                          {to ?? "—"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {!reviewing && tab === "state" && (
+        {tab === "state" && (
           <div className="grid gap-4 p-4">
             {autoState?.autoStateEnabled && (
               <p className="rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] px-3 py-2 text-xs text-[var(--ink-2)]">
@@ -881,6 +846,87 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               />
             </div>
 
+            <StateSegment title="Current Activity" hint="what you're doing now">
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_ACTIVITIES.map((activity) => (
+                  <button
+                    key={activity.label}
+                    type="button"
+                    onClick={() => {
+                      setActivityTitle(activity.label);
+                      setActivityEmoji(activity.emoji);
+                    }}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                      activityTitle === activity.label
+                        ? "bg-[var(--flag)] text-[var(--ink-on-brand)]"
+                        : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)] hover:text-[var(--ink-1)]",
+                    )}
+                  >
+                    <span aria-hidden="true">{activity.emoji}</span> {activity.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-[72px_1fr] gap-2">
+                <div className="grid gap-1.5">
+                  <label htmlFor="status-activity-emoji" className={stateLabelClass}>
+                    Emoji
+                  </label>
+                  <input
+                    id="status-activity-emoji"
+                    type="text"
+                    value={activityEmoji}
+                    onChange={(e) => setActivityEmoji(e.target.value.slice(0, 10))}
+                    maxLength={10}
+                    placeholder="🚶"
+                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <label htmlFor="status-activity-title" className={stateLabelClass}>
+                    Activity
+                  </label>
+                  <input
+                    id="status-activity-title"
+                    type="text"
+                    value={activityTitle}
+                    onChange={(e) => setActivityTitle(e.target.value.slice(0, 80))}
+                    placeholder="What are you doing?"
+                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-1.5">
+                <label htmlFor="status-activity-note" className={stateLabelClass}>
+                  Activity Note
+                </label>
+                <textarea
+                  id="status-activity-note"
+                  value={activityNote}
+                  onChange={(e) => setActivityNote(e.target.value.slice(0, 240))}
+                  rows={2}
+                  placeholder="Activity note (optional)"
+                  className={cn("resize-none px-3 py-2 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                />
+              </div>
+
+              <div className="grid gap-1.5">
+                <label htmlFor="status-activity-place" className={stateLabelClass}>
+                  Place
+                </label>
+                <input
+                  id="status-activity-place"
+                  type="text"
+                  value={activityLocationLabel}
+                  onChange={(e) => setActivityLocationLabel(e.target.value.slice(0, 120))}
+                  placeholder="Place name (optional)"
+                  className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                />
+              </div>
+            </StateSegment>
+
             {/* Biometrics */}
             <div className="grid gap-2">
               <button
@@ -958,22 +1004,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
       {/* Pinned footer (#7) */}
       <SheetSaveFooter error={footerError} savedAt={savedAt} showSavedAt={tab === "state"}>
-        {reviewing && tab === "state" ? (
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              disabled={saving}
-              onClick={() => setReviewing(false)}
-              className="flex-none"
-            >
-              Back
-            </Button>
-            <Button onClick={handleConfirmSave} disabled={saving} className="flex-1">
-              {saving ? "Saving…" : "Confirm"}
-            </Button>
-          </div>
-        ) : tab === "state" ? (
+        {tab === "state" ? (
           <div className="flex gap-2">
             <Button
               type="button"
@@ -984,8 +1015,8 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
             >
               Clear All
             </Button>
-            <Button onClick={handleReviewState} className="flex-1">
-              Save State
+            <Button onClick={handleSaveStatus} disabled={saving} className="flex-1">
+              {saving ? "Saving…" : "Save Status"}
             </Button>
           </div>
         ) : tab === "visibility" ? (

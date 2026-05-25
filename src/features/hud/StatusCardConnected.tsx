@@ -8,6 +8,8 @@ import {
   type CurrentActivity,
   type Role,
   type TravelerEnergyLevel,
+  type TravelerMoodValue,
+  type TravelerSchedulePressureLevel,
   type TravelerStateForFollower,
   type TravelerStomachLevel,
   type TravelerStressLevel,
@@ -16,6 +18,8 @@ import {
   ENERGY_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
   STRESS_SCORE_FOR_LEVEL,
+  SCHEDULE_LABELS,
+  getStateEmoji,
 } from "@/features/travelstate/travelerStateUtils";
 import { computeAutoState } from "@/features/travelstate/autoStateCalc";
 
@@ -29,14 +33,20 @@ export interface StatusCardConnectedProps {
 }
 
 type StateFacts = {
+  moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
   energyScore?: number;
   stomachLevel?: TravelerStomachLevel;
   stomachScore?: number;
   stressLevel?: TravelerStressLevel;
   stressScore?: number;
+  schedulePressureLevel?: TravelerSchedulePressureLevel;
+  statusNote?: string;
+  statusEmoji?: string;
   updatedAt?: number | null;
 };
+
+const STATE_STALE_MS = 3 * 60 * 60 * 1000;
 
 function formatElapsed(startedAt: number, now: number): string {
   const ms = Math.max(0, now - startedAt);
@@ -170,6 +180,15 @@ function formatBaseSavedAgo(ts: number, now: number): string {
   return m === 0 ? `${h}h ago` : `${h}h ${m}m ago`;
 }
 
+function formatPercent(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+function formatActivitySince(startedAt: number, now: number): string {
+  const elapsed = formatElapsed(startedAt, now);
+  return elapsed === "just now" ? elapsed : `for ${elapsed}`;
+}
+
 /**
  * StatusCard wired to live Convex data — replaces the legacy stacked
  * TravelerStateCard + CurrentActivityCard pair.
@@ -264,24 +283,32 @@ export function StatusCardConnected({
       if (!travelerState || !travelerState.state) return null;
       const s = travelerState.state;
       return {
+        moodValue: s.moodValue,
         energyLevel: s.energyLevel,
         energyScore: s.energyScore,
         stomachLevel: s.stomachLevel,
         stomachScore: s.stomachScore,
         stressLevel: s.stressLevel,
         stressScore: s.stressScore,
+        schedulePressureLevel: s.schedulePressureLevel,
+        statusNote: s.statusNote,
+        statusEmoji: s.statusEmoji,
         updatedAt: s.updatedAt,
       };
     }
     const follower = followerState as TravelerStateForFollower | null | undefined;
     if (!follower || !follower.visible) return null;
     return {
+      moodValue: follower.moodValue,
       energyLevel: follower.energyLevel,
       energyScore: follower.energyScore,
       stomachLevel: follower.stomachLevel,
       stomachScore: follower.stomachScore,
       stressLevel: follower.stressLevel,
       stressScore: follower.stressScore,
+      schedulePressureLevel: follower.schedulePressureLevel,
+      statusNote: follower.statusNote,
+      statusEmoji: follower.statusEmoji,
       updatedAt: follower.updatedAt,
     };
   }, [role, travelerState, followerState]);
@@ -345,37 +372,70 @@ export function StatusCardConnected({
           50,
         );
         return [
-          { label: "Energy", value: energyValue, max: 100, autoChip: isAutoEnergyOn },
-          { label: "Stomach", value: stomachValue, max: 150, autoChip: isAutoStomachOn },
-          { label: "Calm", value: Math.max(0, Math.min(100, 100 - stressValue)), max: 100 },
+          {
+            label: "Energy",
+            value: energyValue,
+            max: 100,
+            valueLabel: formatPercent(energyValue),
+            color: "var(--amber)",
+          },
+          {
+            label: "Fullness",
+            value: stomachValue,
+            max: 150,
+            valueLabel: `${Math.round(stomachValue)}/150`,
+            color: "var(--green)",
+          },
+          {
+            label: "Calm",
+            value: Math.max(0, Math.min(100, 100 - stressValue)),
+            max: 100,
+            valueLabel: formatPercent(Math.max(0, Math.min(100, 100 - stressValue))),
+            color: "var(--teal)",
+          },
         ];
       })()
     : [];
 
-  // Follower-only: when Auto is on with no active activity, replace the activity-since
-  // slot with the "AUTO EST. · base saved …" label.
-  const followerAutoActive = role === "follower" && auto != null;
-  const followerActivityLabelOverride =
-    followerAutoActive && !activity
-      ? `AUTO EST. · base saved ${formatBaseSavedAgo(auto!.autoEnabledAt, now)}`
+  const scheduleLabel = stateFacts?.schedulePressureLevel
+    ? SCHEDULE_LABELS[stateFacts.schedulePressureLevel]
+    : null;
+  const stateUpdatedAgo = stateFacts?.updatedAt
+    ? formatBaseSavedAgo(stateFacts.updatedAt, now)
+    : null;
+  const staleInfo =
+    role === "follower" &&
+    stateFacts?.updatedAt &&
+    now - stateFacts.updatedAt > STATE_STALE_MS
+      ? auto
+        ? `Status was last saved ${stateUpdatedAgo}; these values may be estimated from that saved status.`
+        : `Status was last saved ${stateUpdatedAgo}.`
       : null;
+  const activityLabel = activity
+    ? activity.title
+    : stateFacts
+      ? "Status update"
+      : "Waiting for status";
+  const activityEmoji = activity?.emoji ?? stateFacts?.statusEmoji ?? getStateEmoji(stateFacts);
+  const activitySince = activity ? formatActivitySince(activity.startedAt, now) : null;
+  const statusMeta = [
+    scheduleLabel ? `Schedule: ${scheduleLabel}` : null,
+    !activity && stateUpdatedAgo ? `Updated ${stateUpdatedAgo}` : null,
+  ].filter(Boolean).join(" · ") || null;
 
   return (
     <div className={className}>
       <StatusCard
-        activityLabel={activity ? activity.title : followerActivityLabelOverride ?? null}
-        activityEmoji={activity?.emoji ?? null}
-        activitySince={activity ? formatElapsed(activity.startedAt, now) : null}
+        activityLabel={activityLabel}
+        activityEmoji={activityEmoji}
+        activitySince={activitySince}
+        statusMeta={statusMeta}
         clockLabel={clockLabel}
         meters={meters}
+        staleInfo={staleInfo}
         interactive={role === "traveler"}
         onActivate={role === "traveler" ? onOpenState : undefined}
       />
-      {followerAutoActive && (isAutoEnergyOn || isAutoStomachOn) ? (
-        <p className="mt-1 text-[10px] text-[var(--ink-3)]">
-          These values are estimated locally from the Traveler's saved State. They may not reflect a manual update.
-        </p>
-      ) : null}
     </div>
   );
 }
