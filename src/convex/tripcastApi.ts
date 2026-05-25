@@ -305,6 +305,28 @@ export type MissionContentArgs = {
   estimatedEnergyImpact?: EnergyImpact;
 };
 
+export type RouteForecast = {
+  _id: string;
+  _creationTime: number;
+  title: string;
+  note?: string;
+  locationLabel?: string;
+  lat: number;
+  lon: number;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type RouteForecastInput = {
+  title: string;
+  note?: string;
+  locationLabel?: string;
+  lat: number;
+  lon: number;
+  sortOrder?: number;
+};
+
 // ---------------------------------------------------------------------------
 // Achievements / scoring types
 // ---------------------------------------------------------------------------
@@ -1446,6 +1468,32 @@ export const tripcastApi = {
       "public",
       { token: string; moderationMode?: MissionModerationMode; rateLimitPreset?: MissionRateLimitPreset },
       null
+    >,
+  },
+  routeForecasts: {
+    travelerCreateForecast: (anyApi as any).routeForecasts.travelerCreateForecast as FunctionReference<
+      "mutation",
+      "public",
+      { token: string } & RouteForecastInput,
+      string
+    >,
+    travelerUpdateForecast: (anyApi as any).routeForecasts.travelerUpdateForecast as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; forecastId: string } & RouteForecastInput,
+      null
+    >,
+    travelerDeleteForecast: (anyApi as any).routeForecasts.travelerDeleteForecast as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; forecastId: string },
+      null
+    >,
+    listForecasts: (anyApi as any).routeForecasts.listForecasts as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      RouteForecast[]
     >,
   },
   currentActivity: {

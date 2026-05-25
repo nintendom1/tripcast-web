@@ -14,6 +14,7 @@ import {
   type Checkpoint,
   type JournalEvent,
   type Role,
+  type RouteForecast,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
 } from "../../convex/tripcastApi";
 import AddCheckpointSheet, {
@@ -21,6 +22,7 @@ import AddCheckpointSheet, {
   type SelectedCoordinate,
 } from "./AddCheckpointSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
+import RouteForecastOverlay from "./RouteForecastOverlay";
 import MissionMarkers from "./MissionMarkers";
 import MissionPanel from "../missions/MissionPanel";
 import RouteVotePanel from "../routevote/RouteVotePanel";
@@ -817,17 +819,27 @@ export default function TripMap({
     const val = localStorage.getItem("tripcast.showTripPath");
     return val === null ? true : val === "true";
   });
+  const [showForecastPins, setShowForecastPins] = useState(() => {
+    const val = localStorage.getItem("tripcast.showForecastPins");
+    return val === null ? true : val === "true";
+  });
 
   useEffect(() => {
     const handler = () => {
       const val = localStorage.getItem("tripcast.showTripPath");
       setShowTripPathLocal(val === null ? true : val === "true");
+      const forecastVal = localStorage.getItem("tripcast.showForecastPins");
+      setShowForecastPins(forecastVal === null ? true : forecastVal === "true");
     };
     window.addEventListener("tripcast.preferencesUpdated", handler);
     return () => window.removeEventListener("tripcast.preferencesUpdated", handler);
   }, []);
 
   const followerPreferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
+  const forecasts = useQuery(tripcastApi.routeForecasts.listForecasts, { token }) ?? [];
+  const createForecast = useMutation(tripcastApi.routeForecasts.travelerCreateForecast);
+  const updateForecast = useMutation(tripcastApi.routeForecasts.travelerUpdateForecast);
+  const deleteForecast = useMutation(tripcastApi.routeForecasts.travelerDeleteForecast);
 
   const showPath = role === "traveler"
     ? showTripPathLocal
@@ -2067,6 +2079,69 @@ export default function TripMap({
     setVoteOptionNumberById(optionNumberById ?? null);
   }
 
+  async function handleCreateForecastAt(coordinate: { lat: number; lon: number }) {
+    if (role !== "traveler") return;
+    const title = window.prompt("Forecast stop name");
+    if (!title?.trim()) return;
+    log.logInteraction("forecast:create", { lat: coordinate.lat, lon: coordinate.lon });
+    try {
+      await createForecast({
+        token,
+        title: title.trim(),
+        lat: coordinate.lat,
+        lon: coordinate.lon,
+        sortOrder: Date.now(),
+      });
+      showToast("Forecast pin added.");
+    } catch (error) {
+      log.error("forecast:create:error", "mutation", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      showToast("Forecast pin could not be added.");
+    }
+  }
+
+  async function handleEditForecast(forecast: RouteForecast) {
+    const title = window.prompt("Forecast stop name", forecast.title);
+    if (!title?.trim()) return;
+    log.logInteraction("forecast:edit", { forecastId: forecast._id });
+    try {
+      await updateForecast({
+        token,
+        forecastId: forecast._id,
+        title: title.trim(),
+        note: forecast.note,
+        locationLabel: forecast.locationLabel,
+        lat: forecast.lat,
+        lon: forecast.lon,
+        sortOrder: forecast.sortOrder,
+      });
+      showToast("Forecast pin updated.");
+    } catch (error) {
+      log.error("forecast:edit:error", "mutation", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      showToast("Forecast pin could not be updated.");
+    }
+  }
+
+  async function handleDeleteForecast(forecast: RouteForecast) {
+    log.logInteraction("forecast:delete", { forecastId: forecast._id });
+    try {
+      await deleteForecast({ token, forecastId: forecast._id });
+      showToast("Forecast pin deleted.");
+    } catch (error) {
+      log.error("forecast:delete:error", "mutation", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      showToast("Forecast pin could not be deleted.");
+    }
+  }
+
+  function handleOpenForecast(forecast: RouteForecast) {
+    log.logInteraction("forecast:pin-open", { forecastId: forecast._id });
+  }
+
   // NOTE: the activity-complete-as-checkin flow (handleCompleteAsCheckIn +
   // handleCheckpointCreated + activityToComplete state) was removed when the
   // CurrentActivityCard came out with the legacy chrome. The Mission
@@ -2301,6 +2376,14 @@ export default function TripMap({
     return null;
   }, [latestCheckpointLat, latestCheckpointLon, livePosition, role]);
 
+  useEffect(() => {
+    if (!showForecastPins || forecasts.length === 0) return;
+    log.logMap("forecast:path-render", {
+      count: forecasts.length,
+      hasOrigin: routeVoteFallbackOrigin !== null,
+    });
+  }, [forecasts.length, log, routeVoteFallbackOrigin, showForecastPins]);
+
   return (
     <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
       <DesktopMapFrame
@@ -2359,6 +2442,15 @@ export default function TripMap({
         overlay={isVotePanelOpen ? voteMapOverlay : null}
         fallbackOrigin={routeVoteFallbackOrigin}
         optionNumberById={voteOptionNumberById}
+      />
+      <RouteForecastOverlay
+        map={mapInstance}
+        forecasts={forecasts}
+        origin={routeVoteFallbackOrigin}
+        visible={showForecastPins}
+        onOpen={handleOpenForecast}
+        onEdit={handleEditForecast}
+        onDelete={handleDeleteForecast}
       />
       <MissionMarkers
         map={mapInstance}
@@ -2479,6 +2571,12 @@ export default function TripMap({
         ) : null}
       </AnimatePresence>
 
+      {showForecastPins && forecasts.length > 0 ? (
+        <div className="absolute left-1/2 top-[92px] z-[3] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-full bg-[var(--bg-card)] px-3 py-1.5 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)]">
+          Forecast route · plans may change
+        </div>
+      ) : null}
+
       {contextMenu && (
         <div
           className="absolute z-[100] min-w-[140px] rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-1 shadow-xl animate-in fade-in zoom-in-95 duration-100"
@@ -2522,6 +2620,18 @@ export default function TripMap({
           >
             {role === "traveler" ? "Add Mission" : "Propose Mission"}
           </button>
+          {role === "traveler" ? (
+            <button
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-[var(--bg-paper-2)] text-[var(--ink-1)]"
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleCreateForecastAt({ lat: contextMenu.lat, lon: contextMenu.lon });
+                setContextMenu(null);
+              }}
+            >
+              Add Forecast
+            </button>
+          ) : null}
         </div>
       )}
 

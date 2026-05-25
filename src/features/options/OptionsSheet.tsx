@@ -781,10 +781,20 @@ function MapSettingsSection({ token, role }: { token: string; role: "traveler" |
     const val = localStorage.getItem("tripcast.showTripPath");
     return val === null ? true : val === "true";
   });
+  const [showForecastPins, setShowForecastPins] = useState(() => {
+    const val = localStorage.getItem("tripcast.showForecastPins");
+    return val === null ? true : val === "true";
+  });
 
   const toggleShowPath = (checked: boolean) => {
     setShowTripPath(checked);
     localStorage.setItem("tripcast.showTripPath", String(checked));
+    window.dispatchEvent(new Event("tripcast.preferencesUpdated"));
+  };
+
+  const toggleForecastPins = (checked: boolean) => {
+    setShowForecastPins(checked);
+    localStorage.setItem("tripcast.showForecastPins", String(checked));
     window.dispatchEvent(new Event("tripcast.preferencesUpdated"));
   };
 
@@ -804,6 +814,15 @@ function MapSettingsSection({ token, role }: { token: string; role: "traveler" |
         checked={showTripPath}
         onChange={toggleShowPath}
       />
+
+      {role === "traveler" ? (
+        <OptionsSwitchRow
+          title="Show Forecast Pins"
+          detail="Show ghosted future stops and the forecast route line."
+          checked={showForecastPins}
+          onChange={toggleForecastPins}
+        />
+      ) : null}
 
       {role === "traveler" ? (
         <OptionsSwitchRow

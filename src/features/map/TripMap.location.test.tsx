@@ -134,6 +134,10 @@ vi.mock("./RouteVoteMapOverlay", () => ({
   default: () => null,
 }));
 
+vi.mock("./RouteForecastOverlay", () => ({
+  default: () => null,
+}));
+
 vi.mock("./MissionMarkers", () => ({
   default: () => null,
 }));
@@ -239,6 +243,7 @@ function setupQueries({
     }
     if (query === tripcastApi.journalEvents.listJournalEvents) return journalEvents;
     if (query === tripcastApi.routeVotes.travelerListRouteVotes) return [];
+    if (query === tripcastApi.routeForecasts.listForecasts) return [];
     if (query === tripcastApi.travelFunds.travelerGetConfig) {
       return {
         enabled: true,
