@@ -5,6 +5,7 @@ import * as convexReact from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
+import { ThemeProvider } from "../../providers/ThemeProvider";
 import OptionsSheet from "./OptionsSheet";
 
 vi.mock("convex/react", () => ({
@@ -173,20 +174,22 @@ function setupMocks({
 
 function renderOptions(overrides?: Partial<React.ComponentProps<typeof OptionsSheet>>) {
   render(
-    <OptionsSheet
-      open
-      onOpenChange={vi.fn()}
-      session={travelerSession}
-      role="traveler"
-      onSignOut={vi.fn()}
-      onManageFollowers={vi.fn()}
-      onReplayFollowerTour={vi.fn()}
-      onLoggedOut={vi.fn()}
-      onLocationDataCleared={vi.fn()}
-      onTripDataDeleted={vi.fn()}
-      onResetStarted={vi.fn()}
-      {...overrides}
-    />,
+    <ThemeProvider>
+      <OptionsSheet
+        open
+        onOpenChange={vi.fn()}
+        session={travelerSession}
+        role="traveler"
+        onSignOut={vi.fn()}
+        onManageFollowers={vi.fn()}
+        onReplayFollowerTour={vi.fn()}
+        onLoggedOut={vi.fn()}
+        onLocationDataCleared={vi.fn()}
+        onTripDataDeleted={vi.fn()}
+        onResetStarted={vi.fn()}
+        {...overrides}
+      />
+    </ThemeProvider>,
   );
 }
 
@@ -200,6 +203,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
+  document.documentElement.classList.remove("dark", "theme-dark");
+  document.documentElement.removeAttribute("style");
 });
 
 describe("OptionsSheet traveler timezone", () => {
@@ -410,7 +415,7 @@ describe("OptionsSheet developer scoring toggle", () => {
 });
 
 describe("OptionsSheet appearance", () => {
-  it("orders theme choices as Auto, Meadow, Constellation", () => {
+  it("shows light/dark choices and automatic theme as a toggle", () => {
     setupMocks();
     renderOptions();
 
@@ -420,6 +425,7 @@ describe("OptionsSheet appearance", () => {
       button.textContent?.trim(),
     );
 
-    expect(labels).toEqual(["Auto", "Meadow", "Constellation"]);
+    expect(labels).toEqual(["Light", "Dark"]);
+    expect(within(appearanceSection!).getByRole("checkbox", { name: /automatic theme/i })).toBeChecked();
   });
 });
