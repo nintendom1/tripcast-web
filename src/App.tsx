@@ -468,7 +468,7 @@ function ConnectedApp() {
       )}
 
       {isCreditsOpen && (
-        <CreditsOverlay token={session.token} onClose={() => setIsCreditsOpen(false)} />
+        <CreditsOverlay token={session.token} role={role} onClose={() => setIsCreditsOpen(false)} />
       )}
 
       <ErrorBoundary
@@ -496,6 +496,7 @@ function ConnectedApp() {
             role={role}
             locationResetNonce={locationResetNonce}
             tripDataResetNonce={tripDataResetNonce}
+            finaleReplayActive={isCreditsOpen}
             onOpenDebugPanel={() => {
               music.sfx("open");
               setPreserveDebugContext(true);
