@@ -14,6 +14,8 @@ import {
   getCategoryOverrides,
   getLocationRedact,
   setLocationRedact,
+  getConsoleMirror,
+  setConsoleMirror,
   subscribe,
   log as rawLog,
   type DebugEntry,
@@ -250,20 +252,24 @@ function CategoryOverrides({ disabled, onRefresh }: { disabled: boolean; onRefre
 
 export default function DebugPanel({ onBack }: { onBack: () => void }) {
   const [enabled, setEnabledState] = useState(isEnabled);
+  const [consoleMirror, setConsoleMirrorState] = useState(getConsoleMirror);
   const [locationRedact, setLocationRedactState] = useState(getLocationRedact);
   const [floatingSettings, setFloatingSettings] = useState(getFloatingDebugSettings);
   const [logs, setLogs] = useState<DebugEntry[]>(() => getLogs().slice(-50).reverse());
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const copyStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refresh = useCallback(() => {
+  const syncDebugState = useCallback(() => {
+    setEnabledState(isEnabled());
+    setConsoleMirrorState(getConsoleMirror());
+    setLocationRedactState(getLocationRedact());
     setLogs(getLogs().slice(-50).reverse());
   }, []);
 
-  // Auto-refresh when new entries arrive
+  // Auto-refresh when debug settings or entries change, including console commands.
   useEffect(() => {
-    return subscribe(refresh);
-  }, [refresh]);
+    return subscribe(syncDebugState);
+  }, [syncDebugState]);
 
   useEffect(() => {
     return subscribeActiveUiContext(() => {
@@ -299,6 +305,13 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
     const next = !enabled;
     setEnabled(next);
     setEnabledState(next);
+  }
+
+  function handleConsoleMirrorToggle() {
+    if (!enabled) return;
+    const next = !consoleMirror;
+    setConsoleMirror(next);
+    setConsoleMirrorState(next);
   }
 
   function handleLocationRedactToggle() {
@@ -435,6 +448,38 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
         </button>
       </div>
 
+      {/* Browser console mirror toggle */}
+      <div className="grid gap-2 rounded-xl bg-[var(--bg-card)] px-4 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold text-[var(--ink-2)]">Browser console logs</p>
+            <p className="text-[10px] text-[var(--ink-3)]">Prefix mirrored entries with [Tripcast]</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={consoleMirror}
+            aria-label="Browser console logs"
+            disabled={!enabled}
+            onClick={handleConsoleMirrorToggle}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              consoleMirror ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]"
+            }`}
+          >
+            <span
+              className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                consoleMirror ? "translate-x-4" : "translate-x-0.5"
+              }`}
+            />
+          </button>
+        </div>
+        <div className="grid gap-1 rounded-lg bg-[var(--bg-surface)] p-2 font-[var(--font-mono)] text-[10px] leading-4 text-[var(--ink-2)]">
+          <code>tripcast.addLog("Checkpoint")</code>
+          <code>tripcast.enableLogs() / tripcast.disableLogs()</code>
+          <code>tripcast.enableConsoleLogs() / tripcast.disableConsoleLogs()</code>
+        </div>
+      </div>
+
       {/* Location redact toggle */}
       <div className="flex items-center justify-between rounded-xl bg-[var(--bg-card)] px-4 py-2.5">
         <p className="text-xs text-[var(--ink-2)]">Redact location in copies</p>
@@ -458,7 +503,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Preset + category overrides */}
-      <CategoryOverrides disabled={!enabled} onRefresh={refresh} />
+      <CategoryOverrides disabled={!enabled} onRefresh={syncDebugState} />
 
       {/* Floating Debug button settings */}
       <div
@@ -535,7 +580,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
         <button
           type="button"
           disabled={!enabled}
-          onClick={refresh}
+          onClick={syncDebugState}
           className="text-xs font-semibold text-[var(--flag)] disabled:cursor-not-allowed disabled:text-[var(--ink-3)]"
         >
           Refresh

@@ -82,6 +82,8 @@ TripCast Web is the React/Vite frontend using MapLibre GL JS and Base UI.
 - **Validation**: `npm run validate` (typecheck -> lint -> tests)
 - **Testing**: `npm run test` (Vitest with `jsdom`)
 
+`npm run dev` is available for local development but not available for agents.
+
 Do not claim a code task complete until `npm run validate` passes.
 
 ## Read-On-Demand Agent Procedures
