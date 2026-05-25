@@ -23,6 +23,14 @@ function makeProps(overrides: Partial<Parameters<typeof AddCheckpointSheet>[0]> 
 describe("AddCheckpointSheet", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:story-image"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
   });
 
   it("does not render form content when selectedCoordinate is null", () => {
@@ -106,6 +114,22 @@ describe("AddCheckpointSheet", () => {
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ showInStory: false }));
+    });
+  });
+
+  it("uploads a selected photo and passes imageId on submit", async () => {
+    const onSave = vi.fn().mockResolvedValue("id");
+    const onUploadImage = vi.fn().mockResolvedValue("image-1");
+    const user = userEvent.setup();
+    render(<AddCheckpointSheet {...makeProps({ onSave, onUploadImage })} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
+
+    await waitFor(() => {
+      expect(onUploadImage).toHaveBeenCalledWith(file);
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ imageId: "image-1" }));
     });
   });
 

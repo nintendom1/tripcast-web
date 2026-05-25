@@ -18,6 +18,7 @@ export type Checkpoint = {
   showInStory?: boolean;
   lat?: number;
   lon?: number;
+  imageId?: string;
   source: CheckpointSource;
   /** Optional link to the mission a Story narrates (Complete-as-story flow). */
   missionId?: string;
@@ -33,6 +34,7 @@ export type AddCheckpointArgs = {
   showInStory?: boolean;
   lat?: number;
   lon?: number;
+  imageId?: string;
   source: CheckpointSource;
   // Optional link back to the mission a Story narrates. Persisted on
   // the checkpoint and threaded into the emitted story event so
@@ -63,6 +65,8 @@ export type UpdateCheckpointArgs = {
   showInStory?: boolean;
   lat?: number;
   lon?: number;
+  imageId?: string;
+  clearImage?: boolean;
 };
 
 export type DeleteCheckpointArgs = {
@@ -554,7 +558,8 @@ export type TravelerPreferences = {
 };
 
 export type TravelerPreferencesForFollower =
-  | { visible: false } | { visible: true; travelerTimeZone?: string; allowFollowersTripPath: boolean };
+  | { visible: false }
+  | { visible: true; travelerTimeZone?: string; allowFollowersTripPath: boolean };
 
 export type Message = {
   _id: string;
@@ -629,6 +634,7 @@ export type JournalEvent = {
   locationLabel?: string;
   lat?: number;
   lon?: number;
+  imageId?: string;
   checkpointId?: string;
   routeVoteId?: string;
   missionId?: string;
@@ -1013,11 +1019,23 @@ export const tripcastApi = {
     >,
   },
   checkpoints: {
+    generateStoryImageUploadUrl: (anyApi as any).checkpoints.generateStoryImageUploadUrl as FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
+      string
+    >,
     listCheckpoints: (anyApi as any).checkpoints.listCheckpoints as FunctionReference<
       "query",
       "public",
       { token: string },
       Checkpoint[]
+    >,
+    getStoryImageUrl: (anyApi as any).checkpoints.getStoryImageUrl as FunctionReference<
+      "query",
+      "public",
+      { token: string; imageId: string },
+      string | null
     >,
     addCheckpoint: (anyApi as any).checkpoints.addCheckpoint as FunctionReference<
       "mutation",
@@ -1275,6 +1293,7 @@ export const tripcastApi = {
         lat: number;
         lon: number;
         source: CheckpointSource;
+        imageId?: string;
         transaction?: TransactionInlineInput;
         awardBadgeType?: BadgeType;
       },
