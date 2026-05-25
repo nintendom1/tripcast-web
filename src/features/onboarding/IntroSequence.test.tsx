@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import { CreateAccountIntroFlow, IntroSequence } from "./IntroSequence";
+import { ThemeProvider } from "../../providers/ThemeProvider";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -91,6 +92,35 @@ describe("IntroSequence", () => {
 
     fireEvent.keyDown(window, { key: "ArrowLeft" });
     expect(screen.getByRole("heading", { name: /watch, shape, and share/i })).toBeInTheDocument();
+  });
+
+  it("asks for theme preference and applies auto dark during dark hours", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-25T21:00:00"));
+    localStorage.setItem("tripcast.theme_mode", "meadow");
+    render(
+      <ThemeProvider>
+        <IntroSequence
+          role="follower"
+          userHandle="alice"
+          travelerName="Traveler"
+          onDone={vi.fn()}
+        />
+      </ThemeProvider>,
+    );
+
+    act(() => {
+      for (let i = 0; i < 5; i += 1) {
+        fireEvent.click(screen.getByRole("button", { name: /next/i }));
+      }
+    });
+
+    expect(screen.getByRole("heading", { name: /light, dark, or auto/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Auto" }));
+
+    expect(localStorage.getItem("tripcast.theme_mode")).toBe("auto");
+    expect(document.documentElement).toHaveClass("theme-dark");
   });
 });
 

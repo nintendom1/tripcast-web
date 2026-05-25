@@ -6,7 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { DollarSign, Play, RotateCcw } from "lucide-react";
+import { DollarSign, Play, X } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -364,7 +364,7 @@ function TripReplayHud({
   onSpeedChange,
   onShuttleStart,
   onShuttleEnd,
-  onBackToLive,
+  onClose,
 }: {
   playheadTime: number;
   startTime: number;
@@ -374,7 +374,7 @@ function TripReplayHud({
   onSpeedChange: (speed: number) => void;
   onShuttleStart: () => void;
   onShuttleEnd: () => void;
-  onBackToLive: () => void;
+  onClose: () => void;
 }) {
   const duration = Math.max(1, endTime - startTime);
   const progress = Math.round(((playheadTime - startTime) / duration) * 100);
@@ -401,11 +401,12 @@ function TripReplayHud({
         </div>
         <button
           type="button"
-          onClick={onBackToLive}
+          onClick={onClose}
+          aria-label="Close trip replay"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
         >
-          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-          Back to Live
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+          Close
         </button>
       </div>
 
@@ -434,7 +435,7 @@ function TripReplayHud({
         <input
           type="range"
           min={1}
-          max={4}
+          max={16}
           step={1}
           value={speed}
           onPointerDown={onShuttleStart}
@@ -1906,7 +1907,7 @@ export default function TripMap({
   }
 
   function handleReplaySpeedChange(speed: number) {
-    const nextSpeed = Math.min(4, Math.max(1, Math.round(speed)));
+    const nextSpeed = Math.min(16, Math.max(1, Math.round(speed)));
     setReplaySpeed((currentSpeed) => {
       if (currentSpeed !== nextSpeed) {
         log.logInteraction("replay:speed-shift", {
@@ -1926,19 +1927,12 @@ export default function TripMap({
     log.logInteraction("replay:shuttle:drag-end", { speed: replaySpeed });
   }
 
-  function handleBackToLive() {
+  function handleCloseReplay() {
     music.sfx("close");
     snappedReplayEventRef.current = null;
     setReplayActive(false);
     setReplayPlayheadTime(null);
-    log.logInteraction("replay:back-to-live", { speed: replaySpeed });
-    const liveCoordinate =
-      role === "traveler"
-        ? (livePosition ?? storedTravelerLocation ?? null)
-        : (storedTravelerLocation ?? null);
-    if (liveCoordinate) {
-      centerMapOnCoordinate(liveCoordinate);
-    }
+    log.logInteraction("replay:close", { speed: replaySpeed });
   }
 
   function handleRequestCoordinatePick(
@@ -2269,11 +2263,11 @@ export default function TripMap({
     // Measure actual rendered sheet height; fall back to 50% of mapHeight if not mounted yet.
     const sheetEl = document.querySelector('[data-role="story-detail"]') as HTMLElement | null;
     const rawSheetHeight = sheetEl?.offsetHeight ?? 0;
-    const sheetHeight = rawSheetHeight > 0 ? rawSheetHeight : Math.round(mapHeight * 0.50);
+    const sheetHeight = rawSheetHeight > 0 ? rawSheetHeight : Math.round(mapHeight * 0.62);
 
     const topPad = 60;
     const rightPad = 60;
-    const bottomPadding = sheetHeight + 30;
+    const bottomPadding = Math.min(mapHeight - topPad - 80, sheetHeight + 30);
     const availableHeight = Math.max(mapHeight - bottomPadding - topPad, 50);
 
     // Only push the pin right of the cards when they cover the pin's natural
@@ -2536,7 +2530,7 @@ export default function TripMap({
             onSpeedChange={handleReplaySpeedChange}
             onShuttleStart={handleReplayShuttleStart}
             onShuttleEnd={handleReplayShuttleEnd}
-            onBackToLive={handleBackToLive}
+            onClose={handleCloseReplay}
           />
         ) : null}
       </AnimatePresence>
@@ -2668,7 +2662,7 @@ export default function TripMap({
       </FeatureBoundary>
 
       {/* Bottom Dock */}
-      <div className="pointer-events-none absolute inset-x-3 bottom-[42px] z-[20] tripcast-frame">
+      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
         <Dock
           active={activeDockTab}
           onSelect={handleDockSelect}
@@ -2852,16 +2846,29 @@ export default function TripMap({
             }}
           />
         </FeatureBoundary>
-        <div className="flex items-center justify-between gap-2">
-          {role === "traveler" ? (
-            <LivePill
-              on={isLocationSharing}
-              onToggle={handleToggleLocationSharing}
-              trailEnabled={liveTrailEnabled}
-            />
-          ) : (
-            <span aria-hidden="true" />
-          )}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {role === "traveler" ? (
+              <LivePill
+                on={isLocationSharing}
+                onToggle={handleToggleLocationSharing}
+                trailEnabled={liveTrailEnabled}
+              />
+            ) : null}
+            <FeatureBoundary
+              resetKeys={[token, role, "hud-funds-compact"]}
+              title="Funds chip hit a problem."
+              message="Try again."
+              fallbackClassName={CARD_ERROR_CLASS}
+            >
+              <FundsCompactConnected
+                token={token}
+                role={role}
+                onOpenSheet={role === "traveler" ? () => openFunds({ source: "funds-chip", sourceLabel: "Funds chip" }) : undefined}
+                className="max-w-full"
+              />
+            </FeatureBoundary>
+          </div>
           <button
             type="button"
             onClick={handleStartReplay}
@@ -2872,18 +2879,6 @@ export default function TripMap({
             <Play className="h-3.5 w-3.5" aria-hidden="true" />
             {replayActive ? `${replaySpeed}x Replay` : "Replay"}
           </button>
-          <FeatureBoundary
-            resetKeys={[token, role, "hud-funds-compact"]}
-            title="Funds chip hit a problem."
-            message="Try again."
-            fallbackClassName={CARD_ERROR_CLASS}
-          >
-            <FundsCompactConnected
-              token={token}
-              role={role}
-              onOpenSheet={role === "traveler" ? () => openFunds({ source: "funds-chip", sourceLabel: "Funds chip" }) : undefined}
-            />
-          </FeatureBoundary>
         </div>
       </div>
 

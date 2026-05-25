@@ -7,7 +7,9 @@ import {
   ChevronLeft,
   Flag,
   MapPin,
+  Moon,
   Sparkles,
+  Sun,
   Trophy,
   Vote,
   X,
@@ -20,6 +22,7 @@ import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { cn } from "@/lib/utils";
 import { IntroMascot } from "./IntroMascot";
+import { useTheme, type ThemeMode } from "../../providers/ThemeProvider";
 
 const INTRO_STORAGE_PREFIX = "tripcast.introSeen.v1";
 
@@ -79,11 +82,11 @@ const BEATS: Beat[] = [
     Icon: Trophy,
   },
   {
-    kicker: "Ready",
-    title: "Come along.",
-    body: "Open the map, read along, and tap in whenever you have an idea.",
+    kicker: "Theme",
+    title: "Light, dark, or auto?",
+    body: "Pick how TripCast should look before the map opens.",
     cta: "Open the map",
-    Icon: ArrowRight,
+    Icon: Sun,
   },
 ];
 const LAST_BEAT_INDEX = BEATS.length - 1;
@@ -125,8 +128,11 @@ export function IntroSequence({
   const beatRef = React.useRef(0);
   const finishedRef = React.useRef(false);
   const log = useDebugLogger("IntroSequence", "src/features/onboarding/IntroSequence.tsx");
+  const { mode, resolvedTheme, setMode } = useTheme();
+  const [themeChoice, setThemeChoice] = React.useState<ThemeMode>(mode);
   const safeBeat = Math.min(Math.max(beat, 0), LAST_BEAT_INDEX);
   const current = BEATS[safeBeat];
+  const isThemeBeat = safeBeat === LAST_BEAT_INDEX;
 
   useActiveUiContext(true, {
     sheetName: "IntroSequence",
@@ -205,6 +211,16 @@ export function IntroSequence({
     setBeat(nextBeat);
   }, [finish, log]);
 
+  const chooseTheme = React.useCallback((nextMode: ThemeMode) => {
+    setThemeChoice(nextMode);
+    setMode(nextMode);
+    log.logUi("intro:theme-select", {
+      mode: nextMode,
+      resolvedTheme: nextMode === "auto" ? resolvedTheme : nextMode,
+      source,
+    });
+  }, [log, resolvedTheme, setMode, source]);
+
   const previous = React.useCallback((trigger: IntroBackTrigger) => {
     const currentBeat = Math.min(Math.max(beatRef.current, 0), LAST_BEAT_INDEX);
     if (finishedRef.current) {
@@ -247,7 +263,9 @@ export function IntroSequence({
       data-role="intro-sequence"
       className="fixed inset-0 z-[60] overflow-hidden bg-[var(--meadow-bg)] text-[var(--meadow-ink)]"
       onClick={() => {
-        advance("surface-click");
+        if (!isThemeBeat) {
+          advance("surface-click");
+        }
       }}
     >
       <IntroBackdrop beat={safeBeat} />
@@ -295,6 +313,13 @@ export function IntroSequence({
           className="relative z-[1] flex h-full flex-col items-center justify-center px-5 pb-12 pt-16"
         >
           <BeatScene beat={safeBeat} current={current} userHandle={userHandle} travelerName={travelerName} />
+          {isThemeBeat ? (
+            <ThemeChoicePanel
+              value={themeChoice}
+              resolvedTheme={resolvedTheme}
+              onChange={chooseTheme}
+            />
+          ) : null}
           <Button
             type="button"
             onClick={(event) => {
@@ -489,6 +514,57 @@ function BeatScene({
       <h1 className="font-[var(--meadow-font-display)] text-3xl font-extrabold leading-tight text-[var(--meadow-ink)]">
         {current.title}
       </h1>
+    </div>
+  );
+}
+
+function ThemeChoicePanel({
+  value,
+  resolvedTheme,
+  onChange,
+}: {
+  value: ThemeMode;
+  resolvedTheme: "meadow" | "constellation";
+  onChange: (mode: ThemeMode) => void;
+}) {
+  const choices: Array<{ mode: ThemeMode; label: string; Icon: LucideIcon }> = [
+    { mode: "meadow", label: "Light", Icon: Sun },
+    { mode: "constellation", label: "Dark", Icon: Moon },
+    { mode: "auto", label: "Auto", Icon: Sparkles },
+  ];
+
+  return (
+    <div
+      className="mt-6 grid w-full max-w-sm gap-3"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="grid grid-cols-3 gap-2">
+        {choices.map(({ mode, label, Icon }) => {
+          const active = value === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => onChange(mode)}
+              aria-pressed={active}
+              className={cn(
+                "grid min-h-20 justify-items-center gap-2 rounded-2xl border px-2 py-3 font-[var(--meadow-font-display)] text-sm font-extrabold shadow-[var(--shadow-card)] transition-transform active:scale-[0.98]",
+                active
+                  ? "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
+                  : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]",
+              )}
+            >
+              <Icon className="h-5 w-5" aria-hidden />
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {value === "auto" ? (
+        <p className="text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--meadow-ink-soft)]">
+          Auto will open in {resolvedTheme === "constellation" ? "dark" : "light"} mode now
+        </p>
+      ) : null}
     </div>
   );
 }

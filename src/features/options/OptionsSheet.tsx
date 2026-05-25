@@ -9,7 +9,6 @@ import {
   Download,
   Eye,
   Flag,
-  Infinity,
   LogOut,
   Play,
   Route,
@@ -29,7 +28,7 @@ import DebugPanel from "../../debug/DebugPanel";
 import type { DebugLogger } from "../../debug/useDebugLogger";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { logMapEvent } from "../../debug/debugLogger";
-import { useTheme, type ThemeMode } from "../../providers/ThemeProvider";
+import { useTheme } from "../../providers/ThemeProvider";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -220,23 +219,53 @@ function TravelerTimezoneSection({ token }: { token: string }) {
 function AppearanceSection() {
   const theme = useTheme();
   const { mode, setMode, resolvedTheme } = theme;
+  const autoEnabled = mode === "auto";
+
+  function handleAutoChange(enabled: boolean) {
+    setMode(enabled ? "auto" : resolvedTheme);
+  }
 
   return (
     <OptionsSection label="Appearance">
-      <OptionsSegmentedControl
-        value={mode}
-        options={[
-          { value: "auto", label: "Auto", icon: Infinity },
-          { value: "meadow", label: "Meadow", icon: Sun },
-          { value: "constellation", label: "Constellation", icon: Moon },
-        ]}
-        onChange={(value) => setMode(value as ThemeMode)}
-      />
-      {mode === "auto" && (
-        <p className="px-1 text-xs font-medium text-[var(--ink-3)]">
-          Currently using {resolvedTheme === "meadow" ? "Meadow" : "Constellation"} based on your local time.
-        </p>
-      )}
+      <OptionsGroup>
+        <div className="grid gap-3 p-4 sm:p-5">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setMode("meadow")}
+              className={cn(
+                "flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                mode === "meadow"
+                  ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
+                  : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)]",
+              )}
+            >
+              <Sun className="h-4 w-4" aria-hidden />
+              Light
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("constellation")}
+              className={cn(
+                "flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                mode === "constellation"
+                  ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
+                  : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)]",
+              )}
+            >
+              <Moon className="h-4 w-4" aria-hidden />
+              Dark
+            </button>
+          </div>
+        </div>
+        <OptionsSwitchRow
+          icon={Clock}
+          title="Automatic theme"
+          detail={`Currently using ${resolvedTheme === "meadow" ? "Light" : "Dark"} based on your local time.`}
+          checked={autoEnabled}
+          onChange={handleAutoChange}
+        />
+      </OptionsGroup>
     </OptionsSection>
   );
 }

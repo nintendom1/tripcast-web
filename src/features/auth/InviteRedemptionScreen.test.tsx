@@ -53,6 +53,8 @@ describe("InviteRedemptionScreen", () => {
     expect(screen.getByLabelText(/^password/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/confirm password/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/agree to the terms/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /terms of service/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /privacy policy/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /create account/i })).toBeInTheDocument();
   });
 
@@ -121,6 +123,19 @@ describe("InviteRedemptionScreen", () => {
     renderScreen();
     await userEvent.click(screen.getByRole("button", { name: /back/i }));
     expect(mockOnBack).toHaveBeenCalled();
+  });
+
+  it("opens scrollable legal documents from the agreement text", async () => {
+    renderScreen();
+
+    await userEvent.click(screen.getByRole("button", { name: /terms of service/i }));
+    expect(screen.getByRole("dialog", { name: /terms of service/i })).toHaveTextContent("TRIPCAST TERMS OF SERVICE");
+
+    await userEvent.click(screen.getByRole("button", { name: /close/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /privacy policy/i }));
+    expect(screen.getByRole("dialog", { name: /privacy policy/i })).toHaveTextContent("TRIPCAST PRIVACY POLICY");
   });
 
   it("shows password mismatch message when passwords differ", async () => {
