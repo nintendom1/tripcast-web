@@ -47,7 +47,6 @@ import {
   SheetContent,
   SheetTitle,
 } from "../../components/ui/sheet";
-import SetActivitySheet from "../currentactivity/SetActivitySheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
 import AchievementsConnected from "../achievements/AchievementsConnected";
@@ -599,7 +598,6 @@ export default function TripMap({
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [selectedStoryDetail, setSelectedStoryDetail] = useState<SelectedStoryDetail | null>(null);
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
-  const [isSetActivityOpen, setIsSetActivityOpen] = useState(false);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
@@ -610,7 +608,7 @@ export default function TripMap({
   const [missionsDebugSource, setMissionsDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [votesDebugSource, setVotesDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [fundsDebugSource, setFundsDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
-  const [activityDebugSource, setActivityDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
+  const [stateDebugSource, setStateDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [storyDebugSource, setStoryDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [checkInDebugSource, setCheckInDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [pendingOpenMissionId, setPendingOpenMissionId] = useState<string | null>(null);
@@ -728,7 +726,7 @@ export default function TripMap({
     role,
     storyOpen: selectedStoryEvent !== null || storyPrefill !== null,
     voteActive: isVotePanelOpen || hasUnseenVote,
-    missionActive: isMissionsPanelOpen || isSetActivityOpen || missionBadgeCount > 0,
+    missionActive: isMissionsPanelOpen || missionBadgeCount > 0,
   });
 
   useEffect(() => {
@@ -1154,11 +1152,6 @@ export default function TripMap({
         setCheckInDebugSource({ source: "fan-menu:checkin", sourceLabel: "FanMenu -> Check In" });
         setSelectedCoordinate(null);
         setIsPlacementMode(true);
-        break;
-      case "activity":
-        music.sfx("open");
-        setActivityDebugSource({ source: "fan-menu:activity", sourceLabel: "FanMenu -> Activity" });
-        setIsSetActivityOpen(true);
         break;
       case "transaction":
         openFunds({ source: "fan-menu:transaction", sourceLabel: "FanMenu -> Add Transaction" });
@@ -2231,6 +2224,7 @@ export default function TripMap({
                   setIsTravelerStateOpen(false);
                 }}
                 onToast={showToast}
+                debugSource={stateDebugSource}
               />
             </FeatureBoundary>
           </div>
@@ -2269,7 +2263,7 @@ export default function TripMap({
             role={role}
             onOpenState={() => {
               music.sfx("open");
-              setActivityDebugSource({ source: "status-card:state", sourceLabel: "Status card" });
+              setStateDebugSource({ source: "status-card:state", sourceLabel: "Status card" });
               setIsTravelerStateOpen(true);
             }}
           />
@@ -2451,28 +2445,6 @@ export default function TripMap({
         debugSource={storyDebugSource}
       />
 
-      {role === "traveler" && (
-        <FeatureBoundary
-          resetKeys={[isSetActivityOpen, token]}
-          onClose={() => {
-            music.sfx("close");
-            setIsSetActivityOpen(false);
-          }}
-          title="Activity editor hit a problem."
-          message="Try again, or close the activity editor."
-          fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
-        >
-          <SetActivitySheet
-            open={isSetActivityOpen}
-            token={token}
-            debugSource={activityDebugSource}
-            onOpenChange={(nextOpen) => {
-              if (!nextOpen) music.sfx("close");
-              setIsSetActivityOpen(nextOpen);
-            }}
-          />
-        </FeatureBoundary>
-      )}
       </DesktopMapFrame>
     </section>
   );

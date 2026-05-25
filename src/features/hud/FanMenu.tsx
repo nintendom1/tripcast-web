@@ -1,11 +1,11 @@
 import * as React from "react";
 import { useEffect } from "react";
-import { MapPin, Sparkles, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
+import { MapPin, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { TERMS } from "../../copy/terminology";
 
-export type FanAction = "checkin" | "activity" | "transaction" | "mission" | "vote";
+export type FanAction = "checkin" | "transaction" | "mission" | "vote";
 
 export interface FanMenuProps {
   open: boolean;
@@ -20,11 +20,6 @@ const ITEM_CONFIG: Record<FanAction, { label: string; icon: React.ReactNode; col
     label: `${TERMS.checkIn} / ${TERMS.story}`,
     icon: <MapPin className="h-4 w-4" aria-hidden="true" />,
     color: "var(--flag)",
-  },
-  activity: {
-    label: "Set Activity",
-    icon: <Sparkles className="h-4 w-4" aria-hidden="true" />,
-    color: "var(--amber)",
   },
   transaction: {
     label: "Add Spending",
@@ -45,7 +40,6 @@ const ITEM_CONFIG: Record<FanAction, { label: string; icon: React.ReactNode; col
 
 const DEFAULT_TRAVELER_ITEMS: FanAction[] = [
   "checkin",
-  "activity",
   "transaction",
   "mission",
   "vote",
