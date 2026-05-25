@@ -673,6 +673,7 @@ export default function TripMap({
   const sessionData = useQuery(tripcastApi.auth.currentSession, { token });
   const followerSession = useQuery(tripcastApi.followers.followerCurrentSession, { token });
   const currentUserId = sessionData?.userId || followerSession?.userId;
+  const currentSessionId = sessionData?.sessionId || followerSession?.sessionId;
 
   const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
   const journalEvents = useMemo(() => queriedJournalEvents ?? [], [queriedJournalEvents]);
@@ -680,7 +681,8 @@ export default function TripMap({
 
   const messages = useQuery(tripcastApi.messages.listMessages, { token }) ?? [];
   const { unreadCount: messagingUnread, markAllRead: markMessagingRead, lastReadAt } = 
-    useMessagingUnread(messages, currentUserId, role);
+    useMessagingUnread(messages, currentUserId, role, currentSessionId);
+  const visibleMessagingUnread = isMessagingOpen ? 0 : messagingUnread;
 
   const allMissionsForBadge = useQuery(
     tripcastApi.missions.travelerListMissions,
@@ -1076,7 +1078,6 @@ export default function TripMap({
       return;
     }
     music.sfx("open");
-    markMessagingRead();
     setIsMessagingOpen(true);
     setIsJournalOpen(false);
     setIsMissionsPanelOpen(false);
@@ -1859,8 +1860,8 @@ export default function TripMap({
           missions: missionBadgeCount,
           votes: hasUnseenVote ? 1 : 0,
           votesPulsing: hasUnseenVote,
-          messaging: messagingUnread,
-          messagingPulsing: messagingUnread > 0,
+          messaging: visibleMessagingUnread,
+          messagingPulsing: visibleMessagingUnread > 0,
         }}
         addLabel={role === "traveler" ? "Add" : `Propose ${TERMS.mission.toLowerCase()}`}
         showAdd={role === "traveler"}
@@ -2101,8 +2102,8 @@ export default function TripMap({
             missions: missionBadgeCount,
             votes: hasUnseenVote ? 1 : 0,
             votesPulsing: hasUnseenVote,
-            messaging: messagingUnread,
-            messagingPulsing: messagingUnread > 0,
+            messaging: visibleMessagingUnread,
+            messagingPulsing: visibleMessagingUnread > 0,
           }}
         />
       </div>
@@ -2243,8 +2244,10 @@ export default function TripMap({
         messages={messages}
         token={token}
         userId={currentUserId}
+        sessionId={currentSessionId}
         role={role}
         lastReadAt={lastReadAt}
+        onMarkRead={markMessagingRead}
         onNavigateToItem={handleNavigateToMessageItem}
       />
 
