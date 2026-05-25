@@ -1,9 +1,10 @@
 import * as React from "react";
-import { Settings } from "lucide-react";
+import { Moon, Settings, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import type { Role } from "@/convex/tripcastApi";
 import { TERMS } from "../../copy/terminology";
+import { useTheme } from "../../providers/ThemeProvider";
 
 export interface TopBarProps {
   role: Role;
@@ -21,6 +22,9 @@ export interface TopBarProps {
 export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
   const isTraveler = role === "traveler";
   const roleLabel = isTraveler ? TERMS.traveler : TERMS.follower;
+  const { resolvedTheme, setMode } = useTheme();
+  const nextTheme = resolvedTheme === "meadow" ? "constellation" : "meadow";
+  const NextThemeIcon = nextTheme === "meadow" ? Sun : Moon;
 
   return (
     <header
@@ -53,6 +57,14 @@ export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setMode(nextTheme)}
+          aria-label={`Switch to ${nextTheme === "meadow" ? "light" : "dark"} theme`}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper-2)]"
+        >
+          <NextThemeIcon className="h-[18px] w-[18px]" aria-hidden="true" />
+        </button>
         <span
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.12em]",
