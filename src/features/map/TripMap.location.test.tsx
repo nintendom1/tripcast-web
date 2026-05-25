@@ -353,6 +353,16 @@ describe("TripMap location marker", () => {
     expect(screen.getByTestId("journal-sheet")).toBeInTheDocument();
   });
 
+  it("offsets map HUD controls away from MapLibre controls", () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    expect(screen.getByRole("button", { name: /mute soundtrack/i })).toHaveClass("right-14");
+    expect(screen.getByRole("button", { name: "Center map on traveler" })).toHaveClass("bottom-[118px]");
+    expect(screen.getByRole("navigation", { name: "Map sections" }).parentElement).toHaveClass("bottom-[42px]");
+  });
+
   it("closes Traveler State when a Dock sheet opens", async () => {
     setupQueries();
 
