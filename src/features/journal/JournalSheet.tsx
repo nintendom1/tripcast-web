@@ -198,6 +198,11 @@ export default function JournalSheet({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
   useEffect(() => {
+    if (open) return;
+    setViewMode("list");
+    setCreateError(null);
+  }, [open]);
+  useEffect(() => {
     return () => { if (wasOpen.current) onMarkAllRead(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -247,8 +252,9 @@ export default function JournalSheet({
     <Sheet
       open={open}
       modal={false}
+      disablePointerDismissal={isPickingCoordinate}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
+        if (!nextOpen && !isPickingCoordinate) {
           log.logInteraction("sheet:close", { trigger: "backdrop" });
           onClose();
         }
