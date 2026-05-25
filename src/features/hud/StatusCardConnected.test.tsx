@@ -104,10 +104,63 @@ describe("StatusCardConnected", () => {
     render(<StatusCardConnected token="token" role="follower" onOpenState={vi.fn()} />);
 
     expect(screen.getByText("Status update")).toBeInTheDocument();
-    expect(screen.getByText(/Comfortable/)).toBeInTheDocument();
+    expect(screen.getByText(/Schedule: Comfortable/)).toBeInTheDocument();
     expect(screen.queryByText(/AUTO EST/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/base saved/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/estimated from that saved status/i)).toBeInTheDocument();
+  });
+
+  it("shows one elapsed timer when activity and state timestamps are both present", () => {
+    const now = Date.UTC(2024, 0, 1, 20, 7, 0);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
+      if (ref === tripcastApi.travelerState.travelerGetState) {
+        return {
+          state: {
+            energyScore: 60,
+            stomachScore: 80,
+            stressScore: 20,
+            schedulePressureLevel: "comfortable",
+            updatedAt: now - 2 * 60 * 60 * 1000,
+          },
+          visibility: null,
+        };
+      }
+      if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) {
+        return {
+          _id: "activity-1",
+          _creationTime: now - 30 * 60 * 1000,
+          status: "active",
+          title: "Museum",
+          startedAt: now - 30 * 60 * 1000,
+          createdAt: now - 30 * 60 * 1000,
+          updatedAt: now - 30 * 60 * 1000,
+          createdBySessionId: "session-1",
+          updatedBySessionId: "session-1",
+        };
+      }
+      if (ref === tripcastApi.travelerAutoState.travelerGetAutoState) {
+        return {
+          autoStateEnabled: false,
+          autoTimeZone: "UTC",
+          updatedAt: null,
+          updatedBySessionId: null,
+        };
+      }
+      if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
+        return { updatedAt: null };
+      }
+      return null;
+    });
+
+    render(<StatusCardConnected token="token" role="traveler" onOpenState={vi.fn()} />);
+
+    expect(screen.getByText("Museum")).toBeInTheDocument();
+    expect(screen.getByText(/for 30m/)).toBeInTheDocument();
+    expect(screen.getByText(/Schedule: Comfortable/)).toBeInTheDocument();
+    expect(screen.queryByText(/Updated/)).not.toBeInTheDocument();
   });
 
   it("shows the Traveler's saved timezone clock inside the status card", () => {

@@ -414,8 +414,8 @@ export function StatusCardConnected({
   const activityEmoji = activity?.emoji ?? stateFacts?.statusEmoji ?? getStateEmoji(stateFacts);
   const activitySince = activity ? `for ${formatElapsed(activity.startedAt, now)}` : null;
   const statusMeta = [
-    scheduleLabel,
-    stateUpdatedAgo ? `Updated ${stateUpdatedAgo}` : null,
+    scheduleLabel ? `Schedule: ${scheduleLabel}` : null,
+    !activity && stateUpdatedAgo ? `Updated ${stateUpdatedAgo}` : null,
   ].filter(Boolean).join(" · ") || null;
 
   return (
