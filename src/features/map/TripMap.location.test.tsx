@@ -492,7 +492,7 @@ describe("TripMap location marker", () => {
     });
   });
 
-  it("runs Trip Replay with playhead clipping, shuttle logging, and Back to Live", async () => {
+  it("runs Trip Replay with playhead clipping, shuttle logging, and Close", async () => {
     setEnabled(true);
     setupQueries({
       checkpoints: [
@@ -551,7 +551,8 @@ describe("TripMap location marker", () => {
 
     const speedSlider = screen.getByLabelText("Replay speed");
     fireEvent.pointerDown(speedSlider);
-    fireEvent.change(speedSlider, { target: { value: "4" } });
+    expect(speedSlider).toHaveAttribute("max", "16");
+    fireEvent.change(speedSlider, { target: { value: "16" } });
     fireEvent.pointerUp(speedSlider);
 
     await waitFor(() => {
@@ -560,7 +561,8 @@ describe("TripMap location marker", () => {
       expect(getLogs().some((entry) => entry.action === "replay:coordinate-snap")).toBe(true);
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /back to live/i }));
+    const callsBeforeClose = mapEaseTo.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: /close trip replay/i }));
 
     await waitFor(() => {
       expect(screen.queryByRole("group", { name: "Trip Replay" })).not.toBeInTheDocument();
@@ -571,6 +573,8 @@ describe("TripMap location marker", () => {
         true,
         null,
       );
+      expect(mapEaseTo).toHaveBeenCalledTimes(callsBeforeClose);
+      expect(getLogs().some((entry) => entry.action === "replay:close")).toBe(true);
     });
   });
 
@@ -599,7 +603,16 @@ describe("TripMap location marker", () => {
 
     expect(screen.getByRole("button", { name: /mute soundtrack/i })).toHaveClass("right-14");
     expect(screen.getByRole("button", { name: "Center map on traveler" })).toHaveClass("bottom-[118px]");
-    expect(screen.getByRole("navigation", { name: "Map sections" }).parentElement).toHaveClass("bottom-[42px]");
+    expect(screen.getByRole("navigation", { name: "Map sections" }).parentElement).toHaveClass("bottom-3");
+  });
+
+  it("uses the same top HUD row structure for Followers", () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    expect(screen.getByRole("group", { name: "Traveler status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Replay" }).parentElement).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
   });
 
   it("closes Traveler State when a Dock sheet opens", async () => {
