@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
@@ -12,6 +12,7 @@ import {
   Infinity,
   LogOut,
   Play,
+  Route,
   ShieldAlert,
   Trophy,
   Moon,
@@ -33,6 +34,7 @@ import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
+  LiveTrailDeletePreview,
   MissionModerationMode,
   MissionRateLimitPreset,
 } from "../../convex/tripcastApi";
@@ -78,7 +80,7 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "bulk-import" | "bulk-export" | "debug-logs";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "debug-logs";
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -127,6 +129,26 @@ function detectBrowserTimeZone(): string | null {
     return null;
   }
 }
+
+function formatDateInputValue(ms: number, timeZone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(ms));
+    const year = parts.find((part) => part.type === "year")?.value;
+    const month = parts.find((part) => part.type === "month")?.value;
+    const day = parts.find((part) => part.type === "day")?.value;
+    if (year && month && day) return `${year}-${month}-${day}`;
+  } catch {
+    // Fall back to UTC below.
+  }
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+type LiveTrailPreviewSample = LiveTrailDeletePreview["samples"][number];
 
 function TravelerTimezoneSection({ token }: { token: string }) {
   const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, {
@@ -347,6 +369,227 @@ function FollowerAttributionToggle({ token }: { token: string }) {
   );
 }
 
+function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogger }) {
+  const fallbackTimeZone = detectBrowserTimeZone() ?? "UTC";
+  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
+  const status = useQuery(tripcastApi.liveTrail.travelerGetLiveTrailStatus, { token });
+  const setEnabled = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailEnabled);
+  const setVisibility = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailVisibility);
+  const deleteRange = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailRange);
+
+  const timeZone = preferences?.travelerTimeZone ?? fallbackTimeZone;
+  const [startDate, setStartDate] = useState(() => formatDateInputValue(Date.now(), fallbackTimeZone));
+  const [endDate, setEndDate] = useState(() => formatDateInputValue(Date.now(), fallbackTimeZone));
+  const [savingField, setSavingField] = useState<"enabled" | "visibility" | "delete" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const rangeIsValid = Boolean(startDate && endDate && startDate <= endDate);
+
+  const preview = useQuery(
+    tripcastApi.liveTrail.travelerPreviewLiveTrailDeleteRange,
+    rangeIsValid ? { token, startDate, endDate, timeZone } : "skip",
+  );
+
+  const enabled = status?.enabled ?? false;
+  const visibleToFollowers = status?.visibleToFollowers ?? false;
+  const previewCount = preview?.count ?? 0;
+
+  useEffect(() => {
+    log.logInteraction("live-trail:settings:open");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!rangeIsValid) return;
+    log.logInteraction("live-trail:preview:request", {
+      startDate,
+      endDate,
+      timeZone,
+    });
+  }, [endDate, log, rangeIsValid, startDate, timeZone]);
+
+  useEffect(() => {
+    if (!preview) return;
+    log.logInteraction("live-trail:preview:result", {
+      startDate,
+      endDate,
+      timeZone: preview.timeZone,
+      count: preview.count,
+    });
+  }, [endDate, log, preview, startDate]);
+
+  async function handleEnabledChange(nextEnabled: boolean) {
+    if (savingField) return;
+    setSavingField("enabled");
+    setError(null);
+    log.logInteraction("live-trail:enabled:change", { enabled: nextEnabled });
+    try {
+      await setEnabled({ token, enabled: nextEnabled });
+      log.logInteraction("live-trail:enabled:result", { enabled: nextEnabled, ok: true });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      log.error("live-trail:enabled:error", "mutation", { message });
+    } finally {
+      setSavingField(null);
+    }
+  }
+
+  async function handleVisibilityChange(nextVisible: boolean) {
+    if (savingField) return;
+    setSavingField("visibility");
+    setError(null);
+    log.logInteraction("live-trail:visibility:change", { visible: nextVisible });
+    try {
+      await setVisibility({ token, visibleToFollowers: nextVisible });
+      log.logInteraction("live-trail:visibility:result", { visible: nextVisible, ok: true });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      log.error("live-trail:visibility:error", "mutation", { message });
+    } finally {
+      setSavingField(null);
+    }
+  }
+
+  async function handleDeleteRange() {
+    if (savingField || !rangeIsValid || previewCount === 0) return;
+    setSavingField("delete");
+    setError(null);
+    log.logInteraction("live-trail:delete-range:confirm", {
+      startDate,
+      endDate,
+      timeZone,
+      previewCount,
+    });
+    try {
+      const result = await deleteRange({ token, startDate, endDate, timeZone });
+      log.logInteraction("live-trail:delete-range:result", {
+        deleted: result.deleted,
+        ok: true,
+      });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      log.error("live-trail:delete-range:error", "mutation", { message });
+    } finally {
+      setSavingField(null);
+    }
+  }
+
+  return (
+    <div className="grid gap-8">
+      <OptionsSection label="Recording">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            icon={Route}
+            title="Live Trail"
+            detail="Records GPS breadcrumbs only while Live GPS is on."
+            checked={enabled}
+            onChange={handleEnabledChange}
+          />
+          <OptionsSwitchRow
+            icon={Eye}
+            title="Show to Followers"
+            detail="Followers see an approximate recent route, not precise breadcrumb data."
+            checked={visibleToFollowers}
+            onChange={handleVisibilityChange}
+          />
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Delete Trail">
+        <OptionsGroup>
+          <div className="grid gap-5 p-4 sm:p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
+                Start date
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                  className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
+                End date
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-2">
+              <LiveTrailPreviewMap samples={preview?.samples ?? []} />
+              <p className="text-sm text-[var(--ink-3)]" aria-live="polite">
+                {!rangeIsValid
+                  ? "Choose an end date on or after the start date."
+                  : preview
+                    ? `${previewCount} breadcrumb${previewCount === 1 ? "" : "s"} selected in ${timeZone}.`
+                    : `Loading preview in ${timeZone}...`}
+              </p>
+            </div>
+
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={!rangeIsValid || previewCount === 0 || savingField === "delete"}
+              onClick={() => void handleDeleteRange()}
+              className="w-full sm:w-fit"
+            >
+              {savingField === "delete" ? "Deleting..." : "Delete selected breadcrumbs"}
+            </Button>
+
+            {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+    </div>
+  );
+}
+
+function LiveTrailPreviewMap({ samples }: { samples: LiveTrailPreviewSample[] }) {
+  const points = useMemo(() => {
+    if (samples.length === 0) return "";
+    if (samples.length === 1) return "120,70";
+
+    const minLat = Math.min(...samples.map((sample) => sample.lat));
+    const maxLat = Math.max(...samples.map((sample) => sample.lat));
+    const minLon = Math.min(...samples.map((sample) => sample.lon));
+    const maxLon = Math.max(...samples.map((sample) => sample.lon));
+    const latSpan = Math.max(maxLat - minLat, 0.000001);
+    const lonSpan = Math.max(maxLon - minLon, 0.000001);
+
+    return samples
+      .map((sample) => {
+        const x = 16 + ((sample.lon - minLon) / lonSpan) * 208;
+        const y = 124 - ((sample.lat - minLat) / latSpan) * 108;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  }, [samples]);
+
+  return (
+    <div
+      role="img"
+      aria-label="Live Trail deletion preview map"
+      className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--meter-track)]"
+    >
+      <svg viewBox="0 0 240 140" className="block h-40 w-full" aria-hidden>
+        <rect width="240" height="140" fill="var(--meter-track)" />
+        <path d="M0 108 C54 88 95 116 142 92 S206 57 240 67" fill="none" stroke="var(--line-soft)" strokeWidth="2" />
+        <path d="M0 47 C39 65 82 39 130 50 S199 81 240 39" fill="none" stroke="var(--line-soft)" strokeWidth="2" />
+        {samples.length > 1 ? (
+          <polyline points={points} fill="none" stroke="var(--flag)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        ) : null}
+        {samples.length === 1 ? <circle cx="120" cy="70" r="5" fill="var(--flag)" /> : null}
+      </svg>
+    </div>
+  );
+}
+
 export default function OptionsSheet({
   open,
   onOpenChange,
@@ -435,6 +678,11 @@ export default function OptionsSheet({
               title={TERMS.travelFunds}
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "live-trail" ? (
+            <SubViewHeader
+              title="Live Trail"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
           ) : view === "emergency-reset" ? (
             <EmergencyResetContent
               token={session.token}
@@ -462,6 +710,12 @@ export default function OptionsSheet({
                 />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "live-trail" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <LiveTrailSettingsSheet token={session.token} log={log} />
+              </OptionsContentFrame>
+            </SheetBody>
           ) : view === "options" ? (
             <OptionsHome
               role={role}
@@ -471,6 +725,7 @@ export default function OptionsSheet({
               onManageFollowers={onManageFollowers}
               onReplayFollowerTour={onReplayFollowerTour}
               onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
+              onLiveTrail={() => { music.sfx("page"); navigateTo("live-trail"); }}
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
@@ -570,6 +825,7 @@ function OptionsHome({
   onManageFollowers,
   onReplayFollowerTour,
   onTravelFunds,
+  onLiveTrail,
   onBulkImport,
   onBulkExport,
   onEmergencyReset,
@@ -584,6 +840,7 @@ function OptionsHome({
   onManageFollowers: () => void;
   onReplayFollowerTour: () => void;
   onTravelFunds: () => void;
+  onLiveTrail: () => void;
   onDebugLogs: () => void;
   onBulkImport: () => void;
   onBulkExport: () => void;
@@ -629,6 +886,17 @@ function OptionsHome({
         <OptionsSection label="Account">
           <OptionsGroup>
             <MapSettingsSection token={session.token} role={role} />
+            {role === "traveler" ? (
+              <OptionsRow
+                icon={Route}
+                title="Live Trail"
+                detail="GPS breadcrumbs, follower visibility, and cleanup"
+                onClick={() => {
+                  log.logUi("action:live-trail-settings");
+                  onLiveTrail();
+                }}
+              />
+            ) : null}
 
             <InfoRow
               icon={User}

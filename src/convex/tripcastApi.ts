@@ -144,6 +144,21 @@ export type FollowerLiveTrail = {
   samples: FollowerLiveTrailSample[];
 };
 
+export type LiveTrailPreviewSample = {
+  _id: string;
+  lat: number;
+  lon: number;
+  sampledAt: number;
+};
+
+export type LiveTrailDeletePreview = {
+  startMs: number;
+  endExclusiveMs: number;
+  timeZone: string;
+  count: number;
+  samples: LiveTrailPreviewSample[];
+};
+
 export type LinkedMissionAction = "planned" | "visible" | "leave";
 
 export type RouteVoteOptionInput = {
@@ -1170,6 +1185,18 @@ export const tripcastApi = {
       "mutation",
       "public",
       { token: string; recentMs?: number },
+      { deleted: number }
+    >,
+    travelerPreviewLiveTrailDeleteRange: (anyApi as any).liveTrail.travelerPreviewLiveTrailDeleteRange as FunctionReference<
+      "query",
+      "public",
+      { token: string; startDate: string; endDate: string; timeZone: string },
+      LiveTrailDeletePreview
+    >,
+    travelerDeleteLiveTrailRange: (anyApi as any).liveTrail.travelerDeleteLiveTrailRange as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; startDate: string; endDate: string; timeZone: string },
       { deleted: number }
     >,
     travelerGetLiveTrailStatus: (anyApi as any).liveTrail.travelerGetLiveTrailStatus as FunctionReference<

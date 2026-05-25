@@ -6,7 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { DollarSign, Eye, EyeOff, Pause, Play, Route, RotateCcw, Trash2 } from "lucide-react";
+import { DollarSign, Play, RotateCcw } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -446,69 +446,6 @@ function TripReplayHud({
   );
 }
 
-function LiveTrailControls({
-  enabled,
-  visibleToFollowers,
-  sampleCount,
-  onStart,
-  onPause,
-  onToggleVisibility,
-  onDeleteRecent,
-}: {
-  enabled: boolean;
-  visibleToFollowers: boolean;
-  sampleCount: number;
-  onStart: () => void;
-  onPause: () => void;
-  onToggleVisibility: () => void;
-  onDeleteRecent: () => void;
-}) {
-  return (
-    <div
-      role="group"
-      aria-label="Live Trail controls"
-      className="flex flex-wrap items-center gap-1.5"
-    >
-      {enabled ? (
-        <span className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[var(--flag)] px-2.5 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)]">
-          <Route className="h-3.5 w-3.5" aria-hidden="true" />
-          Live Trail ON
-        </span>
-      ) : null}
-      <button
-        type="button"
-        onClick={enabled ? onPause : onStart}
-        aria-pressed={enabled}
-        aria-label={enabled ? "Pause Live Trail" : "Start Live Trail"}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-2.5 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)]"
-      >
-        {enabled ? <Pause className="h-3.5 w-3.5" aria-hidden="true" /> : <Play className="h-3.5 w-3.5" aria-hidden="true" />}
-        {enabled ? "Pause" : "Start"}
-      </button>
-      <button
-        type="button"
-        onClick={onToggleVisibility}
-        aria-pressed={visibleToFollowers}
-        aria-label={visibleToFollowers ? "Hide Live Trail from Followers" : "Show Live Trail to Followers"}
-        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-2.5 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)]"
-      >
-        {visibleToFollowers ? <EyeOff className="h-3.5 w-3.5" aria-hidden="true" /> : <Eye className="h-3.5 w-3.5" aria-hidden="true" />}
-        {visibleToFollowers ? "Hide" : "Show"}
-      </button>
-      <button
-        type="button"
-        onClick={onDeleteRecent}
-        aria-label="Delete recent Live Trail trace"
-        className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-2.5 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-danger)]"
-      >
-        <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-        Delete recent
-        {sampleCount > 0 ? <span className="text-[var(--ink-3)]">{sampleCount}</span> : null}
-      </button>
-    </div>
-  );
-}
-
 function ConvexCheckpointSheet({
   selectedCoordinate,
   token,
@@ -842,8 +779,6 @@ export default function TripMap({
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlayheadTime, setReplayPlayheadTime] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
-  const [liveTrailEnabledOverride, setLiveTrailEnabledOverride] = useState<boolean | null>(null);
-  const [liveTrailVisibilityOverride, setLiveTrailVisibilityOverride] = useState<boolean | null>(null);
   const canWrite = role === "traveler";
   const { resolvedMapBase } = useTheme();
   const sheetPersonalities = useSheetPersonalities();
@@ -858,10 +793,7 @@ export default function TripMap({
   const stopTravelerLocationSharing = useMutation(
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
-  const setLiveTrailEnabled = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailEnabled);
-  const setLiveTrailVisibility = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailVisibility);
   const recordLiveTrailSample = useMutation(tripcastApi.liveTrail.travelerRecordLiveTrailSample);
-  const deleteRecentLiveTrail = useMutation(tripcastApi.liveTrail.travelerDeleteRecentLiveTrail);
   const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
@@ -874,14 +806,7 @@ export default function TripMap({
     tripcastApi.liveTrail.followerListLiveTrailSamples,
     role === "follower" ? { token } : "skip",
   );
-  const queriedLiveTrailEnabled = travelerLiveTrailStatus?.enabled === true;
-  const queriedLiveTrailVisibleToFollowers = travelerLiveTrailStatus?.visibleToFollowers === true;
-  const liveTrailEnabled = role === "traveler"
-    ? (liveTrailEnabledOverride ?? queriedLiveTrailEnabled)
-    : false;
-  const liveTrailVisibleToFollowers = role === "traveler"
-    ? (liveTrailVisibilityOverride ?? queriedLiveTrailVisibleToFollowers)
-    : false;
+  const liveTrailEnabled = role === "traveler" && travelerLiveTrailStatus?.enabled === true;
   const liveTrailSamples =
     role === "traveler"
       ? (travelerLiveTrailStatus?.samples ?? [])
@@ -1720,27 +1645,19 @@ export default function TripMap({
 
   useEffect(() => {
     liveTrailEnabledRef.current = liveTrailEnabled;
-    if (!liveTrailEnabled) {
-      liveTrailCanRecordRef.current = false;
-    } else if (liveTrailEnabledOverride === null) {
-      liveTrailCanRecordRef.current = true;
+    liveTrailCanRecordRef.current = liveTrailEnabled;
+    if (!travelerLiveTrailStatus) return;
+    const latestSample = travelerLiveTrailStatus.samples.at(-1);
+    if (latestSample) {
+      lastLiveTrailSampleRef.current = {
+        lat: latestSample.lat,
+        lon: latestSample.lon,
+        sentAt: latestSample.sampledAt,
+      };
+    } else {
+      lastLiveTrailSampleRef.current = null;
     }
-  }, [liveTrailEnabled, liveTrailEnabledOverride]);
-
-  useEffect(() => {
-    if (liveTrailEnabledOverride !== null && travelerLiveTrailStatus?.enabled === liveTrailEnabledOverride) {
-      setLiveTrailEnabledOverride(null);
-    }
-  }, [liveTrailEnabledOverride, travelerLiveTrailStatus?.enabled]);
-
-  useEffect(() => {
-    if (
-      liveTrailVisibilityOverride !== null &&
-      travelerLiveTrailStatus?.visibleToFollowers === liveTrailVisibilityOverride
-    ) {
-      setLiveTrailVisibilityOverride(null);
-    }
-  }, [liveTrailVisibilityOverride, travelerLiveTrailStatus?.visibleToFollowers]);
+  }, [liveTrailEnabled, travelerLiveTrailStatus]);
 
   useEffect(() => {
     if (!liveTrailPathVisible) return;
@@ -1754,7 +1671,7 @@ export default function TripMap({
   // Track browser location only after an explicit Traveler opt-in.
   useEffect(() => {
     if (role !== "traveler" || !navigator.geolocation) return;
-    if (!isLocationSharing && !liveTrailEnabled) return;
+    if (!isLocationSharing) return;
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
@@ -1795,7 +1712,7 @@ export default function TripMap({
     };
   // publish* only uses refs plus stable mutation inputs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocationSharing, liveTrailEnabled, role, token]);
+  }, [isLocationSharing, role, token]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -1840,8 +1757,6 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadTime(null);
     lastLiveTrailSampleRef.current = null;
-    setLiveTrailEnabledOverride(null);
-    setLiveTrailVisibilityOverride(null);
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -1907,97 +1822,6 @@ export default function TripMap({
     stopTravelerLocationSharing({ token }).catch(() => {});
   }
 
-  function handleStartLiveTrail() {
-    music.sfx("tap");
-    liveTrailEnabledRef.current = true;
-    liveTrailCanRecordRef.current = false;
-    liveTrailPermissionLoggedRef.current = false;
-    lastLiveTrailSampleRef.current = null;
-    setLiveTrailEnabledOverride(true);
-    log.logInteraction("live-trail:tracking:start", {
-      sampleCount: liveTrailSamples.length,
-      visibleToFollowers: liveTrailVisibleToFollowers,
-    });
-    log.logInteraction("live-trail:permission:request", {
-      available: Boolean(navigator.geolocation),
-    });
-    if (!navigator.geolocation) {
-      log.logInteraction("live-trail:permission:result", { result: "unavailable" });
-    }
-    setLiveTrailEnabled({ token, enabled: true })
-      .then(() => {
-        liveTrailCanRecordRef.current = true;
-        if (livePositionRef.current) {
-          publishLiveTrailSample(livePositionRef.current);
-        }
-      })
-      .catch((error) => {
-        liveTrailEnabledRef.current = false;
-        liveTrailCanRecordRef.current = false;
-        setLiveTrailEnabledOverride(false);
-        log.error("live-trail:tracking:start:error", "mutation", {
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
-  }
-
-  function handlePauseLiveTrail() {
-    music.sfx("tap");
-    liveTrailEnabledRef.current = false;
-    liveTrailCanRecordRef.current = false;
-    liveTrailPermissionLoggedRef.current = false;
-    lastLiveTrailSampleRef.current = null;
-    setLiveTrailEnabledOverride(false);
-    log.logInteraction("live-trail:tracking:pause", {
-      sampleCount: liveTrailSamples.length,
-    });
-    setLiveTrailEnabled({ token, enabled: false }).catch((error) => {
-      liveTrailEnabledRef.current = true;
-      liveTrailCanRecordRef.current = true;
-      setLiveTrailEnabledOverride(true);
-      log.error("live-trail:tracking:pause:error", "mutation", {
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }
-
-  function handleToggleLiveTrailVisibility() {
-    music.sfx("tap");
-    const nextVisible = !liveTrailVisibleToFollowers;
-    setLiveTrailVisibilityOverride(nextVisible);
-    log.logInteraction("live-trail:visibility:update", {
-      visibleToFollowers: nextVisible,
-      sampleCount: liveTrailSamples.length,
-    });
-    setLiveTrailVisibility({ token, visibleToFollowers: nextVisible }).catch((error) => {
-      setLiveTrailVisibilityOverride(!nextVisible);
-      log.error("live-trail:visibility:error", "mutation", {
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
-  }
-
-  function handleDeleteRecentLiveTrail() {
-    music.sfx("tap");
-    lastLiveTrailSampleRef.current = null;
-    deleteRecentLiveTrail({ token })
-      .then((result) => {
-        log.logInteraction("live-trail:delete-recent", {
-          deleted: result.deleted,
-        });
-        showToast(
-          result.deleted > 0
-            ? "Recent Live Trail deleted."
-            : "No recent Live Trail to delete.",
-        );
-      })
-      .catch((error) => {
-        log.error("live-trail:delete-recent:error", "mutation", {
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
-  }
-
   function handleNavigateToMessageItem(type: string, id: string) {
     music.sfx("page");
     setIsMessagingOpen(false);
@@ -2024,6 +1848,12 @@ export default function TripMap({
     if (isLocationSharing) {
       stopLocationSharing();
     } else {
+      if (liveTrailEnabledRef.current) {
+        liveTrailPermissionLoggedRef.current = false;
+        log.logInteraction("live-trail:permission:request", {
+          available: Boolean(navigator.geolocation),
+        });
+      }
       isLocationSharingRef.current = true;
       setIsLocationSharing(true);
       if (livePosition) {
@@ -2914,7 +2744,11 @@ export default function TripMap({
         </FeatureBoundary>
         <div className="flex items-center justify-between gap-2">
           {role === "traveler" ? (
-            <LivePill on={isLocationSharing} onToggle={handleToggleLocationSharing} />
+            <LivePill
+              on={isLocationSharing}
+              onToggle={handleToggleLocationSharing}
+              trailEnabled={liveTrailEnabled}
+            />
           ) : (
             <span aria-hidden="true" />
           )}
@@ -2941,17 +2775,6 @@ export default function TripMap({
             />
           </FeatureBoundary>
         </div>
-        {role === "traveler" ? (
-          <LiveTrailControls
-            enabled={liveTrailEnabled}
-            visibleToFollowers={liveTrailVisibleToFollowers}
-            sampleCount={travelerLiveTrailStatus?.sampleCount ?? liveTrailSamples.length}
-            onStart={handleStartLiveTrail}
-            onPause={handlePauseLiveTrail}
-            onToggleVisibility={handleToggleLiveTrailVisibility}
-            onDeleteRecent={handleDeleteRecentLiveTrail}
-          />
-        ) : null}
       </div>
 
       <Sheet
