@@ -430,6 +430,88 @@ describe("TripMap location marker", () => {
     });
   });
 
+  it("runs Trip Replay with playhead clipping, shuttle logging, and Back to Live", async () => {
+    setEnabled(true);
+    setupQueries({
+      checkpoints: [
+        {
+          _id: "checkpoint-old",
+          _creationTime: 1,
+          title: "Old story",
+          lat: 47.61,
+          lon: -122.31,
+          source: "right_click",
+          createdAt: 1000,
+          updatedAt: 1000,
+        },
+        {
+          _id: "checkpoint-new",
+          _creationTime: 2,
+          title: "New story",
+          lat: 47.63,
+          lon: -122.33,
+          source: "right_click",
+          createdAt: 3000,
+          updatedAt: 3000,
+        },
+      ],
+      journalEvents: [
+        makeJournalEvent({
+          _id: "event-new",
+          checkpointId: "checkpoint-new",
+          title: "New story",
+          occurredAt: 3000,
+          lat: 47.63,
+          lon: -122.33,
+        }),
+        makeJournalEvent({
+          _id: "event-old",
+          checkpointId: "checkpoint-old",
+          title: "Old story",
+          occurredAt: 1000,
+          lat: 47.61,
+          lon: -122.31,
+        }),
+      ],
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+
+    expect(await screen.findByRole("group", { name: "Trip Replay" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(vi.mocked(useTripPath).mock.calls.some((call) => call[4] === 1000)).toBe(true);
+      expect(mapEaseTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ center: [-122.31, 47.61] }),
+      );
+    });
+
+    const speedSlider = screen.getByLabelText("Replay speed");
+    fireEvent.pointerDown(speedSlider);
+    fireEvent.change(speedSlider, { target: { value: "4" } });
+    fireEvent.pointerUp(speedSlider);
+
+    await waitFor(() => {
+      expect(getLogs().some((entry) => entry.action === "replay:shuttle:drag-start")).toBe(true);
+      expect(getLogs().some((entry) => entry.action === "replay:speed-shift")).toBe(true);
+      expect(getLogs().some((entry) => entry.action === "replay:coordinate-snap")).toBe(true);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /back to live/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("group", { name: "Trip Replay" })).not.toBeInTheDocument();
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        null,
+        true,
+        null,
+      );
+    });
+  });
+
   it("keeps Funds off the Dock but closes its sheet when another Dock sheet opens", async () => {
     setupQueries();
 
@@ -866,7 +948,8 @@ describe("TripMap location marker", () => {
         expect.anything(),
         expect.anything(),
         expect.anything(),
-        true
+        true,
+        null
       );
     });
 
@@ -879,7 +962,8 @@ describe("TripMap location marker", () => {
         expect.anything(),
         expect.anything(),
         expect.anything(),
-        false
+        false,
+        null
       );
     });
   });
@@ -894,7 +978,8 @@ describe("TripMap location marker", () => {
         expect.anything(),
         expect.anything(),
         null,
-        true
+        true,
+        null
       );
     });
   });
