@@ -51,8 +51,63 @@ describe("StatusCardConnected", () => {
 
     expect(screen.getByText("Museum")).toBeInTheDocument();
     expect(screen.queryByText("Energy")).not.toBeInTheDocument();
-    expect(screen.queryByText("Stomach")).not.toBeInTheDocument();
+    expect(screen.queryByText("Fullness")).not.toBeInTheDocument();
     expect(screen.queryByText("Calm")).not.toBeInTheDocument();
+  });
+
+  it("uses plain follower status copy instead of auto-estimate jargon", () => {
+    const now = Date.UTC(2024, 0, 1, 20, 7, 0);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
+      if (ref === tripcastApi.travelerState.followerGetTravelerState) {
+        return {
+          visible: true,
+          energyScore: 60,
+          stomachScore: 80,
+          stressScore: 20,
+          schedulePressureLevel: "comfortable",
+          updatedAt: now - 4 * 60 * 60 * 1000,
+        };
+      }
+      if (ref === tripcastApi.travelerAutoState.followerGetAutoState) {
+        return {
+          visible: true,
+          autoStateEnabled: true,
+          autoEnabledAt: now - 4 * 60 * 60 * 1000,
+          autoTimeZone: "UTC",
+          autoBaseEnergyScore: 60,
+          autoBaseStomachScore: 80,
+          autoBedtimeMinutes: 23 * 60,
+          autoWakeTimeMinutes: 8 * 60,
+          autoEnergyMin: 0,
+          autoEnergyMax: 100,
+          autoStomachMin: 0,
+          autoStomachMax: 150,
+          autoEnergySleepDeltaPerTick: 1,
+          autoEnergyAwakeDeltaPerTick: -1,
+          autoStomachAwakeDeltaPerTick: -2,
+          autoStomachNightAboveHungryEveryTicks: 2,
+          autoStomachNightAtOrBelowHungryEveryTicks: 4,
+        };
+      }
+      if (ref === tripcastApi.currentActivity.followerGetCurrentActivity) {
+        return null;
+      }
+      if (ref === tripcastApi.travelerPreferences.followerGetPreferences) {
+        return { visible: false };
+      }
+      return undefined;
+    });
+
+    render(<StatusCardConnected token="token" role="follower" onOpenState={vi.fn()} />);
+
+    expect(screen.getByText("Status update")).toBeInTheDocument();
+    expect(screen.getByText(/Comfortable/)).toBeInTheDocument();
+    expect(screen.queryByText(/AUTO EST/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/base saved/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/estimated from that saved status/i)).toBeInTheDocument();
   });
 
   it("shows the Traveler's saved timezone clock inside the status card", () => {

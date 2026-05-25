@@ -1616,7 +1616,7 @@ export default function TripMap({
   // CurrentActivityCard came out with the legacy chrome. The Mission
   // Complete-as-Story flow below (Part 8) replaces it for the mission case;
   // an explicit "complete this freeform activity as a Story" flow can be
-  // re-added in a later pass if the SetActivitySheet refresh wants it.
+  // re-added in a later pass if Current Activity expands beyond status entry.
 
   function handleCompleteAsStory(Mission: {
     _id: string;

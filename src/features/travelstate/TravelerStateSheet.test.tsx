@@ -20,22 +20,27 @@ vi.mock("framer-motion", () => ({
   },
 }));
 
-// Mutation order inside TravelerStateSheet:
-//   1st useMutation call → travelerUpdateState
-//   2nd useMutation call → travelerUpdateStateVisibility
+// Keep mutation mocks keyed by Convex reference so AutoStateTab renders do not
+// change callback identities and loop footer-action updates.
 
 function setupMocks({
   state = null,
   visibility = null,
   autoState = null,
+  currentActivity = null,
   updateStateFn = vi.fn().mockResolvedValue(null),
+  setActivityFn = vi.fn().mockResolvedValue("activity-id"),
   updateVisibilityFn = vi.fn().mockResolvedValue(null),
+  autoMutationFn = vi.fn().mockResolvedValue(null),
 }: {
   state?: object | null;
   visibility?: object | null;
   autoState?: object | null;
+  currentActivity?: object | null;
   updateStateFn?: ReturnType<typeof vi.fn>;
+  setActivityFn?: ReturnType<typeof vi.fn>;
   updateVisibilityFn?: ReturnType<typeof vi.fn>;
+  autoMutationFn?: ReturnType<typeof vi.fn>;
 } = {}) {
 
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
@@ -45,16 +50,18 @@ function setupMocks({
     if (ref === tripcastApi.travelerAutoState.travelerGetAutoState) {
       return autoState;
     }
+    if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) {
+      return currentActivity;
+    }
     return undefined;
   });
-  // Order inside TravelerStateSheet: updateState, updateVisibility.
-  // AutoStateTab is not mounted on the default ("state") tab so its mutations
-  // are not part of the call sequence.
-  const mutationFns = [updateStateFn, updateVisibilityFn];
-  let callCount = 0;
-
-  vi.mocked(convexReact.useMutation).mockImplementation(() => mutationFns[callCount++ % mutationFns.length] as any);
-  return { updateStateFn, updateVisibilityFn };
+  vi.mocked(convexReact.useMutation).mockImplementation((ref: unknown) => {
+    if (ref === tripcastApi.travelerState.travelerUpdateState) return updateStateFn as any;
+    if (ref === tripcastApi.currentActivity.travelerSetCurrentActivity) return setActivityFn as any;
+    if (ref === tripcastApi.travelerState.travelerUpdateStateVisibility) return updateVisibilityFn as any;
+    return autoMutationFn as any;
+  });
+  return { updateStateFn, setActivityFn, updateVisibilityFn, autoMutationFn };
 }
 
 function renderSheet(overrides?: Partial<React.ComponentProps<typeof TravelerStateSheet>>) {
@@ -177,73 +184,89 @@ describe("TravelerStateSheet — State tab", () => {
     await userEvent.click(screen.getByRole("button", { name: "Rough" }));
     await userEvent.click(screen.getByRole("button", { name: "Low" }));
     await userEvent.click(screen.getByRole("button", { name: "Clear All" }));
-    expect(screen.getByRole("button", { name: "Rough" })).not.toHaveClass("bg-navy");
-    expect(screen.getByRole("button", { name: "Low" })).not.toHaveClass("bg-navy");
+    expect(screen.getByRole("button", { name: "Rough" })).not.toHaveClass("bg-[var(--flag)]");
+    expect(screen.getByRole("button", { name: "Low" })).not.toHaveClass("bg-[var(--flag)]");
   });
 
-  it("Save State shows review panel with 'No previous entry' when state is null", async () => {
-    setupMocks({ state: null });
+  it("renders the unified Current Activity fields", () => {
+    setupMocks();
     renderSheet();
-    await userEvent.click(screen.getByRole("button", { name: "Rough" }));
-    await userEvent.click(screen.getByRole("button", { name: "Save State" }));
-    expect(screen.getByText("No previous entry")).toBeInTheDocument();
+
+    expect(screen.getByText("Current Activity")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Walking/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Activity")).toBeInTheDocument();
+    expect(screen.getByLabelText("Activity Note")).toBeInTheDocument();
+    expect(screen.getByLabelText("Place")).toBeInTheDocument();
   });
 
-  it("Save State shows 'No changes from last entry.' when form matches saved state", async () => {
+  it("loads the current activity into the unified status form", () => {
     setupMocks({
-      state: { moodValue: "rough", updatedAt: Date.now() - 60_000 },
+      currentActivity: {
+        title: "Existing walk",
+        emoji: "🚶",
+        note: "By the river",
+        locationLabel: "Waterfront",
+      },
     });
+
     renderSheet();
-    // Form populates from state via useEffect; no additional clicks needed
-    await userEvent.click(screen.getByRole("button", { name: "Save State" }));
-    expect(screen.getByText("No changes from last entry.")).toBeInTheDocument();
+
+    expect(screen.getByLabelText("Activity")).toHaveValue("Existing walk");
+    expect(screen.getByLabelText("Emoji")).toHaveValue("🚶");
+    expect(screen.getByLabelText("Activity Note")).toHaveValue("By the river");
+    expect(screen.getByLabelText("Place")).toHaveValue("Waterfront");
   });
 
-  it("Save State shows diff row when mood changes from saved state", async () => {
-    setupMocks({
-      state: { moodValue: "okay", updatedAt: Date.now() - 60_000 },
-    });
+  it("clicking a quick-activity pill sets the activity title and emoji", async () => {
+    setupMocks();
     renderSheet();
-    // Form populates with "okay"; deselect it and pick "rough"
-    await userEvent.click(screen.getByRole("button", { name: "Okay" }));
-    await userEvent.click(screen.getByRole("button", { name: "Rough" }));
-    await userEvent.click(screen.getByRole("button", { name: "Save State" }));
-    expect(screen.getByText("Mood")).toBeInTheDocument();
-    expect(screen.getByText("Okay")).toBeInTheDocument();
-    expect(screen.getByText("Rough")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Walking/ }));
+
+    expect(screen.getByLabelText("Activity")).toHaveValue("Walking");
+    expect(screen.getByLabelText("Emoji")).toHaveValue("🚶");
   });
 
-  it("Back button returns from review panel to edit form", async () => {
-    setupMocks({ state: null });
-    renderSheet();
-    await userEvent.click(screen.getByRole("button", { name: "Rough" }));
-    await userEvent.click(screen.getByRole("button", { name: "Save State" }));
-    expect(screen.getByText("No previous entry")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.getByRole("button", { name: "Save State" })).toBeInTheDocument();
-  });
-
-  it("Confirm calls updateState with the correct token and closes the panel", async () => {
-    const { updateStateFn } = setupMocks({ state: null });
+  it("Save Status calls updateState with the correct token and closes the panel", async () => {
+    const { updateStateFn, setActivityFn } = setupMocks({ state: null });
     const onClose = vi.fn();
     renderSheet({ onClose });
     await userEvent.click(screen.getByRole("button", { name: "Rough" }));
-    await userEvent.click(screen.getByRole("button", { name: "Save State" }));
-    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save Status" }));
     await waitFor(() => {
       expect(updateStateFn).toHaveBeenCalledWith(
         expect.objectContaining({ token: "test-token" }),
       );
     });
+    expect(setActivityFn).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("Save Status updates current activity only when the activity changed", async () => {
+    const { setActivityFn } = setupMocks({ state: null });
+    renderSheet();
+
+    await userEvent.click(screen.getByRole("button", { name: /Walking/ }));
+    await userEvent.type(screen.getByLabelText("Activity Note"), "Across the bridge");
+    await userEvent.type(screen.getByLabelText("Place"), "Bridge Park");
+    await userEvent.click(screen.getByRole("button", { name: "Save Status" }));
+
+    await waitFor(() => {
+      expect(setActivityFn).toHaveBeenCalledWith({
+        token: "test-token",
+        title: "Walking",
+        emoji: "🚶",
+        note: "Across the bridge",
+        locationLabel: "Bridge Park",
+      });
+    });
   });
 
   it("shows a rate-limit error in role=alert when save fails", async () => {
     const updateStateFn = vi.fn().mockRejectedValue(new Error("rate limit exceeded"));
     setupMocks({ state: null, updateStateFn });
     renderSheet();
-    await userEvent.click(screen.getByRole("button", { name: "Save State" }));
-    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save Status" }));
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Too many updates");
     });
@@ -253,8 +276,7 @@ describe("TravelerStateSheet — State tab", () => {
     const updateStateFn = vi.fn().mockRejectedValue(new Error("traveler role required"));
     setupMocks({ state: null, updateStateFn });
     renderSheet();
-    await userEvent.click(screen.getByRole("button", { name: "Save State" }));
-    await userEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save Status" }));
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Traveler access is required");
     });
@@ -277,7 +299,7 @@ describe("TravelerStateSheet — segmented redesign", () => {
     expect(body).toHaveClass("pb-28");
     expect(footer).toHaveClass("flex-none");
     expect(footer).toHaveClass("pb-[calc(var(--dock-h,76px)+16px+env(safe-area-inset-bottom))]");
-    expect(footer).toContainElement(screen.getByRole("button", { name: "Save State" }));
+    expect(footer).toContainElement(screen.getByRole("button", { name: "Save Status" }));
   });
 
   it("leads with the Energy/Stomach/Calm bars segment", () => {

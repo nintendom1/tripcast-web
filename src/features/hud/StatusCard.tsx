@@ -63,9 +63,9 @@ export function StatusCard({
   const hasActivity = Boolean(activityLabel);
   const body = (
     <div className="flex min-w-0 flex-1 flex-col gap-3">
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <div
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/70 text-[var(--ink-1)] shadow-sm"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/70 text-[var(--ink-1)] shadow-sm"
           style={{
             background: "color-mix(in oklab, var(--bg-card) 78%, var(--flag) 10%)",
           }}
@@ -108,41 +108,41 @@ export function StatusCard({
             </div>
           </div>
         </div>
-
-        {meters.length > 0 ? (
-          <div className="grid grid-cols-3 gap-3">
-            {meters.map((meter) => {
-              const max = meter.max ?? 100;
-              const pct = Math.min(100, Math.max(0, (meter.value / max) * 100));
-              const tier = tierFor((meter.value / max) * 100);
-              const color = meter.color ?? TIER_COLORS[tier];
-              return (
-                <div key={meter.label} className="flex min-w-0 flex-col gap-1.5">
-                  <div className="flex min-w-0 items-center justify-between gap-1 font-[var(--font-mono)] text-[9px] font-bold uppercase leading-none tracking-[0.08em] text-[var(--ink-3)]">
-                    <span className="min-w-0 truncate">{meter.label}</span>
-                    {meter.valueLabel ? (
-                      <span className="shrink-0 tracking-normal" style={{ color }}>
-                        {meter.valueLabel}
-                      </span>
-                    ) : null}
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-[var(--meter-track)]">
-                    <span
-                      className="block h-full rounded-full transition-[width]"
-                      style={{ width: `${pct}%`, background: color }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
       </div>
+
+      {meters.length > 0 ? (
+        <div className="grid grid-cols-3 gap-3">
+          {meters.map((meter) => {
+            const max = meter.max ?? 100;
+            const pct = Math.min(100, Math.max(0, (meter.value / max) * 100));
+            const tier = tierFor((meter.value / max) * 100);
+            const color = meter.color ?? TIER_COLORS[tier];
+            return (
+              <div key={meter.label} className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex min-w-0 items-center justify-between gap-1 font-[var(--font-mono)] text-[9px] font-bold uppercase leading-none tracking-[0.08em] text-[var(--ink-3)]">
+                  <span className="min-w-0 truncate">{meter.label}</span>
+                  {meter.valueLabel ? (
+                    <span className="shrink-0 tracking-normal" style={{ color }}>
+                      {meter.valueLabel}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-[var(--meter-track)]">
+                  <span
+                    className="block h-full rounded-full transition-[width]"
+                    style={{ width: `${pct}%`, background: color }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 
   const sharedClass = cn(
-    "relative flex items-center gap-3 rounded-3xl bg-[color-mix(in_oklab,var(--bg-card)_88%,transparent)] px-4 py-4 text-left shadow-[var(--shadow-card)] backdrop-blur-md",
+    "relative flex items-center gap-3 rounded-lg bg-[color-mix(in_oklab,var(--bg-card)_88%,transparent)] px-4 py-4 text-left shadow-[var(--shadow-card)] backdrop-blur-md",
     interactive ? "transition-transform active:scale-[0.99]" : "cursor-default",
     className,
   );

@@ -18,7 +18,6 @@ import {
   ENERGY_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
   STRESS_SCORE_FOR_LEVEL,
-  MOOD_LABELS,
   SCHEDULE_LABELS,
   getStateEmoji,
 } from "@/features/travelstate/travelerStateUtils";
@@ -396,7 +395,6 @@ export function StatusCardConnected({
   const scheduleLabel = stateFacts?.schedulePressureLevel
     ? SCHEDULE_LABELS[stateFacts.schedulePressureLevel]
     : null;
-  const moodLabel = stateFacts?.moodValue ? MOOD_LABELS[stateFacts.moodValue] : null;
   const stateUpdatedAgo = stateFacts?.updatedAt
     ? formatBaseSavedAgo(stateFacts.updatedAt, now)
     : null;
@@ -410,20 +408,15 @@ export function StatusCardConnected({
       : null;
   const activityLabel = activity
     ? activity.title
-    : scheduleLabel
-      ? `Currently ${scheduleLabel}`
-      : moodLabel
-        ? `${moodLabel} status`
-        : stateFacts
-          ? "Status update"
-          : "Waiting for status";
+    : stateFacts
+      ? "Status update"
+      : "Waiting for status";
   const activityEmoji = activity?.emoji ?? stateFacts?.statusEmoji ?? getStateEmoji(stateFacts);
   const activitySince = activity ? `for ${formatElapsed(activity.startedAt, now)}` : null;
-  const statusMeta = activity
-    ? scheduleLabel
-    : stateUpdatedAgo
-      ? `Updated ${stateUpdatedAgo}`
-      : null;
+  const statusMeta = [
+    scheduleLabel,
+    stateUpdatedAgo ? `Updated ${stateUpdatedAgo}` : null,
+  ].filter(Boolean).join(" · ") || null;
 
   return (
     <div className={className}>

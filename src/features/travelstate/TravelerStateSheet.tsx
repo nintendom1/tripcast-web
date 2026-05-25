@@ -846,6 +846,87 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               />
             </div>
 
+            <StateSegment title="Current Activity" hint="what you're doing now">
+              <div className="flex flex-wrap gap-1.5">
+                {QUICK_ACTIVITIES.map((activity) => (
+                  <button
+                    key={activity.label}
+                    type="button"
+                    onClick={() => {
+                      setActivityTitle(activity.label);
+                      setActivityEmoji(activity.emoji);
+                    }}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                      activityTitle === activity.label
+                        ? "bg-[var(--flag)] text-[var(--ink-on-brand)]"
+                        : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)] hover:text-[var(--ink-1)]",
+                    )}
+                  >
+                    <span aria-hidden="true">{activity.emoji}</span> {activity.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-[72px_1fr] gap-2">
+                <div className="grid gap-1.5">
+                  <label htmlFor="status-activity-emoji" className={stateLabelClass}>
+                    Emoji
+                  </label>
+                  <input
+                    id="status-activity-emoji"
+                    type="text"
+                    value={activityEmoji}
+                    onChange={(e) => setActivityEmoji(e.target.value.slice(0, 10))}
+                    maxLength={10}
+                    placeholder="🚶"
+                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <label htmlFor="status-activity-title" className={stateLabelClass}>
+                    Activity
+                  </label>
+                  <input
+                    id="status-activity-title"
+                    type="text"
+                    value={activityTitle}
+                    onChange={(e) => setActivityTitle(e.target.value.slice(0, 80))}
+                    placeholder="What are you doing?"
+                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-1.5">
+                <label htmlFor="status-activity-note" className={stateLabelClass}>
+                  Activity Note
+                </label>
+                <textarea
+                  id="status-activity-note"
+                  value={activityNote}
+                  onChange={(e) => setActivityNote(e.target.value.slice(0, 240))}
+                  rows={2}
+                  placeholder="Activity note (optional)"
+                  className={cn("resize-none px-3 py-2 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                />
+              </div>
+
+              <div className="grid gap-1.5">
+                <label htmlFor="status-activity-place" className={stateLabelClass}>
+                  Place
+                </label>
+                <input
+                  id="status-activity-place"
+                  type="text"
+                  value={activityLocationLabel}
+                  onChange={(e) => setActivityLocationLabel(e.target.value.slice(0, 120))}
+                  placeholder="Place name (optional)"
+                  className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                />
+              </div>
+            </StateSegment>
+
             {/* Biometrics */}
             <div className="grid gap-2">
               <button
