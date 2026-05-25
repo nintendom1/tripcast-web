@@ -117,6 +117,48 @@ export type TravelerLocation = {
   isSharing: true;
 } | null;
 
+export type LiveTrailSample = {
+  _id: string;
+  lat: number;
+  lon: number;
+  accuracy?: number;
+  sampledAt: number;
+};
+
+export type FollowerLiveTrailSample = {
+  _id: string;
+  lat: number;
+  lon: number;
+  sampledAt: number;
+};
+
+export type LiveTrailStatus = {
+  enabled: boolean;
+  visibleToFollowers: boolean;
+  sampleCount: number;
+  samples: LiveTrailSample[];
+};
+
+export type FollowerLiveTrail = {
+  visible: boolean;
+  samples: FollowerLiveTrailSample[];
+};
+
+export type LiveTrailPreviewSample = {
+  _id: string;
+  lat: number;
+  lon: number;
+  sampledAt: number;
+};
+
+export type LiveTrailDeletePreview = {
+  startMs: number;
+  endExclusiveMs: number;
+  timeZone: string;
+  count: number;
+  samples: LiveTrailPreviewSample[];
+};
+
 export type LinkedMissionAction = "planned" | "visible" | "leave";
 
 export type RouteVoteOptionInput = {
@@ -1118,6 +1160,56 @@ export const tripcastApi = {
       "public",
       { token: string },
       TravelerLocation
+    >,
+  },
+  liveTrail: {
+    travelerSetLiveTrailEnabled: (anyApi as any).liveTrail.travelerSetLiveTrailEnabled as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; enabled: boolean },
+      null
+    >,
+    travelerSetLiveTrailVisibility: (anyApi as any).liveTrail.travelerSetLiveTrailVisibility as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; visibleToFollowers: boolean },
+      null
+    >,
+    travelerRecordLiveTrailSample: (anyApi as any).liveTrail.travelerRecordLiveTrailSample as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; lat: number; lon: number; accuracy?: number; sampledAt?: number },
+      null
+    >,
+    travelerDeleteRecentLiveTrail: (anyApi as any).liveTrail.travelerDeleteRecentLiveTrail as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; recentMs?: number },
+      { deleted: number }
+    >,
+    travelerPreviewLiveTrailDeleteRange: (anyApi as any).liveTrail.travelerPreviewLiveTrailDeleteRange as FunctionReference<
+      "query",
+      "public",
+      { token: string; startDate: string; endDate: string; timeZone: string },
+      LiveTrailDeletePreview
+    >,
+    travelerDeleteLiveTrailRange: (anyApi as any).liveTrail.travelerDeleteLiveTrailRange as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; startDate: string; endDate: string; timeZone: string },
+      { deleted: number }
+    >,
+    travelerGetLiveTrailStatus: (anyApi as any).liveTrail.travelerGetLiveTrailStatus as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      LiveTrailStatus
+    >,
+    followerListLiveTrailSamples: (anyApi as any).liveTrail.followerListLiveTrailSamples as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      FollowerLiveTrail
     >,
   },
   routeVotes: {

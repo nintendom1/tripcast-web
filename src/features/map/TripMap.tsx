@@ -59,6 +59,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useTripPath } from "./useTripPath";
+import { useLiveTrailPath } from "./useLiveTrailPath";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
 import { isEnabled, isCategoryEnabled, log as rawLog, logMapError, logMapEvent } from "../../debug/debugLogger";
@@ -93,6 +94,8 @@ import {
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
+const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
+const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
 const PANEL_ERROR_CLASS =
   "absolute bottom-5 left-5 z-[4] grid w-80 max-w-[calc(100%-40px)] gap-3 rounded-md border bg-background p-4 text-sm shadow-lg";
 const BOTTOM_SHEET_ERROR_CLASS =
@@ -161,6 +164,19 @@ function formatReplayTime(timestamp: number) {
 
 function roundedCoordinate(value: number) {
   return Number(value.toFixed(4));
+}
+
+function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  const radiusMeters = 6_371_000;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const deltaLat = toRadians(b.lat - a.lat);
+  const deltaLon = toRadians(b.lon - a.lon);
+  const hav =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+  return 2 * radiusMeters * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
 }
 
 function mapLibreErrorDetails(event: unknown) {
@@ -669,6 +685,7 @@ function ConvexCheckpointSheet({
 // ---------------------------------------------------------------------------
 
 type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
+type LastLiveTrailSample = { lat: number; lon: number; sentAt: number } | null;
 type SelectedStoryDetail = {
   eventId: string;
   checkpointId?: string;
@@ -699,7 +716,12 @@ export default function TripMap({
   const placementModeRef = useRef(false);
   const browserLocationWatchRef = useRef<number | null>(null);
   const isLocationSharingRef = useRef(false);
+  const liveTrailEnabledRef = useRef(false);
+  const liveTrailCanRecordRef = useRef(false);
+  const liveTrailPermissionLoggedRef = useRef(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
+  const lastLiveTrailSampleRef = useRef<LastLiveTrailSample>(null);
+  const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
   const mapCooldownTriggeredRef = useRef(false);
@@ -771,10 +793,25 @@ export default function TripMap({
   const stopTravelerLocationSharing = useMutation(
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
+  const recordLiveTrailSample = useMutation(tripcastApi.liveTrail.travelerRecordLiveTrailSample);
   const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
   });
+  const travelerLiveTrailStatus = useQuery(
+    tripcastApi.liveTrail.travelerGetLiveTrailStatus,
+    role === "traveler" ? { token } : "skip",
+  );
+  const followerLiveTrail = useQuery(
+    tripcastApi.liveTrail.followerListLiveTrailSamples,
+    role === "follower" ? { token } : "skip",
+  );
+  const liveTrailEnabled = role === "traveler" && travelerLiveTrailStatus?.enabled === true;
+  const liveTrailSamples =
+    role === "traveler"
+      ? (travelerLiveTrailStatus?.samples ?? [])
+      : (followerLiveTrail?.visible ? followerLiveTrail.samples : []);
+  const liveTrailPathVisible = liveTrailSamples.length >= 2;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
     const val = localStorage.getItem("tripcast.showTripPath");
@@ -803,6 +840,7 @@ export default function TripMap({
     showPath,
     replayActive ? replayPlayheadTime : null,
   );
+  useLiveTrailPath(mapInstance, liveTrailSamples, liveTrailPathVisible);
 
   const sessionData = useQuery(tripcastApi.auth.currentSession, { token });
   const followerSession = useQuery(tripcastApi.followers.followerCurrentSession, { token });
@@ -1601,19 +1639,66 @@ export default function TripMap({
     isLocationSharingRef.current = isLocationSharing;
   }, [isLocationSharing]);
 
-  // Track the traveler's own browser location locally. Sharing only controls publishing.
+  useEffect(() => {
+    livePositionRef.current = livePosition;
+  }, [livePosition]);
+
+  useEffect(() => {
+    liveTrailEnabledRef.current = liveTrailEnabled;
+    liveTrailCanRecordRef.current = liveTrailEnabled;
+    if (!travelerLiveTrailStatus) return;
+    const latestSample = travelerLiveTrailStatus.samples.at(-1);
+    if (latestSample) {
+      lastLiveTrailSampleRef.current = {
+        lat: latestSample.lat,
+        lon: latestSample.lon,
+        sentAt: latestSample.sampledAt,
+      };
+    } else {
+      lastLiveTrailSampleRef.current = null;
+    }
+  }, [liveTrailEnabled, travelerLiveTrailStatus]);
+
+  useEffect(() => {
+    if (!liveTrailPathVisible) return;
+    log.logMap("live-trail:render", {
+      role,
+      sampleCount: liveTrailSamples.length,
+      visible: true,
+    });
+  }, [liveTrailPathVisible, liveTrailSamples.length, log, role]);
+
+  // Track browser location only after an explicit Traveler opt-in.
   useEffect(() => {
     if (role !== "traveler" || !navigator.geolocation) return;
+    if (!isLocationSharing) return;
 
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-        setLivePosition({ lat, lon });
+        if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
+          liveTrailPermissionLoggedRef.current = true;
+          log.logInteraction("live-trail:permission:result", { result: "granted" });
+        }
+        const nextPosition = { lat, lon };
+        livePositionRef.current = nextPosition;
+        setLivePosition(nextPosition);
 
-        if (!isLocationSharingRef.current) return;
-        publishTravelerLocation({ lat, lon }, accuracy ?? undefined);
+        if (isLocationSharingRef.current) {
+          publishTravelerLocation(nextPosition, accuracy ?? undefined);
+        }
+        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+          publishLiveTrailSample(nextPosition, accuracy ?? undefined);
+        }
       },
-      () => {},
+      (error) => {
+        if (liveTrailEnabledRef.current) {
+          log.logInteraction("live-trail:permission:result", {
+            result: "denied",
+            code: error.code,
+          });
+        }
+      },
       { enableHighAccuracy: true },
     );
 
@@ -1625,9 +1710,9 @@ export default function TripMap({
         browserLocationWatchRef.current = null;
       }
     };
-  // publishTravelerLocation only uses refs plus stable mutation inputs.
+  // publish* only uses refs plus stable mutation inputs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, token]);
+  }, [isLocationSharing, role, token]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -1671,6 +1756,7 @@ export default function TripMap({
     snappedReplayEventRef.current = null;
     setReplayActive(false);
     setReplayPlayheadTime(null);
+    lastLiveTrailSampleRef.current = null;
   }, [tripDataResetNonce]);
 
   function publishTravelerLocation(
@@ -1697,6 +1783,36 @@ export default function TripMap({
       lon: position.lon,
       accuracy,
     }).catch(() => {});
+  }
+
+  function publishLiveTrailSample(
+    position: { lat: number; lon: number },
+    accuracy?: number,
+  ) {
+    const last = lastLiveTrailSampleRef.current;
+    const now = Date.now();
+    const elapsed = last ? now - last.sentAt : Number.POSITIVE_INFINITY;
+    const movedMeters = last ? distanceMeters(last, position) : Number.POSITIVE_INFINITY;
+    if (last && movedMeters < LIVE_TRAIL_MIN_DISTANCE_METERS && elapsed < LIVE_TRAIL_MIN_INTERVAL_MS) {
+      return;
+    }
+
+    lastLiveTrailSampleRef.current = {
+      lat: position.lat,
+      lon: position.lon,
+      sentAt: now,
+    };
+    recordLiveTrailSample({
+      token,
+      lat: position.lat,
+      lon: position.lon,
+      accuracy,
+      sampledAt: now,
+    }).catch((error) => {
+      log.error("live-trail:sample:error", "mutation", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   function stopLocationSharing() {
@@ -1732,6 +1848,12 @@ export default function TripMap({
     if (isLocationSharing) {
       stopLocationSharing();
     } else {
+      if (liveTrailEnabledRef.current) {
+        liveTrailPermissionLoggedRef.current = false;
+        log.logInteraction("live-trail:permission:request", {
+          available: Boolean(navigator.geolocation),
+        });
+      }
       isLocationSharingRef.current = true;
       setIsLocationSharing(true);
       if (livePosition) {
@@ -2622,7 +2744,11 @@ export default function TripMap({
         </FeatureBoundary>
         <div className="flex items-center justify-between gap-2">
           {role === "traveler" ? (
-            <LivePill on={isLocationSharing} onToggle={handleToggleLocationSharing} />
+            <LivePill
+              on={isLocationSharing}
+              onToggle={handleToggleLocationSharing}
+              trailEnabled={liveTrailEnabled}
+            />
           ) : (
             <span aria-hidden="true" />
           )}

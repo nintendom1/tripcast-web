@@ -70,13 +70,56 @@ const followerSession: StoredSession = {
 function setupMocks({
   travelerTimeZone = detectedTimeZone,
   allowFollowersTripPath = false,
+  liveTrailStatus = {
+    enabled: false,
+    visibleToFollowers: false,
+    sampleCount: 0,
+    samples: [],
+  },
+  liveTrailPreview = {
+    startMs: 0,
+    endExclusiveMs: 0,
+    timeZone: travelerTimeZone ?? detectedTimeZone,
+    count: 0,
+    samples: [],
+  },
   setTimeZoneFn = vi.fn().mockResolvedValue(null),
   updatePreferencesFn = vi.fn().mockResolvedValue(null),
+  setLiveTrailEnabledFn = vi.fn().mockResolvedValue(null),
+  setLiveTrailVisibilityFn = vi.fn().mockResolvedValue(null),
+  deleteLiveTrailRangeFn = vi.fn().mockResolvedValue({ deleted: 0 }),
 }: {
   travelerTimeZone?: string | null;
   allowFollowersTripPath?: boolean;
+  liveTrailStatus?: {
+    enabled: boolean;
+    visibleToFollowers: boolean;
+    sampleCount: number;
+    samples: Array<{
+      _id: string;
+      lat: number;
+      lon: number;
+      sampledAt: number;
+      accuracy?: number;
+    }>;
+  };
+  liveTrailPreview?: {
+    startMs: number;
+    endExclusiveMs: number;
+    timeZone: string;
+    count: number;
+    samples: Array<{
+      _id: string;
+      lat: number;
+      lon: number;
+      sampledAt: number;
+    }>;
+  };
   setTimeZoneFn?: ReturnType<typeof vi.fn>;
   updatePreferencesFn?: ReturnType<typeof vi.fn>;
+  setLiveTrailEnabledFn?: ReturnType<typeof vi.fn>;
+  setLiveTrailVisibilityFn?: ReturnType<typeof vi.fn>;
+  deleteLiveTrailRangeFn?: ReturnType<typeof vi.fn>;
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
     if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
@@ -91,6 +134,12 @@ function setupMocks({
         rateLimitPreset: "per_second",
       };
     }
+    if (ref === tripcastApi.liveTrail.travelerGetLiveTrailStatus) {
+      return liveTrailStatus;
+    }
+    if (ref === tripcastApi.liveTrail.travelerPreviewLiveTrailDeleteRange) {
+      return liveTrailPreview;
+    }
     return undefined;
   });
 
@@ -101,10 +150,25 @@ function setupMocks({
     if ((ref as any) === (tripcastApi.travelerPreferences as any).travelerUpdatePreferences) {
       return updatePreferencesFn as any;
     }
+    if (ref === tripcastApi.liveTrail.travelerSetLiveTrailEnabled) {
+      return setLiveTrailEnabledFn as any;
+    }
+    if (ref === tripcastApi.liveTrail.travelerSetLiveTrailVisibility) {
+      return setLiveTrailVisibilityFn as any;
+    }
+    if (ref === tripcastApi.liveTrail.travelerDeleteLiveTrailRange) {
+      return deleteLiveTrailRangeFn as any;
+    }
     return vi.fn().mockResolvedValue(null) as any;
   });
 
-  return { setTimeZoneFn, updatePreferencesFn };
+  return {
+    setTimeZoneFn,
+    updatePreferencesFn,
+    setLiveTrailEnabledFn,
+    setLiveTrailVisibilityFn,
+    deleteLiveTrailRangeFn,
+  };
 }
 
 function renderOptions(overrides?: Partial<React.ComponentProps<typeof OptionsSheet>>) {
@@ -223,6 +287,74 @@ describe("OptionsSheet Map Settings", () => {
       token: "test-token",
       allowFollowersTripPath: true,
     });
+  });
+});
+
+describe("OptionsSheet Live Trail settings", () => {
+  it("opens Traveler Live Trail settings and updates recording visibility toggles", async () => {
+    const {
+      setLiveTrailEnabledFn,
+      setLiveTrailVisibilityFn,
+    } = setupMocks({
+      liveTrailStatus: {
+        enabled: false,
+        visibleToFollowers: false,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+    renderOptions();
+
+    await userEvent.click(screen.getByRole("button", { name: /Live Trail/i }));
+    expect(screen.getByRole("heading", { name: "Live Trail" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getAllByRole("checkbox")[0]);
+    expect(setLiveTrailEnabledFn).toHaveBeenCalledWith({
+      token: "test-token",
+      enabled: true,
+    });
+
+    await userEvent.click(screen.getByLabelText(/Show to Followers/i));
+    expect(setLiveTrailVisibilityFn).toHaveBeenCalledWith({
+      token: "test-token",
+      visibleToFollowers: true,
+    });
+  });
+
+  it("previews a deletion range and confirms only when breadcrumbs are selected", async () => {
+    const { deleteLiveTrailRangeFn } = setupMocks({
+      travelerTimeZone: "America/Los_Angeles",
+      liveTrailPreview: {
+        startMs: Date.UTC(2026, 4, 1, 7),
+        endExclusiveMs: Date.UTC(2026, 4, 2, 7),
+        timeZone: "America/Los_Angeles",
+        count: 2,
+        samples: [
+          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: Date.UTC(2026, 4, 1, 16) },
+          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: Date.UTC(2026, 4, 1, 17) },
+        ],
+      },
+    });
+    renderOptions({ defaultView: "live-trail" });
+
+    expect(screen.getByRole("img", { name: "Live Trail deletion preview map" })).toBeInTheDocument();
+    expect(screen.getByText(/2 breadcrumbs selected/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Delete selected breadcrumbs/i }));
+
+    expect(deleteLiveTrailRangeFn).toHaveBeenCalledWith({
+      token: "test-token",
+      startDate: expect.any(String),
+      endDate: expect.any(String),
+      timeZone: "America/Los_Angeles",
+    });
+  });
+
+  it("does not show Live Trail settings to Followers", () => {
+    setupMocks();
+    renderOptions({ session: followerSession, role: "follower" });
+
+    expect(screen.queryByRole("button", { name: /Live Trail/i })).not.toBeInTheDocument();
   });
 });
 

@@ -6,6 +6,7 @@ import { tripcastApi, type JournalEvent } from "../../convex/tripcastApi";
 import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
 import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
+import { useLiveTrailPath } from "./useLiveTrailPath";
 import { useTripPath } from "./useTripPath";
 
 const mapEaseTo = vi.fn();
@@ -14,6 +15,10 @@ const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
 const updateTravelerLocation = vi.fn();
 const stopTravelerLocationSharing = vi.fn();
+const setLiveTrailEnabled = vi.fn();
+const setLiveTrailVisibility = vi.fn();
+const recordLiveTrailSample = vi.fn();
+const deleteRecentLiveTrail = vi.fn();
 const fetchMock = vi.fn();
 const mapConstructorOptions: unknown[] = [];
 const mapInstances: Array<{
@@ -39,6 +44,10 @@ vi.mock("convex/react", () => ({
 
 vi.mock("./useTripPath", () => ({
   useTripPath: vi.fn(),
+}));
+
+vi.mock("./useLiveTrailPath", () => ({
+  useLiveTrailPath: vi.fn(),
 }));
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
@@ -161,6 +170,16 @@ function setupQueries({
   journalEvents = [],
   travelerLocation = null,
   allowFollowersTripPath = false,
+  liveTrailStatus = {
+    enabled: false,
+    visibleToFollowers: false,
+    sampleCount: 0,
+    samples: [],
+  },
+  followerLiveTrail = {
+    visible: false,
+    samples: [],
+  },
 }: {
   checkpoints?: Array<{
     _id: string;
@@ -175,11 +194,38 @@ function setupQueries({
   journalEvents?: JournalEvent[];
   travelerLocation?: { lat: number; lon: number; isSharing: true } | null;
   allowFollowersTripPath?: boolean;
+  liveTrailStatus?: {
+    enabled: boolean;
+    visibleToFollowers: boolean;
+    sampleCount: number;
+    samples: Array<{
+      _id: string;
+      lat: number;
+      lon: number;
+      sampledAt: number;
+      accuracy?: number;
+    }>;
+  };
+  followerLiveTrail?: {
+    visible: boolean;
+    samples: Array<{
+      _id: string;
+      lat: number;
+      lon: number;
+      sampledAt: number;
+    }>;
+  };
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((query: unknown) => {
     if (query === tripcastApi.checkpoints.listCheckpoints) return checkpoints;
     if (query === tripcastApi.travelerLocations.getTravelerLocation) {
       return travelerLocation;
+    }
+    if (query === tripcastApi.liveTrail.travelerGetLiveTrailStatus) {
+      return liveTrailStatus;
+    }
+    if (query === tripcastApi.liveTrail.followerListLiveTrailSamples) {
+      return followerLiveTrail;
     }
     if (query === tripcastApi.travelerPreferences.followerGetPreferences) {
       return { visible: true, allowFollowersTripPath };
@@ -262,6 +308,10 @@ beforeEach(() => {
   routeVotePanelProps.length = 0;
   updateTravelerLocation.mockResolvedValue(null);
   stopTravelerLocationSharing.mockResolvedValue(null);
+  setLiveTrailEnabled.mockResolvedValue(null);
+  setLiveTrailVisibility.mockResolvedValue(null);
+  recordLiveTrailSample.mockResolvedValue(null);
+  deleteRecentLiveTrail.mockResolvedValue({ deleted: 0 });
   fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
 
@@ -271,6 +321,18 @@ beforeEach(() => {
     }
     if (mutation === tripcastApi.travelerLocations.stopTravelerLocationSharing) {
       return stopTravelerLocationSharing;
+    }
+    if (mutation === tripcastApi.liveTrail.travelerSetLiveTrailEnabled) {
+      return setLiveTrailEnabled;
+    }
+    if (mutation === tripcastApi.liveTrail.travelerSetLiveTrailVisibility) {
+      return setLiveTrailVisibility;
+    }
+    if (mutation === tripcastApi.liveTrail.travelerRecordLiveTrailSample) {
+      return recordLiveTrailSample;
+    }
+    if (mutation === tripcastApi.liveTrail.travelerDeleteRecentLiveTrail) {
+      return deleteRecentLiveTrail;
     }
     return vi.fn();
   });
@@ -612,7 +674,7 @@ describe("TripMap location marker", () => {
     });
   });
 
-  it("shows traveler current location without pulsing until sharing is enabled", async () => {
+  it("starts browser location watching only after live location sharing is enabled", async () => {
     geolocationWatchPosition.mockImplementation((onSuccess) => {
       onSuccess({
         coords: {
@@ -627,10 +689,8 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    await waitFor(() => {
-      expect(getTravelerMarker()).toHaveClass("traveler-location-marker");
-    });
-    expect(getTravelerMarker()).not.toHaveClass("traveler-location-marker--pulsing");
+    expect(geolocationWatchPosition).not.toHaveBeenCalled();
+    expect(getTravelerMarker()).toBeUndefined();
 
     fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
 
@@ -641,7 +701,7 @@ describe("TripMap location marker", () => {
       token: "test-token",
       lat: 47.62,
       lon: -122.34,
-      accuracy: undefined,
+      accuracy: 9,
     });
   });
 
@@ -937,6 +997,230 @@ describe("TripMap location marker", () => {
     });
   });
 
+  it("keeps Live Trail settings out of the map HUD while indicating enabled state on Live GPS", () => {
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: true,
+        sampleCount: 2,
+        samples: [
+          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
+          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
+        ],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    expect(screen.getByRole("button", { name: /Live Trail is enabled/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Start Live Trail/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Delete recent Live Trail trace/i })).not.toBeInTheDocument();
+    expect(setLiveTrailEnabled).not.toHaveBeenCalled();
+    expect(setLiveTrailVisibility).not.toHaveBeenCalled();
+    expect(deleteRecentLiveTrail).not.toHaveBeenCalled();
+  });
+
+  it("does not emit Live Trail breadcrumbs while Live GPS is off", () => {
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: true,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    expect(geolocationWatchPosition).not.toHaveBeenCalled();
+    expect(recordLiveTrailSample).not.toHaveBeenCalled();
+  });
+
+  it("keeps Live GPS publishes separate from Live Trail when breadcrumbs are disabled", async () => {
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({
+        coords: {
+          latitude: 47.62,
+          longitude: -122.34,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries({
+      liveTrailStatus: {
+        enabled: false,
+        visibleToFollowers: false,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: "Start sharing live location" }));
+
+    await waitFor(() => {
+      expect(updateTravelerLocation).toHaveBeenCalledWith({
+        token: "test-token",
+        lat: 47.62,
+        lon: -122.34,
+        accuracy: 9,
+      });
+    });
+    expect(recordLiveTrailSample).not.toHaveBeenCalled();
+  });
+
+  it("logs Live Trail permission without precise raw location payloads", async () => {
+    setEnabled(true);
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({
+        coords: {
+          latitude: 47.621234,
+          longitude: -122.345678,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: false,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location.*Live Trail is enabled/i }));
+
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: "test-token",
+          lat: 47.621234,
+          lon: -122.345678,
+        }),
+      );
+    });
+
+    const actions = getLogs().map((entry) => entry.action);
+    expect(actions).toContain("live-trail:permission:request");
+    expect(actions).toContain("live-trail:permission:result");
+    const serializedLogs = JSON.stringify(getLogs());
+    expect(serializedLogs).not.toContain("47.621234");
+    expect(serializedLogs).not.toContain("-122.345678");
+    expect(serializedLogs).not.toContain("accuracy");
+  });
+
+  it("records Live Trail samples only after 200m movement or 60 seconds", async () => {
+    let nowMs = Date.UTC(2026, 0, 1, 0, 0, 0);
+    const dateNow = vi.spyOn(Date, "now").mockImplementation(() => nowMs);
+    let onGeolocationSuccess: ((position: GeolocationPosition) => void) = () => {};
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onGeolocationSuccess = onSuccess;
+      onSuccess({
+        coords: {
+          latitude: 47.62,
+          longitude: -122.34,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: false,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location.*Live Trail is enabled/i }));
+
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
+    });
+
+    nowMs += 30_000;
+    onGeolocationSuccess({
+      coords: {
+        latitude: 47.6201,
+        longitude: -122.3401,
+        accuracy: 8,
+      },
+    } as GeolocationPosition);
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
+
+    nowMs += 30_000;
+    onGeolocationSuccess({
+      coords: {
+        latitude: 47.6201,
+        longitude: -122.3401,
+        accuracy: 8,
+      },
+    } as GeolocationPosition);
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
+
+    nowMs += 1_000;
+    onGeolocationSuccess({
+      coords: {
+        latitude: 47.623,
+        longitude: -122.34,
+        accuracy: 8,
+      },
+    } as GeolocationPosition);
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(3);
+    dateNow.mockRestore();
+  });
+
+  it("renders follower Live Trail breadcrumbs only when visible", async () => {
+    setupQueries({
+      followerLiveTrail: {
+        visible: false,
+        samples: [
+          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
+          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
+        ],
+      },
+    });
+
+    const { rerender } = render(<TripMap token="test-token" role="follower" />);
+
+    await waitFor(() => {
+      expect(useLiveTrailPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        [],
+        false,
+      );
+    });
+
+    setupQueries({
+      followerLiveTrail: {
+        visible: true,
+        samples: [
+          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
+          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
+        ],
+      },
+    });
+    rerender(<TripMap token="test-token" role="follower" />);
+
+    await waitFor(() => {
+      expect(useLiveTrailPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        [
+          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
+          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
+        ],
+        true,
+      );
+    });
+  });
+
   it("shows the trip path for traveler based on local storage", async () => {
     localStorage.setItem("tripcast.showTripPath", "true");
     setupQueries();
@@ -947,7 +1231,7 @@ describe("TripMap location marker", () => {
       expect(useTripPath).toHaveBeenLastCalledWith(
         expect.anything(),
         expect.anything(),
-        expect.anything(),
+        null,
         true,
         null
       );
@@ -961,7 +1245,7 @@ describe("TripMap location marker", () => {
       expect(useTripPath).toHaveBeenLastCalledWith(
         expect.anything(),
         expect.anything(),
-        expect.anything(),
+        null,
         false,
         null
       );
