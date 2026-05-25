@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useMutation } from "convex/react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useMutation, useQuery } from "convex/react";
+import { ChevronLeft, ChevronRight, ImagePlus, Trash2 } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -37,6 +37,7 @@ import {
   STRESS_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
 } from "../travelstate/travelerStateUtils";
+import { uploadStoryImage, validateStoryImageFile } from "./storyImageUpload";
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -155,6 +156,7 @@ export default function StoryDetailSheet({
   const music = useMusicSafe();
   const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
+  const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
 
   const [isEditing, setIsEditing] = useState(false);
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
@@ -164,6 +166,9 @@ export default function StoryDetailSheet({
   const [editLat, setEditLat] = useState<number | undefined>(undefined);
   const [editLon, setEditLon] = useState<number | undefined>(undefined);
   const [editShowInStory, setEditShowInStory] = useState(true);
+  const [editImageFile, setEditImageFile] = useState<File | null>(null);
+  const [editImagePreviewUrl, setEditImagePreviewUrl] = useState<string | null>(null);
+  const [editClearImage, setEditClearImage] = useState(false);
   const [isWorking, setIsWorking] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
@@ -171,6 +176,10 @@ export default function StoryDetailSheet({
   const [optimisticEvent, setOptimisticEvent] = useState<JournalEvent | null>(null);
 
   const displayEvent = optimisticEvent?._id === event?._id ? optimisticEvent : event;
+  const currentImageUrl = useQuery(
+    tripcastApi.checkpoints.getStoryImageUrl,
+    displayEvent?.imageId && token ? { token, imageId: displayEvent.imageId } : "skip",
+  );
   const isNarrative = displayEvent?.narrativeLevel === "narrative";
 
   const isTraveler = role === "traveler";
@@ -182,7 +191,25 @@ export default function StoryDetailSheet({
     setPendingDelete(false);
     setActionError(null);
     setOptimisticEvent(null);
+    setEditImageFile(null);
+    setEditImagePreviewUrl(null);
+    setEditClearImage(false);
   }, [event?._id]);
+
+  useEffect(() => {
+    return () => {
+      if (editImagePreviewUrl) URL.revokeObjectURL(editImagePreviewUrl);
+    };
+  }, [editImagePreviewUrl]);
+
+  useEffect(() => {
+    if (displayEvent?.imageId && currentImageUrl === null) {
+      log.error("story-image:render:error", "query", {
+        hasImage: true,
+        reason: "url-unavailable",
+      });
+    }
+  }, [currentImageUrl, displayEvent?.imageId, log]);
 
   useEffect(() => {
     if (!event) {
@@ -197,6 +224,7 @@ export default function StoryDetailSheet({
         current.locationLabel === event.locationLabel &&
         current.lat === event.lat &&
         current.lon === event.lon &&
+        current.imageId === event.imageId &&
         current.narrativeLevel === event.narrativeLevel;
       return parentCaughtUp ? null : current;
     });
@@ -211,6 +239,9 @@ export default function StoryDetailSheet({
     setEditLat(displayEvent.lat);
     setEditLon(displayEvent.lon);
     setEditShowInStory(displayEvent.narrativeLevel !== "activity");
+    setEditImageFile(null);
+    setEditImagePreviewUrl(null);
+    setEditClearImage(false);
     setActionError(null);
     setIsEditing(true);
   }
@@ -219,6 +250,44 @@ export default function StoryDetailSheet({
     log.logInteraction("form:cancel", {});
     setIsEditing(false);
     setActionError(null);
+    setEditImageFile(null);
+    setEditImagePreviewUrl(null);
+    setEditClearImage(false);
+  }
+
+  function handleEditImageChange(file: File | undefined) {
+    if (!file) return;
+    try {
+      validateStoryImageFile(file);
+      setEditImageFile(file);
+      setEditClearImage(false);
+      setEditImagePreviewUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return URL.createObjectURL(file);
+      });
+      setActionError(null);
+      log.logInteraction("story-image:attach", {
+        source: "edit",
+        bytes: file.size,
+        contentType: file.type || "unknown",
+      });
+    } catch (imageError) {
+      log.error("story-image:attach:error", "interaction", {
+        source: "edit",
+        message: imageError instanceof Error ? imageError.message : String(imageError),
+      });
+      setActionError(friendlyError(imageError));
+    }
+  }
+
+  function clearEditImage() {
+    setEditImageFile(null);
+    setEditClearImage(true);
+    setEditImagePreviewUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return null;
+    });
+    log.logInteraction("story-image:remove", { source: "edit" });
   }
 
   function handleStoryNavigation(direction: "previous" | "next") {
@@ -246,6 +315,20 @@ export default function StoryDetailSheet({
     setActionError(null);
     log.logInteraction("form:submit", { checkpointId: event.checkpointId });
     try {
+      const imageId = editImageFile
+        ? await (async () => {
+            log.logInteraction("story-image:upload:start", {
+              source: "edit",
+              bytes: editImageFile.size,
+              contentType: editImageFile.type || "unknown",
+            });
+            const uploadedImageId = await uploadStoryImage(editImageFile, () =>
+              generateStoryImageUploadUrl({ token }),
+            );
+            log.logInteraction("story-image:upload:success", { source: "edit", hasImage: true });
+            return uploadedImageId;
+          })()
+        : undefined;
       await updateCheckpoint({
         token,
         checkpointId: event.checkpointId,
@@ -254,6 +337,8 @@ export default function StoryDetailSheet({
         locationLabel: editLocation.trim() ? editLocation : undefined,
         lat: editLat,
         lon: editLon,
+        ...(imageId ? { imageId } : {}),
+        ...(!editImageFile && editClearImage ? { clearImage: true } : {}),
         showInStory: editShowInStory,
       });
       music.sfx("success");
@@ -265,9 +350,13 @@ export default function StoryDetailSheet({
         locationLabel: editLocation.trim() ? editLocation : undefined,
         lat: editLat,
         lon: editLon,
+        imageId: imageId ?? (editClearImage ? undefined : event.imageId),
         narrativeLevel: editShowInStory ? "narrative" : "activity",
       });
       setIsEditing(false);
+      setEditImageFile(null);
+      setEditImagePreviewUrl(null);
+      setEditClearImage(false);
     } catch (e) {
       log.logInteraction("form:submit:error", { message: String(e) });
       setActionError(friendlyError(e));
@@ -434,6 +523,41 @@ export default function StoryDetailSheet({
                     Story / Notes
                     <Textarea maxLength={1000} value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={5} />
                   </label>
+                  <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-[var(--ink-1)]">Photo</span>
+                      {editImagePreviewUrl || (!editClearImage && currentImageUrl) ? (
+                        <button
+                          type="button"
+                          onClick={clearEditImage}
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-[var(--ink-danger)] hover:bg-[var(--bg-danger)]"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                    {editImagePreviewUrl || (!editClearImage && currentImageUrl) ? (
+                      <img
+                        src={editImagePreviewUrl ?? currentImageUrl ?? undefined}
+                        alt=""
+                        className="max-h-48 w-full rounded-md object-cover"
+                        onLoad={() => log.logInteraction("story-image:render", { source: editImagePreviewUrl ? "draft" : "stored" })}
+                        onError={() => log.error("story-image:render:error", "ui", { source: editImagePreviewUrl ? "draft" : "stored" })}
+                      />
+                    ) : (
+                      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--bg-paper-2)]">
+                        <ImagePlus className="h-4 w-4" aria-hidden="true" />
+                        Add photo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="sr-only"
+                          onChange={(e) => handleEditImageChange(e.currentTarget.files?.[0])}
+                        />
+                      </label>
+                    )}
+                  </div>
                   <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[var(--ink-1)]">
                     <input
                       type="checkbox"
@@ -483,7 +607,17 @@ export default function StoryDetailSheet({
                   ) : null}
                 </div>
               ) : isNarrative ? (
-                <NarrativeContent event={displayEvent} token={token} role={role} missionTitle={missionTitle} missionId={missionId} onNavigateToMission={onNavigateToMission} />
+                <NarrativeContent
+                  event={displayEvent}
+                  token={token}
+                  role={role}
+                  missionTitle={missionTitle}
+                  missionId={missionId}
+                  onNavigateToMission={onNavigateToMission}
+                  imageUrl={currentImageUrl ?? undefined}
+                  onImageLoad={() => log.logInteraction("story-image:render", { source: "stored" })}
+                  onImageError={() => log.error("story-image:render:error", "ui", { source: "stored" })}
+                />
               ) : (
                 <ActivityContent event={displayEvent} />
               )}
@@ -525,6 +659,9 @@ function NarrativeContent({
   missionTitle,
   missionId,
   onNavigateToMission,
+  imageUrl,
+  onImageLoad,
+  onImageError,
 }: {
   event: JournalEvent;
   token?: string;
@@ -532,17 +669,31 @@ function NarrativeContent({
   missionTitle?: string;
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
+  imageUrl?: string;
+  onImageLoad?: () => void;
+  onImageError?: () => void;
 }) {
   return (
     <>
-      {event.body ? (
-        <RevealText
-          text={event.body}
-          className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]"
-        />
-      ) : (
-        <p className="text-sm italic text-[var(--ink-3)]">No story body yet.</p>
-      )}
+      <div className="flow-root">
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt=""
+            className="mb-3 max-h-72 w-full rounded-md object-cover shadow-sm sm:float-right sm:mb-2 sm:ml-4 sm:w-52"
+            onLoad={onImageLoad}
+            onError={onImageError}
+          />
+        ) : null}
+        {event.body ? (
+          <RevealText
+            text={event.body}
+            className="block font-[var(--font-display)] text-[15px] leading-relaxed text-[var(--ink-1)]"
+          />
+        ) : (
+          <p className="text-sm italic text-[var(--ink-3)]">No story body yet.</p>
+        )}
+      </div>
 
       {event.statusNote ? (
         <blockquote className="mt-5 border-l-2 border-[var(--amber)] pl-4 text-sm italic text-[var(--ink-2)]">
