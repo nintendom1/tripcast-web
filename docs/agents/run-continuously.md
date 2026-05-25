@@ -6,6 +6,6 @@
 - Keep related work, including fixes and tests, on the same branch.
 - Do NOT use the internet, github, or external dependencies while in Autonomous mode. Do not push out any commits.
 - Do not halt or prompt me for anything while in Autonomous mode. 
-- If permissions are required, use the auto-review agent if available; otherwise, work on something else.
+- If permissions are required, use the auto-review agent if available; If unavailable or denied, simply work on something else.
 - Do not give checkpoint summaries; continue seeking other issues to solve.
 - Continue work on your own. Never stop working. The developer is going now away. I'm going now!
