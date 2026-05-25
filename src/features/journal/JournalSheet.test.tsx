@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { act, render, screen, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as convexReact from "convex/react";
@@ -232,6 +232,61 @@ describe("JournalSheet", () => {
       await user.click(screen.getByRole("button", { name: "New" }));
       await user.click(screen.getByRole("button", { name: "Cancel" }));
       expect(screen.queryByPlaceholderText("Story title (optional)")).not.toBeInTheDocument();
+    });
+
+    it("reopens to the list after being closed from the create form", async () => {
+      const user = userEvent.setup();
+      const { rerender } = render(<JournalSheet {...defaultProps} role="traveler" />);
+
+      await user.click(screen.getByRole("button", { name: "New" }));
+      expect(screen.getByPlaceholderText("Story title (optional)")).toBeInTheDocument();
+
+      rerender(<JournalSheet {...defaultProps} open={false} role="traveler" />);
+      rerender(<JournalSheet {...defaultProps} open role="traveler" />);
+
+      expect(screen.queryByPlaceholderText("Story title (optional)")).not.toBeInTheDocument();
+      expect(screen.getByText("No story entries yet.")).toBeInTheDocument();
+    });
+
+    it("restores the create form with the picked coordinate after map picking ends", async () => {
+      const user = userEvent.setup();
+      let pickCallback: ((coord: { lat: number; lon: number }) => void) | undefined;
+      const onRequestCoordinatePick = vi.fn((callback) => {
+        pickCallback = callback;
+      });
+      const { rerender } = render(
+        <JournalSheet
+          {...defaultProps}
+          role="traveler"
+          onRequestCoordinatePick={onRequestCoordinatePick}
+        />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "New" }));
+      await user.click(screen.getByRole("button", { name: /pick location on map/i }));
+      rerender(
+        <JournalSheet
+          {...defaultProps}
+          role="traveler"
+          onRequestCoordinatePick={onRequestCoordinatePick}
+          isPickingCoordinate
+        />,
+      );
+
+      act(() => {
+        pickCallback?.({ lat: 47.61, lon: -122.33 });
+      });
+      rerender(
+        <JournalSheet
+          {...defaultProps}
+          role="traveler"
+          onRequestCoordinatePick={onRequestCoordinatePick}
+          isPickingCoordinate={false}
+        />,
+      );
+
+      expect(screen.getByPlaceholderText("Story title (optional)")).toBeInTheDocument();
+      expect(screen.getByText("47.61000, -122.33000")).toBeInTheDocument();
     });
 
     it("submitting the form calls addCheckpoint with showInStory=true and source=inline_form", async () => {
