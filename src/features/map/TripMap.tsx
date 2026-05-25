@@ -2054,8 +2054,8 @@ export default function TripMap({
         </div>
       )}
 
-      {/* Music mute indicator — top-right of the map */}
-      <MusicMuteIndicator className="absolute right-3 top-3 z-[2]" />
+      {/* Music mute indicator — offset left of MapLibre's top-right controls. */}
+      <MusicMuteIndicator className="absolute right-14 top-3 z-[2]" />
 
       {/* Debug chip — only visible when debug logging is enabled */}
       {onOpenDebugPanel ? (
@@ -2066,7 +2066,7 @@ export default function TripMap({
 
       {/* Map utility — center on traveler (replaces the LocateFixed FAB) */}
       <MapCenterButton
-        className="absolute bottom-[88px] right-3 z-[2]"
+        className="absolute bottom-[118px] right-3 z-[2]"
         active={role === "traveler" ? isLocationSharing : storedTravelerLocation !== null}
         onClick={handleCenterLocation}
       />
@@ -2087,7 +2087,7 @@ export default function TripMap({
       </FeatureBoundary>
 
       {/* Bottom Dock */}
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
+      <div className="pointer-events-none absolute inset-x-3 bottom-[42px] z-[20] tripcast-frame">
         <Dock
           active={activeDockTab}
           onSelect={handleDockSelect}
