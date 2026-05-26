@@ -324,7 +324,12 @@ export type BadgeType =
   | "tasty"
   | "entertained"
   | "refreshing"
-  | "popular";
+  | "popular"
+  | "wayfinder"
+  | "clutch_call"
+  | "photo_worthy"
+  | "budget_saver"
+  | "local_legend";
 
 export type AchievementEvent = {
   _id: string;
