@@ -465,6 +465,15 @@ export type CurrentActivity = {
   updatedAt: number;
 };
 
+export type CurrentActivityStalenessSettings = {
+  enabled: boolean;
+  fallbackTitle: string;
+  fallbackEmoji?: string;
+  resetAfterMs: number;
+  updatedAt: number | null;
+  updatedBySessionId: string | null;
+};
+
 // ---------------------------------------------------------------------------
 // Traveler State types
 // ---------------------------------------------------------------------------
@@ -1455,6 +1464,8 @@ export const tripcastApi = {
     travelerGetCurrentActivity: (anyApi as any).currentActivity.travelerGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
     followerGetCurrentActivity: (anyApi as any).currentActivity.followerGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
     travelerListRecentActivities: (anyApi as any).currentActivity.travelerListRecentActivities as FunctionReference<"query", "public", { token: string }, CurrentActivity[]>,
+    travelerGetStalenessSettings: (anyApi as any).currentActivity.travelerGetStalenessSettings as FunctionReference<"query", "public", { token: string }, CurrentActivityStalenessSettings>,
+    travelerUpdateStalenessSettings: (anyApi as any).currentActivity.travelerUpdateStalenessSettings as FunctionReference<"mutation", "public", { token: string; enabled: boolean; fallbackTitle: string; fallbackEmoji?: string; resetAfterMs: number }, null>,
   },
   travelerState: {
     travelerGetState: (anyApi as any).travelerState.travelerGetState as FunctionReference<
