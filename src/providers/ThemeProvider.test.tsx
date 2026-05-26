@@ -20,7 +20,7 @@ function ThemeProbe() {
 
 beforeEach(() => {
   localStorage.clear();
-  document.documentElement.classList.remove("dark", "theme-dark");
+  document.documentElement.classList.remove("dark", "theme-dark", "theme-transitioning");
   document.documentElement.removeAttribute("style");
 });
 
@@ -40,6 +40,7 @@ describe("ThemeProvider", () => {
       expect(screen.getByText("map: fiord")).toBeInTheDocument();
       expect(document.documentElement).toHaveClass("dark");
       expect(document.documentElement).toHaveClass("theme-dark");
+      expect(document.documentElement).toHaveClass("theme-transitioning");
       expect(document.documentElement.style.getPropertyValue("--bg-paper")).toBe("#1c1f3a");
       expect(document.documentElement.style.getPropertyValue("--ink-danger")).toBe("#ff8aae");
       expect(document.documentElement.style.getPropertyValue("--danger")).toBe("#ff8aae");
