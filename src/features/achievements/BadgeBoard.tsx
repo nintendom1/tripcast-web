@@ -9,6 +9,11 @@ const BADGE_COLOR: Record<BadgeType, string> = {
   entertained: "border-[var(--flag)] bg-[color-mix(in_oklab,var(--flag)_18%,var(--bg-card))] text-[var(--ink-1)]",
   refreshing: "border-[var(--teal)] bg-[color-mix(in_oklab,var(--teal)_18%,var(--bg-card))] text-[var(--ink-1)]",
   popular: "border-[var(--plum)] bg-[color-mix(in_oklab,var(--plum)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  wayfinder: "border-[var(--teal)] bg-[color-mix(in_oklab,var(--teal)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  clutch_call: "border-[var(--flag)] bg-[color-mix(in_oklab,var(--flag)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  photo_worthy: "border-[var(--plum)] bg-[color-mix(in_oklab,var(--plum)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  budget_saver: "border-[var(--green)] bg-[color-mix(in_oklab,var(--green)_18%,var(--bg-card))] text-[var(--ink-1)]",
+  local_legend: "border-[var(--amber)] bg-[color-mix(in_oklab,var(--amber)_18%,var(--bg-card))] text-[var(--ink-1)]",
 };
 
 type BadgeChipProps = {
