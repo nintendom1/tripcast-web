@@ -24,6 +24,7 @@ import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import MissionMarkers from "./MissionMarkers";
 import MissionPanel from "../missions/MissionPanel";
 import RouteVotePanel from "../routevote/RouteVotePanel";
+import VoteTimeSplash from "../routevote/VoteTimeSplash";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import {
@@ -1346,6 +1347,12 @@ export default function TripMap({
     setIsAchievementsOpen(false);
     setIsMessagingOpen(false);
   }
+  function openVotesFromSplash() {
+    openVotes({
+      source: "vote-time-splash",
+      sourceLabel: "Vote Time Splash -> Votes",
+    });
+  }
   function openFunds(debugSource: DebugOpenSource = UNKNOWN_DEBUG_SOURCE) {
     if (isTravelFundsSheetOpen) {
       log.logInteraction("panel:close", { panel: "funds" });
@@ -2469,6 +2476,12 @@ export default function TripMap({
           />
         ) : null}
       </AnimatePresence>
+
+      <VoteTimeSplash
+        token={token}
+        enabled={role === "follower" && !isVotePanelOpen}
+        onOpenVotes={openVotesFromSplash}
+      />
 
       <AnimatePresence>
         {isMapServiceUnavailable ? (
