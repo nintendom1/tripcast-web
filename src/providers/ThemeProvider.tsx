@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
 
 export type ThemeMode = "meadow" | "constellation" | "auto";
 
@@ -10,6 +10,9 @@ interface ThemeContextType {
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const THEME_TRANSITION_CLASS = "theme-transitioning";
+const THEME_TRANSITION_MS = 480;
+let themeTransitionTimeout: number | undefined;
 
 const THEMES = {
   meadow: {
@@ -116,9 +119,17 @@ const THEMES = {
   },
 };
 
-function applyThemeVariables(theme: "meadow" | "constellation") {
+function applyThemeVariables(theme: "meadow" | "constellation", animate = false) {
   const root = document.documentElement;
   const mapping = THEMES[theme];
+  const reduceMotion =
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  if (animate && !reduceMotion) {
+    root.classList.add(THEME_TRANSITION_CLASS);
+    window.clearTimeout(themeTransitionTimeout);
+  }
 
   Object.entries(mapping).forEach(([key, value]) => {
     root.style.setProperty(key, value);
@@ -131,9 +142,16 @@ function applyThemeVariables(theme: "meadow" | "constellation") {
     root.classList.remove("theme-dark");
     root.classList.remove("dark");
   }
+
+  if (animate && !reduceMotion) {
+    themeTransitionTimeout = window.setTimeout(() => {
+      root.classList.remove(THEME_TRANSITION_CLASS);
+    }, THEME_TRANSITION_MS);
+  }
 }
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const hasAppliedThemeRef = useRef(false);
   const [mode, setModeState] = useState<ThemeMode>(
     () => (localStorage.getItem("tripcast.theme_mode") as ThemeMode) || "auto"
   );
@@ -151,7 +169,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const current = getResolvedTheme();
     setResolvedTheme(current);
-    applyThemeVariables(current);
+    applyThemeVariables(current, hasAppliedThemeRef.current);
+    hasAppliedThemeRef.current = true;
   }, [getResolvedTheme]);
 
   // Handle Auto-switch timer
@@ -161,7 +180,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       const next = getResolvedTheme();
       if (next !== resolvedTheme) {
         setResolvedTheme(next);
-        applyThemeVariables(next);
+        applyThemeVariables(next, true);
       }
     }, 60000); // Check every minute
     return () => clearInterval(interval);
@@ -174,25 +193,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeContext.Provider value={{ mode, resolvedTheme, resolvedMapBase: resolvedTheme === "meadow" ? "bright" : "fiord", setMode }}>
-      <style>{`
-        /* Seamless Theme Transitions */
-        :root {
-          transition: background-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-                      color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-                      border-color 0.6s cubic-bezier(0.4, 0, 0.2, 1),
-                      --map-land 0.6s ease,
-                      --map-water 0.6s ease,
-                      --shadow-sheet 0.6s ease;
-        }
-        /* Specific transition for sheets and cards */
-        [data-role="options-sheet"], .bg-\[var\(--bg-card\)\] {
-          transition: background-color 0.6s ease, color 0.6s ease;
-        }
-        .maplibregl-map {
-          background-color: var(--map-land);
-          transition: background-color 0.6s ease;
-        }
-      `}</style>
       {children}
     </ThemeContext.Provider>
   );
