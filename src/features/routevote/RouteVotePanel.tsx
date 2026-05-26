@@ -819,7 +819,29 @@ export default function RouteVotePanel({
   const music = useMusicSafe();
   const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
 
-  const selectedVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
+  // Resolve the selected vote by id when it isn't in the (capped) list — keeps
+  // navigation scale-independent so detail opens regardless of list size.
+  const listVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
+  const needByIdFetch = Boolean(selectedVoteId) && listVote === null;
+  const followerByIdVote = useQuery(
+    tripcastApi.routeVotes.getVisibleRouteVote,
+    needByIdFetch && !isTraveler && selectedVoteId
+      ? { token, routeVoteId: selectedVoteId }
+      : "skip",
+  );
+  const travelerByIdVote = useQuery(
+    tripcastApi.routeVotes.travelerGetRouteVoteDetail,
+    needByIdFetch && isTraveler && selectedVoteId
+      ? { token, routeVoteId: selectedVoteId }
+      : "skip",
+  );
+  const byIdVote = (isTraveler ? travelerByIdVote : followerByIdVote) as
+    | PanelVote
+    | null
+    | undefined;
+  const selectedVote = listVote ?? byIdVote ?? null;
+  const detailLoading =
+    view === "detail" && !selectedVote && needByIdFetch && byIdVote === undefined;
   const openCount = votes?.filter((vote) => vote.effectiveStatus === "active").length ?? 0;
   const closedCount = votes?.filter((vote) => vote.effectiveStatus !== "active").length ?? 0;
   const filteredVotes =
@@ -835,16 +857,20 @@ export default function RouteVotePanel({
   }, { boundsSelector: "[data-role='route-votes-sheet']" });
 
   useEffect(() => {
-    if (!pendingOpenVoteId || !votes || !isTraveler) return;
-    const target = votes.find((v) => v._id === pendingOpenVoteId);
-    if (target) {
-      log.logUi("action:pending-vote:navigate", { voteId: pendingOpenVoteId });
-      setSelectedVoteId(pendingOpenVoteId);
-      setView("detail");
-      onClearPendingVoteId?.();
+    if (!pendingOpenVoteId) return;
+    log.logUi("action:pending-vote:navigate", { voteId: pendingOpenVoteId, role });
+    setSelectedVoteId(pendingOpenVoteId);
+    setView("detail");
+    onClearPendingVoteId?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenVoteId]);
+
+  useEffect(() => {
+    if (view === "detail" && needByIdFetch && byIdVote === null) {
+      log.logUi("action:pending-vote:not-found", { voteId: selectedVoteId, role });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOpenVoteId, votes, isTraveler]);
+  }, [view, needByIdFetch, byIdVote]);
 
   function handleBack() {
     log.logInteraction("view:change", { from: view, to: "list" });
@@ -984,6 +1010,19 @@ export default function RouteVotePanel({
                     fallbackOrigin={fallbackOrigin}
                   />
                 )}
+              </motion.div>
+            ) : detailLoading ? (
+              <motion.div
+                key="detail-loading"
+                initial={{ x: 20, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -20, opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <PendingNotice
+                  label="Loading vote..."
+                  className="py-6 text-center text-sm text-[var(--ink-3)]"
+                />
               </motion.div>
             ) : (
               <motion.div
