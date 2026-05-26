@@ -537,7 +537,9 @@ describe("TripMap location marker", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Replay" }));
 
-    expect(await screen.findByRole("group", { name: "Trip Replay" })).toBeInTheDocument();
+    const replayHud = await screen.findByRole("group", { name: "Trip Replay" });
+    expect(replayHud).toBeInTheDocument();
+    expect(replayHud).toHaveClass("bottom-[88px]");
     await waitFor(() => {
       expect(vi.mocked(useTripPath).mock.calls.some((call) => call[4] === 1000)).toBe(true);
       expect(mapEaseTo).toHaveBeenLastCalledWith(

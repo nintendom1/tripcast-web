@@ -381,7 +381,7 @@ function TripReplayHud({
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: 16, opacity: 0 }}
       transition={{ duration: 0.18, ease: "easeOut" as const }}
-      className="pointer-events-auto absolute bottom-[186px] left-1/2 z-[6] w-[calc(100%-24px)] max-w-[390px] -translate-x-1/2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-3 text-[var(--ink-1)] shadow-[var(--shadow-card)]"
+      className="pointer-events-auto absolute bottom-[88px] left-1/2 z-[21] w-[calc(100%-24px)] max-w-[390px] -translate-x-1/2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-3 text-[var(--ink-1)] shadow-[var(--shadow-card)]"
       role="group"
       aria-label="Trip Replay"
     >
