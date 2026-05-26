@@ -153,10 +153,6 @@ vi.mock("../routevote/RouteVotePanel", () => ({
   },
 }));
 
-vi.mock("../routevote/RouteVoteProgress", () => ({
-  default: () => null,
-}));
-
 vi.mock("../journal/JournalSheet", () => ({
   default: () => <div data-testid="journal-sheet" />,
 }));

@@ -24,7 +24,6 @@ import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import MissionMarkers from "./MissionMarkers";
 import MissionPanel from "../missions/MissionPanel";
 import RouteVotePanel from "../routevote/RouteVotePanel";
-import RouteVoteProgress from "../routevote/RouteVoteProgress";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import {
@@ -96,8 +95,6 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
-const PANEL_ERROR_CLASS =
-  "absolute bottom-5 left-5 z-[4] grid w-80 max-w-[calc(100%-40px)] gap-3 rounded-md border bg-background p-4 text-sm shadow-lg";
 const BOTTOM_SHEET_ERROR_CLASS =
   "absolute inset-x-0 bottom-0 z-[4] grid gap-3 border-t bg-background p-4 text-sm shadow-lg";
 const CARD_ERROR_CLASS =
@@ -2636,72 +2633,41 @@ export default function TripMap({
 
       {/* Vote panels — kept mounted (not unmounted) during coordinate pick to
           preserve form state, and while closed so the close transition plays. */}
-      {role === "follower" && (
-          <FeatureBoundary
-            resetKeys={[isVotePanelOpen, role, token]}
-            onClose={() => {
-              music.sfx("close");
-              setIsVotePanelOpen(false);
-              setVoteMapOverlay(null);
-              setVoteOptionNumberById(null);
-            }}
-            title="Votes hit a problem."
-            message="Try again, or close votes and reopen them."
-            fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
-          >
-            <RouteVotePanel
-              key="follower-vote-panel"
-              open={isVotePanelOpen}
-              token={token}
-              onClose={() => {
-                music.sfx("close");
-                setIsVotePanelOpen(false);
-                setVoteMapOverlay(null);
-                setVoteOptionNumberById(null);
-              }}
-              onVoteOverlayChange={handleVoteOverlayChange}
-              onRequestFitMap={handleRequestFitMap}
-              fallbackOrigin={routeVoteFallbackOrigin}
-              debugSource={votesDebugSource}
-            />
-          </FeatureBoundary>
-      )}
-
-      {role === "traveler" && (
-        <FeatureBoundary
-            resetKeys={[isVotePanelOpen, role, token]}
-            onClose={() => {
-              music.sfx("close");
-              setIsVotePanelOpen(false);
-              setVoteMapOverlay(null);
-              setVoteOptionNumberById(null);
-            }}
-            title="Route votes hit a problem."
-            message="Try again, or close votes and reopen them."
-            fallbackClassName={PANEL_ERROR_CLASS}
-          >
-            <RouteVoteProgress
-              open={isVotePanelOpen}
-              token={token}
-              onClose={() => {
-                music.sfx("close");
-                setIsVotePanelOpen(false);
-                setVoteMapOverlay(null);
-                setVoteOptionNumberById(null);
-              }}
-              onRequestCoordinatePick={handleRequestCoordinatePick}
-              referenceLocation={livePosition}
-              onVoteOverlayChange={handleVoteOverlayChange}
-              onRequestFitMap={handleRequestFitMap}
-              fallbackOrigin={routeVoteFallbackOrigin}
-              isPickingCoordinate={isPickingCoordinate}
-              pendingOpenVoteId={pendingOpenVoteId}
-              onClearPendingVoteId={() => setPendingOpenVoteId(null)}
-              onRequestOpenMissionDetail={handleNavigateToMissionDetail}
-              debugSource={votesDebugSource}
-            />
-          </FeatureBoundary>
-      )}
+      <FeatureBoundary
+        resetKeys={[isVotePanelOpen, role, token]}
+        onClose={() => {
+          music.sfx("close");
+          setIsVotePanelOpen(false);
+          setVoteMapOverlay(null);
+          setVoteOptionNumberById(null);
+        }}
+        title={role === "traveler" ? "Route votes hit a problem." : "Votes hit a problem."}
+        message="Try again, or close votes and reopen them."
+        fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
+      >
+        <RouteVotePanel
+          key={`${role}-vote-panel`}
+          open={isVotePanelOpen}
+          token={token}
+          role={role}
+          onClose={() => {
+            music.sfx("close");
+            setIsVotePanelOpen(false);
+            setVoteMapOverlay(null);
+            setVoteOptionNumberById(null);
+          }}
+          onRequestCoordinatePick={handleRequestCoordinatePick}
+          referenceLocation={livePosition}
+          onVoteOverlayChange={handleVoteOverlayChange}
+          onRequestFitMap={handleRequestFitMap}
+          fallbackOrigin={routeVoteFallbackOrigin}
+          isPickingCoordinate={isPickingCoordinate}
+          pendingOpenVoteId={pendingOpenVoteId}
+          onClearPendingVoteId={() => setPendingOpenVoteId(null)}
+          onRequestOpenMissionDetail={handleNavigateToMissionDetail}
+          debugSource={votesDebugSource}
+        />
+      </FeatureBoundary>
 
       <AnimatePresence>
         {role === "traveler" && isTravelerStateOpen && (
