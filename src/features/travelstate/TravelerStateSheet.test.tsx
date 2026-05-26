@@ -28,8 +28,17 @@ function setupMocks({
   visibility = null,
   autoState = null,
   currentActivity = null,
+  stalenessSettings = {
+    enabled: true,
+    fallbackTitle: "Idle",
+    fallbackEmoji: "🙂",
+    resetAfterMs: 4 * 60 * 60 * 1000,
+    updatedAt: null,
+    updatedBySessionId: null,
+  },
   updateStateFn = vi.fn().mockResolvedValue(null),
   setActivityFn = vi.fn().mockResolvedValue("activity-id"),
+  updateStalenessFn = vi.fn().mockResolvedValue(null),
   updateVisibilityFn = vi.fn().mockResolvedValue(null),
   autoMutationFn = vi.fn().mockResolvedValue(null),
 }: {
@@ -37,8 +46,10 @@ function setupMocks({
   visibility?: object | null;
   autoState?: object | null;
   currentActivity?: object | null;
+  stalenessSettings?: object | null;
   updateStateFn?: ReturnType<typeof vi.fn>;
   setActivityFn?: ReturnType<typeof vi.fn>;
+  updateStalenessFn?: ReturnType<typeof vi.fn>;
   updateVisibilityFn?: ReturnType<typeof vi.fn>;
   autoMutationFn?: ReturnType<typeof vi.fn>;
 } = {}) {
@@ -53,15 +64,19 @@ function setupMocks({
     if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) {
       return currentActivity;
     }
+    if (ref === tripcastApi.currentActivity.travelerGetStalenessSettings) {
+      return stalenessSettings;
+    }
     return undefined;
   });
   vi.mocked(convexReact.useMutation).mockImplementation((ref: unknown) => {
     if (ref === tripcastApi.travelerState.travelerUpdateState) return updateStateFn as any;
     if (ref === tripcastApi.currentActivity.travelerSetCurrentActivity) return setActivityFn as any;
+    if (ref === tripcastApi.currentActivity.travelerUpdateStalenessSettings) return updateStalenessFn as any;
     if (ref === tripcastApi.travelerState.travelerUpdateStateVisibility) return updateVisibilityFn as any;
     return autoMutationFn as any;
   });
-  return { updateStateFn, setActivityFn, updateVisibilityFn, autoMutationFn };
+  return { updateStateFn, setActivityFn, updateStalenessFn, updateVisibilityFn, autoMutationFn };
 }
 
 function renderSheet(overrides?: Partial<React.ComponentProps<typeof TravelerStateSheet>>) {
@@ -197,6 +212,10 @@ describe("TravelerStateSheet — State tab", () => {
     expect(screen.getByLabelText("Activity")).toBeInTheDocument();
     expect(screen.getByLabelText("Activity Note")).toBeInTheDocument();
     expect(screen.getByLabelText("Place")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Auto-set activity when stale" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByLabelText("Fallback")).toHaveValue("Idle");
+    expect(screen.getByLabelText("Fallback Emoji")).toHaveValue("🙂");
+    expect(screen.getByLabelText("Hours")).toHaveValue(4);
   });
 
   it("loads the current activity into the unified status form", () => {
@@ -258,6 +277,27 @@ describe("TravelerStateSheet — State tab", () => {
         emoji: "🚶",
         note: "Across the bridge",
         locationLabel: "Bridge Park",
+      });
+    });
+  });
+
+  it("Save Status persists staleness reset changes", async () => {
+    const { updateStalenessFn } = setupMocks({ state: null });
+    renderSheet();
+
+    await userEvent.clear(screen.getByLabelText("Fallback"));
+    await userEvent.type(screen.getByLabelText("Fallback"), "Resting");
+    fireEvent.change(screen.getByLabelText("Hours"), { target: { value: "2" } });
+    await userEvent.click(screen.getByRole("switch", { name: "Auto-set activity when stale" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save Status" }));
+
+    await waitFor(() => {
+      expect(updateStalenessFn).toHaveBeenCalledWith({
+        token: "test-token",
+        enabled: false,
+        fallbackTitle: "Resting",
+        fallbackEmoji: "🙂",
+        resetAfterMs: 2 * 60 * 60 * 1000,
       });
     });
   });

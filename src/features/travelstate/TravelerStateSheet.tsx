@@ -10,6 +10,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import type {
   AutoState,
   CurrentActivity,
+  CurrentActivityStalenessSettings,
   TravelerMoodValue,
   TravelerEnergyLevel,
   TravelerStomachLevel,
@@ -63,6 +64,14 @@ const QUICK_ACTIVITIES = [
   { label: "Errands", emoji: "💻" },
 ] as const;
 
+const DEFAULT_STALENESS_RESET_AFTER_MS = 4 * 60 * 60 * 1000;
+const DEFAULT_STALENESS_SETTINGS = {
+  enabled: true,
+  fallbackTitle: "Idle",
+  fallbackEmoji: "🙂",
+  resetAfterMs: DEFAULT_STALENESS_RESET_AFTER_MS,
+};
+const HOURS_TO_MS = 60 * 60 * 1000;
 const BODY_FOOTER_CLEARANCE_CLASS = "pb-28";
 const FOOTER_DOCK_CLEARANCE_CLASS = "pb-[calc(var(--dock-h,76px)+16px+env(safe-area-inset-bottom))]";
 const stateInputClass =
@@ -308,14 +317,17 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
   const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
   const currentActivity = useQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
+  const stalenessSettings = useQuery(tripcastApi.currentActivity.travelerGetStalenessSettings, { token });
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
   const setActivity = useMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
+  const updateStalenessSettings = useMutation(tripcastApi.currentActivity.travelerUpdateStalenessSettings);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
 
   const { state: statePersonality } = useSheetPersonalities();
   const log = useDebugLogger("TravelerStateSheet", "src/features/travelstate/TravelerStateSheet.tsx");
   const hasPopulatedRef = useRef(false);
   const hasPopulatedActivityRef = useRef(false);
+  const hasPopulatedStalenessRef = useRef(false);
   const [tab, setTab] = useState<TabView>("state");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -337,6 +349,10 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [activityEmoji, setActivityEmoji] = useState("");
   const [activityNote, setActivityNote] = useState("");
   const [activityLocationLabel, setActivityLocationLabel] = useState("");
+  const [stalenessEnabled, setStalenessEnabled] = useState(true);
+  const [stalenessTitle, setStalenessTitle] = useState("Idle");
+  const [stalenessEmoji, setStalenessEmoji] = useState("🙂");
+  const [stalenessHours, setStalenessHours] = useState(4);
   const [biometricsOpen, setBiometricsOpen] = useState(false);
   const [steps, setSteps] = useState<number | undefined>();
   const [avgHr, setAvgHr] = useState<number | undefined>();
@@ -454,6 +470,16 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     setActivityLocationLabel(currentActivity.locationLabel ?? "");
   }, [currentActivity]);
 
+  useEffect(() => {
+    if (stalenessSettings === undefined || hasPopulatedStalenessRef.current) return;
+    hasPopulatedStalenessRef.current = true;
+    const settings = stalenessSettings ?? DEFAULT_STALENESS_SETTINGS;
+    setStalenessEnabled(settings.enabled);
+    setStalenessTitle(settings.fallbackTitle);
+    setStalenessEmoji(settings.fallbackEmoji ?? "");
+    setStalenessHours(msToHours(settings.resetAfterMs));
+  }, [stalenessSettings]);
+
   function toIsoLocal(ts: number) {
     const d = new Date(ts);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -496,6 +522,24 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     );
   }
 
+  function msToHours(ms: number) {
+    return Math.round((ms / HOURS_TO_MS) * 100) / 100;
+  }
+
+  function getStalenessResetAfterMs() {
+    return Math.round(Math.max(0.25, Math.min(168, stalenessHours)) * HOURS_TO_MS);
+  }
+
+  function hasStalenessChanges(settings: CurrentActivityStalenessSettings | null | undefined): boolean {
+    const current = settings ?? DEFAULT_STALENESS_SETTINGS;
+    return (
+      stalenessEnabled !== current.enabled ||
+      stalenessTitle.trim() !== current.fallbackTitle ||
+      normalizeOptionalText(stalenessEmoji) !== current.fallbackEmoji ||
+      getStalenessResetAfterMs() !== current.resetAfterMs
+    );
+  }
+
   async function handleSaveStatus() {
     if (saving) return;
     setSaving(true);
@@ -535,6 +579,15 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
           emoji: normalizeOptionalText(activityEmoji),
           note: normalizeOptionalText(activityNote),
           locationLabel: normalizeOptionalText(activityLocationLabel),
+        });
+      }
+      if (hasStalenessChanges(stalenessSettings)) {
+        await updateStalenessSettings({
+          token,
+          enabled: stalenessEnabled,
+          fallbackTitle: stalenessTitle.trim(),
+          fallbackEmoji: normalizeOptionalText(stalenessEmoji),
+          resetAfterMs: getStalenessResetAfterMs(),
         });
       }
       log.logInteraction("submit:success", { action: "saveStatus" });
@@ -924,6 +977,60 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                   placeholder="Place name (optional)"
                   className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
                 />
+              </div>
+
+              <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] p-2">
+                <ToggleRow
+                  label="Auto-set activity when stale"
+                  checked={stalenessEnabled}
+                  onChange={setStalenessEnabled}
+                />
+                <div className="grid grid-cols-[72px_1fr_92px] gap-2">
+                  <div className="grid gap-1.5">
+                    <label htmlFor="stale-activity-emoji" className={stateLabelClass}>
+                      Fallback Emoji
+                    </label>
+                    <input
+                      id="stale-activity-emoji"
+                      type="text"
+                      value={stalenessEmoji}
+                      onChange={(e) => setStalenessEmoji(e.target.value.slice(0, 10))}
+                      maxLength={10}
+                      placeholder="🙂"
+                      disabled={!stalenessEnabled}
+                      className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)] disabled:opacity-50", stateInputClass)}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label htmlFor="stale-activity-title" className={stateLabelClass}>
+                      Fallback
+                    </label>
+                    <input
+                      id="stale-activity-title"
+                      type="text"
+                      value={stalenessTitle}
+                      onChange={(e) => setStalenessTitle(e.target.value.slice(0, 80))}
+                      disabled={!stalenessEnabled}
+                      className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
+                    />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <label htmlFor="stale-activity-hours" className={stateLabelClass}>
+                      Hours
+                    </label>
+                    <input
+                      id="stale-activity-hours"
+                      type="number"
+                      min={0.25}
+                      max={168}
+                      step={0.25}
+                      value={stalenessHours}
+                      onChange={(e) => setStalenessHours(Number(e.target.value) || 4)}
+                      disabled={!stalenessEnabled}
+                      className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
+                    />
+                  </div>
+                </div>
               </div>
             </StateSegment>
 
