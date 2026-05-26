@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import maplibregl from "maplibre-gl";
+import { logMapEvent } from "../../debug/debugLogger";
 
 export type LiveTrailPoint = {
   lat: number;
@@ -11,25 +12,8 @@ export function useLiveTrailPath(
   map: maplibregl.Map | null,
   samples: LiveTrailPoint[],
   visible: boolean,
+  lineColor: string = "#444444",
 ) {
-  const [mapLoaded, setMapLoaded] = useState(false);
-
-  useEffect(() => {
-    if (!map) {
-      setMapLoaded(false);
-      return;
-    }
-    if (map.isStyleLoaded()) {
-      setMapLoaded(true);
-      return;
-    }
-    const handleLoad = () => setMapLoaded(true);
-    map.once("load", handleLoad);
-    return () => {
-      map.off("load", handleLoad);
-    };
-  }, [map]);
-
   const pathData = useMemo(() => {
     if (!visible) return null;
     const coords = samples
@@ -50,31 +34,67 @@ export function useLiveTrailPath(
   }, [samples, visible]);
 
   useEffect(() => {
-    if (!map || !mapLoaded) return;
+    if (!map) return;
     const sourceId = "live-trail";
     const layerId = "live-trail-layer";
 
-    if (!pathData) {
-      if (map.getLayer(layerId)) map.removeLayer(layerId);
-      if (map.getSource(sourceId)) map.removeSource(sourceId);
-      return;
-    }
-
-    if (!map.getSource(sourceId)) {
-      map.addSource(sourceId, { type: "geojson", data: pathData });
+    const addLayer = () => {
+      map.addSource(sourceId, { type: "geojson", data: pathData! });
       map.addLayer({
         id: layerId,
         type: "line",
         source: sourceId,
         layout: { "line-join": "round", "line-cap": "round" },
         paint: {
-          "line-color": "#d92332",
-          "line-width": 4,
+          "line-color": lineColor,
+          "line-width": 2,
+          "line-dasharray": [2, 2],
           "line-opacity": 0.72,
         },
       });
+      logMapEvent("map:route-path:re-add", { layerId, lineColor });
+    };
+
+    const sync = () => {
+      if (!map.isStyleLoaded()) return; // styledata will re-fire when ready
+      if (!pathData) {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+        return;
+      }
+      if (!map.getSource(sourceId)) {
+        addLayer();
+      } else {
+        (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(pathData);
+        map.setPaintProperty(layerId, "line-color", lineColor);
+      }
+    };
+
+    // Re-add only when missing (e.g. setStyle wiped it); never calls setData.
+    const ensureAfterStyle = () => {
+      if (map.isStyleLoaded() && pathData && !map.getSource(sourceId)) addLayer();
+    };
+
+    logMapEvent("map:route-path:effect", {
+      layerId,
+      styleLoaded: map.isStyleLoaded(),
+      hasData: !!pathData,
+      layerExists: !!map.getSource(sourceId),
+      lineColor,
+    });
+
+    if (map.isStyleLoaded()) {
+      sync();
     } else {
-      (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(pathData);
+      map.once("load", sync);
     }
-  }, [map, mapLoaded, pathData]);
+    // "idle" is the dependable post-setStyle trigger; styledata is a backstop.
+    map.on("styledata", ensureAfterStyle);
+    map.on("idle", ensureAfterStyle);
+    return () => {
+      map.off("load", sync);
+      map.off("styledata", ensureAfterStyle);
+      map.off("idle", ensureAfterStyle);
+    };
+  }, [map, pathData, lineColor]);
 }

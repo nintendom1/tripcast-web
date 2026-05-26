@@ -782,7 +782,8 @@ export default function TripMap({
   const [replayPlayheadTime, setReplayPlayheadTime] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const canWrite = role === "traveler";
-  const { resolvedMapBase } = useTheme();
+  const { resolvedMapBase, resolvedTheme } = useTheme();
+  const routeLineColor = resolvedTheme === "constellation" ? "#ffd86a" : "#444444";
   const sheetPersonalities = useSheetPersonalities();
   const FUNDS_PERSONALITY = sheetPersonalities.funds;
   const mapStyleResolution = useMemo(() => getMapStyleResolution(resolvedMapBase), [resolvedMapBase]);
@@ -831,9 +832,12 @@ export default function TripMap({
 
   const followerPreferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
 
+  const travelerAllowsFollowerPath = followerPreferences?.visible
+    ? ((followerPreferences as any).allowFollowersTripPath ?? false)
+    : false;
   const showPath = role === "traveler"
     ? showTripPathLocal
-    : (followerPreferences?.visible ? ((followerPreferences as any).allowFollowersTripPath ?? false) : false);
+    : travelerAllowsFollowerPath && showTripPathLocal;
 
   useTripPath(
     mapInstance,
@@ -841,8 +845,18 @@ export default function TripMap({
     livePosition ?? (role === "follower" ? (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null) : null),
     showPath,
     replayActive ? replayPlayheadTime : null,
+    routeLineColor,
   );
-  useLiveTrailPath(mapInstance, liveTrailSamples, liveTrailPathVisible);
+  useLiveTrailPath(mapInstance, liveTrailSamples, liveTrailPathVisible, routeLineColor);
+
+  useEffect(() => {
+    logMapEvent("map:trip-path:gating", {
+      role,
+      showTripPathLocal,
+      travelerAllowsFollowerPath,
+      showPath,
+    });
+  }, [role, showTripPathLocal, travelerAllowsFollowerPath, showPath]);
 
   const sessionData = useQuery(tripcastApi.auth.currentSession, { token });
   const followerSession = useQuery(tripcastApi.followers.followerCurrentSession, { token });

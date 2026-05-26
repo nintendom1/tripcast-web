@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import maplibregl from "maplibre-gl";
 import { Checkpoint } from "../../convex/tripcastApi";
+import { logMapEvent } from "../../debug/debugLogger";
 
 /**
  * Custom hook to render a chronological dashed path connecting checkpoints.
@@ -12,26 +13,8 @@ export function useTripPath(
   livePosition: { lat: number; lon: number } | null,
   visible: boolean,
   playheadTime: number | null = null,
+  lineColor: string = "#444444",
 ) {
-  const [mapLoaded, setMapLoaded] = useState(false);
-
-  useEffect(() => {
-    if (!map) {
-      setMapLoaded(false);
-      return;
-    }
-
-    if (map.isStyleLoaded()) {
-      setMapLoaded(true);
-    } else {
-      const handleLoad = () => setMapLoaded(true);
-      map.once("load", handleLoad);
-      return () => {
-        map.off("load", handleLoad);
-      };
-    }
-  }, [map]);
-
   const pathData = useMemo(() => {
     if (!visible) return null;
 
@@ -97,23 +80,13 @@ export function useTripPath(
   }, [checkpoints, livePosition, visible, playheadTime]);
 
   useEffect(() => {
-    if (!map || !mapLoaded) return;
+    if (!map) return;
 
     const sourceId = "trip-path";
     const layerId = "trip-path-layer";
 
-    if (!pathData) {
-      if (map.getLayer(layerId)) map.removeLayer(layerId);
-      if (map.getSource(sourceId)) map.removeSource(sourceId);
-      return;
-    }
-
-    if (!map.getSource(sourceId)) {
-      map.addSource(sourceId, {
-        type: "geojson",
-        data: pathData,
-      });
-
+    const addLayer = () => {
+      map.addSource(sourceId, { type: "geojson", data: pathData! });
       map.addLayer({
         id: layerId,
         type: "line",
@@ -123,19 +96,60 @@ export function useTripPath(
           "line-cap": "round",
         },
         paint: {
-          "line-color": "#444444",
+          "line-color": lineColor,
           "line-width": 3.5,
           "line-dasharray": [2, 2],
           "line-opacity": ["get", "opacity"],
         },
       });
-    } else {
-      (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(pathData);
-    }
-
-    return () => {
-      // We don't remove here to avoid flicker on every data update, 
-      // the empty pathData check above handles removal.
+      logMapEvent("map:route-path:re-add", { layerId, lineColor });
     };
-  }, [map, mapLoaded, pathData]);
+
+    // Full reconcile against the current data/color.
+    const sync = () => {
+      if (!map.isStyleLoaded()) return; // styledata will re-fire when ready
+      if (!pathData) {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+        return;
+      }
+      if (!map.getSource(sourceId)) {
+        addLayer();
+      } else {
+        (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(pathData);
+        map.setPaintProperty(layerId, "line-color", lineColor);
+      }
+    };
+
+    // Re-add only when the layer is missing (e.g. setStyle wiped it). Never calls
+    // setData, so it can't loop on the styledata events setData itself emits.
+    const ensureAfterStyle = () => {
+      if (map.isStyleLoaded() && pathData && !map.getSource(sourceId)) addLayer();
+    };
+
+    logMapEvent("map:route-path:effect", {
+      layerId,
+      styleLoaded: map.isStyleLoaded(),
+      hasData: !!pathData,
+      layerExists: !!map.getSource(sourceId),
+      lineColor,
+    });
+
+    // Initial trigger: run now if the style is already loaded, otherwise wait for
+    // the one-shot "load". styledata then handles re-adds after each setStyle.
+    if (map.isStyleLoaded()) {
+      sync();
+    } else {
+      map.once("load", sync);
+    }
+    // styledata alone is unreliable after setStyle (fires while isStyleLoaded() is
+    // still false); "idle" fires once the new style + tiles finish loading.
+    map.on("styledata", ensureAfterStyle);
+    map.on("idle", ensureAfterStyle);
+    return () => {
+      map.off("load", sync);
+      map.off("styledata", ensureAfterStyle);
+      map.off("idle", ensureAfterStyle);
+    };
+  }, [map, pathData, lineColor]);
 }
