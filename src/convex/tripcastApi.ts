@@ -252,6 +252,13 @@ export type VisibleRouteVote = {
   totalSubmissions?: number;
 };
 
+export type RouteVoteSummary = {
+  _id: string;
+  title: string;
+  effectiveStatus: RouteVoteStatus;
+  options: Array<{ _id: string; title: string }>;
+};
+
 export type RouteVoteMapOverlay = {
   travelerLocation: { lat: number; lon: number } | null;
   coordinateOptions: Array<{
@@ -1323,6 +1330,18 @@ export const tripcastApi = {
       "public",
       { token: string },
       VisibleRouteVote[]
+    >,
+    getVisibleRouteVote: (anyApi as any).routeVotes.getVisibleRouteVote as FunctionReference<
+      "query",
+      "public",
+      { token: string; routeVoteId: string },
+      VisibleRouteVote | null
+    >,
+    getRouteVoteSummary: (anyApi as any).routeVotes.getRouteVoteSummary as FunctionReference<
+      "query",
+      "public",
+      { token: string; routeVoteId: string },
+      RouteVoteSummary | null
     >,
     getRouteVoteMapOverlay: (anyApi as any).routeVotes.getRouteVoteMapOverlay as FunctionReference<
       "query",

@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useQuery } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -16,10 +17,24 @@ type Props = {
 export default function RouteVoteSourceCard({ sourceVoteId, sourceOptionId, token, onNavigate, heading = "Source Route Vote" }: Props) {
   const log = useDebugLogger("RouteVoteSourceCard", "src/features/missions/RouteVoteSourceCard.tsx");
 
-  const vote = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
+  const vote = useQuery(tripcastApi.routeVotes.getRouteVoteSummary, {
     token,
     routeVoteId: sourceVoteId,
   });
+
+  useEffect(() => {
+    if (vote === undefined) {
+      log.logQuery("summary:fetch", "debug", { voteId: sourceVoteId });
+    } else if (vote === null) {
+      log.logQuery("summary:empty", "warn", { voteId: sourceVoteId });
+    } else {
+      log.logQuery("summary:loaded", "info", {
+        voteId: sourceVoteId,
+        status: vote.effectiveStatus,
+        optionCount: vote.options.length,
+      });
+    }
+  }, [vote, sourceVoteId, log]);
 
   if (vote === null) return null;
 

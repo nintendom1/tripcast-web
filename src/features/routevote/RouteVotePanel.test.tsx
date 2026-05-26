@@ -69,6 +69,26 @@ const MOCK_CLOSED_VOTE: VisibleRouteVote = {
 
 const MOCK_VOTES: VisibleRouteVote[] = [MOCK_VOTE, MOCK_CLOSED_VOTE];
 
+// A vote that is NOT in the list — only resolvable by id via getVisibleRouteVote.
+const MOCK_REMOTE_VOTE: VisibleRouteVote = {
+  _id: "remote-vote-1",
+  title: "Remote Vote",
+  effectiveStatus: "active",
+  expiresAt: Date.now() + 1_000_000,
+  resultsVisibility: "before_voting" as const,
+  options: [
+    {
+      _id: "remote-opt-1",
+      title: "Remote Option",
+      routeVoteId: "remote-vote-1",
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  ],
+  visibleComments: [],
+  mySubmission: undefined,
+};
+
 const MOCK_TRAVELER_VOTE: RouteVoteListItem = {
   _id: "traveler-vote-1",
   title: "Traveler Vote",
@@ -95,7 +115,9 @@ const MOCK_TRAVELER_VOTE: RouteVoteListItem = {
 
 function setupMocks() {
 
-  (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
+  (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args?: unknown) => {
+    // Mirror convex/react: a "skip" sentinel yields undefined (query disabled).
+    if (args === "skip") return undefined;
     if (ref === tripcastApi.routeVotes.listVisibleRouteVotes) return MOCK_VOTES;
     if (ref === tripcastApi.routeVotes.travelerListRouteVotes) return [MOCK_TRAVELER_VOTE];
     if (ref === tripcastApi.routeVotes.travelerGetRouteVoteDetail) {
@@ -104,6 +126,7 @@ function setupMocks() {
         submissions: [],
       };
     }
+    if (ref === tripcastApi.routeVotes.getVisibleRouteVote) return MOCK_REMOTE_VOTE;
     if (ref === tripcastApi.routeVotes.getRouteVoteMapOverlay) return null;
     return undefined;
   });
@@ -213,6 +236,25 @@ describe("RouteVotePanel", () => {
     expect(screen.getByRole("button", { name: "Close voting" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     expect(screen.queryByText("You voted")).not.toBeInTheDocument();
+  });
+
+  it("opens detail for a follower navigating to a vote outside the list (by id)", async () => {
+    render(
+      <RouteVotePanel
+        open
+        token="test-token"
+        onClose={vi.fn()}
+        onVoteOverlayChange={vi.fn()}
+        onRequestFitMap={vi.fn()}
+        fallbackOrigin={null}
+        pendingOpenVoteId="remote-vote-1"
+        onClearPendingVoteId={vi.fn()}
+      />,
+    );
+
+    // "remote-vote-1" is not in the follower list; it must be resolved by id
+    // via getVisibleRouteVote and rendered in the detail view.
+    expect(await screen.findByText("Remote Option")).toBeInTheDocument();
   });
 
   it("hides the shared panel during traveler coordinate picking", () => {
