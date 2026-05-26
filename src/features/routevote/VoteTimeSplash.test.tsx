@@ -58,25 +58,25 @@ afterEach(() => {
 describe("selectVoteTimeSplashTarget", () => {
   it("selects an unseen active vote inside the final 24 hours", () => {
     const vote = makeVote();
-    expect(selectVoteTimeSplashTarget([vote], BASE_TIME, null)?._id).toBe("vote1");
+    expect(selectVoteTimeSplashTarget([vote], BASE_TIME, new Set())?._id).toBe("vote1");
   });
 
   it("ignores votes that are seen, submitted, closed, too early, or dismissed", () => {
     expect(
-      selectVoteTimeSplashTarget([makeVote({ myViewState: { seenAt: BASE_TIME } })], BASE_TIME, null),
+      selectVoteTimeSplashTarget([makeVote({ myViewState: { seenAt: BASE_TIME } })], BASE_TIME, new Set()),
     ).toBeNull();
     expect(
       selectVoteTimeSplashTarget(
         [makeVote({ mySubmission: { _id: "sub1", selectedOptionIds: [], commentVisibility: "public", anonymous: false } })],
         BASE_TIME,
-        null,
+        new Set(),
       ),
     ).toBeNull();
-    expect(selectVoteTimeSplashTarget([makeVote({ effectiveStatus: "closed" })], BASE_TIME, null)).toBeNull();
+    expect(selectVoteTimeSplashTarget([makeVote({ effectiveStatus: "closed" })], BASE_TIME, new Set())).toBeNull();
     expect(
-      selectVoteTimeSplashTarget([makeVote({ expiresAt: BASE_TIME + 25 * 60 * 60 * 1000 })], BASE_TIME, null),
+      selectVoteTimeSplashTarget([makeVote({ expiresAt: BASE_TIME + 25 * 60 * 60 * 1000 })], BASE_TIME, new Set()),
     ).toBeNull();
-    expect(selectVoteTimeSplashTarget([makeVote()], BASE_TIME, "vote1")).toBeNull();
+    expect(selectVoteTimeSplashTarget([makeVote()], BASE_TIME, new Set(["vote1"]))).toBeNull();
   });
 });
 
@@ -96,14 +96,14 @@ describe("VoteTimeSplash", () => {
     expect(screen.queryByText("Cast your Vote")).not.toBeInTheDocument();
   });
 
-  it("auto-dismisses after one second without marking the vote seen", () => {
+  it("auto-dismisses after some time without marking the vote seen", () => {
     mockVotes([makeVote()]);
 
     render(<VoteTimeSplash token="token" enabled onOpenVotes={vi.fn()} />);
     expect(screen.getByText("Cast your Vote")).toBeInTheDocument();
 
     act(() => {
-      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(6000);
     });
 
     expect(screen.queryByText("Cast your Vote")).not.toBeInTheDocument();

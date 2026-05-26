@@ -7,7 +7,7 @@ import { tripcastApi, type VisibleRouteVote } from "../../convex/tripcastApi";
 import { formatTimeRemaining } from "../../lib/routeVoteUtils";
 
 const VOTE_TIME_WINDOW_MS = 24 * 60 * 60 * 1000;
-const SPLASH_DURATION_MS = 1000;
+const SPLASH_DURATION_MS = 5000;
 
 type VoteTimeSplashProps = {
   token: string;
@@ -18,14 +18,14 @@ type VoteTimeSplashProps = {
 function selectVoteTimeSplashTarget(
   votes: VisibleRouteVote[] | undefined,
   now: number,
-  dismissedVoteId: string | null,
+  dismissedVoteIds: Set<string>,
 ) {
   if (!votes) return null;
   return (
     votes.find((vote) => {
       const msRemaining = vote.expiresAt - now;
       return (
-        vote._id !== dismissedVoteId &&
+        !dismissedVoteIds.has(vote._id) &&
         vote.effectiveStatus === "active" &&
         msRemaining > 0 &&
         msRemaining <= VOTE_TIME_WINDOW_MS &&
@@ -45,7 +45,7 @@ export default function VoteTimeSplash({
     tripcastApi.routeVotes.listVisibleRouteVotes,
     enabled ? { token } : "skip",
   );
-  const [dismissedVoteId, setDismissedVoteId] = useState<string | null>(null);
+  const [dismissedVoteIds, setDismissedVoteIds] = useState<Set<string>>(new Set());
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -55,21 +55,21 @@ export default function VoteTimeSplash({
   }, [enabled]);
 
   const targetVote = useMemo(
-    () => selectVoteTimeSplashTarget(votes, now, dismissedVoteId),
-    [dismissedVoteId, now, votes],
+    () => selectVoteTimeSplashTarget(votes, now, dismissedVoteIds),
+    [dismissedVoteIds, now, votes],
   );
 
   useEffect(() => {
     if (!targetVote) return;
     const id = window.setTimeout(() => {
-      setDismissedVoteId(targetVote._id);
+      setDismissedVoteIds((prev) => new Set(prev).add(targetVote._id));
     }, SPLASH_DURATION_MS);
     return () => window.clearTimeout(id);
   }, [targetVote]);
 
   function dismissAndOpen() {
     if (!targetVote) return;
-    setDismissedVoteId(targetVote._id);
+    setDismissedVoteIds((prev) => new Set(prev).add(targetVote._id));
     onOpenVotes();
   }
 
