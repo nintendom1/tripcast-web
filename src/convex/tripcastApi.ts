@@ -237,6 +237,11 @@ export type VisibleRouteVote = {
     commentVisibility: CommentVisibility;
     anonymous: boolean;
   };
+  myViewState?: {
+    seenAt?: number;
+    lastOpenedAt?: number;
+    submittedAt?: number;
+  };
   visibleComments: Array<{
     submissionId: string;
     comment: string;
