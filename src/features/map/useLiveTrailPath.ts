@@ -70,9 +70,14 @@ export function useLiveTrailPath(
       }
     };
 
-    // Re-add only when missing (e.g. setStyle wiped it); never calls setData.
-    const ensureAfterStyle = () => {
-      if (map.isStyleLoaded() && pathData && !map.getSource(sourceId)) addLayer();
+    // Re-add when missing (e.g. setStyle wiped it); never calls setData. "style.load"
+    // / "load" mean the style spec is parsed (safe to addLayer) even before tiles
+    // finish, so treat them as ready without the isStyleLoaded() gate that delayed
+    // the re-add to "idle". See useTripPath for the full rationale.
+    const ensureAfterStyle = (e?: { type?: string }) => {
+      if (map.getSource(sourceId)) return;
+      const styleReady = e?.type === "style.load" || e?.type === "load";
+      if ((styleReady || map.isStyleLoaded()) && pathData) addLayer();
     };
 
     logMapEvent("map:route-path:effect", {
@@ -88,11 +93,13 @@ export function useLiveTrailPath(
     } else {
       map.once("load", sync);
     }
-    // "idle" is the dependable post-setStyle trigger; styledata is a backstop.
+    // style.load is the fast post-setStyle trigger; styledata/idle are backstops.
+    map.on("style.load", ensureAfterStyle);
     map.on("styledata", ensureAfterStyle);
     map.on("idle", ensureAfterStyle);
     return () => {
       map.off("load", sync);
+      map.off("style.load", ensureAfterStyle);
       map.off("styledata", ensureAfterStyle);
       map.off("idle", ensureAfterStyle);
     };

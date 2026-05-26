@@ -121,10 +121,15 @@ export function useTripPath(
       }
     };
 
-    // Re-add only when the layer is missing (e.g. setStyle wiped it). Never calls
-    // setData, so it can't loop on the styledata events setData itself emits.
-    const ensureAfterStyle = () => {
-      if (map.isStyleLoaded() && pathData && !map.getSource(sourceId)) addLayer();
+    // Re-add when the layer is missing (e.g. setStyle wiped it). "style.load" /
+    // "load" fire when the style spec is parsed (MapLibre Style._loaded === true),
+    // which is all addSource/addLayer need — so treat those as "ready" WITHOUT the
+    // isStyleLoaded() gate. isStyleLoaded() only flips true once tiles/sources also
+    // load (≈ the "idle" event ~0.7s later); gating on it was the whole delay.
+    const ensureAfterStyle = (e?: { type?: string }) => {
+      if (map.getSource(sourceId)) return;
+      const styleReady = e?.type === "style.load" || e?.type === "load";
+      if ((styleReady || map.isStyleLoaded()) && pathData) addLayer();
     };
 
     logMapEvent("map:route-path:effect", {
@@ -142,12 +147,14 @@ export function useTripPath(
     } else {
       map.once("load", sync);
     }
-    // styledata alone is unreliable after setStyle (fires while isStyleLoaded() is
-    // still false); "idle" fires once the new style + tiles finish loading.
+    // PASS 1 PROBE: route all three candidate events through ensureAfterStyle so
+    // the log trace reveals the earliest reliable re-add trigger.
+    map.on("style.load", ensureAfterStyle);
     map.on("styledata", ensureAfterStyle);
     map.on("idle", ensureAfterStyle);
     return () => {
       map.off("load", sync);
+      map.off("style.load", ensureAfterStyle);
       map.off("styledata", ensureAfterStyle);
       map.off("idle", ensureAfterStyle);
     };
