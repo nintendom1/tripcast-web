@@ -25,6 +25,13 @@ Read only when touching the related area.
 - Only one map-adjacent bottom sheet should be open at a time.
 - Non-modal map sheets slide under the Dock; fix covered footer actions with internal padding, not a higher z-index.
 
+## Map Layers And Theming (MapLibre GL)
+
+- Theme changes call `map.setStyle()`, which **wipes all custom sources/layers** — every custom layer (lines, breadcrumbs, GeoJSON overlays) must re-add itself after a swap or it's gone until refresh.
+- Re-add on `style.load` (fires after every `setStyle`; earliest point `addSource`/`addLayer` are safe). Don't gate on `map.isStyleLoaded()` — it stays `false` until tiles load (≈ the `idle` event, ~0.7s later), yet adds only need the parsed style spec. Don't rely on `map.once("load")` either: it fires once per map lifetime, never after `setStyle`.
+- Canonical pattern (`src/features/map/useTripPath.ts`): add on `style.load`/`load` ungated; keep `styledata`/`idle` as `isStyleLoaded()`-gated backstops; guard each add with `!map.getSource(id)` to stay idempotent and quiet during pan/zoom.
+- GL paint properties **can't use CSS variables** — read `useTheme()` and pass hex values. DOM markers (`maplibregl.Marker`, `pinStyles.ts`) survive `setStyle` and *can* use CSS vars, so they theme by a different mechanism than GL layers.
+
 ## Coordinate Pick
 
 When a form lets users tap the map for coordinates, keep the form mounted and hide it while picking. If the form is inside a `Sheet`, apply `invisible pointer-events-none` directly to `SheetContent`, not to an ancestor.
