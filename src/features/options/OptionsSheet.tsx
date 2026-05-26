@@ -804,7 +804,7 @@ export default function OptionsSheet({
 function MapSettingsSection({ token, role }: { token: string; role: "traveler" | "follower" }) {
   const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, role === "traveler" ? { token } : "skip");
   const followerPreferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
-  const updatePreferences = useMutation((tripcastApi.travelerPreferences as any).travelerUpdatePreferences);
+  const updatePreferences = useMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
 
   const [showTripPath, setShowTripPath] = useState(() => {
     const val = localStorage.getItem("tripcast.showTripPath");
@@ -818,8 +818,8 @@ function MapSettingsSection({ token, role }: { token: string; role: "traveler" |
   };
 
   const allowFollowers = role === "traveler"
-    ? ((preferences as any)?.allowFollowersTripPath ?? false)
-    : (followerPreferences?.visible ? (followerPreferences as any).allowFollowersTripPath : false);
+    ? (preferences?.allowFollowersTripPath ?? false)
+    : (followerPreferences?.visible ? followerPreferences.allowFollowersTripPath : false);
 
   const toggleAllowFollowers = async (checked: boolean) => {
     await updatePreferences({ token, allowFollowersTripPath: checked });
