@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import maplibregl from "maplibre-gl";
 import type { RouteVoteMapOverlay as RouteVoteMapOverlayType } from "../../convex/tripcastApi";
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
+import { useTheme } from "../../providers/ThemeProvider";
+import { logMapEvent } from "../../debug/debugLogger";
 
 const SOURCE_ID = "route-vote-overlay";
 const LINES_LAYER_ID = "route-vote-lines";
@@ -25,6 +27,7 @@ function removeOverlayLayers(map: maplibregl.Map) {
 function addOverlayLayers(
   map: maplibregl.Map,
   overlay: RouteVoteMapOverlayType,
+  accentColor: string,
   fallbackOrigin?: { lat: number; lon: number } | null,
   optionNumberById?: Record<string, number> | null,
 ) {
@@ -83,7 +86,7 @@ function addOverlayLayers(
     source: SOURCE_ID,
     filter: ["==", "$type", "LineString"],
     paint: {
-      "line-color": "#c9a84c",
+      "line-color": accentColor,
       "line-width": 2,
       "line-dasharray": [4, 3],
       "line-opacity": 0.8,
@@ -97,7 +100,7 @@ function addOverlayLayers(
     filter: ["==", "$type", "Point"],
     paint: {
       "circle-radius": 10,
-      "circle-color": "#c9a84c",
+      "circle-color": accentColor,
       "circle-stroke-width": 2,
       "circle-stroke-color": "#ffffff",
     },
@@ -127,28 +130,55 @@ export default function RouteVoteMapOverlay({
   fallbackOrigin,
   optionNumberById,
 }: RouteVoteMapOverlayProps) {
+  const { resolvedTheme } = useTheme();
+  const accentColor = resolvedTheme === "constellation" ? "#ffd86a" : "#c9a84c";
+
   useEffect(() => {
     if (!map) return;
-    let cancelled = false;
 
-    const doAdd = () => {
-      if (cancelled) return;
+    const addOverlay = () => {
+      if (!overlay) return;
+      addOverlayLayers(map, overlay, accentColor, fallbackOrigin, optionNumberById);
+      logMapEvent("map:route-path:re-add", {
+        layerId: LINES_LAYER_ID,
+        lineColor: accentColor,
+      });
+    };
+
+    // Full reconcile against current overlay/color.
+    const sync = () => {
+      if (!map.isStyleLoaded()) return; // styledata will re-fire when ready
       removeOverlayLayers(map);
-      if (overlay) addOverlayLayers(map, overlay, fallbackOrigin, optionNumberById);
+      addOverlay();
+    };
+
+    // Re-add when missing (e.g. setStyle wiped it). "style.load" / "load" mean the
+    // style spec is parsed (safe to addLayer) even before tiles finish, so treat
+    // them as ready without the isStyleLoaded() gate that delayed the re-add to
+    // "idle". See useTripPath for the full rationale.
+    const ensureAfterStyle = (e?: { type?: string }) => {
+      if (map.getSource(SOURCE_ID)) return;
+      const styleReady = e?.type === "style.load" || e?.type === "load";
+      if ((styleReady || map.isStyleLoaded()) && overlay) addOverlay();
     };
 
     if (map.isStyleLoaded()) {
-      doAdd();
+      sync();
     } else {
-      map.once("styledata", doAdd);
+      map.once("load", sync);
     }
-
+    // style.load is the fast post-setStyle trigger; styledata/idle are backstops.
+    map.on("style.load", ensureAfterStyle);
+    map.on("styledata", ensureAfterStyle);
+    map.on("idle", ensureAfterStyle);
     return () => {
-      cancelled = true;
-      map.off("styledata", doAdd);
+      map.off("load", sync);
+      map.off("style.load", ensureAfterStyle);
+      map.off("styledata", ensureAfterStyle);
+      map.off("idle", ensureAfterStyle);
       if (map.isStyleLoaded()) removeOverlayLayers(map);
     };
-  }, [map, overlay, fallbackOrigin, optionNumberById]);
+  }, [map, overlay, accentColor, fallbackOrigin, optionNumberById]);
 
   return null;
 }

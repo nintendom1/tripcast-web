@@ -829,7 +829,11 @@ function MapSettingsSection({ token, role }: { token: string; role: "traveler" |
     <>
       <OptionsSwitchRow
         title="Show Trip Path"
-        detail="Draw a dashed line connecting your pins."
+        detail={
+          role === "follower"
+            ? "Show the traveler's pin path. May not appear if the traveler has disabled it."
+            : "Draw a dashed line connecting your pins."
+        }
         checked={showTripPath}
         onChange={toggleShowPath}
       />

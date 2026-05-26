@@ -570,6 +570,7 @@ describe("TripMap location marker", () => {
         null,
         true,
         null,
+        "#444444",
       );
       expect(mapEaseTo).toHaveBeenCalledTimes(callsBeforeClose);
       expect(getLogs().some((entry) => entry.action === "replay:close")).toBe(true);
@@ -1206,6 +1207,7 @@ describe("TripMap location marker", () => {
         expect.anything(),
         [],
         false,
+        "#444444",
       );
     });
 
@@ -1228,6 +1230,7 @@ describe("TripMap location marker", () => {
           { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
         ],
         true,
+        "#444444",
       );
     });
   });
@@ -1244,7 +1247,8 @@ describe("TripMap location marker", () => {
         expect.anything(),
         null,
         true,
-        null
+        null,
+        "#444444"
       );
     });
 
@@ -1258,13 +1262,49 @@ describe("TripMap location marker", () => {
         expect.anything(),
         null,
         false,
-        null
+        null,
+        "#444444"
       );
     });
   });
 
-  it("shows the trip path for followers based on traveler preferences", async () => {
+  it("shows the follower trip path only when the traveler allows it AND the follower's toggle is on", async () => {
+    localStorage.setItem("tripcast.showTripPath", "true");
     setupQueries({ allowFollowersTripPath: true });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    // Traveler allows + follower toggle on → visible.
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        null,
+        true,
+        null,
+        "#444444"
+      );
+    });
+
+    // Follower turns their own toggle off → hidden, even though the traveler allows it.
+    localStorage.setItem("tripcast.showTripPath", "false");
+    window.dispatchEvent(new Event("tripcast.preferencesUpdated"));
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        null,
+        false,
+        null,
+        "#444444"
+      );
+    });
+  });
+
+  it("hides the follower trip path when the traveler disallows it, regardless of the follower toggle", async () => {
+    localStorage.setItem("tripcast.showTripPath", "true");
+    setupQueries({ allowFollowersTripPath: false });
 
     render(<TripMap token="test-token" role="follower" />);
 
@@ -1273,8 +1313,9 @@ describe("TripMap location marker", () => {
         expect.anything(),
         expect.anything(),
         null,
-        true,
-        null
+        false,
+        null,
+        "#444444"
       );
     });
   });

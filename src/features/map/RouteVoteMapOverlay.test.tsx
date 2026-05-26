@@ -18,6 +18,7 @@ function makeMap() {
     addLayer: vi.fn(),
     isStyleLoaded: vi.fn(() => true),
     once: vi.fn(),
+    on: vi.fn(),
     off: vi.fn(),
   };
 }
@@ -99,17 +100,18 @@ describe("RouteVoteMapOverlay", () => {
     ]);
   });
 
-  it("cancels pending styledata overlay work on cleanup", () => {
+  it("cancels pending overlay work on cleanup", () => {
     const map = makeMap();
     map.isStyleLoaded.mockReturnValue(false);
 
     const { unmount } = render(<RouteVoteMapOverlay map={map as never} overlay={overlay} />);
-    const pendingStyleHandler = map.once.mock.calls[0][1];
+    // Style not loaded yet, so the initial reconcile is deferred to "load".
+    const pendingLoadHandler = map.once.mock.calls[0][1];
 
     unmount();
-    pendingStyleHandler();
+    pendingLoadHandler();
 
-    expect(map.off).toHaveBeenCalledWith("styledata", pendingStyleHandler);
+    expect(map.off).toHaveBeenCalledWith("load", pendingLoadHandler);
     expect(map.addSource).not.toHaveBeenCalled();
   });
 });
