@@ -144,6 +144,15 @@ function ConnectedApp() {
     });
   }, []);
 
+  // Keep the soundtrack silent while unauthenticated (login / no session) and
+  // restore it the instant a session exists. Declarative on `session`, so it
+  // can never strand the "auth" suppression reason. Must stay above the early
+  // returns below for stable hook order + to re-run on every session change.
+  useEffect(() => {
+    music.setSuppressed("auth", session === null);
+    debugLog("info", "App", "audio:auth-suppress", "audio", { suppressed: session === null });
+  }, [session, music]);
+
   useEffect(() => {
     const onError = (e: ErrorEvent) =>
       debugLog("error", "window", "global:error", "error", { message: e.message, filename: e.filename, line: e.lineno });

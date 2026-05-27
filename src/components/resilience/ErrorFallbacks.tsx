@@ -1,6 +1,8 @@
+import * as React from "react";
 import type { FallbackProps } from "react-error-boundary";
 
 import { Button } from "../ui/button";
+import { useMusicSafe } from "@/providers/MusicProvider";
 
 type FullScreenErrorFallbackProps = FallbackProps & {
   title?: string;
@@ -12,6 +14,18 @@ export function FullScreenErrorFallback({
   title = "TripCast hit a problem.",
   message = "Try again, or reload the app if the problem keeps happening.",
 }: FullScreenErrorFallbackProps) {
+  const music = useMusicSafe();
+
+  // Soft "bubble pop" earcon, then duck the soundtrack while this full-screen
+  // fallback is shown. The pop is dispatched BEFORE suppression so its attack
+  // plays at full level and fades naturally as the music ducks. The "error"
+  // reason is released on unmount (retry/reset), so music resumes on its own.
+  React.useEffect(() => {
+    music.sfx("bubble");
+    music.setSuppressed("error", true);
+    return () => music.setSuppressed("error", false);
+  }, [music]);
+
   return (
     <div className="flex min-h-dvh items-center justify-center bg-[var(--bg-paper)] px-4">
       <div role="alert" className="grid w-full max-w-sm gap-4 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 shadow-lg">

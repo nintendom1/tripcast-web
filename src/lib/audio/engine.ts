@@ -5,6 +5,8 @@
  * gesture so browser autoplay rules are respected.
  */
 
+import { debugLoggerFor } from "@/debug/useDebugLogger";
+
 export type AudioScenario = "idle" | "voteActive" | "missionActive" | "overBudget" | "story";
 
 export type AudioSoundtrack =
@@ -25,7 +27,9 @@ export type SfxName =
   | "success"
   | "tap"
   | "page"
-  | "toast";
+  | "toast"
+  | "plop"
+  | "bubble";
 
 export interface AudioEngine {
   armOnGesture(): void;
@@ -33,6 +37,13 @@ export interface AudioEngine {
   setVolume(volume: number): void;
   setScenario(scenario: AudioScenario): void;
   setSoundtrack(soundtrack: AudioSoundtrack): void;
+  /**
+   * Silences the soundtrack for a named reason without touching the user's
+   * saved mute preference. The engine stays silenced while ANY reason is
+   * active, so independent callers (e.g. "auth", "error") never clobber each
+   * other. Pass `active: false` with the same reason to release it.
+   */
+  setSuppressed(reason: string, active: boolean): void;
   sfx(name: SfxName): void;
 }
 
@@ -159,6 +170,20 @@ class TripcastAudioEngine implements AudioEngine {
   private muted = false;
   private started = false;
   private armed = false;
+  private suppressions = new Set<string>();
+  private log = debugLoggerFor("AudioEngine", "src/lib/audio/engine.ts");
+
+  /** Silenced when hard-muted by the user OR any suppression reason is active. */
+  private get silenced(): boolean {
+    return this.muted || this.suppressions.size > 0;
+  }
+
+  /** Ramp the master gain toward its effective target (silence vs. volume). */
+  private applyGain(): void {
+    if (this.master && this.ctx) {
+      this.master.gain.setTargetAtTime(this.silenced ? 0 : this.volume, this.ctx.currentTime, 0.05);
+    }
+  }
 
   armOnGesture(): void {
     if (this.started || this.armed) return;
@@ -170,34 +195,52 @@ class TripcastAudioEngine implements AudioEngine {
       win.removeEventListener("keydown", handler);
     };
     this.armed = true;
+    this.log.logAudio("engine:armed", {});
     win.addEventListener("pointerdown", handler, { once: false });
     win.addEventListener("keydown", handler, { once: false });
   }
 
   setMute(mute: boolean): void {
+    if (this.muted === mute) return;
     this.muted = mute;
-    if (this.master && this.ctx) {
-      this.master.gain.setTargetAtTime(mute ? 0 : this.volume, this.ctx.currentTime, 0.05);
-    }
+    this.log.logAudio("engine:mute", { muted: mute, silenced: this.silenced });
+    this.applyGain();
   }
 
   setVolume(volume: number): void {
     this.volume = Math.min(1, Math.max(0, volume));
-    if (this.master && this.ctx && !this.muted) {
-      this.master.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.05);
-    }
+    if (!this.silenced) this.applyGain();
+  }
+
+  setSuppressed(reason: string, active: boolean): void {
+    const had = this.suppressions.has(reason);
+    if (had === active) return;
+    if (active) this.suppressions.add(reason);
+    else this.suppressions.delete(reason);
+    this.log.logAudio("engine:suppress", {
+      reason,
+      active,
+      reasons: [...this.suppressions],
+      silenced: this.silenced,
+    });
+    this.applyGain();
   }
 
   setScenario(scenario: AudioScenario): void {
+    if (this.scenario === scenario) return;
     this.scenario = scenario;
+    this.log.logAudio("engine:scenario", { scenario });
   }
 
   setSoundtrack(soundtrack: AudioSoundtrack): void {
+    if (this.soundtrack === soundtrack) return;
     this.soundtrack = soundtrack;
+    this.log.logAudio("engine:soundtrack", { soundtrack });
   }
 
   sfx(name: SfxName): void {
     if (!this.started || this.muted || !this.ctx || !this.master) return;
+    this.log.logAudio("engine:sfx", { name, suppressed: this.suppressions.size > 0 });
     const now = this.ctx.currentTime;
     const tone = (freq: number, dur: number, type: OscillatorType = "sine", gain = 0.12, delay = 0) => {
       this.playTone(freq, now + delay, dur, type, gain);
@@ -233,6 +276,17 @@ class TripcastAudioEngine implements AudioEngine {
       case "toast":
         tone(1320, 0.06, "sine", 0.08);
         break;
+      case "plop":
+        // Punch impact for the account-creation splash — round and bouncy.
+        tone(220, 0.15, "sine", 0.22);
+        tone(440, 0.08, "sine", 0.10);
+        tone(110, 0.12, "sine", 0.14, 0.02);
+        break;
+      case "bubble":
+        // Soft, gentle, slightly hollow — the error fallback's "pop".
+        tone(520, 0.05, "sine", 0.09);
+        tone(720, 0.04, "sine", 0.05, 0.02);
+        break;
     }
   }
 
@@ -245,7 +299,7 @@ class TripcastAudioEngine implements AudioEngine {
     const ctx = new Ctor();
     this.ctx = ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : this.volume;
+    this.master.gain.value = this.silenced ? 0 : this.volume;
     this.master.connect(ctx.destination);
 
     const reverb = ctx.createGain();
@@ -268,6 +322,7 @@ class TripcastAudioEngine implements AudioEngine {
     this.started = true;
     this.beat = 0;
     this.scheduledAt = ctx.currentTime + 0.1;
+    this.log.logAudio("engine:start", { silenced: this.silenced, soundtrack: this.soundtrack });
     this.scheduleLoop();
   }
 
