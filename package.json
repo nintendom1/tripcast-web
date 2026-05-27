@@ -21,6 +21,11 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
+    "@capacitor-community/background-geolocation": "1.2.26",
+    "@capacitor/cli": "8.3.4",
+    "@capacitor/core": "8.3.4",
+    "@capacitor/ios": "8.3.4",
+    "@capacitor/status-bar": "8.0.2",
     "@fontsource-variable/geist": "^5.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

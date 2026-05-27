@@ -4,3 +4,10 @@ dist/
 .env.local
 .env.*.local
 npm-debug.log*
+
+# Capacitor iOS build artifacts (native project generated on the Mac)
+ios/App/Pods/
+ios/App/build/
+ios/App/Podfile.lock
+DerivedData/
+*.xcuserstate
