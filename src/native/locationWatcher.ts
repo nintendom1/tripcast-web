@@ -13,9 +13,11 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
   "BackgroundGeolocation",
 );
 
-// Meters the device must move before a new fix fires. The server (and our
-// publish* throttles) dedupe further; this just trims battery/churn.
-const DISTANCE_FILTER_METERS = 25;
+// Meters the device must move before a new fix fires — the plugin's main
+// battery lever. Set to 50m so the GPS wakes less often during the locked
+// 7-day window; the server already dedupes at 200m/60s and the publish*
+// throttles trim further, so a tighter filter would only burn battery.
+const DISTANCE_FILTER_METERS = 50;
 
 export type NativeLocationFix = { lat: number; lon: number; accuracy?: number };
 

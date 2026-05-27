@@ -771,6 +771,8 @@ export default function TripMap({
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
   const locationDeniedPromptedRef = useRef(false);
+  const lastLocationFixAtRef = useRef<number | null>(null);
+  const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const lastLiveTrailSampleRef = useRef<LastLiveTrailSample>(null);
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
@@ -1899,7 +1901,12 @@ export default function TripMap({
   useEffect(() => {
     if (role !== "traveler" || !isLocationSharing) return;
 
+    lastLocationFixAtRef.current = Date.now();
+    setLocationStale(false);
+
     const handleFix = (lat: number, lon: number, accuracy?: number) => {
+      lastLocationFixAtRef.current = Date.now();
+      setLocationStale(false);
       if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
         liveTrailPermissionLoggedRef.current = true;
         log.logInteraction("live-trail:permission:result", { result: "granted" });
@@ -1964,6 +1971,29 @@ export default function TripMap({
   // publish* only uses refs plus stable mutation inputs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLocationSharing, role, token]);
+
+  // Native only: if LIVE is on but no fix has landed in a while, the app is
+  // likely no longer emitting — commonly a lapsed 7-day free-signing build, or
+  // location access turned off. Surface a banner instead of failing silently.
+  useEffect(() => {
+    if (!isNativeLocationAvailable() || role !== "traveler" || !isLocationSharing) {
+      setLocationStale(false);
+      return;
+    }
+    const STALE_AFTER_MS = 5 * 60_000;
+    const id = setInterval(() => {
+      const last = lastLocationFixAtRef.current;
+      if (last !== null && Date.now() - last > STALE_AFTER_MS) {
+        setLocationStale((prev) => {
+          if (!prev) {
+            log.logInteraction("live-trail:location-stale", { sinceMs: Date.now() - last });
+          }
+          return true;
+        });
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [isLocationSharing, role, log]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -3024,6 +3054,16 @@ export default function TripMap({
         ref={cardsWrapperRef}
         className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
       >
+        {locationStale ? (
+          <button
+            type="button"
+            onClick={openNativeLocationSettings}
+            className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-left text-xs font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]"
+          >
+            Live location hasn’t updated recently. Tap to check location access — or reinstall from
+            Xcode if the app build has expired.
+          </button>
+        ) : null}
         <FeatureBoundary
           resetKeys={[token, role, "hud-status-card"]}
           title="Status card hit a problem."
