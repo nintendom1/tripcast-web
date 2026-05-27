@@ -38,7 +38,11 @@ import {
   MusicMuteIndicator,
   StatusCardConnected,
 } from "../hud";
-import { isNativeLocationAvailable, startNativeLocationWatch } from "../../native/locationWatcher";
+import {
+  isNativeLocationAvailable,
+  openNativeLocationSettings,
+  startNativeLocationWatch,
+} from "../../native/locationWatcher";
 import TravelFundsInlineSection, {
   type TravelFundsInlineState,
 } from "../travelfunds/TravelFundsInlineSection";
@@ -766,6 +770,7 @@ export default function TripMap({
   const liveTrailEnabledRef = useRef(false);
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
+  const locationDeniedPromptedRef = useRef(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const lastLiveTrailSampleRef = useRef<LastLiveTrailSample>(null);
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
@@ -1912,11 +1917,19 @@ export default function TripMap({
     };
 
     const handleError = (error: unknown) => {
-      if (!liveTrailEnabledRef.current) return;
       const code =
         typeof error === "object" && error !== null && "code" in error
           ? (error as { code?: unknown }).code
           : undefined;
+      // Native: location was denied. Guide the user to re-enable it once,
+      // rather than leaving them hunting through Settings (no crash here —
+      // a missing Info.plist usage string crashes natively before this fires).
+      if (code === "NOT_AUTHORIZED" && !locationDeniedPromptedRef.current) {
+        locationDeniedPromptedRef.current = true;
+        showToast("Location access is off for TripCast. Opening Settings to enable it.");
+        openNativeLocationSettings();
+      }
+      if (!liveTrailEnabledRef.current) return;
       log.logInteraction("live-trail:permission:result", { result: "denied", code });
     };
 

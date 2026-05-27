@@ -23,6 +23,11 @@ export function isNativeLocationAvailable(): boolean {
   return Capacitor.isNativePlatform();
 }
 
+/** Open the iOS Settings page for this app, so a user who denied location can re-enable it. */
+export function openNativeLocationSettings(): void {
+  void BackgroundGeolocation.openSettings();
+}
+
 /**
  * Start a background-capable location watch. Defining `backgroundMessage` is
  * what tells the plugin to keep delivering fixes while backgrounded/locked

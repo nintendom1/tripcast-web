@@ -110,18 +110,48 @@ Traveler location-sharing effect in `src/features/map/TripMap.tsx` uses it on na
 uses `navigator.geolocation`). The **LivePill** "LIVE / PAUSED" toggle is the control surface — no
 new UI. Remaining work is iOS native config, all on the Mac.
 
+### ⚠️ Info.plist keys are MANDATORY — missing them crashes the app
+
+iOS **hard-terminates** the app (SIGABRT → back to the home screen) the instant it touches Core
+Location without these usage strings. It is a native crash *before* any JS runs, so the React error
+boundary and debug logging see nothing, and Settings → TripCast shows **no Location row** (iOS only
+adds it after the first successful request). If the LIVE toggle crashes to home, this is why.
+
+**Capture the real cause:** connect the iPhone, run the app *from Xcode* (or Window → Devices and
+Simulators → device → Open Console), tap LIVE, and read the log — it names the missing key
+explicitly ("…must contain an NSLocationWhenInUseUsageDescription key").
+
 ### iOS native setup (Mac, one-time)
 
 1. `npx cap sync ios` (installs the plugin pod after `npm install`).
 2. In Xcode → **App** target → **Signing & Capabilities** → **+ Capability** → **Background Modes**,
    then check **Location updates**. (Allowed under free signing — it is a background *mode*, not a
    paid entitlement.)
-3. Add Info.plist usage strings (Xcode → Info, or edit `ios/App/App/Info.plist`):
-   - `NSLocationWhenInUseUsageDescription` — e.g. "TripCast shows your live location on the trip map."
-   - `NSLocationAlwaysAndWhenInUseUsageDescription` — e.g. "TripCast keeps sharing your live
-     location with followers while the app is in the background."
-   - Confirm `UIBackgroundModes` contains `location` (step 2 adds this).
-4. Reinstall: `npm run ios:run`.
+3. Add Info.plist usage strings (Xcode → Info, or edit `ios/App/App/Info.plist`) — paste inside the
+   top-level `<dict>`:
+   ```xml
+   <key>NSLocationWhenInUseUsageDescription</key>
+   <string>TripCast shows your live location on the trip map.</string>
+   <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+   <string>TripCast keeps sharing your live location with followers while the app is in the background.</string>
+   <key>UIBackgroundModes</key>
+   <array>
+     <string>location</string>
+   </array>
+   ```
+   (Step 2's capability adds the `UIBackgroundModes`/`location` entry; keep it if already present.)
+4. Reinstall: `npm run ios:run`. First LIVE tap now shows the iOS prompt → choose **Allow Always**.
+
+### Commit the native project
+
+`ios/` is currently Mac-local only, so the Info.plist fix would be lost on regen. After it works:
+`git add ios/ && git commit`. Capacitor's generated `ios/App/.gitignore` plus the repo `.gitignore`
+already exclude `Pods/`, `build/`, copied web assets, `Podfile.lock`, and `*.xcuserstate`. Pushing
+makes Info.plist versioned and editable from any checkout (including Windows).
+
+> If location is later **denied**, the app now detects `NOT_AUTHORIZED` and opens Settings once
+> (via `BackgroundGeolocation.openSettings()`) so you can re-enable it — see `TripMap.tsx`
+> `handleError`. This is recovery only; it does not substitute for the mandatory Info.plist keys.
 
 ### On-device test (real iPhone — simulator can't truly background-lock GPS)
 
