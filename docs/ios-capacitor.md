@@ -163,6 +163,18 @@ makes Info.plist versioned and editable from any checkout (including Windows).
 - [ ] Tap **PAUSED** → emission stops (watcher removed). Server dedup (60s/200m) prevents flooding.
 - [ ] Debug log shows `live-trail:native-watch:start/stop` and `live-trail:permission:result`.
 
+## App icon & splash (Phase 3)
+
+The native project currently uses the generic Capacitor scaffold icon. To brand it: drop a
+**1024×1024** `assets/icon.png` (no transparency) — see `assets/README.md` — then on the Mac:
+
+```bash
+cd tripcast-web
+npm run ios:assets          # capacitor-assets generate --ios
+npm run ios:run
+git add assets/ ios/App/App/Assets.xcassets   # commit sources + generated icons
+```
+
 ## Notes
 
 - Web deploy is unaffected: a plain `npm run build` (no `CAPACITOR=1`) keeps the
