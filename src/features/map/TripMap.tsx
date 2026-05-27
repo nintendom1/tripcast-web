@@ -2873,8 +2873,9 @@ export default function TripMap({
         </div>
       )}
 
-      {/* Music mute indicator — offset left of MapLibre's top-right controls. */}
-      <MusicMuteIndicator className="absolute right-14 top-3 z-[2]" />
+      {/* Music mute indicator — below MapLibre's top-right zoom/compass controls so a
+          status card on narrow screens can't bury it. */}
+      <MusicMuteIndicator className="absolute right-3 top-[148px] z-[2]" />
 
       {/* Debug chip — only visible when debug logging is enabled */}
       {onOpenDebugPanel ? (

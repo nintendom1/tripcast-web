@@ -58,6 +58,7 @@ export interface MusicContextValue {
   soundtrack: AudioSoundtrack;
   setSoundtrack: (soundtrack: AudioSoundtrack) => void;
   setScenario: (scenario: AudioScenario) => void;
+  setSuppressed: (reason: string, active: boolean) => void;
   sfx: (name: SfxName) => void;
 }
 
@@ -120,6 +121,13 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
     [engine],
   );
 
+  const setSuppressed = React.useCallback(
+    (reason: string, active: boolean) => {
+      engine.setSuppressed(reason, active);
+    },
+    [engine],
+  );
+
   const sfx = React.useCallback(
     (name: SfxName) => {
       engine.sfx(name);
@@ -136,9 +144,10 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
       soundtrack,
       setSoundtrack,
       setScenario,
+      setSuppressed,
       sfx,
     }),
-    [mute, setMute, volume, setVolume, soundtrack, setSoundtrack, setScenario, sfx],
+    [mute, setMute, volume, setVolume, soundtrack, setSoundtrack, setScenario, setSuppressed, sfx],
   );
 
   return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>;
@@ -167,6 +176,7 @@ export function useMusicSafe(): MusicContextValue {
     soundtrack: "auto",
     setSoundtrack() {},
     setScenario() {},
+    setSuppressed() {},
     sfx() {},
   };
 }

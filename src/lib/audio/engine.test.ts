@@ -56,9 +56,12 @@ class FakeAudioContext {
   currentTime = 0;
   destination = new FakeNode();
   oscillators: FakeOscillator[] = [];
+  gains: FakeGain[] = [];
 
   createGain() {
-    return new FakeGain();
+    const gain = new FakeGain();
+    this.gains.push(gain);
+    return gain;
   }
 
   createDelay() {
@@ -129,6 +132,60 @@ describe("audio engine", () => {
     const before = context?.oscillators.length ?? 0;
     engine.setMute(true);
     engine.sfx("open");
+
+    expect(context?.oscillators.length).toBe(before);
+  });
+
+  it("starts silent while a suppression reason is active, then resumes when released", () => {
+    const engine = createAudioEngine();
+    engine.setSuppressed("auth", true);
+    engine.armOnGesture();
+    window.dispatchEvent(new Event("pointerdown"));
+
+    const master = contexts[0]?.gains[0]; // first gain created in start() is the master
+    expect(master?.gain.value).toBe(0);
+
+    engine.setSuppressed("auth", false);
+    expect(master?.gain.value).toBeGreaterThan(0);
+  });
+
+  it("stays silent until EVERY suppression reason is released (no clobber)", () => {
+    const engine = createAudioEngine();
+    engine.setSuppressed("auth", true);
+    engine.setSuppressed("error", true);
+    engine.armOnGesture();
+    window.dispatchEvent(new Event("pointerdown"));
+
+    const master = contexts[0]?.gains[0];
+    engine.setSuppressed("auth", false);
+    expect(master?.gain.value).toBe(0); // "error" still holds it silent
+
+    engine.setSuppressed("error", false);
+    expect(master?.gain.value).toBeGreaterThan(0);
+  });
+
+  it("plays sfx while suppressed so the error pop stays audible", () => {
+    const engine = createAudioEngine();
+    engine.armOnGesture();
+    window.dispatchEvent(new Event("pointerdown"));
+
+    const context = contexts[0];
+    engine.setSuppressed("error", true);
+    const before = context?.oscillators.length ?? 0;
+    engine.sfx("bubble");
+
+    expect(context?.oscillators.length ?? 0).toBeGreaterThan(before);
+  });
+
+  it("does not play sfx while hard-muted even if not suppressed", () => {
+    const engine = createAudioEngine();
+    engine.armOnGesture();
+    window.dispatchEvent(new Event("pointerdown"));
+
+    const context = contexts[0];
+    engine.setMute(true);
+    const before = context?.oscillators.length ?? 0;
+    engine.sfx("bubble");
 
     expect(context?.oscillators.length).toBe(before);
   });

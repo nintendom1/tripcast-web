@@ -21,6 +21,8 @@ import { tripcastApi, type Role } from "../../convex/tripcastApi";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { cn } from "@/lib/utils";
+import { MusicMuteIndicator } from "../hud/MusicMuteIndicator";
+import { useMusicSafe } from "../../providers/MusicProvider";
 import { IntroMascot } from "./IntroMascot";
 import { useTheme, type ThemeMode } from "../../providers/ThemeProvider";
 
@@ -293,6 +295,9 @@ export function IntroSequence({
         <X className="h-4 w-4" aria-hidden />
       </button>
 
+      {/* Mute toggle on the right rail, directly below Skip — parity with the map control. */}
+      <MusicMuteIndicator className="absolute right-4 top-16 z-10" />
+
       <div className="absolute left-1/2 top-6 z-10 flex -translate-x-1/2 gap-1.5" aria-hidden="true">
         {BEATS.map((_, i) => (
           <span
@@ -365,6 +370,27 @@ export function CreateAccountIntroFlow({
   const finishedRef = React.useRef(false);
   const markIntroSeen = useMutation(tripcastApi.onboarding.markIntroSeen);
   const log = useDebugLogger("CreateAccountIntroFlow", "src/features/onboarding/IntroSequence.tsx");
+  const music = useMusicSafe();
+
+  // Punch lands a fun "plop" — the earliest sound a brand-new user hears.
+  React.useEffect(() => {
+    if (stage === "punch") {
+      music.sfx("plop");
+      log.logAudio("account-intro:punch-plop", {});
+    }
+  }, [stage, music, log]);
+
+  // Hold the soundtrack silent through the splash; start it as the first tour
+  // beat appears (stage flips to "intro" → IntroSequence renders beat 0).
+  // Declarative on `stage`, plus an unmount safety-release, so the "intro"
+  // reason can never strand (same lock-safety contract as "auth"/"error").
+  React.useEffect(() => {
+    music.setSuppressed("intro", stage !== "intro");
+    log.logAudio("account-intro:music-gate", { stage, suppressed: stage !== "intro" });
+  }, [stage, music, log]);
+  React.useEffect(() => {
+    return () => music.setSuppressed("intro", false);
+  }, [music]);
 
   useActiveUiContext(stage !== "intro", {
     sheetName: "CreateAccountIntroFlow",
@@ -437,6 +463,8 @@ export function CreateAccountIntroFlow({
       data-role="create-account-intro"
       className="fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-[var(--meadow-bg)] px-6 text-center"
     >
+      {/* Subtle mute toggle — top-right corner is otherwise empty here. */}
+      <MusicMuteIndicator className="absolute right-4 top-4 z-10" />
       <IntroBackdrop beat={0} />
       <AnimatePresence mode="wait">
         {stage === "welcome" || stage === "welcome-out" ? (
