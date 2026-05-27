@@ -39,22 +39,23 @@ In Xcode (`npx cap open ios`):
 
 `.env.local` holds `VITE_CONVEX_URL=http://127.0.0.1:3210` for local dev. On a phone, `127.0.0.1`
 is the phone itself, so a native build with that value hangs at sign-in
-("Still trying to finish this sign-in…"). The native build must target a **cloud** Convex
-deployment, and login codes must exist on that deployment.
+("Still trying to finish this sign-in…"). The native build must target the **prod cloud**
+deployment — the same one the web app uses.
 
-### One-time: create + configure prod backend
+Prod already exists. Its URL is the GitHub Actions **repo variable** `VITE_CONVEX_URL`, consumed by
+`.github/workflows/main.yml`. The CI build sets only that one var; `VITE_CONVEX_SITE_URL` is left
+unset and auto-derived from it (`mapService.ts`). So the native build just needs the same single
+value — no auth env, no site URL.
+
+### Get the prod URL
 
 ```bash
-cd tripcast-backend
-npx convex deploy                                 # creates cloud prod deployment, prints its URL
-npx convex env set TRIPCAST_TRAVELER_CODE <code> --prod
-npx convex env set TRIPCAST_SUPPORT_CODE  <code> --prod
-# optional, only if set locally:
-npx convex env set TRIPCAST_AUTH_VERSION 1 --prod
+cd tripcast-web
+gh variable get VITE_CONVEX_URL          # or: gh variable list
 ```
 
-The deploy prints a slug. Both URLs share it: `https://<slug>.convex.cloud` and
-`https://<slug>.convex.site`.
+Or via GitHub web: repo → Settings → Secrets and variables → Actions → Variables tab →
+`VITE_CONVEX_URL`.
 
 ### One-time: env file for native builds
 
@@ -62,12 +63,12 @@ Create `tripcast-web/.env.production.local` (gitignored; loaded only for `vite b
 mode and **overrides** `.env.local`, so dev keeps using localhost):
 
 ```
-VITE_CONVEX_URL=https://<slug>.convex.cloud
-VITE_CONVEX_SITE_URL=https://<slug>.convex.site
+VITE_CONVEX_URL=<value from the GitHub variable>
 ```
 
 Result: `CAPACITOR=1 npm run build` uses prod automatically; `npm run dev` stays local. No manual
-swapping. (Vite precedence in production: `.env.production.local` > `.env.local`.)
+swapping. (Vite precedence in production: `.env.production.local` > `.env.local`.) This matches the
+web deploy exactly, so sign-in behaves the same as the live site.
 
 ## Routine deploy / weekly refresh (Mac)
 
