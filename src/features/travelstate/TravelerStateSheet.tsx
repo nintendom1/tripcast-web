@@ -62,6 +62,7 @@ const QUICK_ACTIVITIES = [
   { label: "Exploring", emoji: "🧭" },
   { label: "Shopping", emoji: "🛒" },
   { label: "Errands", emoji: "💻" },
+  { label: "Sleeping", emoji: "️🛏️" },
 ] as const;
 
 const DEFAULT_STALENESS_RESET_AFTER_MS = 4 * 60 * 60 * 1000;
@@ -139,7 +140,7 @@ function ChipRow<T extends string>({
   onDeselect?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap justify-end gap-1.5">
       {values.map((v) => (
         <button
           key={v}
@@ -347,8 +348,6 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [statusEmoji, setStatusEmoji] = useState("");
   const [activityTitle, setActivityTitle] = useState("");
   const [activityEmoji, setActivityEmoji] = useState("");
-  const [activityNote, setActivityNote] = useState("");
-  const [activityLocationLabel, setActivityLocationLabel] = useState("");
   const [stalenessEnabled, setStalenessEnabled] = useState(true);
   const [stalenessTitle, setStalenessTitle] = useState("Idle");
   const [stalenessEmoji, setStalenessEmoji] = useState("🙂");
@@ -466,8 +465,6 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     if (!currentActivity) return;
     setActivityTitle(currentActivity.title);
     setActivityEmoji(currentActivity.emoji ?? "");
-    setActivityNote(currentActivity.note ?? "");
-    setActivityLocationLabel(currentActivity.locationLabel ?? "");
   }, [currentActivity]);
 
   useEffect(() => {
@@ -516,9 +513,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     if (!existingActivity) return true;
     return (
       nextTitle !== existingActivity.title ||
-      normalizeOptionalText(activityEmoji) !== existingActivity.emoji ||
-      normalizeOptionalText(activityNote) !== existingActivity.note ||
-      normalizeOptionalText(activityLocationLabel) !== existingActivity.locationLabel
+      normalizeOptionalText(activityEmoji) !== existingActivity.emoji
     );
   }
 
@@ -577,8 +572,6 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
           token,
           title: activityTitle.trim(),
           emoji: normalizeOptionalText(activityEmoji),
-          note: normalizeOptionalText(activityNote),
-          locationLabel: normalizeOptionalText(activityLocationLabel),
         });
       }
       if (hasStalenessChanges(stalenessSettings)) {
@@ -638,7 +631,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     <motion.div
       {...PANEL_MOTION}
       data-role="traveler-state-sheet"
-      className="absolute inset-x-0 bottom-0 z-[10] flex max-h-[90dvh] flex-col rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+      className="absolute inset-x-0 bottom-0 z-[10] flex max-h-[85dvh] flex-col rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
     >
       {/* Color accent rail */}
       <div
@@ -730,7 +723,60 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               </p>
             )}
 
-            {/* Segment 1 — the three bars come first (#5, #6) */}
+            <StateSegment title="Current Activity" hint="what you're doing now">
+              <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-1.5">
+                {QUICK_ACTIVITIES.map((activity) => (
+                  <button
+                    key={activity.label}
+                    type="button"
+                    onClick={() => {
+                      setActivityTitle(activity.label);
+                      setActivityEmoji(activity.emoji);
+                    }}
+                    className={cn(
+                      "rounded-full px-3 py-2.5 text-sm font-medium transition-colors truncate",
+                      activityTitle === activity.label
+                        ? "bg-[var(--flag)] text-[var(--ink-on-brand)]"
+                        : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)] hover:text-[var(--ink-1)]",
+                    )}
+                  >
+                    <span aria-hidden="true">{activity.emoji}</span> {activity.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[72px_1fr]">
+                <div className="grid gap-1.5">
+                  <label htmlFor="status-activity-emoji" className={stateLabelClass}>
+                    Emoji
+                  </label>
+                  <input
+                    id="status-activity-emoji"
+                    type="text"
+                    value={activityEmoji}
+                    onChange={(e) => setActivityEmoji(e.target.value.slice(0, 10))}
+                    maxLength={10}
+                    placeholder="🚶"
+                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <label htmlFor="status-activity-title" className={stateLabelClass}>
+                    Activity
+                  </label>
+                  <input
+                    id="status-activity-title"
+                    type="text"
+                    value={activityTitle}
+                    onChange={(e) => setActivityTitle(e.target.value.slice(0, 80))}
+                    placeholder="What are you doing?"
+                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                  />
+                </div>
+              </div>
+
+            </StateSegment>
+
             <StateSegment title="Energy · Stomach · Calm" hint="how you're running">
               {/* Energy */}
               <div className="grid gap-1.5">
@@ -831,7 +877,49 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               />
             </div>
 
-            {/* When */}
+            {/* Schedule — chip only (#4) */}
+            <div className="grid gap-1.5">
+              <label className={stateLabelClass}>
+                Schedule
+              </label>
+              <ChipRow
+                values={SCHEDULE_VALUES}
+                labels={SCHEDULE_LABELS}
+                selected={scheduleLevel}
+                onSelect={setScheduleLevel}
+                onDeselect={() => setScheduleLevel(undefined)}
+              />
+            </div>
+
+            {/* Status — note + accent emoji grouped into one block */}
+            <div className="grid gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className={stateLabelClass}>
+                  Status
+                </label>
+                <span className={stateHintClass}>{statusNote.length}/240</span>
+              </div>
+              <div className="flex flex-col gap-2 sm:grid sm:grid-cols-[72px_1fr]">
+                <input
+                  type="text"
+                  value={statusEmoji}
+                  onChange={(e) => setStatusEmoji(e.target.value.slice(0, 10))}
+                  maxLength={10}
+                  placeholder="🏔️"
+                  aria-label="Status emoji"
+                  className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                />
+                <textarea
+                  value={statusNote}
+                  onChange={(e) => setStatusNote(e.target.value.slice(0, 240))}
+                  rows={2}
+                  placeholder="How are you doing? (optional)"
+                  className={cn("resize-none px-3 py-2 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                />
+              </div>
+            </div>
+
+            {/* When — rarely changed (defaults to Now), kept low in the form */}
             <div className="grid gap-1.5">
               <div className="flex items-center justify-between">
                 <label className={stateLabelClass}>
@@ -853,187 +941,6 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               />
             </div>
 
-            {/* Schedule — chip only (#4) */}
-            <div className="grid gap-1.5">
-              <label className={stateLabelClass}>
-                Schedule
-              </label>
-              <ChipRow
-                values={SCHEDULE_VALUES}
-                labels={SCHEDULE_LABELS}
-                selected={scheduleLevel}
-                onSelect={setScheduleLevel}
-                onDeselect={() => setScheduleLevel(undefined)}
-              />
-            </div>
-
-            {/* Status note */}
-            <div className="grid gap-1.5">
-              <div className="flex items-center justify-between">
-                <label className={stateLabelClass}>
-                  Status Note
-                </label>
-                <span className={stateHintClass}>{statusNote.length}/240</span>
-              </div>
-              <textarea
-                value={statusNote}
-                onChange={(e) => setStatusNote(e.target.value.slice(0, 240))}
-                rows={2}
-                placeholder="How are you doing? (optional)"
-                className={cn("resize-none px-3 py-2 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
-              />
-            </div>
-
-            {/* Status emoji */}
-            <div className="grid gap-1.5">
-              <label className={stateLabelClass}>
-                Status Emoji
-              </label>
-              <input
-                type="text"
-                value={statusEmoji}
-                onChange={(e) => setStatusEmoji(e.target.value.slice(0, 10))}
-                maxLength={10}
-                placeholder="e.g. 🏔️"
-                className={cn("h-9 w-28 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
-              />
-            </div>
-
-            <StateSegment title="Current Activity" hint="what you're doing now">
-              <div className="flex flex-wrap gap-1.5">
-                {QUICK_ACTIVITIES.map((activity) => (
-                  <button
-                    key={activity.label}
-                    type="button"
-                    onClick={() => {
-                      setActivityTitle(activity.label);
-                      setActivityEmoji(activity.emoji);
-                    }}
-                    className={cn(
-                      "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                      activityTitle === activity.label
-                        ? "bg-[var(--flag)] text-[var(--ink-on-brand)]"
-                        : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)] hover:text-[var(--ink-1)]",
-                    )}
-                  >
-                    <span aria-hidden="true">{activity.emoji}</span> {activity.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-[72px_1fr] gap-2">
-                <div className="grid gap-1.5">
-                  <label htmlFor="status-activity-emoji" className={stateLabelClass}>
-                    Emoji
-                  </label>
-                  <input
-                    id="status-activity-emoji"
-                    type="text"
-                    value={activityEmoji}
-                    onChange={(e) => setActivityEmoji(e.target.value.slice(0, 10))}
-                    maxLength={10}
-                    placeholder="🚶"
-                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <label htmlFor="status-activity-title" className={stateLabelClass}>
-                    Activity
-                  </label>
-                  <input
-                    id="status-activity-title"
-                    type="text"
-                    value={activityTitle}
-                    onChange={(e) => setActivityTitle(e.target.value.slice(0, 80))}
-                    placeholder="What are you doing?"
-                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
-                  />
-                </div>
-              </div>
-
-              <div className="grid gap-1.5">
-                <label htmlFor="status-activity-note" className={stateLabelClass}>
-                  Activity Note
-                </label>
-                <textarea
-                  id="status-activity-note"
-                  value={activityNote}
-                  onChange={(e) => setActivityNote(e.target.value.slice(0, 240))}
-                  rows={2}
-                  placeholder="Activity note (optional)"
-                  className={cn("resize-none px-3 py-2 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
-                />
-              </div>
-
-              <div className="grid gap-1.5">
-                <label htmlFor="status-activity-place" className={stateLabelClass}>
-                  Place
-                </label>
-                <input
-                  id="status-activity-place"
-                  type="text"
-                  value={activityLocationLabel}
-                  onChange={(e) => setActivityLocationLabel(e.target.value.slice(0, 120))}
-                  placeholder="Place name (optional)"
-                  className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
-                />
-              </div>
-
-              <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] p-2">
-                <ToggleRow
-                  label="Auto-set activity when stale"
-                  checked={stalenessEnabled}
-                  onChange={setStalenessEnabled}
-                />
-                <div className="grid grid-cols-[72px_1fr_92px] gap-2">
-                  <div className="grid gap-1.5">
-                    <label htmlFor="stale-activity-emoji" className={stateLabelClass}>
-                      Fallback Emoji
-                    </label>
-                    <input
-                      id="stale-activity-emoji"
-                      type="text"
-                      value={stalenessEmoji}
-                      onChange={(e) => setStalenessEmoji(e.target.value.slice(0, 10))}
-                      maxLength={10}
-                      placeholder="🙂"
-                      disabled={!stalenessEnabled}
-                      className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)] disabled:opacity-50", stateInputClass)}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <label htmlFor="stale-activity-title" className={stateLabelClass}>
-                      Fallback
-                    </label>
-                    <input
-                      id="stale-activity-title"
-                      type="text"
-                      value={stalenessTitle}
-                      onChange={(e) => setStalenessTitle(e.target.value.slice(0, 80))}
-                      disabled={!stalenessEnabled}
-                      className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <label htmlFor="stale-activity-hours" className={stateLabelClass}>
-                      Hours
-                    </label>
-                    <input
-                      id="stale-activity-hours"
-                      type="number"
-                      min={0.25}
-                      max={168}
-                      step={0.25}
-                      value={stalenessHours}
-                      onChange={(e) => setStalenessHours(Number(e.target.value) || 4)}
-                      disabled={!stalenessEnabled}
-                      className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
-                    />
-                  </div>
-                </div>
-              </div>
-            </StateSegment>
-
             {/* Biometrics */}
             <div className="grid gap-2">
               <button
@@ -1053,7 +960,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     { label: "Sleep (hrs)", value: sleepHours, setter: setSleepHours, min: 0, max: 24 },
                     { label: "Active min", value: activeMin, setter: setActiveMin, min: 0, max: 1440 },
                   ].map(({ label, value, setter, min, max }) => (
-                    <div key={label} className="flex items-center justify-between gap-2">
+                    <div key={label} className="flex flex-wrap items-center justify-between gap-2">
                       <span className="text-sm">{label}</span>
                       <NumberInput value={value} onChange={setter} min={min} max={max} />
                     </div>
@@ -1073,6 +980,60 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                   </div>
                 </div>
               )}
+            </div>
+
+            <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] p-2">
+              <ToggleRow
+                label="Auto-set activity when stale"
+                checked={stalenessEnabled}
+                onChange={setStalenessEnabled}
+              />
+              <div className="flex flex-wrap gap-2 sm:grid sm:grid-cols-[72px_1fr_92px]">
+                <div className="grid gap-1.5">
+                  <label htmlFor="stale-activity-emoji" className={stateLabelClass}>
+                    Fallback Emoji
+                  </label>
+                  <input
+                    id="stale-activity-emoji"
+                    type="text"
+                    value={stalenessEmoji}
+                    onChange={(e) => setStalenessEmoji(e.target.value.slice(0, 10))}
+                    maxLength={10}
+                    placeholder="🙂"
+                    disabled={!stalenessEnabled}
+                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)] disabled:opacity-50", stateInputClass)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <label htmlFor="stale-activity-title" className={stateLabelClass}>
+                    Fallback
+                  </label>
+                  <input
+                    id="stale-activity-title"
+                    type="text"
+                    value={stalenessTitle}
+                    onChange={(e) => setStalenessTitle(e.target.value.slice(0, 80))}
+                    disabled={!stalenessEnabled}
+                    className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <label htmlFor="stale-activity-hours" className={stateLabelClass}>
+                    Hours
+                  </label>
+                  <input
+                    id="stale-activity-hours"
+                    type="number"
+                    min={0.25}
+                    max={168}
+                    step={0.25}
+                    value={stalenessHours}
+                    onChange={(e) => setStalenessHours(Number(e.target.value) || 4)}
+                    disabled={!stalenessEnabled}
+                    className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
+                  />
+                </div>
+              </div>
             </div>
           </div>
         )}

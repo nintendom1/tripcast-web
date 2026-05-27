@@ -210,8 +210,6 @@ describe("TravelerStateSheet — State tab", () => {
     expect(screen.getByText("Current Activity")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Walking/ })).toBeInTheDocument();
     expect(screen.getByLabelText("Activity")).toBeInTheDocument();
-    expect(screen.getByLabelText("Activity Note")).toBeInTheDocument();
-    expect(screen.getByLabelText("Place")).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "Auto-set activity when stale" })).toHaveAttribute("aria-checked", "true");
     expect(screen.getByLabelText("Fallback")).toHaveValue("Idle");
     expect(screen.getByLabelText("Fallback Emoji")).toHaveValue("🙂");
@@ -232,8 +230,6 @@ describe("TravelerStateSheet — State tab", () => {
 
     expect(screen.getByLabelText("Activity")).toHaveValue("Existing walk");
     expect(screen.getByLabelText("Emoji")).toHaveValue("🚶");
-    expect(screen.getByLabelText("Activity Note")).toHaveValue("By the river");
-    expect(screen.getByLabelText("Place")).toHaveValue("Waterfront");
   });
 
   it("clicking a quick-activity pill sets the activity title and emoji", async () => {
@@ -266,8 +262,6 @@ describe("TravelerStateSheet — State tab", () => {
     renderSheet();
 
     await userEvent.click(screen.getByRole("button", { name: /Walking/ }));
-    await userEvent.type(screen.getByLabelText("Activity Note"), "Across the bridge");
-    await userEvent.type(screen.getByLabelText("Place"), "Bridge Park");
     await userEvent.click(screen.getByRole("button", { name: "Save Status" }));
 
     await waitFor(() => {
@@ -275,8 +269,6 @@ describe("TravelerStateSheet — State tab", () => {
         token: "test-token",
         title: "Walking",
         emoji: "🚶",
-        note: "Across the bridge",
-        locationLabel: "Bridge Park",
       });
     });
   });
@@ -334,7 +326,7 @@ describe("TravelerStateSheet — segmented redesign", () => {
 
     expect(sheet).toHaveClass("z-[10]");
     expect(sheet).toHaveClass("bottom-0");
-    expect(sheet).toHaveClass("max-h-[90dvh]");
+    expect(sheet).toHaveClass("max-h-[85dvh]");
     expect(body).toHaveClass("overflow-y-auto");
     expect(body).toHaveClass("pb-28");
     expect(footer).toHaveClass("flex-none");
