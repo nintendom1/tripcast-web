@@ -29,7 +29,9 @@ export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
   return (
     <header
       className={cn(
-        "relative z-[2] bg-[var(--bg-paper)]",
+        // pt inset lets the paper bg fill the iOS status-bar/notch area while
+        // the brand row sits below it. Collapses to 0 on web/desktop.
+        "relative z-[2] bg-[var(--bg-paper)] pt-[env(safe-area-inset-top)]",
         className,
       )}
     >

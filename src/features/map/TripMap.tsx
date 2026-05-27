@@ -2990,7 +2990,7 @@ export default function TripMap({
 
       <div
         ref={cardsWrapperRef}
-        className="absolute inset-x-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[2] flex flex-col gap-2 tripcast-frame"
+        className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
       >
         <FeatureBoundary
           resetKeys={[token, role, "hud-status-card"]}
