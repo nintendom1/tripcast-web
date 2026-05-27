@@ -6,7 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { DollarSign, Play, X } from "lucide-react";
+import { Crosshair, DollarSign, Play, X } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -58,6 +58,14 @@ import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
+import {
+  bandFractionOf,
+  isOccluded,
+  readFocusGeometry,
+  readOccluderPadding,
+  type FocusGeometry,
+} from "./focusCoordinate";
 import { useTripPath } from "./useTripPath";
 import { useLiveTrailPath } from "./useLiveTrailPath";
 import { DebugChip } from "../../debug/DebugChip";
@@ -118,6 +126,43 @@ type ReplayPin = {
   lat: number;
   lon: number;
 };
+
+type FocusEntry = {
+  coord: { lat: number; lon: number };
+  trigger: string;
+  sheetSelector: string | null;
+  minZoom?: number;
+  geometry: FocusGeometry;
+};
+
+type ActiveFocus =
+  | {
+      kind: "center";
+      coord: { lat: number; lon: number };
+      trigger: string;
+      sheetSelector: string | null;
+      minZoom?: number;
+      duration?: number;
+    }
+  | {
+      kind: "fit";
+      bounds: [[number, number], [number, number]];
+      trigger: string;
+      sheetSelector: string | null;
+      maxZoom?: number;
+      duration?: number;
+    };
+
+/** How long after a focus the user's first pan counts as "teach me the spot". */
+const FOCUS_TEACH_WINDOW_MS = 8_000;
+/** In calibration mode, ignore teach drags smaller than this (mouse jitter). */
+const FOCUS_ADJUST_MIN_PX = 20;
+/** Sheet height change (px) below which a resize does not trigger a recenter. */
+const SHEET_RESIZE_THRESHOLD_PX = 8;
+/** A sheet shorter than this is closing/animating out — never recenter for it. */
+const SHEET_MIN_OPEN_PX = 120;
+/** Debounce window collapsing animate-in resize frames into one recenter. */
+const SHEET_RESIZE_DEBOUNCE_MS = 120;
 
 const UNKNOWN_DEBUG_SOURCE: DebugOpenSource = {
   source: "unknown",
@@ -734,9 +779,26 @@ export default function TripMap({
   const finaleReplayStartedRef = useRef(false);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
+  // Focus-observability: pendingFocusRef carries the in-flight focus so the next
+  // programmatic moveend can log where the pin actually settled; focusAdjustArmRef
+  // is the short window where a user pan is interpreted as "teach me the spot."
+  const pendingFocusRef = useRef<FocusEntry | null>(null);
+  const focusAdjustArmRef = useRef<(FocusEntry & { until: number }) | null>(null);
+  // The currently focused pin + which sheet occludes it. A ResizeObserver on that
+  // sheet recenters as it animates in (and on list<->detail height changes), so the
+  // pin lands centered even though the sheet is not at final height when focus fires.
+  const activeFocusRef = useRef<ActiveFocus | null>(null);
+  const sheetResizeObserverRef = useRef<ResizeObserver | null>(null);
+  const sheetResizeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastRecenterHeightRef = useRef<number>(-1);
   const music = useMusicSafe();
   const musicRef = useRef(music);
   const log = useDebugLogger("TripMap", "src/features/map/TripMap.tsx");
+  const calibration = useCenteringCalibration();
+  // The moveend listener runs inside a mount-time closure, so mirror calibration
+  // into a ref it can read at fire time.
+  const calibrationRef = useRef(calibration);
+  calibrationRef.current = calibration;
 
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
@@ -1020,11 +1082,41 @@ export default function TripMap({
       lat: roundedCoordinate(target.lat),
       lon: roundedCoordinate(target.lon),
     });
+    // Geometry-driven focus (no bottom sheet during replay). Mirrors
+    // focusCoordinate() so the observability triad still fires; defined inline
+    // because that closure is declared later in the component body.
+    const coord = { lat: target.lat, lon: target.lon };
+    const geometry = readFocusGeometry(map, {
+      topOccluderEl: cardsWrapperRef.current,
+      sheetSelector: null,
+      minZoom: 13,
+    });
+    log.logMap("map:camera:focus", {
+      trigger: "replay:coordinate-snap",
+      lat: coord.lat,
+      lon: coord.lon,
+      viewport: geometry.viewport,
+      topOccluder: geometry.topOccluder,
+      bottomOccluder: geometry.bottomOccluder,
+      band: geometry.band,
+      target: geometry.target,
+      anchor: geometry.anchor,
+      padding: geometry.padding,
+      zoom: geometry.zoom,
+    });
+    pendingFocusRef.current = {
+      coord,
+      trigger: "replay:coordinate-snap",
+      sheetSelector: null,
+      minZoom: 13,
+      geometry,
+    };
+    focusAdjustArmRef.current = null;
     map.easeTo({
-      center: [target.lon, target.lat],
-      zoom: Math.max(map.getZoom(), 13),
+      center: [coord.lon, coord.lat],
+      zoom: geometry.zoom,
       duration: 550,
-      padding: { top: 80, right: 60, bottom: 230, left: 60 },
+      padding: geometry.padding,
     });
   }, [log, replayActive, replayPins, replayPlayheadTime]);
 
@@ -1660,11 +1752,74 @@ export default function TripMap({
       });
     });
 
+    // Focus observability: after a programmatic focus, log where the pin
+    // actually settled; then briefly treat a user pan as "teach me the spot."
+    map.on("moveend", (event) => {
+      const userDriven = Boolean((event as { originalEvent?: unknown }).originalEvent);
+
+      if (!userDriven && pendingFocusRef.current) {
+        const focus = pendingFocusRef.current;
+        pendingFocusRef.current = null;
+        const settledGeo = readFocusGeometry(map, {
+          topOccluderEl: cardsWrapperRef.current,
+          sheetSelector: focus.sheetSelector,
+          minZoom: focus.minZoom,
+        });
+        const pt = map.project([focus.coord.lon, focus.coord.lat]);
+        const screen = { x: Math.round(pt.x), y: Math.round(pt.y) };
+        log.logMap("map:camera:focus:settled", {
+          trigger: focus.trigger,
+          screen,
+          bandFraction: bandFractionOf(screen, settledGeo),
+          occluded: isOccluded(screen, settledGeo),
+        });
+        focusAdjustArmRef.current = {
+          ...focus,
+          geometry: settledGeo,
+          until: Date.now() + FOCUS_TEACH_WINDOW_MS,
+        };
+        return;
+      }
+
+      if (userDriven && focusAdjustArmRef.current) {
+        const arm = focusAdjustArmRef.current;
+        focusAdjustArmRef.current = null;
+        if (Date.now() > arm.until) return;
+        const pt = map.project([arm.coord.lon, arm.coord.lat]);
+        const screen = { x: Math.round(pt.x), y: Math.round(pt.y) };
+        const from = arm.geometry.target;
+        const dx = screen.x - from.x;
+        const dy = screen.y - from.y;
+        // In calibration mode, drop sub-threshold mouse jitter and round the
+        // implied anchor so the logged number is a clean teaching target.
+        const calibrating = calibrationRef.current;
+        if (calibrating && Math.hypot(dx, dy) < FOCUS_ADJUST_MIN_PX) return;
+        const toBandFraction = bandFractionOf(screen, arm.geometry);
+        const impliedAnchor = calibrating
+          ? { x: Number(toBandFraction.x.toFixed(2)), y: Number(toBandFraction.y.toFixed(2)) }
+          : toBandFraction;
+        log.logMap("map:camera:focus:user-adjust", {
+          trigger: arm.trigger,
+          calibrating,
+          deltaPx: { dx, dy },
+          fromBandFraction: bandFractionOf(from, arm.geometry),
+          toBandFraction,
+          // The fraction the user dragged the pin to IS the anchor they want.
+          impliedAnchor,
+        });
+      }
+    });
+
     mapRef.current = map;
     activeMapStyleUrlRef.current = initialMapStyleUrl;
     setMapInstance(map);
 
     return () => {
+      sheetResizeObserverRef.current?.disconnect();
+      sheetResizeObserverRef.current = null;
+      if (sheetResizeDebounceRef.current) clearTimeout(sheetResizeDebounceRef.current);
+      sheetResizeDebounceRef.current = null;
+      activeFocusRef.current = null;
       map.remove();
       mapRef.current = null;
       activeMapStyleUrlRef.current = null;
@@ -1683,6 +1838,21 @@ export default function TripMap({
     recordMapResourceFailure,
     showToast,
   ]);
+
+  // When no focus-driving sheet is open, drop the active focus + observer so a
+  // sheet's animate-out can't trigger a recenter (the map stays put on close).
+  useEffect(() => {
+    const focusSheetOpen =
+      Boolean(selectedStoryDetail) || isMissionsPanelOpen || isJournalOpen || isVotePanelOpen;
+    if (focusSheetOpen) return;
+    activeFocusRef.current = null;
+    sheetResizeObserverRef.current?.disconnect();
+    sheetResizeObserverRef.current = null;
+    if (sheetResizeDebounceRef.current) {
+      clearTimeout(sheetResizeDebounceRef.current);
+      sheetResizeDebounceRef.current = null;
+    }
+  }, [selectedStoryDetail, isMissionsPanelOpen, isJournalOpen, isVotePanelOpen]);
 
   useEffect(() => {
     isLocationSharingRef.current = isLocationSharing;
@@ -1982,19 +2152,143 @@ export default function TripMap({
     setCoordinatePickMode({ label, callback });
   }
 
-  function handleNavigateToMission(coord: { lat: number; lon: number }) {
-    if (!mapRef.current) return;
+  function disconnectSheetObserver() {
+    sheetResizeObserverRef.current?.disconnect();
+    sheetResizeObserverRef.current = null;
+    if (sheetResizeDebounceRef.current) {
+      clearTimeout(sheetResizeDebounceRef.current);
+      sheetResizeDebounceRef.current = null;
+    }
+  }
+
+  // Apply the active focus to the camera. Used both for the immediate move and
+  // for the debounced re-apply once the sheet settles/resizes. Handles both a
+  // "center a point" target and a "fit bounds" target with measured occluders.
+  function applyActiveFocus(reason: "initial" | "resize") {
+    const focus = activeFocusRef.current;
+    const map = mapRef.current;
+    if (!focus || !map) return;
     if (mapServiceUnavailableRef.current) {
-      logMapEvent("map:camera:blocked", { trigger: "Mission:location-focus" });
+      logMapEvent("map:camera:blocked", { trigger: focus.trigger });
       return;
     }
-    log.logInteraction("map:camera:move", { lat: coord.lat, lon: coord.lon, trigger: "Mission:location-focus" });
-    // Offset the target so it appears in the visible area to the right of the
-    // 320px panel and above the bottom detail sheet (~300px).
-    mapRef.current.flyTo({
-      center: [coord.lon, coord.lat],
-      zoom: Math.max(mapRef.current.getZoom(), 14),
-      padding: { top: 60, right: 60, bottom: 320, left: 380 },
+    // Sheet not mounted yet (fresh open) — skip; the ResizeObserver re-applies
+    // once it appears. Do NOT clear here; close is owned by the no-sheet-open
+    // effect, so clearing would drop a still-valid focus.
+    if (focus.sheetSelector && !document.querySelector(focus.sheetSelector)) {
+      return;
+    }
+
+    if (focus.kind === "fit") {
+      const padding = readOccluderPadding(map, {
+        topOccluderEl: cardsWrapperRef.current,
+        sheetSelector: focus.sheetSelector,
+      });
+      lastRecenterHeightRef.current = Math.max(0, padding.bottom - 24);
+      log.logInteraction("map:camera:fitbounds", {
+        trigger: focus.trigger,
+        reason,
+        sw: { lon: focus.bounds[0][0], lat: focus.bounds[0][1] },
+        ne: { lon: focus.bounds[1][0], lat: focus.bounds[1][1] },
+        padding,
+      });
+      pendingFocusRef.current = null;
+      focusAdjustArmRef.current = null;
+      map.fitBounds(focus.bounds, {
+        padding,
+        maxZoom: focus.maxZoom ?? 14,
+        duration: focus.duration ?? 700,
+      });
+      return;
+    }
+
+    const geometry = readFocusGeometry(map, {
+      topOccluderEl: cardsWrapperRef.current,
+      sheetSelector: focus.sheetSelector,
+      minZoom: focus.minZoom,
+    });
+    lastRecenterHeightRef.current = geometry.bottomOccluder?.h ?? 0;
+    log.logMap("map:camera:focus", {
+      trigger: focus.trigger,
+      reason,
+      lat: focus.coord.lat,
+      lon: focus.coord.lon,
+      viewport: geometry.viewport,
+      topOccluder: geometry.topOccluder,
+      bottomOccluder: geometry.bottomOccluder,
+      band: geometry.band,
+      target: geometry.target,
+      anchor: geometry.anchor,
+      padding: geometry.padding,
+      zoom: geometry.zoom,
+    });
+    // Arm the settled-log (and teach window) for the resulting moveend.
+    pendingFocusRef.current = {
+      coord: focus.coord,
+      trigger: focus.trigger,
+      sheetSelector: focus.sheetSelector,
+      minZoom: focus.minZoom,
+      geometry,
+    };
+    focusAdjustArmRef.current = null;
+    map.easeTo({
+      center: [focus.coord.lon, focus.coord.lat],
+      zoom: geometry.zoom,
+      duration: focus.duration ?? 700,
+      padding: geometry.padding,
+    });
+  }
+
+  // Watch the active sheet so the pin recenters once it reaches final height
+  // (animate-in) and whenever it changes size later (e.g. list <-> detail).
+  function observeActiveSheet(sheetSelector: string | null) {
+    disconnectSheetObserver();
+    if (sheetSelector === null || typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(() => {
+      const height = (document.querySelector(sheetSelector) as HTMLElement | null)?.offsetHeight ?? 0;
+      // A collapsing sheet (animate-out on close) must never drive a recenter.
+      if (height < SHEET_MIN_OPEN_PX) return;
+      if (Math.abs(height - lastRecenterHeightRef.current) < SHEET_RESIZE_THRESHOLD_PX) return;
+      // Debounce: collapse the burst of animate-in frames into one recenter.
+      if (sheetResizeDebounceRef.current) clearTimeout(sheetResizeDebounceRef.current);
+      sheetResizeDebounceRef.current = setTimeout(() => {
+        sheetResizeDebounceRef.current = null;
+        applyActiveFocus("resize");
+      }, SHEET_RESIZE_DEBOUNCE_MS);
+    });
+    sheetResizeObserverRef.current = observer;
+
+    // The element may not be mounted yet; poll a few frames for it to appear.
+    const tryAttach = (attempt: number) => {
+      if (sheetResizeObserverRef.current !== observer) return; // superseded
+      const el = document.querySelector(sheetSelector);
+      if (el) {
+        observer.observe(el);
+        return;
+      }
+      if (attempt < 30) requestAnimationFrame(() => tryAttach(attempt + 1));
+    };
+    tryAttach(0);
+  }
+
+  // Unified, measured focus: clamps the pin to the center of the visible band
+  // between the status card and the active sheet, then logs the geometry so the
+  // result is observable (see focusCoordinate.ts and docs/agents/debug-log.md).
+  function focusCoordinate(
+    coord: { lat: number; lon: number },
+    opts: { trigger: string; sheetSelector: string | null; minZoom?: number; duration?: number },
+  ) {
+    activeFocusRef.current = { kind: "center", coord, ...opts };
+    lastRecenterHeightRef.current = -1;
+    applyActiveFocus("initial"); // move now with best-available measurement
+    observeActiveSheet(opts.sheetSelector); // then correct as the sheet settles
+  }
+
+  function handleNavigateToMission(coord: { lat: number; lon: number }) {
+    focusCoordinate(coord, {
+      trigger: "Mission:location-focus",
+      sheetSelector: "[data-role='missions-sheet']",
     });
   }
 
@@ -2197,73 +2491,17 @@ export default function TripMap({
     });
   }
 
-  // Panel-aware focus: positions the pin in the visible map above the journal sheet.
-  // The journal sheet is max-h-[50dvh], so apply matching bottom padding so the pin
-  // lands in the vertical center of the exposed map area rather than behind the panel.
   function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
-    const map = mapRef.current;
-    if (!map) return;
-    if (mapServiceUnavailableRef.current) {
-      logMapEvent("map:camera:blocked", { trigger: "journal:location-focus" });
-      return;
-    }
-    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "journal:location-focus" });
-    const mapHeight = map.getContainer().clientHeight;
-    map.easeTo({
-      center: [coordinate.lon, coordinate.lat],
-      zoom: Math.max(map.getZoom(), 14),
-      duration: 700,
-      padding: { top: 60, right: 60, bottom: Math.round(mapHeight * 0.55), left: 60 },
+    focusCoordinate(coordinate, {
+      trigger: "journal:location-focus",
+      sheetSelector: "[data-role='journal-sheet']",
     });
   }
 
   function handleStoryDetailLocationFocus(coordinate: { lat: number; lon: number }) {
-    const map = mapRef.current;
-    if (!map) return;
-    if (mapServiceUnavailableRef.current) {
-      logMapEvent("map:camera:blocked", { trigger: "story-detail:location-focus" });
-      return;
-    }
-    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "story-detail:location-focus" });
-    const mapContainer = map.getContainer();
-    const mapHeight = mapContainer.clientHeight;
-    const mapWidth = mapContainer.clientWidth;
-    const mapRect = mapContainer.getBoundingClientRect();
-    const cardsRect = cardsWrapperRef.current?.getBoundingClientRect();
-    const cardsRight = cardsRect ? Math.round(cardsRect.right) : 0;
-    const cardsBottom = cardsRect ? cardsRect.bottom : 0;
-
-    // Measure actual rendered sheet height; fall back to 50% of mapHeight if not mounted yet.
-    const sheetEl = document.querySelector('[data-role="story-detail"]') as HTMLElement | null;
-    const rawSheetHeight = sheetEl?.offsetHeight ?? 0;
-    const sheetHeight = rawSheetHeight > 0 ? rawSheetHeight : Math.round(mapHeight * 0.62);
-
-    const topPad = 60;
-    const rightPad = 60;
-    const bottomPadding = Math.min(mapHeight - topPad - 80, sheetHeight + 30);
-    const availableHeight = Math.max(mapHeight - bottomPadding - topPad, 50);
-
-    // Only push the pin right of the cards when they cover the pin's natural
-    // center BOTH horizontally AND vertically. On wide screens or when cards
-    // are scrolled above the pin, no offset is needed.
-    const pinNaturalY_inViewport = mapRect.top + topPad + availableHeight / 2;
-    const cardsHorizontallyEncroach = cardsRight + 16 > mapWidth / 2;
-    const cardsVerticallyOverlap = cardsBottom > pinNaturalY_inViewport;
-    const leftPadding =
-      cardsHorizontallyEncroach && cardsVerticallyOverlap ? cardsRight + 16 : rightPad;
-
-    // Zoom so ~1200m fits in the available vertical space above the sheet.
-    const targetMetersPerPixel = 1200 / availableHeight;
-    const contextZoom = Math.log2(
-      (156543.03392 * Math.cos((coordinate.lat * Math.PI) / 180)) / targetMetersPerPixel,
-    );
-    const zoom = Math.min(Math.max(contextZoom, 12), 16);
-
-    map.easeTo({
-      center: [coordinate.lon, coordinate.lat],
-      zoom,
-      duration: 700,
-      padding: { top: topPad, right: rightPad, bottom: bottomPadding, left: leftPadding },
+    focusCoordinate(coordinate, {
+      trigger: "story-detail:location-focus",
+      sheetSelector: "[data-role='story-detail']",
     });
   }
 
@@ -2289,27 +2527,27 @@ export default function TripMap({
     showToast("Traveler location is unknown.");
   }
 
-  function handleRequestFitMap(
-    bounds: [[number, number], [number, number]] | null,
-    paddingBottom?: number,
-  ) {
-    if (!mapRef.current || !bounds) return;
-    if (!isFiniteLngLatBounds(bounds)) return;
-    if (mapServiceUnavailableRef.current) {
-      logMapEvent("map:camera:blocked", { trigger: "route-vote" });
+  // Fit the route-vote points (origin + options) into the visible band. Joins
+  // the focus machinery so padding is measured from the real sheet/card and the
+  // fit re-applies once the sheet settles (and clears on close).
+  function handleRequestFitMap(bounds: [[number, number], [number, number]] | null) {
+    if (!bounds || !isFiniteLngLatBounds(bounds)) {
+      if (activeFocusRef.current?.kind === "fit") {
+        activeFocusRef.current = null;
+        disconnectSheetObserver();
+      }
       return;
     }
-    const bottom = paddingBottom ?? 80;
-    log.logInteraction("map:camera:fitbounds", {
-      sw: { lon: bounds[0][0], lat: bounds[0][1] },
-      ne: { lon: bounds[1][0], lat: bounds[1][1] },
-      paddingBottom: bottom,
+    activeFocusRef.current = {
+      kind: "fit",
+      bounds,
       trigger: "route-vote",
-    });
-    mapRef.current.fitBounds(bounds, {
-      padding: { top: 80, right: 80, bottom, left: 80 },
+      sheetSelector: "[data-role='route-votes-sheet']",
       maxZoom: 14,
-    });
+    };
+    lastRecenterHeightRef.current = -1;
+    applyActiveFocus("initial");
+    observeActiveSheet("[data-role='route-votes-sheet']");
   }
 
   const mapClassName = useMemo(
@@ -2580,6 +2818,17 @@ export default function TripMap({
       {onOpenDebugPanel ? (
         <div className="absolute right-3 top-12 z-[3]">
           <DebugChip onOpen={onOpenDebugPanel} />
+        </div>
+      ) : null}
+
+      {/* Calibration indicator — signals that map sheets won't dismiss on map interaction */}
+      {calibration ? (
+        <div
+          className="pointer-events-none absolute left-3 top-12 z-[3] flex items-center gap-1.5 rounded-full bg-[var(--flag)] px-2.5 py-1 text-[11px] font-semibold text-[var(--ink-on-dark)] shadow-[var(--shadow-card)]"
+          role="status"
+        >
+          <Crosshair className="h-3.5 w-3.5" aria-hidden="true" />
+          CALIBRATE
         </div>
       ) : null}
 

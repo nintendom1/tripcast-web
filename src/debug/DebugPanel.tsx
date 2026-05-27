@@ -16,6 +16,8 @@ import {
   setLocationRedact,
   getConsoleMirror,
   setConsoleMirror,
+  getCenteringCalibration,
+  setCenteringCalibration,
   subscribe,
   log as rawLog,
   type DebugEntry,
@@ -254,6 +256,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
   const [enabled, setEnabledState] = useState(isEnabled);
   const [consoleMirror, setConsoleMirrorState] = useState(getConsoleMirror);
   const [locationRedact, setLocationRedactState] = useState(getLocationRedact);
+  const [centeringCalibration, setCenteringCalibrationState] = useState(getCenteringCalibration);
   const [floatingSettings, setFloatingSettings] = useState(getFloatingDebugSettings);
   const [logs, setLogs] = useState<DebugEntry[]>(() => getLogs().slice(-50).reverse());
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
@@ -263,6 +266,7 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
     setEnabledState(isEnabled());
     setConsoleMirrorState(getConsoleMirror());
     setLocationRedactState(getLocationRedact());
+    setCenteringCalibrationState(getCenteringCalibration());
     setLogs(getLogs().slice(-50).reverse());
   }, []);
 
@@ -319,6 +323,13 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
     const next = !locationRedact;
     setLocationRedact(next);
     setLocationRedactState(next);
+  }
+
+  function handleCenteringCalibrationToggle() {
+    if (!enabled) return;
+    const next = !centeringCalibration;
+    setCenteringCalibration(next);
+    setCenteringCalibrationState(next);
   }
 
   function handleButtonMode(mode: FloatingDebugButtonMode) {
@@ -497,6 +508,33 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
           <span
             className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
               locationRedact ? "translate-x-4" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* Map centering calibration toggle */}
+      <div className="flex items-center justify-between rounded-xl bg-[var(--bg-card)] px-4 py-2.5">
+        <p className="text-xs text-[var(--ink-2)]">
+          Map centering calibration
+          <span className="mt-0.5 block text-[10px] text-[var(--ink-3)]">
+            Keeps map sheets open + filters drag jitter so you can teach pin centering
+          </span>
+        </p>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={centeringCalibration}
+          aria-label="Map centering calibration"
+          disabled={!enabled}
+          onClick={handleCenteringCalibrationToggle}
+          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+            centeringCalibration ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]"
+          }`}
+        >
+          <span
+            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+              centeringCalibration ? "translate-x-4" : "translate-x-0.5"
             }`}
           />
         </button>

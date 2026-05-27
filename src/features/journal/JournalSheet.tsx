@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { getStateEmoji } from "../travelstate/travelerStateUtils";
 import { formatUsd } from "../travelfunds/currency";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
@@ -184,6 +185,7 @@ export default function JournalSheet({
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
+  const calibration = useCenteringCalibration();
   const sheetPersonalities = useSheetPersonalities();
   useActiveUiContext(open, {
     sheetName: "JournalSheet",
@@ -316,7 +318,7 @@ export default function JournalSheet({
     <Sheet
       open={open}
       modal={false}
-      disablePointerDismissal={isPickingCoordinate}
+      disablePointerDismissal={isPickingCoordinate || calibration}
       onOpenChange={(nextOpen) => {
         if (!nextOpen && !isPickingCoordinate) {
           log.logInteraction("sheet:close", { trigger: "backdrop" });

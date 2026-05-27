@@ -10,6 +10,7 @@ import { StatBar } from "../../components/rpg/StatBar";
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { JournalEvent, Role } from "../../convex/tripcastApi";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import {
   Sheet,
   SheetBody,
@@ -153,6 +154,7 @@ export default function StoryDetailSheet({
 }: StoryDetailSheetProps) {
   const { journal: journalPersonality } = useSheetPersonalities();
   const log = useDebugLogger("StoryDetailSheet", "src/features/journal/StoryDetailSheet.tsx");
+  const calibration = useCenteringCalibration();
   const music = useMusicSafe();
   const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
@@ -419,12 +421,13 @@ export default function StoryDetailSheet({
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
+      disablePointerDismissal={isPickingCoordinate || calibration}
     >
       <SheetContent
         side="bottom"
         showBackdrop={false}
         mapAdjacent
-        className={cn("z-[11] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]", isPickingCoordinate && "invisible pointer-events-none")}
+        className={cn("z-[11] max-h-[62dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]", isPickingCoordinate && "invisible pointer-events-none")}
         data-role="story-detail"
       >
         {displayEvent && (

@@ -25,6 +25,7 @@ import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
@@ -109,6 +110,7 @@ export default function MissionPanel({
   const [travelerFilter, setTravelerFilter] = useState<TravelerFilter>("all");
   const music = useMusicSafe();
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
+  const calibration = useCenteringCalibration();
   useActiveUiContext(open, {
     sheetName: "MissionPanel",
     label: TERMS.missions,
@@ -243,14 +245,15 @@ export default function MissionPanel({
       open={open}
       modal={false}
       onOpenChange={handleOpenChange}
-      disablePointerDismissal={isPickingCoordinate}
+      disablePointerDismissal={isPickingCoordinate || calibration}
     >
       <SheetContent
         side="bottom"
         showBackdrop={false}
         mapAdjacent
         className={cn(
-          "z-[10] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+          // Capped so the map keeps a visible band above the sheet for focus centering.
+          "z-[10] max-h-[62dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
           isPickingCoordinate && "invisible pointer-events-none",
         )}
         data-role="missions-sheet"

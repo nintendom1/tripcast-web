@@ -6,6 +6,7 @@ const LS_PRESET_KEY = "tripcast.debug.preset";
 const LS_OVERRIDES_KEY = "tripcast.debug.category-overrides";
 const LS_LOCATION_REDACT_KEY = "tripcast.debug.redact-location";
 const LS_CONSOLE_MIRROR_KEY = "tripcast.debug.console-mirror";
+const LS_CENTERING_CALIBRATION_KEY = "tripcast.debug.centering-calibration";
 const MAX_ENTRIES = 500;
 const DROP_BATCH = 100;
 const MAX_BYTES = 256 * 1024;
@@ -239,6 +240,21 @@ export function getConsoleMirror(): boolean {
 
 export function setConsoleMirror(on: boolean): void {
   localStorage.setItem(LS_CONSOLE_MIRROR_KEY, on ? "true" : "false");
+  notifySubscribers();
+}
+
+// ---------------------------------------------------------------------------
+// Map centering calibration (dev setting): keeps map sheets open and filters
+// drag jitter so the developer can teach pin centering by dragging. Off by
+// default — normal sheet-dismiss behavior is preserved.
+// ---------------------------------------------------------------------------
+
+export function getCenteringCalibration(): boolean {
+  return localStorage.getItem(LS_CENTERING_CALIBRATION_KEY) === "true";
+}
+
+export function setCenteringCalibration(on: boolean): void {
+  localStorage.setItem(LS_CENTERING_CALIBRATION_KEY, on ? "true" : "false");
   notifySubscribers();
 }
 
