@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:cap": "tsc -b && vite build --mode capacitor",
+    "ios:sync": "npm run build:cap && cap sync ios",
+    "ios:run": "npm run build:cap && cap sync ios && cap run ios",
     "validate": "npm run lint:terms:report && tsc -b && eslint . && vitest run",
     "typecheck": "tsc -b",
     "lint": "eslint .",

@@ -21,10 +21,12 @@ Xcode to keep it alive.
 
 ## One-time setup (Mac, after `git pull`)
 
+First create `.env.capacitor.local` (see "Pointing at prod" below), then:
+
 ```bash
 cd tripcast-web
 npm install
-CAPACITOR=1 npm run build        # produces dist/ with relative asset paths
+npm run build:cap                # vite --mode capacitor → dist/ with relative paths + prod URL
 npx cap add ios                  # generates ios/ native project (macOS only)
 npx cap sync ios                 # copies web build + installs pods
 ```
@@ -59,28 +61,31 @@ Or via GitHub web: repo → Settings → Secrets and variables → Actions → V
 
 ### One-time: env file for native builds
 
-Create `tripcast-web/.env.production.local` (gitignored; loaded only for `vite build` production
-mode and **overrides** `.env.local`, so dev keeps using localhost):
+Create `tripcast-web/.env.capacitor.local` (gitignored; loaded only by the `--mode capacitor`
+build, and **overrides** `.env.local`, so dev keeps using localhost):
 
 ```
 VITE_CONVEX_URL=<value from the GitHub variable>
 ```
 
-Result: `CAPACITOR=1 npm run build` uses prod automatically; `npm run dev` stays local. No manual
-swapping. (Vite precedence in production: `.env.production.local` > `.env.local`.) This matches the
-web deploy exactly, so sign-in behaves the same as the live site.
+How it connects: Capacitor never reads env files. Only `vite build` does — and it bakes the URL
+into `dist/`. The `npm run ios:*` scripts build with `--mode capacitor` (which loads
+`.env.capacitor.local` and sets the relative base), then `cap sync` copies `dist/` into the native
+project, then `cap run` compiles and launches it. So the env value reaches the phone purely through
+the built `dist/`. (Vite precedence: `.env.capacitor.local` > `.env.local`.)
 
 ## Routine deploy / weekly refresh (Mac)
 
-Each web change, or whenever the 7-day profile lapses:
+Each web change, or whenever the 7-day profile lapses — one command does build + sync + run:
 
 ```bash
 cd tripcast-web
-CAPACITOR=1 npm run build
-npx cap sync ios
-npx cap run ios --target <device-id>   # build + install in one step
+npm run ios:run                 # = build:cap → cap sync ios → cap run ios
+# or target a specific device:
+npm run ios:run -- --target <device-id>
 ```
 
+- `npm run ios:sync` (build + sync, no launch) if you prefer to run from Xcode.
 - List devices: `npx cap run ios --list`.
 - First launch on device: **Settings → General → VPN & Device Management** → trust your dev cert.
 - When Live Trail location is wired (Phase 2), iOS will prompt for permission — choose
@@ -88,7 +93,7 @@ npx cap run ios --target <device-id>   # build + install in one step
 
 ## Phase 1 test checklist
 
-- [ ] `CAPACITOR=1 npm run build` succeeds; `dist/index.html` uses `./assets/...` paths.
+- [ ] `npm run build:cap` succeeds; `dist/index.html` uses `./assets/...` paths.
 - [ ] `npx cap add ios && npx cap sync ios` complete with no errors (Mac).
 - [ ] App launches in the iOS Simulator and the existing TripCast web app renders unchanged
       (map, sheets, auth all work — backend reached over https).
