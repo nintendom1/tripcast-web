@@ -277,10 +277,9 @@ class TripcastAudioEngine implements AudioEngine {
         tone(1320, 0.06, "sine", 0.08);
         break;
       case "plop":
-        // Punch impact for the account-creation splash — round and bouncy.
-        tone(220, 0.15, "sine", 0.22);
-        tone(440, 0.08, "sine", 0.10);
-        tone(110, 0.12, "sine", 0.14, 0.02);
+        // Soft, happy little lift for the account-creation punch.
+        tone(523, 0.15, "sine", 0.10);        // C5 — gentle round body
+        tone(784, 0.11, "sine", 0.06, 0.04);  // rising to G5 — bright, cheerful lift
         break;
       case "bubble":
         // Soft, gentle, slightly hollow — the error fallback's "pop".

@@ -380,6 +380,18 @@ export function CreateAccountIntroFlow({
     }
   }, [stage, music, log]);
 
+  // Hold the soundtrack silent through the splash; start it as the first tour
+  // beat appears (stage flips to "intro" → IntroSequence renders beat 0).
+  // Declarative on `stage`, plus an unmount safety-release, so the "intro"
+  // reason can never strand (same lock-safety contract as "auth"/"error").
+  React.useEffect(() => {
+    music.setSuppressed("intro", stage !== "intro");
+    log.logAudio("account-intro:music-gate", { stage, suppressed: stage !== "intro" });
+  }, [stage, music, log]);
+  React.useEffect(() => {
+    return () => music.setSuppressed("intro", false);
+  }, [music]);
+
   useActiveUiContext(stage !== "intro", {
     sheetName: "CreateAccountIntroFlow",
     label: "Create account intro",
