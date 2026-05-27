@@ -38,6 +38,11 @@ import {
   MusicMuteIndicator,
   StatusCardConnected,
 } from "../hud";
+import {
+  isNativeLocationAvailable,
+  openNativeLocationSettings,
+  startNativeLocationWatch,
+} from "../../native/locationWatcher";
 import TravelFundsInlineSection, {
   type TravelFundsInlineState,
 } from "../travelfunds/TravelFundsInlineSection";
@@ -765,6 +770,9 @@ export default function TripMap({
   const liveTrailEnabledRef = useRef(false);
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
+  const locationDeniedPromptedRef = useRef(false);
+  const lastLocationFixAtRef = useRef<number | null>(null);
+  const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const lastLiveTrailSampleRef = useRef<LastLiveTrailSample>(null);
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
@@ -1887,37 +1895,68 @@ export default function TripMap({
     });
   }, [liveTrailPathVisible, liveTrailSamples.length, log, role]);
 
-  // Track browser location only after an explicit Traveler opt-in.
+  // Track location only after an explicit Traveler opt-in. On a native
+  // (Capacitor) build use the background-capable watcher so location keeps
+  // emitting while the phone is locked; on web fall back to the browser API.
   useEffect(() => {
-    if (role !== "traveler" || !navigator.geolocation) return;
-    if (!isLocationSharing) return;
+    if (role !== "traveler" || !isLocationSharing) return;
+
+    lastLocationFixAtRef.current = Date.now();
+    setLocationStale(false);
+
+    const handleFix = (lat: number, lon: number, accuracy?: number) => {
+      lastLocationFixAtRef.current = Date.now();
+      setLocationStale(false);
+      if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
+        liveTrailPermissionLoggedRef.current = true;
+        log.logInteraction("live-trail:permission:result", { result: "granted" });
+      }
+      const nextPosition = { lat, lon };
+      livePositionRef.current = nextPosition;
+      setLivePosition(nextPosition);
+
+      if (isLocationSharingRef.current) {
+        publishTravelerLocation(nextPosition, accuracy);
+      }
+      if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+        publishLiveTrailSample(nextPosition, accuracy);
+      }
+    };
+
+    const handleError = (error: unknown) => {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? (error as { code?: unknown }).code
+          : undefined;
+      // Native: location was denied. Guide the user to re-enable it once,
+      // rather than leaving them hunting through Settings (no crash here —
+      // a missing Info.plist usage string crashes natively before this fires).
+      if (code === "NOT_AUTHORIZED" && !locationDeniedPromptedRef.current) {
+        locationDeniedPromptedRef.current = true;
+        showToast("Location access is off for TripCast. Opening Settings to enable it.");
+        openNativeLocationSettings();
+      }
+      if (!liveTrailEnabledRef.current) return;
+      log.logInteraction("live-trail:permission:result", { result: "denied", code });
+    };
+
+    if (isNativeLocationAvailable()) {
+      log.logInteraction("live-trail:native-watch:start", {});
+      const stop = startNativeLocationWatch(
+        (fix) => handleFix(fix.lat, fix.lon, fix.accuracy),
+        handleError,
+      );
+      return () => {
+        log.logInteraction("live-trail:native-watch:stop", {});
+        stop();
+      };
+    }
+
+    if (!navigator.geolocation) return;
 
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-        if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
-          liveTrailPermissionLoggedRef.current = true;
-          log.logInteraction("live-trail:permission:result", { result: "granted" });
-        }
-        const nextPosition = { lat, lon };
-        livePositionRef.current = nextPosition;
-        setLivePosition(nextPosition);
-
-        if (isLocationSharingRef.current) {
-          publishTravelerLocation(nextPosition, accuracy ?? undefined);
-        }
-        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
-          publishLiveTrailSample(nextPosition, accuracy ?? undefined);
-        }
-      },
-      (error) => {
-        if (liveTrailEnabledRef.current) {
-          log.logInteraction("live-trail:permission:result", {
-            result: "denied",
-            code: error.code,
-          });
-        }
-      },
+      (pos) => handleFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined),
+      handleError,
       { enableHighAccuracy: true },
     );
 
@@ -1932,6 +1971,29 @@ export default function TripMap({
   // publish* only uses refs plus stable mutation inputs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLocationSharing, role, token]);
+
+  // Native only: if LIVE is on but no fix has landed in a while, the app is
+  // likely no longer emitting — commonly a lapsed 7-day free-signing build, or
+  // location access turned off. Surface a banner instead of failing silently.
+  useEffect(() => {
+    if (!isNativeLocationAvailable() || role !== "traveler" || !isLocationSharing) {
+      setLocationStale(false);
+      return;
+    }
+    const STALE_AFTER_MS = 5 * 60_000;
+    const id = setInterval(() => {
+      const last = lastLocationFixAtRef.current;
+      if (last !== null && Date.now() - last > STALE_AFTER_MS) {
+        setLocationStale((prev) => {
+          if (!prev) {
+            log.logInteraction("live-trail:location-stale", { sinceMs: Date.now() - last });
+          }
+          return true;
+        });
+      }
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [isLocationSharing, role, log]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -2855,7 +2917,7 @@ export default function TripMap({
       </FeatureBoundary>
 
       {/* Bottom Dock */}
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
+      <div className="pointer-events-none absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-[20] tripcast-frame">
         <Dock
           active={activeDockTab}
           onSelect={handleDockSelect}
@@ -2992,6 +3054,16 @@ export default function TripMap({
         ref={cardsWrapperRef}
         className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
       >
+        {locationStale ? (
+          <button
+            type="button"
+            onClick={openNativeLocationSettings}
+            className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-left text-xs font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]"
+          >
+            Live location hasn’t updated recently. Tap to check location access — or reinstall from
+            Xcode if the app build has expired.
+          </button>
+        ) : null}
         <FeatureBoundary
           resetKeys={[token, role, "hud-status-card"]}
           title="Status card hit a problem."

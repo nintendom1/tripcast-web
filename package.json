@@ -9,6 +9,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:cap": "tsc -b && vite build --mode capacitor",
+    "ios:sync": "npm run build:cap && cap sync ios",
+    "ios:run": "npm run build:cap && cap sync ios && cap run ios",
+    "ios:assets": "npx --yes @capacitor/assets@latest generate --ios",
     "validate": "npm run lint:terms:report && tsc -b && eslint . && vitest run",
     "typecheck": "tsc -b",
     "lint": "eslint .",
@@ -21,6 +25,11 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
+    "@capacitor-community/background-geolocation": "1.2.26",
+    "@capacitor/cli": "7.6.5",
+    "@capacitor/core": "7.6.5",
+    "@capacitor/ios": "7.6.5",
+    "@capacitor/status-bar": "7.0.6",
     "@fontsource-variable/geist": "^5.2.8",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
