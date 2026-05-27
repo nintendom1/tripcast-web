@@ -62,6 +62,7 @@ const QUICK_ACTIVITIES = [
   { label: "Exploring", emoji: "🧭" },
   { label: "Shopping", emoji: "🛒" },
   { label: "Errands", emoji: "💻" },
+  { label: "Sleeping", emoji: "️🛏️" },
 ] as const;
 
 const DEFAULT_STALENESS_RESET_AFTER_MS = 4 * 60 * 60 * 1000;
