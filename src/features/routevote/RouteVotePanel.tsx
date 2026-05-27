@@ -36,6 +36,7 @@ import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
@@ -57,7 +58,7 @@ type RouteVotePanelProps = {
     overlay: RouteVoteMapOverlay | null,
     optionNumberById?: Record<string, number> | null,
   ) => void;
-  onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
+  onRequestFitMap: (bounds: [[number, number], [number, number]] | null) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
   isPickingCoordinate?: boolean;
   pendingOpenVoteId?: string | null;
@@ -226,7 +227,7 @@ type FollowerVoteDetailProps = {
     overlay: RouteVoteMapOverlay | null,
     optionNumberById?: Record<string, number> | null,
   ) => void;
-  onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
+  onRequestFitMap: (bounds: [[number, number], [number, number]] | null) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
 };
 
@@ -284,8 +285,7 @@ function FollowerVoteDetail({
       return;
     }
 
-    const panelPadding = Math.round(window.innerHeight * 0.62) + 20;
-    onRequestFitMap(bounds, panelPadding);
+    onRequestFitMap(bounds);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [overlay, fallbackOrigin, vote.options]);
 
@@ -469,7 +469,7 @@ function TravelerVoteDetail({
     overlay: RouteVoteMapOverlay | null,
     optionNumberById?: Record<string, number> | null,
   ) => void;
-  onRequestFitMap: (bounds: [[number, number], [number, number]] | null, paddingBottom?: number) => void;
+  onRequestFitMap: (bounds: [[number, number], [number, number]] | null) => void;
   fallbackOrigin: { lat: number; lon: number } | null;
   onRequestOpenMissionDetail?: (missionId: string) => void;
 }) {
@@ -506,7 +506,7 @@ function TravelerVoteDetail({
 
     const origin = overlay.travelerLocation ?? fallbackOrigin;
     const bounds = getRouteVoteMapBounds(overlay.coordinateOptions, origin);
-    onRequestFitMap(bounds, 120);
+    onRequestFitMap(bounds);
 
     return () => {
       onVoteOverlayChange(null);
@@ -818,6 +818,7 @@ export default function RouteVotePanel({
   const [statusFilter, setStatusFilter] = useState<VoteStatusFilter>("all");
   const music = useMusicSafe();
   const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
+  const calibration = useCenteringCalibration();
 
   // Resolve the selected vote by id when it isn't in the (capped) list — keeps
   // navigation scale-independent so detail opens regardless of list size.
@@ -882,8 +883,7 @@ export default function RouteVotePanel({
   }
 
   function handleOptionFocus(lat: number, lon: number) {
-    const panelPadding = Math.round(window.innerHeight * 0.62) + 20;
-    onRequestFitMap([[lon - 0.01, lat - 0.01], [lon + 0.01, lat + 0.01]], panelPadding);
+    onRequestFitMap([[lon - 0.01, lat - 0.01], [lon + 0.01, lat + 0.01]]);
   }
 
   const showBack = view === "create" || Boolean(selectedVote);
@@ -897,7 +897,7 @@ export default function RouteVotePanel({
     <Sheet
       open={open}
       modal={false}
-      disablePointerDismissal={isPickingCoordinate}
+      disablePointerDismissal={isPickingCoordinate || calibration}
       onOpenChange={(nextOpen) => {
         if (!nextOpen && !isPickingCoordinate) onClose();
       }}
@@ -907,7 +907,8 @@ export default function RouteVotePanel({
         showBackdrop={false}
         mapAdjacent
         className={cn(
-          "z-[10] max-h-[80dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+          // Capped so the map keeps a visible band above the sheet for focus centering.
+          "z-[10] max-h-[62dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
           isPickingCoordinate && "invisible pointer-events-none",
         )}
         data-role="route-votes-sheet"
