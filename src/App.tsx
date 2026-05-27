@@ -34,6 +34,7 @@ import { useMusicSafe } from "./providers/MusicProvider";
 import { getLocalDateKey } from "./features/achievements/dateUtils";
 import { useInteractionLogger } from "./debug/useInteractionLogger";
 import DebugErrorBoundary from "./debug/DebugErrorBoundary";
+import { CrashOnDemand, disarmCrash } from "./debug/crashTrigger";
 import { log as debugLog } from "./debug/debugLogger";
 import { ThemeProvider } from "./providers/ThemeProvider";
 
@@ -482,6 +483,7 @@ function ConnectedApp() {
 
       <ErrorBoundary
         resetKeys={[session.token, role, locationResetNonce, tripDataResetNonce]}
+        onReset={disarmCrash}
         onError={(error, info) => {
           const err = error instanceof Error ? error : null;
           debugLog("error", "App", "react:map-boundary-error", "error", {
@@ -493,6 +495,9 @@ function ConnectedApp() {
         }}
         fallbackRender={(props) => <MapErrorFallback {...props} />}
       >
+        {/* Dev tool: lets the "Crash App" Option (or window.tripcast.crash()) trip
+            this boundary's full-screen fallback. Retry recovers via resetKeys. */}
+        <CrashOnDemand />
         <Suspense
           fallback={
             <div className="flex items-center justify-center h-full min-h-[200px]">

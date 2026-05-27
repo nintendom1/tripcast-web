@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
+  Bomb,
   Bug,
   ChevronRight,
   Clock,
@@ -58,6 +59,7 @@ import BulkImportSheet from "./BulkImportSheet";
 import BulkExportSheet from "./BulkExportSheet";
 import { TERMS } from "../../copy/terminology";
 import { triggerMapCooldown } from "../map/mapService";
+import { triggerCrash } from "../../debug/crashTrigger";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -903,6 +905,18 @@ function OptionsHome({
             });
           }}
         />
+        {role === "traveler" ? (
+          <OptionsRow
+            icon={Bomb}
+            title="Crash App (test error boundary)"
+            detail="Throws a render error to show the full-screen fallback — plays the bubble pop and stops music. Retry recovers."
+            danger
+            onClick={() => {
+              log.logUi("action:crash-app");
+              triggerCrash();
+            }}
+          />
+        ) : null}
       </OptionsGroup>
     </OptionsSection>
   );
