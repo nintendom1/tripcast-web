@@ -111,6 +111,19 @@ export function getMapStyleResolution(style?: string): MapProxyBaseResolution & 
   };
 }
 
+// Flags a known map-proxy misconfiguration so it can be surfaced on-device.
+// Convex HTTP actions (e.g. `/map/style`) are served only from `.convex.site`;
+// a base resolved to a `.convex.cloud` host always 404s the basemap style.
+export function getMapProxyConfigHint(resolution: MapProxyBaseResolution): string | null {
+  if (!resolution.baseUrl) return null;
+  const parsed = parseUrl(resolution.baseUrl);
+  if (!parsed) return null;
+  if (parsed.hostname.endsWith(".convex.cloud")) {
+    return "Map proxy host ends in .cloud but must be .site.";
+  }
+  return null;
+}
+
 function normalizeCooldownState(value: unknown, now: number): MapCooldownState | null {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) return null;

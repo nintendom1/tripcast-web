@@ -96,6 +96,7 @@ import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import {
   getActiveMapCooldown,
+  getMapProxyConfigHint,
   getMapStyleResolution,
   MAP_COOLDOWN_EVENT,
   MAP_COOLDOWN_KEY,
@@ -828,6 +829,11 @@ export default function TripMap({
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
   const [journalDebugSource, setJournalDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [mapCooldownState, setMapCooldownState] = useState<MapCooldownState>(() => readMapCooldownState());
+  // Basemap style fetch failure (e.g. a 404 from a misconfigured proxy host).
+  // Distinct from the 403/429 cooldown path, which would otherwise leave the
+  // basemap blank with no on-screen signal. Cleared on a successful map load.
+  const [mapStyleError, setMapStyleError] = useState<{ status?: number } | null>(null);
+  const [mapErrorDismissed, setMapErrorDismissed] = useState(false);
   const [mapInitRetryToken, setMapInitRetryToken] = useState(0);
   const [missionsDebugSource, setMissionsDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [votesDebugSource, setVotesDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
@@ -859,6 +865,7 @@ export default function TripMap({
   const mapStyleResolution = useMemo(() => getMapStyleResolution(resolvedMapBase), [resolvedMapBase]);
   const mapStyleUrl = mapStyleResolution.styleUrl;
   latestMapStyleUrlRef.current = mapStyleUrl;
+  const mapProxyConfigHint = useMemo(() => getMapProxyConfigHint(mapStyleResolution), [mapStyleResolution]);
   const mapCooldownUntil = mapCooldownState.until;
   const isMapServiceUnavailable = mapCooldownUntil !== null || !mapStyleUrl;
 
@@ -1644,6 +1651,7 @@ export default function TripMap({
 
     map.on("load", () => {
       mapLoadedRef.current = true;
+      setMapStyleError(null);
       logMapEvent("map:load:success", {
         styleUrl: activeMapStyleUrlRef.current ?? initialMapStyleUrl,
         zoom: map.getZoom(),
@@ -1657,6 +1665,13 @@ export default function TripMap({
         ...details,
         resourceKind: resourceFailure.kind,
       });
+      // A failed basemap style fetch (any status) leaves a blank map. The
+      // 403/429 cooldown path below already surfaces a banner; this captures
+      // the other cases (e.g. a 404 from a misconfigured proxy host) so they
+      // are not silent.
+      if (resourceFailure.kind === "style") {
+        setMapStyleError({ status: details.status });
+      }
       if (details.status === 403 || details.status === 429) {
         if (mapCooldownTriggeredRef.current) {
           logMapEvent("map:cooldown:duplicate-error", {
@@ -2624,6 +2639,16 @@ export default function TripMap({
   const mapCooldownMinutesRemaining = mapCooldownUntil
     ? Math.max(1, Math.ceil((mapCooldownUntil - Date.now()) / 60_000))
     : null;
+  const showMapErrorBanner = (isMapServiceUnavailable || mapStyleError !== null) && !mapErrorDismissed;
+  // The config hint is diagnostic detail, so it is shown only to the Traveler
+  // with debug logging enabled. Everyone else sees the generic banner.
+  const showMapDiagnosticDetail = role === "traveler" && isEnabled();
+  // Re-show the banner when the underlying failure changes, even if a prior
+  // instance was dismissed.
+  const mapErrorSignature = `${mapCooldownUntil ?? ""}|${mapStyleUrl ? "" : "noproxy"}|${mapStyleError?.status ?? ""}`;
+  useEffect(() => {
+    setMapErrorDismissed(false);
+  }, [mapErrorSignature]);
 
   const latestCheckpoint = checkpoints.at(-1) ?? null;
   const latestCheckpointLat = latestCheckpoint?.lat;
@@ -2798,7 +2823,7 @@ export default function TripMap({
       />
 
       <AnimatePresence>
-        {isMapServiceUnavailable ? (
+        {showMapErrorBanner ? (
           <motion.div
             key="map-service-unavailable"
             initial={{ y: -16, opacity: 0 }}
@@ -2806,14 +2831,29 @@ export default function TripMap({
             exit={{ y: -16, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="alert"
-            className="absolute left-1/2 top-4 z-[7] flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-col rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-4 py-2.5 text-sm font-medium text-[var(--ink-danger)] shadow-lg"
+            className="absolute left-1/2 top-4 z-[7] flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-col rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] py-2.5 pl-4 pr-9 text-sm font-medium text-[var(--ink-danger)] shadow-lg"
           >
-            <span>Map Service Unavailable</span>
+            <button
+              type="button"
+              aria-label="Dismiss"
+              className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-base leading-none opacity-70 hover:opacity-100"
+              onClick={() => setMapErrorDismissed(true)}
+            >
+              ×
+            </button>
+            <span>{isMapServiceUnavailable ? "Map Service Unavailable" : "Basemap failed to load"}</span>
             <span className="text-xs font-normal opacity-85">
               {mapCooldownMinutesRemaining
                 ? `It will attempt to resume in ${mapCooldownMinutesRemaining} min.`
-                : "Map proxy is not configured."}
+                : !mapStyleUrl
+                  ? "Map proxy is not configured."
+                  : "The map background couldn't be loaded."}
             </span>
+            {showMapDiagnosticDetail && mapProxyConfigHint ? (
+              <span className="mt-1 text-[11px] font-normal leading-snug opacity-85">
+                {mapProxyConfigHint}
+              </span>
+            ) : null}
             {mapCooldownUntil && role === "traveler" ? (
               <button
                 type="button"

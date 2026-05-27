@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearMapCooldown,
   getActiveMapCooldown,
+  getMapProxyConfigHint,
   getMapStyleUrl,
   MAP_COOLDOWN_BACKOFF_MS,
   MAP_COOLDOWN_EVENT,
@@ -44,6 +45,21 @@ describe("mapService", () => {
     expect(getMapStyleUrl()).toBe(
       `https://${siteHost}/map/style?base=${encodeURIComponent(`https://${siteHost}`)}`,
     );
+  });
+
+  it("flags a .convex.cloud proxy base as a misconfiguration", () => {
+    const cloudHost = ["fixture-deployment", "convex", "cloud"].join(".");
+    const hint = getMapProxyConfigHint({ baseUrl: `https://${cloudHost}`, source: "override" });
+
+    expect(hint).toContain(".cloud");
+    expect(hint).toContain(".site");
+  });
+
+  it("does not flag a valid .convex.site proxy base", () => {
+    const siteHost = ["fixture-deployment", "convex", "site"].join(".");
+
+    expect(getMapProxyConfigHint({ baseUrl: `https://${siteHost}`, source: "override" })).toBeNull();
+    expect(getMapProxyConfigHint({ baseUrl: null, source: "missing" })).toBeNull();
   });
 
   it("stores and announces a progressive cooldown", () => {
