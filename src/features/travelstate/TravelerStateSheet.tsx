@@ -139,14 +139,14 @@ function ChipRow<T extends string>({
   onDeselect?: () => void;
 }) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-1.5">
+    <div className="flex flex-wrap justify-end gap-1.5">
       {values.map((v) => (
         <button
           key={v}
           type="button"
           onClick={() => (selected === v ? onDeselect?.() : onSelect(v))}
           className={cn(
-            "rounded-full px-3 py-2.5 text-sm font-medium transition-colors truncate",
+            "rounded-full px-3 py-1 text-xs font-medium transition-colors",
             selected === v
               ? "bg-[var(--flag)] text-[var(--ink-on-brand)]"
               : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)] hover:text-[var(--ink-1)]",
