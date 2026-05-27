@@ -35,6 +35,40 @@ In Xcode (`npx cap open ios`):
    (`com.tripcast.app`) — change if Xcode says it is taken.
 3. Phase 2 will add the **Location** background mode and Info.plist usage strings here.
 
+## Pointing at prod (required — the phone can't reach localhost)
+
+`.env.local` holds `VITE_CONVEX_URL=http://127.0.0.1:3210` for local dev. On a phone, `127.0.0.1`
+is the phone itself, so a native build with that value hangs at sign-in
+("Still trying to finish this sign-in…"). The native build must target a **cloud** Convex
+deployment, and login codes must exist on that deployment.
+
+### One-time: create + configure prod backend
+
+```bash
+cd tripcast-backend
+npx convex deploy                                 # creates cloud prod deployment, prints its URL
+npx convex env set TRIPCAST_TRAVELER_CODE <code> --prod
+npx convex env set TRIPCAST_SUPPORT_CODE  <code> --prod
+# optional, only if set locally:
+npx convex env set TRIPCAST_AUTH_VERSION 1 --prod
+```
+
+The deploy prints a slug. Both URLs share it: `https://<slug>.convex.cloud` and
+`https://<slug>.convex.site`.
+
+### One-time: env file for native builds
+
+Create `tripcast-web/.env.production.local` (gitignored; loaded only for `vite build` production
+mode and **overrides** `.env.local`, so dev keeps using localhost):
+
+```
+VITE_CONVEX_URL=https://<slug>.convex.cloud
+VITE_CONVEX_SITE_URL=https://<slug>.convex.site
+```
+
+Result: `CAPACITOR=1 npm run build` uses prod automatically; `npm run dev` stays local. No manual
+swapping. (Vite precedence in production: `.env.production.local` > `.env.local`.)
+
 ## Routine deploy / weekly refresh (Mac)
 
 Each web change, or whenever the 7-day profile lapses:
