@@ -102,6 +102,37 @@ npm run ios:run -- --target <device-id>
 
 Background-GPS emission testing is **Phase 2** (needs the geolocation plugin + Info.plist modes).
 
+## Phase 2 — Background GPS emission
+
+The web code is done: `src/native/locationWatcher.ts` wraps the
+`@capacitor-community/background-geolocation` plugin behind a platform guard, and the existing
+Traveler location-sharing effect in `src/features/map/TripMap.tsx` uses it on native (web still
+uses `navigator.geolocation`). The **LivePill** "LIVE / PAUSED" toggle is the control surface — no
+new UI. Remaining work is iOS native config, all on the Mac.
+
+### iOS native setup (Mac, one-time)
+
+1. `npx cap sync ios` (installs the plugin pod after `npm install`).
+2. In Xcode → **App** target → **Signing & Capabilities** → **+ Capability** → **Background Modes**,
+   then check **Location updates**. (Allowed under free signing — it is a background *mode*, not a
+   paid entitlement.)
+3. Add Info.plist usage strings (Xcode → Info, or edit `ios/App/App/Info.plist`):
+   - `NSLocationWhenInUseUsageDescription` — e.g. "TripCast shows your live location on the trip map."
+   - `NSLocationAlwaysAndWhenInUseUsageDescription` — e.g. "TripCast keeps sharing your live
+     location with followers while the app is in the background."
+   - Confirm `UIBackgroundModes` contains `location` (step 2 adds this).
+4. Reinstall: `npm run ios:run`.
+
+### On-device test (real iPhone — simulator can't truly background-lock GPS)
+
+- [ ] Tap **LIVE** on the HUD; grant **Allow Always** when prompted (Always is required for locked
+      emission — "While Using" stops when backgrounded).
+- [ ] Confirm the iOS location arrow appears; lock the phone, walk/drive a few hundred meters.
+- [ ] In Convex, `liveTrailSamples` rows accrue while locked; a Follower session sees moving points
+      via `followerListLiveTrailSamples`.
+- [ ] Tap **PAUSED** → emission stops (watcher removed). Server dedup (60s/200m) prevents flooding.
+- [ ] Debug log shows `live-trail:native-watch:start/stop` and `live-trail:permission:result`.
+
 ## Notes
 
 - Web deploy is unaffected: a plain `npm run build` (no `CAPACITOR=1`) keeps the

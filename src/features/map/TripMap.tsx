@@ -38,6 +38,7 @@ import {
   MusicMuteIndicator,
   StatusCardConnected,
 } from "../hud";
+import { isNativeLocationAvailable, startNativeLocationWatch } from "../../native/locationWatcher";
 import TravelFundsInlineSection, {
   type TravelFundsInlineState,
 } from "../travelfunds/TravelFundsInlineSection";
@@ -1887,37 +1888,55 @@ export default function TripMap({
     });
   }, [liveTrailPathVisible, liveTrailSamples.length, log, role]);
 
-  // Track browser location only after an explicit Traveler opt-in.
+  // Track location only after an explicit Traveler opt-in. On a native
+  // (Capacitor) build use the background-capable watcher so location keeps
+  // emitting while the phone is locked; on web fall back to the browser API.
   useEffect(() => {
-    if (role !== "traveler" || !navigator.geolocation) return;
-    if (!isLocationSharing) return;
+    if (role !== "traveler" || !isLocationSharing) return;
+
+    const handleFix = (lat: number, lon: number, accuracy?: number) => {
+      if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
+        liveTrailPermissionLoggedRef.current = true;
+        log.logInteraction("live-trail:permission:result", { result: "granted" });
+      }
+      const nextPosition = { lat, lon };
+      livePositionRef.current = nextPosition;
+      setLivePosition(nextPosition);
+
+      if (isLocationSharingRef.current) {
+        publishTravelerLocation(nextPosition, accuracy);
+      }
+      if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+        publishLiveTrailSample(nextPosition, accuracy);
+      }
+    };
+
+    const handleError = (error: unknown) => {
+      if (!liveTrailEnabledRef.current) return;
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? (error as { code?: unknown }).code
+          : undefined;
+      log.logInteraction("live-trail:permission:result", { result: "denied", code });
+    };
+
+    if (isNativeLocationAvailable()) {
+      log.logInteraction("live-trail:native-watch:start", {});
+      const stop = startNativeLocationWatch(
+        (fix) => handleFix(fix.lat, fix.lon, fix.accuracy),
+        handleError,
+      );
+      return () => {
+        log.logInteraction("live-trail:native-watch:stop", {});
+        stop();
+      };
+    }
+
+    if (!navigator.geolocation) return;
 
     const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-        if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
-          liveTrailPermissionLoggedRef.current = true;
-          log.logInteraction("live-trail:permission:result", { result: "granted" });
-        }
-        const nextPosition = { lat, lon };
-        livePositionRef.current = nextPosition;
-        setLivePosition(nextPosition);
-
-        if (isLocationSharingRef.current) {
-          publishTravelerLocation(nextPosition, accuracy ?? undefined);
-        }
-        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
-          publishLiveTrailSample(nextPosition, accuracy ?? undefined);
-        }
-      },
-      (error) => {
-        if (liveTrailEnabledRef.current) {
-          log.logInteraction("live-trail:permission:result", {
-            result: "denied",
-            code: error.code,
-          });
-        }
-      },
+      (pos) => handleFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined),
+      handleError,
       { enableHighAccuracy: true },
     );
 
