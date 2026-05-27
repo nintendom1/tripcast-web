@@ -5,6 +5,10 @@ locked / in a pocket**. Built around **free Apple ID signing** (no $99/yr fee), 
 app is **device-only** and the provisioning profile **expires every 7 days** — re-deploy from
 Xcode to keep it alive.
 
+> Capacitor is pinned to the **7.x** line (core/cli/ios 7.6.5, status-bar 7.0.6) to match
+> `@capacitor-community/background-geolocation`, whose Swift PM dependency targets Capacitor 7.
+> Do not bump to Capacitor 8 until the geolocation plugin ships a Cap 8 build.
+>
 > Phase 1 (this commit) adds Capacitor config on Windows. The `ios/` native project is generated
 > on the Mac (Phase 1 finish) because `cap add ios` requires macOS + Xcode + CocoaPods.
 
