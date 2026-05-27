@@ -12,11 +12,12 @@ Required / optional sources:
   launch screen. If omitted, the existing scaffold splash is kept.
 - `splash-dark.png` — optional dark-mode splash, same size.
 
-Generate:
+Generate (the tool is fetched on demand via `npx`, not vendored as a dependency — it pulls in
+build-time packages with known advisories that we don't want in the lockfile):
 
 ```bash
 cd tripcast-web
-npm run ios:assets          # capacitor-assets generate --ios
+npm run ios:assets          # npx @capacitor/assets@latest generate --ios
 ```
 
 Then in Xcode confirm the App Icon set is populated, rebuild with `npm run ios:run`, and
