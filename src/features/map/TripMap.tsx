@@ -2855,7 +2855,7 @@ export default function TripMap({
       </FeatureBoundary>
 
       {/* Bottom Dock */}
-      <div className="pointer-events-none absolute inset-x-3 bottom-3 z-[20] tripcast-frame">
+      <div className="pointer-events-none absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] z-[20] tripcast-frame">
         <Dock
           active={activeDockTab}
           onSelect={handleDockSelect}
@@ -2990,7 +2990,7 @@ export default function TripMap({
 
       <div
         ref={cardsWrapperRef}
-        className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
+        className="absolute inset-x-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-[2] flex flex-col gap-2 tripcast-frame"
       >
         <FeatureBoundary
           resetKeys={[token, role, "hud-status-card"]}

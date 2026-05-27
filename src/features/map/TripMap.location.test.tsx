@@ -602,7 +602,9 @@ describe("TripMap location marker", () => {
 
     expect(screen.getByRole("button", { name: /mute soundtrack/i })).toHaveClass("right-14");
     expect(screen.getByRole("button", { name: "Center map on traveler" })).toHaveClass("bottom-[118px]");
-    expect(screen.getByRole("navigation", { name: "Map sections" }).parentElement).toHaveClass("bottom-3");
+    expect(screen.getByRole("navigation", { name: "Map sections" }).parentElement).toHaveClass(
+      "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]",
+    );
   });
 
   it("uses the same top HUD row structure for Followers", () => {
