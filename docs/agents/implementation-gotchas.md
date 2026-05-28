@@ -25,6 +25,15 @@ Read only when touching the related area.
 - Only one map-adjacent bottom sheet should be open at a time.
 - Non-modal map sheets slide under the Dock; fix covered footer actions with internal padding, not a higher z-index.
 
+## Intro Sequence Theming
+
+The `IntroSequence` manages its own visual dark/light state independently of the global ThemeProvider.
+
+- **Two token families, never mixed.** Beats 0–4 hardcode Meadow brand tokens (`--meadow-*`) and are immune to ThemeProvider state — do not replace these with functional tokens. The theme beat (beat 5) switches to functional tokens (`--bg-paper`, `--ink-1`, `--card`) only when `isDarkPreview` is true.
+- **`isDarkPreview`, not `resolvedTheme`, drives visual state.** `resolvedTheme` from `useTheme()` is only consulted inside the `isDarkPreview` calculation (for the auto+night case). Nothing else in the intro should read from `resolvedTheme` directly to decide colors.
+- **`setMode` must be called when the user picks a theme.** The functional tokens get their dark values from `applyThemeVariables("constellation")`, which runs inside ThemeProvider when `setMode("constellation")` is called. Without it, functional tokens still carry Meadow values and the dark preview renders incorrectly.
+- **Adding `.dark` to the intro container div does not change CSS variable values.** TripCast variables are set as inline styles on `:root` by JavaScript, not via a `.dark { }` CSS rule. The class is a conventional marker only.
+
 ## Map Layers And Theming (MapLibre GL)
 
 - Theme changes call `map.setStyle()`, which **wipes all custom sources/layers** — every custom layer (lines, breadcrumbs, GeoJSON overlays) must re-add itself after a swap or it's gone until refresh.
