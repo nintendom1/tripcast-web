@@ -1,11 +1,66 @@
 import { useEffect, useMemo } from "react";
 import maplibregl from "maplibre-gl";
 import { Checkpoint } from "../../convex/tripcastApi";
+import { LiveTrailPoint } from "./useLiveTrailPath";
 import { logMapEvent } from "../../debug/debugLogger";
 
+type UnifiedPoint = {
+  lat: number;
+  lon: number;
+  timestamp: number;
+  kind: "checkpoint" | "breadcrumb";
+};
+
+function haversineMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const R = 6_371_000;
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const dlat = toRad(b.lat - a.lat);
+  const dlon = toRad(b.lon - a.lon);
+  const hav =
+    Math.sin(dlat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dlon / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
+}
+
+// Removes breadcrumb points closer than minMeters to the previous kept point.
+// Checkpoints are always kept.
+function decimatePoints(points: UnifiedPoint[], minMeters: number): UnifiedPoint[] {
+  if (points.length === 0) return points;
+  const result: UnifiedPoint[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    const curr = points[i];
+    if (curr.kind === "checkpoint") {
+      result.push(curr);
+      continue;
+    }
+    const prev = result[result.length - 1];
+    if (haversineMeters(prev, curr) >= minMeters) {
+      result.push(curr);
+    }
+  }
+  return result;
+}
+
+// Quantise a value in [0,1] into a small set of discrete opacity buckets to
+// reduce the number of features emitted. Range is ~0.45–0.95 so no segment
+// ever drops near-invisible regardless of its age.
+function bucketOpacity(raw: number): number {
+  if (raw <= 0.52) return 0.45;
+  if (raw <= 0.68) return 0.62;
+  if (raw <= 0.84) return 0.78;
+  return 0.95;
+}
+
 /**
- * Custom hook to render a chronological dashed path connecting checkpoints.
- * The path fades out (lower opacity) for older segments.
+ * Renders a unified chronological path that interleaves Checkpoints and Live
+ * Trail breadcrumbs into a single continuous line.
+ *
+ * Segment styling (data-driven via feature properties):
+ *  - Primary  (width 3.5): consecutive checkpoint → checkpoint segments.
+ *  - Secondary (width 2.0): any segment involving a breadcrumb.
+ *
+ * The line fades for older segments and connects to livePosition when not in
+ * replay mode.
  */
 export function useTripPath(
   map: maplibregl.Map | null,
@@ -14,70 +69,109 @@ export function useTripPath(
   visible: boolean,
   playheadTime: number | null = null,
   lineColor: string = "#444444",
+  liveTrailSamples: LiveTrailPoint[] = [],
+  showBreadcrumbs: boolean = false,
 ) {
   const pathData = useMemo(() => {
     if (!visible) return null;
 
-    // Filter pins with coordinates and sort by creation time
-    const validPins = checkpoints
+    const cpPoints: UnifiedPoint[] = checkpoints
       .filter((cp) => cp.lat !== undefined && cp.lon !== undefined)
       .filter((cp) => playheadTime === null || cp.createdAt <= playheadTime)
-      .sort((a, b) => a._creationTime - b._creationTime)
-      .slice(-100);
+      .map((cp) => ({
+        lat: cp.lat!,
+        lon: cp.lon!,
+        timestamp: cp.createdAt,
+        kind: "checkpoint" as const,
+      }));
 
-    const coords = validPins.map((cp) => [cp.lon!, cp.lat!]);
+    const bcPoints: UnifiedPoint[] = showBreadcrumbs
+      ? liveTrailSamples
+          .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon))
+          .filter((s) => playheadTime === null || s.sampledAt <= playheadTime)
+          .map((s) => ({
+            lat: s.lat,
+            lon: s.lon,
+            timestamp: s.sampledAt,
+            kind: "breadcrumb" as const,
+          }))
+      : [];
 
+    const merged = [...cpPoints, ...bcPoints].sort((a, b) => a.timestamp - b.timestamp);
+    const points = decimatePoints(merged, 5);
+
+    // Terminal connection to live GPS when not scrubbing replay.
+    // Uses "breadcrumb" kind so the segment is always rendered as thin/secondary,
+    // regardless of whether the last trail point is a checkpoint or breadcrumb.
     if (livePosition && playheadTime === null) {
-      coords.push([livePosition.lon, livePosition.lat]);
+      points.push({
+        lat: livePosition.lat,
+        lon: livePosition.lon,
+        timestamp: Infinity,
+        kind: "breadcrumb",
+      });
     }
 
-    if (coords.length < 2) return null;
+    if (points.length < 2) return null;
 
+    const totalSegments = points.length - 1;
+    // The most recent STRENGTH_SEGMENTS segments always render at full opacity so
+    // even a brand-new 2- or 3-point path is fully visible.
+    const STRENGTH_SEGMENTS = 10;
+    const tailLength = Math.max(0, totalSegments - STRENGTH_SEGMENTS);
     const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
 
-    // Define the "strength" block: the most recent 5 segments (6 points).
-    // This includes the live segment (lastPin -> livePosition) if emitting.
-    const strengthPointCount = 6;
-    const strengthStartIndex = Math.max(0, coords.length - strengthPointCount);
+    let groupCoords: [number, number][] | null = null;
+    let groupIsPrimary = false;
+    let groupOpacityBucket = 0;
 
-    // 1. Fading Tail: Everything before the strength block
-    if (strengthStartIndex > 0) {
-      const tailCoords = coords.slice(0, strengthStartIndex + 1);
-      const numTailSegments = 4;
-      const tailSegmentSize = Math.max(1, Math.ceil(tailCoords.length / numTailSegments));
+    for (let i = 0; i < totalSegments; i++) {
+      const a = points[i];
+      const b = points[i + 1];
+      const isPrimary = a.kind === "checkpoint" && b.kind === "checkpoint";
+      let opacityBucket: number;
+      if (i >= tailLength) {
+        opacityBucket = 0.95;
+      } else {
+        const rawProgress = tailLength > 1 ? i / (tailLength - 1) : 0;
+        opacityBucket = bucketOpacity(0.45 + rawProgress * 0.5);
+      }
 
-      for (let i = 0; i < tailCoords.length - 1; i += tailSegmentSize) {
-        const segment = tailCoords.slice(i, i + tailSegmentSize + 1);
-        if (segment.length < 2) continue;
-
-        // Fade from 0.2 (oldest) up toward 0.95
-        const progress = i / (tailCoords.length - 1);
-        const opacity = 0.2 + progress * (0.95 - 0.2);
-
-        features.push({
-          type: "Feature",
-          properties: { opacity },
-          geometry: { type: "LineString", coordinates: segment },
-        });
+      if (
+        groupCoords === null ||
+        isPrimary !== groupIsPrimary ||
+        opacityBucket !== groupOpacityBucket
+      ) {
+        if (groupCoords !== null && groupCoords.length >= 2) {
+          features.push({
+            type: "Feature",
+            properties: { opacity: groupOpacityBucket, width: groupIsPrimary ? 3.5 : 2.0 },
+            geometry: { type: "LineString", coordinates: groupCoords },
+          });
+        }
+        groupCoords = [[a.lon, a.lat], [b.lon, b.lat]];
+        groupIsPrimary = isPrimary;
+        groupOpacityBucket = opacityBucket;
+      } else {
+        groupCoords.push([b.lon, b.lat]);
       }
     }
 
-    // 2. Strength Block: Most recent segments at constant high opacity
-    const strengthCoords = coords.slice(strengthStartIndex);
-    features.push({
-      type: "Feature",
-      properties: { opacity: 0.95 },
-      geometry: {
-        type: "LineString",
-        coordinates: strengthCoords,
-      },
-    });
+    if (groupCoords !== null && groupCoords.length >= 2) {
+      features.push({
+        type: "Feature",
+        properties: { opacity: groupOpacityBucket, width: groupIsPrimary ? 3.5 : 2.0 },
+        geometry: { type: "LineString", coordinates: groupCoords },
+      });
+    }
+
+    if (features.length === 0) return null;
 
     return {
       type: "FeatureCollection",
       features,
     } as GeoJSON.FeatureCollection<GeoJSON.LineString>;
-  }, [checkpoints, livePosition, visible, playheadTime]);
+  }, [checkpoints, livePosition, visible, playheadTime, liveTrailSamples, showBreadcrumbs]);
 
   useEffect(() => {
     if (!map) return;
@@ -97,7 +191,7 @@ export function useTripPath(
         },
         paint: {
           "line-color": lineColor,
-          "line-width": 3.5,
+          "line-width": ["get", "width"],
           "line-dasharray": [2, 2],
           "line-opacity": ["get", "opacity"],
         },
@@ -105,9 +199,8 @@ export function useTripPath(
       logMapEvent("map:route-path:re-add", { layerId, lineColor });
     };
 
-    // Full reconcile against the current data/color.
     const sync = () => {
-      if (!map.isStyleLoaded()) return; // styledata will re-fire when ready
+      if (!map.isStyleLoaded()) return;
       if (!pathData) {
         if (map.getLayer(layerId)) map.removeLayer(layerId);
         if (map.getSource(sourceId)) map.removeSource(sourceId);
@@ -136,19 +229,21 @@ export function useTripPath(
       layerId,
       styleLoaded: map.isStyleLoaded(),
       hasData: !!pathData,
+      featureCount: pathData?.features.length ?? 0,
       layerExists: !!map.getSource(sourceId),
       lineColor,
+      showBreadcrumbs,
+      liveTrailSampleCount: liveTrailSamples.length,
+      cpCount: checkpoints.filter((cp) => cp.lat !== undefined && cp.lon !== undefined).length,
+      firstSampleTs: liveTrailSamples.length > 0 ? liveTrailSamples[0].sampledAt : null,
+      lastSampleTs: liveTrailSamples.length > 0 ? liveTrailSamples[liveTrailSamples.length - 1].sampledAt : null,
     });
 
-    // Initial trigger: run now if the style is already loaded, otherwise wait for
-    // the one-shot "load". styledata then handles re-adds after each setStyle.
     if (map.isStyleLoaded()) {
       sync();
     } else {
       map.once("load", sync);
     }
-    // PASS 1 PROBE: route all three candidate events through ensureAfterStyle so
-    // the log trace reveals the earliest reliable re-add trigger.
     map.on("style.load", ensureAfterStyle);
     map.on("styledata", ensureAfterStyle);
     map.on("idle", ensureAfterStyle);

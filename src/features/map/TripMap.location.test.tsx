@@ -6,7 +6,6 @@ import { tripcastApi, type JournalEvent } from "../../convex/tripcastApi";
 import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
 import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
-import { useLiveTrailPath } from "./useLiveTrailPath";
 import { useTripPath } from "./useTripPath";
 
 const mapEaseTo = vi.fn();
@@ -575,6 +574,8 @@ describe("TripMap location marker", () => {
         true,
         null,
         "#444444",
+        [],
+        false,
       );
       expect(mapEaseTo).toHaveBeenCalledTimes(callsBeforeClose);
       expect(getLogs().some((entry) => entry.action === "replay:close")).toBe(true);
@@ -1210,11 +1211,15 @@ describe("TripMap location marker", () => {
     const { rerender } = render(<TripMap token="test-token" role="follower" />);
 
     await waitFor(() => {
-      expect(useLiveTrailPath).toHaveBeenLastCalledWith(
+      expect(useTripPath).toHaveBeenLastCalledWith(
         expect.anything(),
         [],
+        null,
         false,
+        null,
         "#444444",
+        [],
+        false,
       );
     });
 
@@ -1230,14 +1235,18 @@ describe("TripMap location marker", () => {
     rerender(<TripMap token="test-token" role="follower" />);
 
     await waitFor(() => {
-      expect(useLiveTrailPath).toHaveBeenLastCalledWith(
+      expect(useTripPath).toHaveBeenLastCalledWith(
         expect.anything(),
+        [],
+        null,
+        false,
+        null,
+        "#444444",
         [
           { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
           { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
         ],
         true,
-        "#444444",
       );
     });
   });
@@ -1255,7 +1264,9 @@ describe("TripMap location marker", () => {
         null,
         true,
         null,
-        "#444444"
+        "#444444",
+        [],
+        false,
       );
     });
 
@@ -1270,7 +1281,9 @@ describe("TripMap location marker", () => {
         null,
         false,
         null,
-        "#444444"
+        "#444444",
+        [],
+        false,
       );
     });
   });
@@ -1289,7 +1302,9 @@ describe("TripMap location marker", () => {
         null,
         true,
         null,
-        "#444444"
+        "#444444",
+        [],
+        false,
       );
     });
 
@@ -1304,7 +1319,9 @@ describe("TripMap location marker", () => {
         null,
         false,
         null,
-        "#444444"
+        "#444444",
+        [],
+        false,
       );
     });
   });
@@ -1322,7 +1339,54 @@ describe("TripMap location marker", () => {
         null,
         false,
         null,
-        "#444444"
+        "#444444",
+        [],
+        false,
+      );
+    });
+  });
+
+  it("includes a single breadcrumb in the unified path (liveTrailSamples.length >= 1)", async () => {
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: true,
+        sampleCount: 1,
+        samples: [{ _id: "bc-1", lat: 47.615, lon: -122.335, sampledAt: 500 }],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        null,
+        expect.anything(),
+        null,
+        "#444444",
+        [{ _id: "bc-1", lat: 47.615, lon: -122.335, sampledAt: 500 }],
+        true,
+      );
+    });
+  });
+
+  it("does not connect path to livePosition when GPS sharing is off", async () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        null,
+        expect.anything(),
+        null,
+        "#444444",
+        [],
+        false,
       );
     });
   });
