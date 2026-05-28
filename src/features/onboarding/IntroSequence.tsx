@@ -132,14 +132,10 @@ export function IntroSequence({
   const log = useDebugLogger("IntroSequence", "src/features/onboarding/IntroSequence.tsx");
   const { mode, resolvedTheme, setMode } = useTheme();
   const [themeChoice, setThemeChoice] = React.useState<ThemeMode>(mode);
-  const [hasPickedTheme, setHasPickedTheme] = React.useState(false);
   const safeBeat = Math.min(Math.max(beat, 0), LAST_BEAT_INDEX);
   const current = BEATS[safeBeat];
   const isThemeBeat = safeBeat === LAST_BEAT_INDEX;
-  const isDarkPreview = isThemeBeat && (
-    themeChoice === "constellation" ||
-    (themeChoice === "auto" && resolvedTheme === "constellation" && hasPickedTheme)
-  );
+  const isDarkPreview = resolvedTheme === "constellation";
 
   useActiveUiContext(true, {
     sheetName: "IntroSequence",
@@ -220,7 +216,6 @@ export function IntroSequence({
 
   const chooseTheme = React.useCallback((nextMode: ThemeMode) => {
     setThemeChoice(nextMode);
-    setHasPickedTheme(true);
     setMode(nextMode);
     log.logUi("intro:theme-select", {
       mode: nextMode,
@@ -679,11 +674,17 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
             initial={{ opacity: 0, y: 24, rotate: 0 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.14, duration: 0.45, ease: "easeOut" }}
-            className={cn("h-24 rounded-md border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] p-2 shadow-[var(--shadow-card)]", classes)}
+            className={cn(
+              "h-24 rounded-md border p-2 shadow-[var(--shadow-card)]",
+              isDark
+                ? "border-[var(--ink-3)] bg-[var(--card)]"
+                : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]",
+              classes,
+            )}
           >
-            <div className="h-10 rounded bg-[var(--meadow-royal)]/20" />
-            <div className="mt-2 h-2 w-20 rounded bg-[var(--meadow-primary)]/50" />
-            <div className="mt-1 h-2 w-14 rounded bg-[var(--meadow-ink-very)]/40" />
+            <div className={cn("h-10 rounded", isDark ? "bg-[var(--flag)]/20" : "bg-[var(--meadow-royal)]/20")} />
+            <div className={cn("mt-2 h-2 w-20 rounded", isDark ? "bg-[var(--flag)]/50" : "bg-[var(--meadow-primary)]/50")} />
+            <div className={cn("mt-1 h-2 w-14 rounded", isDark ? "bg-[var(--ink-3)]/40" : "bg-[var(--meadow-ink-very)]/40")} />
           </motion.div>
         ))}
       </div>
@@ -692,15 +693,27 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
 
   if (beat === 2) {
     return (
-      <div className="relative h-full overflow-hidden rounded-[26px] border border-[var(--meadow-paper-edge)] bg-[#eaf2da] shadow-[var(--shadow-card)]">
-        <div className="absolute inset-0 opacity-80" style={{ backgroundImage: "linear-gradient(135deg, transparent 0 42%, #bcd58a 42% 50%, transparent 50%), linear-gradient(35deg, transparent 0 55%, #b3def0 55% 68%, transparent 68%)" }} />
+      <div
+        className={cn(
+          "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)]",
+          isDark ? "border-[#2d314d] bg-[#1a1c2c]" : "border-[var(--meadow-paper-edge)] bg-[#eaf2da]",
+        )}
+      >
+        <div
+          className="absolute inset-0 opacity-80"
+          style={{
+            backgroundImage: isDark
+              ? "linear-gradient(135deg, transparent 0 42%, #24273a 42% 50%, transparent 50%), linear-gradient(35deg, transparent 0 55%, #24273a 55% 68%, transparent 68%)"
+              : "linear-gradient(135deg, transparent 0 42%, #bcd58a 42% 50%, transparent 50%), linear-gradient(35deg, transparent 0 55%, #b3def0 55% 68%, transparent 68%)",
+          }}
+        />
         <motion.div
           initial={{ y: -80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.25, duration: 0.55, ease: "easeOut" }}
-          className="absolute left-[62%] top-[35%] text-[var(--meadow-forest)]"
+          className={cn("absolute left-[62%] top-[35%]", isDark ? "text-[var(--flag)]" : "text-[var(--meadow-forest)]")}
         >
-          <MapPin className="h-10 w-10 fill-current text-[var(--meadow-forest)]" />
+          <MapPin className="h-10 w-10 fill-current" />
         </motion.div>
       </div>
     );
@@ -716,13 +729,15 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
             animate={{ y: index === 1 ? -12 : 0, opacity: index === 0 ? 0.65 : 1 }}
             transition={{ delay: 0.15 + index * 0.12, duration: 0.45, ease: "easeOut" }}
             className={cn(
-              "rounded-2xl border bg-[var(--meadow-paper)] p-3 text-left shadow-[var(--shadow-card)]",
-              index === 1 ? "border-[var(--meadow-royal)]" : "border-[var(--meadow-paper-edge)]",
+              "rounded-2xl border p-3 text-left shadow-[var(--shadow-card)]",
+              isDark
+                ? cn("bg-[var(--card)]", index === 1 ? "border-[var(--teal)]" : "border-[var(--ink-3)]")
+                : cn("bg-[var(--meadow-paper)]", index === 1 ? "border-[var(--meadow-royal)]" : "border-[var(--meadow-paper-edge)]"),
             )}
           >
-            <div className="font-[var(--meadow-font-display)] text-sm font-extrabold text-[var(--meadow-ink)]">{label}</div>
-            <div className="mt-3 h-2 overflow-hidden rounded bg-[var(--meadow-royal)]/20">
-              <div className="h-full rounded bg-[var(--meadow-royal)]" style={{ width: index === 1 ? "68%" : "32%" }} />
+            <div className={cn("text-sm font-extrabold", isDark ? "text-[var(--ink-1)]" : "font-[var(--meadow-font-display)] text-[var(--meadow-ink)]")}>{label}</div>
+            <div className={cn("mt-3 h-2 overflow-hidden rounded", isDark ? "bg-[var(--teal)]/20" : "bg-[var(--meadow-royal)]/20")}>
+              <div className={cn("h-full rounded", isDark ? "bg-[var(--teal)]" : "bg-[var(--meadow-royal)]")} style={{ width: index === 1 ? "68%" : "32%" }} />
             </div>
           </motion.div>
         ))}
@@ -736,7 +751,12 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
         initial={{ rotateY: 180, scale: 0.4, opacity: 0 }}
         animate={{ rotateY: 0, scale: 1, opacity: 1 }}
         transition={{ duration: 0.7, ease: "easeOut" }}
-        className="mx-auto grid h-28 w-28 place-items-center rounded-full border-4 border-white bg-[var(--meadow-gold)] text-[var(--meadow-ink)] shadow-[0_14px_32px_rgba(255,184,74,0.45)]"
+        className={cn(
+          "mx-auto grid h-28 w-28 place-items-center rounded-full border-4 shadow-[0_14px_32px_rgba(255,184,74,0.45)]",
+          isDark
+            ? "border-[var(--card)] bg-[var(--amber)] text-[var(--ink-on-dark)]"
+            : "border-white bg-[var(--meadow-gold)] text-[var(--meadow-ink)]",
+        )}
       >
         <Trophy className="h-12 w-12" aria-hidden />
       </motion.div>
@@ -748,8 +768,8 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
   }
 
   return (
-    <div className="mx-auto w-fit rounded-full bg-[var(--meadow-paper)] p-5 shadow-[var(--shadow-card)]">
-      <Sparkles className="h-16 w-16 text-[var(--meadow-primary)]" aria-hidden />
+    <div className={cn("mx-auto w-fit rounded-full p-5 shadow-[var(--shadow-card)]", isDark ? "bg-[var(--card)]" : "bg-[var(--meadow-paper)]")}>
+      <Sparkles className={cn("h-16 w-16", isDark ? "text-[var(--flag)]" : "text-[var(--meadow-primary)]")} aria-hidden />
     </div>
   );
 }
