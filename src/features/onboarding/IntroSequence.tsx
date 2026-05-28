@@ -132,9 +132,14 @@ export function IntroSequence({
   const log = useDebugLogger("IntroSequence", "src/features/onboarding/IntroSequence.tsx");
   const { mode, resolvedTheme, setMode } = useTheme();
   const [themeChoice, setThemeChoice] = React.useState<ThemeMode>(mode);
+  const [hasPickedTheme, setHasPickedTheme] = React.useState(false);
   const safeBeat = Math.min(Math.max(beat, 0), LAST_BEAT_INDEX);
   const current = BEATS[safeBeat];
   const isThemeBeat = safeBeat === LAST_BEAT_INDEX;
+  const isDarkPreview = isThemeBeat && (
+    themeChoice === "constellation" ||
+    (themeChoice === "auto" && resolvedTheme === "constellation" && hasPickedTheme)
+  );
 
   useActiveUiContext(true, {
     sheetName: "IntroSequence",
@@ -215,6 +220,7 @@ export function IntroSequence({
 
   const chooseTheme = React.useCallback((nextMode: ThemeMode) => {
     setThemeChoice(nextMode);
+    setHasPickedTheme(true);
     setMode(nextMode);
     log.logUi("intro:theme-select", {
       mode: nextMode,
@@ -263,7 +269,7 @@ export function IntroSequence({
     <div
       ref={rootRef}
       data-role="intro-sequence"
-      className="fixed inset-0 z-[60] overflow-hidden bg-[var(--meadow-bg)] text-[var(--meadow-ink)]"
+      className={cn("fixed inset-0 z-[60] overflow-hidden bg-[var(--meadow-bg)] text-[var(--meadow-ink)]", isDarkPreview && "dark")}
       onClick={() => {
         if (!isThemeBeat) {
           advance("surface-click");
