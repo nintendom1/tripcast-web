@@ -788,55 +788,81 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
 }
 
 function MapPreviewCard({ isDark }: { isDark?: boolean }) {
+  const roadMajor = isDark ? "#3c4060" : "#ffffff";
+  const roadMinor = isDark ? "#333758" : "#ede8d8";
+  const building = isDark ? "#35385a" : "#e0d8c4";
+
   return (
     <div
       className={cn(
         "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)] transition-colors duration-500",
-        isDark ? "bg-[#1a1c2c] border-[#2d314d]" : "bg-[#eaf2da] border-[var(--meadow-paper-edge)]"
+        isDark ? "border-[#2d314d]" : "border-[var(--meadow-paper-edge)]"
       )}
     >
-      {/* Terrain blobs — land regions */}
-      <div
-        className="absolute inset-0 opacity-40"
-        style={{
-          backgroundImage: isDark
-            ? "radial-gradient(circle at 20% 30%, #24273a 0%, transparent 40%), radial-gradient(circle at 80% 70%, #24273a 0%, transparent 40%)"
-            : "radial-gradient(circle at 20% 30%, #bcd58a 0%, transparent 40%), radial-gradient(circle at 80% 70%, #bcd58a 0%, transparent 40%)",
-        }}
-      />
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+        {/* Ocean background */}
+        <rect x="0" y="0" width="100" height="100" fill="var(--map-water)" />
 
-      {/* Route line + waypoints */}
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100">
-        {/* River */}
-        <line x1="0" y1="28" x2="55" y2="72" stroke={isDark ? "#1e3a5c" : "#b3def0"} strokeWidth="4" strokeLinecap="round" />
-        {/* Street grid */}
-        <line x1="0" y1="45" x2="100" y2="45" stroke={isDark ? "#3a3f5c" : "#c8c0a8"} strokeWidth="1" />
-        <line x1="0" y1="65" x2="100" y2="65" stroke={isDark ? "#3a3f5c" : "#c8c0a8"} strokeWidth="1" />
-        <line x1="40" y1="0" x2="40" y2="100" stroke={isDark ? "#3a3f5c" : "#c8c0a8"} strokeWidth="1" />
-        <line x1="65" y1="0" x2="65" y2="100" stroke={isDark ? "#3a3f5c" : "#c8c0a8"} strokeWidth="1" />
-        {/* Route */}
+        {/* Land mass — irregular coastline from upper-right down to lower-left */}
+        <path
+          d="M 42 0 L 100 0 L 100 100 L 52 100 Q 36 95 28 80 Q 18 62 24 44 Q 30 26 38 12 Q 40 5 42 0 Z"
+          fill="var(--map-land)"
+        />
+
+        {/* Bay — water cutting into the land from the left */}
+        <path
+          d="M 26 46 Q 15 54 20 67 Q 24 76 30 81"
+          fill="none"
+          stroke="var(--map-water)"
+          strokeWidth="8"
+          strokeLinecap="round"
+        />
+
+        {/* Park — lower portion of land */}
+        <path
+          d="M 40 66 Q 52 59 64 63 Q 74 67 70 81 Q 64 91 48 89 Q 36 86 38 75 Z"
+          fill="var(--map-park)"
+        />
+
+        {/* Minor road — curves across land */}
+        <path
+          d="M 100 40 Q 80 44 65 47 Q 48 51 34 49"
+          fill="none"
+          stroke={roadMinor}
+          strokeWidth="1.2"
+        />
+
+        {/* Major road — curves top to bottom */}
+        <path
+          d="M 66 0 Q 60 28 54 52 Q 50 68 52 100"
+          fill="none"
+          stroke={roadMajor}
+          strokeWidth="2.5"
+        />
+
+        {/* Building cluster — upper right */}
+        <rect x="74" y="10" width="7" height="5" rx="0.5" fill={building} />
+        <rect x="83" y="8" width="5" height="7" rx="0.5" fill={building} />
+        <rect x="76" y="17" width="9" height="4" rx="0.5" fill={building} />
+
+        {/* Building cluster — mid right */}
+        <rect x="72" y="37" width="6" height="4" rx="0.5" fill={building} />
+        <rect x="80" y="34" width="5" height="6" rx="0.5" fill={building} />
+        <rect x="74" y="43" width="4" height="4" rx="0.5" fill={building} />
+
+        {/* Route — marching dashed line */}
         <motion.path
-          d="M 20 72 L 80 38"
+          d="M 32 79 L 84 26"
           fill="none"
           stroke={isDark ? "#ffd86a" : "#444444"}
           strokeWidth="2.5"
-          strokeDasharray="6 4"
-          initial={{ pathLength: 0 }}
-          animate={{ pathLength: 1 }}
-          transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
+          strokeDasharray="5 3"
+          animate={{ strokeDashoffset: [8, 0] }}
+          transition={{ duration: 0.6, repeat: Infinity, ease: "linear" }}
         />
-        <circle cx="20" cy="72" r="3.5" fill="var(--flag)" />
-        <circle cx="80" cy="38" r="3.5" fill="var(--flag)" />
+        <circle cx="32" cy="79" r="3.5" fill="var(--flag)" />
+        <circle cx="84" cy="26" r="3.5" fill="var(--flag)" />
       </svg>
-
-      {/* Cartographic grid overlay */}
-      <div
-        className="absolute inset-0 opacity-[0.08]"
-        style={{
-          backgroundImage: "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
-          backgroundSize: "20px 20px",
-        }}
-      />
     </div>
   );
 }
