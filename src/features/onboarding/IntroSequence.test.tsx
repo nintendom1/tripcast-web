@@ -39,6 +39,11 @@ vi.mock("framer-motion", async () => {
           <h1 ref={ref} {...props} style={motionStyle<HTMLHeadingElement>({ animate, style })} />
         ),
       ),
+      path: ReactModule.forwardRef<SVGPathElement, React.SVGProps<SVGPathElement> & { animate?: unknown; initial?: unknown; exit?: unknown; transition?: unknown }>(
+        ({ animate: _a, initial: _i, exit: _e, transition: _t, ...props }, ref) => (
+          <path ref={ref} {...props} />
+        ),
+      ),
     },
   };
 });
@@ -121,6 +126,54 @@ describe("IntroSequence", () => {
 
     expect(localStorage.getItem("tripcast.theme_mode")).toBe("auto");
     expect(document.documentElement).toHaveClass("theme-dark");
+  });
+});
+
+describe("IntroSequence — dark preview", () => {
+  function navigateToThemeBeat() {
+    act(() => {
+      for (let i = 0; i < 5; i += 1) {
+        fireEvent.click(screen.getByRole("button", { name: /next/i }));
+      }
+    });
+  }
+
+  it("intro opens dark on beat 0 when mode is auto and time is night", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-27T21:00:00"));
+    localStorage.setItem("tripcast.theme_mode", "auto");
+    render(
+      <ThemeProvider>
+        <IntroSequence role="follower" userHandle="alice" travelerName="Traveler" onDone={vi.fn()} />
+      </ThemeProvider>,
+    );
+    expect(document.querySelector("[data-role='intro-sequence']")!).toHaveClass("dark");
+  });
+
+  it("intro div gains dark class when Dark button is tapped", () => {
+    localStorage.setItem("tripcast.theme_mode", "meadow");
+    render(
+      <ThemeProvider>
+        <IntroSequence role="follower" userHandle="alice" travelerName="Traveler" onDone={vi.fn()} />
+      </ThemeProvider>,
+    );
+    navigateToThemeBeat();
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    expect(document.querySelector("[data-role='intro-sequence']")!).toHaveClass("dark");
+  });
+
+  it("dark class persists when navigating back from theme beat after selecting Dark", () => {
+    localStorage.setItem("tripcast.theme_mode", "meadow");
+    render(
+      <ThemeProvider>
+        <IntroSequence role="follower" userHandle="alice" travelerName="Traveler" onDone={vi.fn()} />
+      </ThemeProvider>,
+    );
+    navigateToThemeBeat();
+    fireEvent.click(screen.getByRole("button", { name: "Dark" }));
+    fireEvent.click(screen.getByRole("button", { name: /previous intro frame/i }));
+    // dark persists across all beats because isDarkPreview = resolvedTheme === "constellation"
+    expect(document.querySelector("[data-role='intro-sequence']")!).toHaveClass("dark");
   });
 });
 

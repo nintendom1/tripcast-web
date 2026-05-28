@@ -135,6 +135,7 @@ export function IntroSequence({
   const safeBeat = Math.min(Math.max(beat, 0), LAST_BEAT_INDEX);
   const current = BEATS[safeBeat];
   const isThemeBeat = safeBeat === LAST_BEAT_INDEX;
+  const isDarkPreview = resolvedTheme === "constellation";
 
   useActiveUiContext(true, {
     sheetName: "IntroSequence",
@@ -263,14 +264,20 @@ export function IntroSequence({
     <div
       ref={rootRef}
       data-role="intro-sequence"
-      className="fixed inset-0 z-[60] overflow-hidden bg-[var(--meadow-bg)] text-[var(--meadow-ink)]"
+      className={cn(
+        "fixed inset-0 z-[60] overflow-hidden transition-colors duration-500",
+        isDarkPreview && "dark",
+        isDarkPreview
+          ? "bg-[var(--bg-paper)] text-[var(--ink-1)]"
+          : "bg-[var(--meadow-bg)] text-[var(--meadow-ink)]"
+      )}
       onClick={() => {
         if (!isThemeBeat) {
           advance("surface-click");
         }
       }}
     >
-      <IntroBackdrop beat={safeBeat} />
+      <IntroBackdrop beat={safeBeat} isDark={isDarkPreview} />
 
       {safeBeat > 0 ? (
         <button
@@ -279,7 +286,12 @@ export function IntroSequence({
             event.stopPropagation();
             previous("back-button");
           }}
-          className="absolute left-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/70 text-[var(--meadow-ink-soft)] shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:text-[var(--meadow-ink)]"
+          className={cn(
+            "absolute left-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[var(--shadow-card)] backdrop-blur transition-all",
+            isDarkPreview
+              ? "border-[var(--ink-3)] bg-[var(--card)]/70 text-[var(--ink-2)]"
+              : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/70 text-[var(--meadow-ink-soft)]"
+          )}
           aria-label="Previous intro frame"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
@@ -289,7 +301,12 @@ export function IntroSequence({
       <button
         type="button"
         onClick={skip}
-        className="absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/80 text-[var(--meadow-ink-soft)] shadow-[var(--shadow-card)] backdrop-blur"
+        className={cn(
+          "absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[var(--shadow-card)] backdrop-blur transition-all",
+          isDarkPreview
+            ? "border-[var(--ink-3)] bg-[var(--card)]/80 text-[var(--ink-2)]"
+            : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/80 text-[var(--meadow-ink-soft)]"
+        )}
         aria-label="Skip"
       >
         <X className="h-4 w-4" aria-hidden />
@@ -303,7 +320,11 @@ export function IntroSequence({
           <span
             key={i}
             className={cn("h-1.5 rounded-full transition-all duration-300", i === safeBeat ? "w-6" : "w-1.5")}
-            style={{ background: i <= safeBeat ? "var(--meadow-primary)" : "var(--meadow-paper-edge)" }}
+            style={{
+              background: i <= safeBeat
+                ? (isDarkPreview ? "var(--flag)" : "var(--meadow-primary)")
+                : (isDarkPreview ? "var(--ink-3)" : "var(--meadow-paper-edge)")
+            }}
           />
         ))}
       </div>
@@ -317,12 +338,13 @@ export function IntroSequence({
           transition={{ duration: 0.42, ease: "easeOut" }}
           className="relative z-[1] flex h-full flex-col items-center justify-center px-5 pb-12 pt-16"
         >
-          <BeatScene beat={safeBeat} current={current} userHandle={userHandle} travelerName={travelerName} />
+          <BeatScene beat={safeBeat} current={current} userHandle={userHandle} travelerName={travelerName} isDark={isDarkPreview} />
           {isThemeBeat ? (
             <ThemeChoicePanel
               value={themeChoice}
               resolvedTheme={resolvedTheme}
               onChange={chooseTheme}
+              isDark={isDarkPreview}
             />
           ) : null}
           <Button
@@ -332,13 +354,16 @@ export function IntroSequence({
               advance("cta");
             }}
             className="mt-8 h-12 rounded-full px-7 font-[var(--meadow-font-display)] text-base font-extrabold"
-            style={{ background: "var(--meadow-primary)", color: "var(--meadow-primary-ink)" }}
+            style={{
+              background: isDarkPreview ? "var(--flag)" : "var(--meadow-primary)",
+              color: isDarkPreview ? "white" : "var(--meadow-primary-ink)",
+            }}
           >
             {current.cta}
             <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
           </Button>
           {safeBeat < 1 ? (
-            <p className="mt-4 font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--meadow-ink-soft)]">
+            <p className={cn("mt-4 font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em]", isDarkPreview ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]")}>
               Tap or press space to continue
             </p>
           ) : null}
@@ -515,11 +540,13 @@ function BeatScene({
   current,
   userHandle,
   travelerName,
+  isDark,
 }: {
   beat: number;
   current: Beat;
   userHandle: string;
   travelerName: string;
+  isDark?: boolean;
 }) {
   const Icon = current.Icon;
   const pose = beat === 0 ? "wave" : beat === 4 ? "cheer" : beat === 5 ? "idle" : "point";
@@ -527,19 +554,48 @@ function BeatScene({
   return (
     <div className="grid w-full max-w-sm translate-y-3 justify-items-center text-center">
       <div className="mb-5 h-32 w-full">
-        <SceneCard beat={beat} />
+        <SceneCard beat={beat} isDark={isDark} />
       </div>
       <div className="mb-8 grid w-full grid-cols-[82px_minmax(0,1fr)] items-end gap-3">
         <IntroMascot pose={pose} size={3.4} />
-        <div className="min-w-0 rounded-2xl border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] px-4 py-3 text-left text-sm font-semibold leading-snug text-[var(--meadow-ink)] shadow-[var(--shadow-card)]">
-          {beat === 0 ? `Hi @${userHandle}. ${current.body}` : beat === 1 ? `${travelerName} posts the moments. You get the thread.` : current.body}
+        <div
+          className={cn(
+            "min-w-0 rounded-2xl border px-4 py-3 text-left text-sm font-semibold leading-snug shadow-[var(--shadow-card)] transition-colors duration-500",
+            isDark
+              ? "border-[var(--ink-3)] bg-[var(--card)] text-[var(--foreground)]"
+              : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]"
+          )}
+        >
+          {beat === 0
+            ? `Hi @${userHandle}. ${current.body}`
+            : beat === 1
+              ? `${travelerName} posts the moments. You get the thread.`
+              : current.body}
         </div>
       </div>
-      <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] px-3 py-1.5 font-[var(--meadow-font-display)] text-[11px] font-extrabold uppercase tracking-[0.12em] text-[var(--meadow-ink-soft)]">
-        <Icon className="h-3.5 w-3.5 text-[var(--meadow-primary)]" aria-hidden />
+      <div
+        className={cn(
+          "mb-3 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-[var(--meadow-font-display)] text-[11px] font-extrabold uppercase tracking-[0.12em] transition-colors duration-500",
+          isDark
+            ? "border-[var(--ink-3)] bg-[var(--card)] text-[var(--ink-2)]"
+            : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink-soft)]"
+        )}
+      >
+        <Icon
+          className={cn(
+            "h-3.5 w-3.5 transition-colors duration-500",
+            isDark ? "text-[var(--flag)]" : "text-[var(--meadow-primary)]"
+          )}
+          aria-hidden
+        />
         {current.kicker}
       </div>
-      <h1 className="font-[var(--meadow-font-display)] text-3xl font-extrabold leading-tight text-[var(--meadow-ink)]">
+      <h1
+        className={cn(
+          "font-[var(--meadow-font-display)] text-3xl font-extrabold leading-tight transition-colors duration-500",
+          isDark ? "text-[var(--foreground)]" : "text-[var(--meadow-ink)]"
+        )}
+      >
         {current.title}
       </h1>
     </div>
@@ -550,16 +606,38 @@ function ThemeChoicePanel({
   value,
   resolvedTheme,
   onChange,
+  isDark,
 }: {
   value: ThemeMode;
   resolvedTheme: "meadow" | "constellation";
   onChange: (mode: ThemeMode) => void;
+  isDark?: boolean;
 }) {
   const choices: Array<{ mode: ThemeMode; label: string; Icon: LucideIcon }> = [
     { mode: "meadow", label: "Light", Icon: Sun },
     { mode: "constellation", label: "Dark", Icon: Moon },
     { mode: "auto", label: "Auto", Icon: Sparkles },
   ];
+
+  function buttonClass(mode: ThemeMode, active: boolean): string {
+    if (mode === "meadow") {
+      return active
+        ? "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
+        : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]";
+    }
+    if (mode === "constellation") {
+      return active
+        ? "border-transparent bg-[#f0eaff] text-[#1c1f3a] shadow-sm"
+        : "border-transparent bg-[#3d3f5d] text-[#c2bdee]";
+    }
+    return active
+      ? isDark
+        ? "border-transparent bg-[var(--ink-1)] text-[var(--primary-foreground)] shadow-sm"
+        : "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
+      : isDark
+        ? "border-transparent bg-[var(--meter-track)] text-[var(--ink-2)]"
+        : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]";
+  }
 
   return (
     <div
@@ -576,10 +654,8 @@ function ThemeChoicePanel({
               onClick={() => onChange(mode)}
               aria-pressed={active}
               className={cn(
-                "grid min-h-20 justify-items-center gap-2 rounded-2xl border px-2 py-3 font-[var(--meadow-font-display)] text-sm font-extrabold shadow-[var(--shadow-card)] transition-transform active:scale-[0.98]",
-                active
-                  ? "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
-                  : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]",
+                "grid min-h-20 justify-items-center gap-2 rounded-2xl border px-2 py-3 font-[var(--meadow-font-display)] text-sm font-extrabold shadow-[var(--shadow-card)] transition-all active:scale-[0.98]",
+                buttonClass(mode, active),
               )}
             >
               <Icon className="h-5 w-5" aria-hidden />
@@ -588,16 +664,20 @@ function ThemeChoicePanel({
           );
         })}
       </div>
-      {value === "auto" ? (
-        <p className="text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--meadow-ink-soft)]">
-          Auto will open in {resolvedTheme === "constellation" ? "dark" : "light"} mode now
-        </p>
-      ) : null}
+      <p
+        className={cn(
+          "text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] transition-colors duration-500",
+          isDark ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]",
+          value !== "auto" && "invisible"
+        )}
+      >
+        Auto will open in {resolvedTheme === "constellation" ? "dark" : "light"} mode now
+      </p>
     </div>
   );
 }
 
-function SceneCard({ beat }: { beat: number }) {
+function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
   if (beat === 1) {
     return (
       <div className="grid h-full grid-cols-3 items-center gap-2">
@@ -607,11 +687,17 @@ function SceneCard({ beat }: { beat: number }) {
             initial={{ opacity: 0, y: 24, rotate: 0 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.14, duration: 0.45, ease: "easeOut" }}
-            className={cn("h-24 rounded-md border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] p-2 shadow-[var(--shadow-card)]", classes)}
+            className={cn(
+              "h-24 rounded-md border p-2 shadow-[var(--shadow-card)]",
+              isDark
+                ? "border-[var(--ink-3)] bg-[var(--card)]"
+                : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]",
+              classes,
+            )}
           >
-            <div className="h-10 rounded bg-[var(--meadow-royal)]/20" />
-            <div className="mt-2 h-2 w-20 rounded bg-[var(--meadow-primary)]/50" />
-            <div className="mt-1 h-2 w-14 rounded bg-[var(--meadow-ink-very)]/40" />
+            <div className={cn("h-10 rounded", isDark ? "bg-[var(--flag)]/20" : "bg-[var(--meadow-royal)]/20")} />
+            <div className={cn("mt-2 h-2 w-20 rounded", isDark ? "bg-[var(--flag)]/50" : "bg-[var(--meadow-primary)]/50")} />
+            <div className={cn("mt-1 h-2 w-14 rounded", isDark ? "bg-[var(--ink-3)]/40" : "bg-[var(--meadow-ink-very)]/40")} />
           </motion.div>
         ))}
       </div>
@@ -620,15 +706,27 @@ function SceneCard({ beat }: { beat: number }) {
 
   if (beat === 2) {
     return (
-      <div className="relative h-full overflow-hidden rounded-[26px] border border-[var(--meadow-paper-edge)] bg-[#eaf2da] shadow-[var(--shadow-card)]">
-        <div className="absolute inset-0 opacity-80" style={{ backgroundImage: "linear-gradient(135deg, transparent 0 42%, #bcd58a 42% 50%, transparent 50%), linear-gradient(35deg, transparent 0 55%, #b3def0 55% 68%, transparent 68%)" }} />
+      <div
+        className={cn(
+          "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)]",
+          isDark ? "border-[#2d314d] bg-[#1c1f3a]" : "border-[var(--meadow-paper-edge)] bg-[#eaf2da]",
+        )}
+      >
+        <div
+          className="absolute inset-0 opacity-80"
+          style={{
+            backgroundImage: isDark
+              ? "linear-gradient(135deg, transparent 0 42%, #24273a 42% 50%, transparent 50%), linear-gradient(35deg, transparent 0 55%, #24273a 55% 68%, transparent 68%)"
+              : "linear-gradient(135deg, transparent 0 42%, #bcd58a 42% 50%, transparent 50%), linear-gradient(35deg, transparent 0 55%, #b3def0 55% 68%, transparent 68%)",
+          }}
+        />
         <motion.div
           initial={{ y: -80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.25, duration: 0.55, ease: "easeOut" }}
-          className="absolute left-[62%] top-[35%] text-[var(--meadow-forest)]"
+          className="absolute left-[62%] top-[35%] text-[#e53935]"
         >
-          <MapPin className="h-10 w-10 fill-current text-[var(--meadow-forest)]" />
+          <MapPin className="h-10 w-10 fill-current" />
         </motion.div>
       </div>
     );
@@ -644,13 +742,15 @@ function SceneCard({ beat }: { beat: number }) {
             animate={{ y: index === 1 ? -12 : 0, opacity: index === 0 ? 0.65 : 1 }}
             transition={{ delay: 0.15 + index * 0.12, duration: 0.45, ease: "easeOut" }}
             className={cn(
-              "rounded-2xl border bg-[var(--meadow-paper)] p-3 text-left shadow-[var(--shadow-card)]",
-              index === 1 ? "border-[var(--meadow-royal)]" : "border-[var(--meadow-paper-edge)]",
+              "rounded-2xl border p-3 text-left shadow-[var(--shadow-card)]",
+              isDark
+                ? cn("bg-[var(--card)]", index === 1 ? "border-[var(--teal)]" : "border-[var(--ink-3)]")
+                : cn("bg-[var(--meadow-paper)]", index === 1 ? "border-[var(--meadow-royal)]" : "border-[var(--meadow-paper-edge)]"),
             )}
           >
-            <div className="font-[var(--meadow-font-display)] text-sm font-extrabold text-[var(--meadow-ink)]">{label}</div>
-            <div className="mt-3 h-2 overflow-hidden rounded bg-[var(--meadow-royal)]/20">
-              <div className="h-full rounded bg-[var(--meadow-royal)]" style={{ width: index === 1 ? "68%" : "32%" }} />
+            <div className={cn("font-[var(--meadow-font-display)] text-sm font-extrabold", isDark ? "text-[var(--ink-1)]" : "text-[var(--meadow-ink)]")}>{label}</div>
+            <div className={cn("mt-3 h-2 overflow-hidden rounded", isDark ? "bg-[var(--teal)]/20" : "bg-[var(--meadow-royal)]/20")}>
+              <div className={cn("h-full rounded", isDark ? "bg-[var(--teal)]" : "bg-[var(--meadow-royal)]")} style={{ width: index === 1 ? "68%" : "32%" }} />
             </div>
           </motion.div>
         ))}
@@ -664,32 +764,209 @@ function SceneCard({ beat }: { beat: number }) {
         initial={{ rotateY: 180, scale: 0.4, opacity: 0 }}
         animate={{ rotateY: 0, scale: 1, opacity: 1 }}
         transition={{ duration: 0.7, ease: "easeOut" }}
-        className="mx-auto grid h-28 w-28 place-items-center rounded-full border-4 border-white bg-[var(--meadow-gold)] text-[var(--meadow-ink)] shadow-[0_14px_32px_rgba(255,184,74,0.45)]"
+        className={cn(
+          "mx-auto grid h-28 w-28 place-items-center rounded-full border-4 shadow-[0_14px_32px_rgba(255,184,74,0.45)]",
+          isDark
+            ? "border-[var(--card)] bg-[var(--amber)] text-[var(--ink-on-dark)]"
+            : "border-white bg-[var(--meadow-gold)] text-[var(--meadow-ink)]",
+        )}
       >
         <Trophy className="h-12 w-12" aria-hidden />
       </motion.div>
     );
   }
 
+  if (beat === LAST_BEAT_INDEX) {
+    return <MapPreviewCard isDark={isDark} />;
+  }
+
   return (
-    <div className="mx-auto w-fit rounded-full bg-[var(--meadow-paper)] p-5 shadow-[var(--shadow-card)]">
-      <Sparkles className="h-16 w-16 text-[var(--meadow-primary)]" aria-hidden />
+    <div className={cn("mx-auto w-fit rounded-full p-5 shadow-[var(--shadow-card)]", isDark ? "bg-[var(--card)]" : "bg-[var(--meadow-paper)]")}>
+      <Sparkles className={cn("h-16 w-16", isDark ? "text-[var(--flag)]" : "text-[var(--meadow-primary)]")} aria-hidden />
     </div>
   );
 }
 
-function IntroBackdrop({ beat }: { beat: number }) {
+function MapPreviewCard({ isDark }: { isDark?: boolean }) {
+  const maskId = React.useId();
+  const roadMajor = isDark ? "#3c4060" : "#ffffff";
+  const roadMinor = isDark ? "#333758" : "#ede8d8";
+  const building = isDark ? "#35385a" : "#e0d8c4";
+
+  const pinFill = "#e53935";
+
+  return (
+    <div
+      className={cn(
+        "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)] transition-colors duration-500",
+        isDark ? "border-[#2d314d]" : "border-[var(--meadow-paper-edge)]"
+      )}
+      style={{ background: "var(--map-water)" }}
+    >
+      {/*
+       * viewBox="0 25 100 50" shows a landscape slice of the 100×100 canvas.
+       * preserveAspectRatio="meet" keeps the full slice visible without cropping;
+       * the div background (--map-water) fills any letterbox margins seamlessly.
+       */}
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 25 100 50" preserveAspectRatio="xMidYMid meet">
+        {/* Ocean background */}
+        <rect x="0" y="0" width="100" height="100" fill="var(--map-water)" />
+
+        {/* Land mass */}
+        <path
+          d="M 42 0 L 100 0 L 100 100 L 52 100 Q 36 95 28 80 Q 18 62 24 44 Q 30 26 38 12 Q 40 5 42 0 Z"
+          fill="var(--map-land)"
+        />
+
+        {/* Bay */}
+        <path
+          d="M 26 46 Q 15 54 20 67 Q 24 76 30 81"
+          fill="none"
+          stroke="var(--map-water)"
+          strokeWidth="8"
+          strokeLinecap="round"
+        />
+
+        {/* Park */}
+        <path
+          d="M 40 66 Q 52 59 64 63 Q 74 67 70 81 Q 64 91 48 89 Q 36 86 38 75 Z"
+          fill="var(--map-park)"
+        />
+
+        {/* Minor road */}
+        <path d="M 100 40 Q 80 44 65 47 Q 48 51 34 49" fill="none" stroke={roadMinor} strokeWidth="1.2" />
+
+        {/* Major road */}
+        <path d="M 66 0 Q 60 28 54 52 Q 50 68 52 100" fill="none" stroke={roadMajor} strokeWidth="2.5" />
+
+        {/* Building cluster (within visible y=25–75 band) */}
+        <rect x="72" y="37" width="6" height="4" rx="0.5" fill={building} />
+        <rect x="80" y="34" width="5" height="6" rx="0.5" fill={building} />
+        <rect x="74" y="43" width="4" height="4" rx="0.5" fill={building} />
+        <rect x="80" y="43" width="6" height="3" rx="0.5" fill={building} />
+
+        {/* Route — dashed wipe-in via mask, endpoints match pin tips */}
+        <defs>
+          <mask id={maskId}>
+            <motion.path
+              d="M 38 64 L 75 40"
+              stroke="white"
+              strokeWidth="6"
+              fill="none"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 2, repeat: Infinity, repeatDelay: 0.8, ease: "easeOut" }}
+            />
+          </mask>
+        </defs>
+        <path
+          d="M 38 64 L 75 40"
+          fill="none"
+          stroke={isDark ? "#ffd86a" : "#444444"}
+          strokeWidth="2.5"
+          strokeDasharray="5 3"
+          mask={`url(#${maskId})`}
+        />
+
+        {/* Pin A — tip at (38, 64), on land near park */}
+        <g fill={pinFill}>
+          <circle cx="38" cy="57.5" r="4.5" />
+          <polygon points="38,64 34.5,59 41.5,59" />
+        </g>
+        <circle cx="38" cy="57.5" r="1.8" fill="white" />
+
+        {/* Pin B — tip at (75, 40), on land upper-right */}
+        <g fill={pinFill}>
+          <circle cx="75" cy="33.5" r="4.5" />
+          <polygon points="75,40 71.5,35 78.5,35" />
+        </g>
+        <circle cx="75" cy="33.5" r="1.8" fill="white" />
+      </svg>
+    </div>
+  );
+}
+
+function IntroBackdrop({ beat, isDark }: { beat: number; isDark?: boolean }) {
+  const isThemeBeat = beat === LAST_BEAT_INDEX;
+
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,var(--meadow-paper)_0%,var(--meadow-bg)_66%)]" />
+      {/* Light radial — fades out when isDark */}
+      <div
+        className={cn(
+          "absolute inset-0 transition-opacity duration-1000",
+          isDark ? "opacity-0" : "opacity-100"
+        )}
+        style={{ background: "radial-gradient(circle at 50% 35%, var(--meadow-paper) 0%, var(--meadow-bg) 66%)" }}
+      />
+
+      {/* Dark radial — fades in when isDark */}
+      <div
+        className={cn(
+          "absolute inset-0 transition-opacity duration-1000",
+          isDark ? "opacity-100" : "opacity-0"
+        )}
+        style={{ background: "radial-gradient(circle at 50% 35%, #242746 0%, #1c1f3a 66%)" }}
+      />
+
+      {/* Sun / Moon — all beats so the transition fires on the theme beat */}
       <motion.div
-        className="absolute right-10 top-16 h-24 w-24 rounded-full bg-[var(--meadow-gold)]/40"
+        className={cn(
+          "absolute right-10 top-16 h-24 w-24 rounded-full transition-colors duration-1000",
+          isDark ? "bg-slate-200/20" : "bg-[var(--meadow-gold)]/40"
+        )}
         animate={{ scale: beat % 2 === 0 ? 1 : 1.08, opacity: [0.45, 0.7, 0.45] }}
         transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
       />
-      <div className="absolute left-8 top-32 h-10 w-28 rounded-full bg-white/65" />
-      <div className="absolute right-16 top-44 h-8 w-24 rounded-full bg-white/55" />
-      <div className="absolute -bottom-16 left-1/2 h-48 w-[120%] -translate-x-1/2 rounded-[50%] bg-[var(--meadow-forest)]/10" />
+
+      {/* Clouds — all beats; fade out when isDark so the transition fires on the theme beat */}
+      <div
+        className={cn(
+          "absolute left-8 top-32 h-10 w-28 rounded-full bg-white/65 transition-opacity duration-700",
+          isDark ? "opacity-0" : "opacity-100"
+        )}
+      />
+      <div
+        className={cn(
+          "absolute right-16 top-44 h-8 w-24 rounded-full bg-white/55 transition-opacity duration-700",
+          isDark ? "opacity-0" : "opacity-100"
+        )}
+      />
+
+      {/* Ground haze — non-theme beats only (would compete with ThemeChoicePanel) */}
+      {!isThemeBeat && (
+        <div className={cn("absolute -bottom-16 left-1/2 h-48 w-[120%] -translate-x-1/2 rounded-[50%]", isDark ? "bg-[var(--map-forest)]/10" : "bg-[var(--meadow-forest)]/10")} />
+      )}
+
+      {/* Subtle grid overlay — theme beat only */}
+      {isThemeBeat && (
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
+            backgroundSize: "60px 60px",
+          }}
+        />
+      )}
+
+      {/* Starfield — theme beat + dark only; golden dots pulse subtly */}
+      {isThemeBeat && isDark && (
+        <motion.div
+          className="absolute inset-0"
+          animate={{ opacity: [0.04, 0.14, 0.04] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            backgroundImage: [
+              "radial-gradient(circle, #ffd86a 1px, transparent 1px)",
+              "radial-gradient(circle, #ffd86a 1px, transparent 1px)",
+              "radial-gradient(circle, #ffd86a 1.5px, transparent 1.5px)",
+              "radial-gradient(circle, #ffd86a 1px, transparent 1px)",
+            ].join(", "),
+            backgroundSize: "120px 80px, 90px 110px, 150px 70px, 80px 130px",
+            backgroundPosition: "20px 15px, 60px 45px, 10px 70px, 80px 10px",
+          }}
+        />
+      )}
     </div>
   );
 }
