@@ -748,7 +748,7 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
                 : cn("bg-[var(--meadow-paper)]", index === 1 ? "border-[var(--meadow-royal)]" : "border-[var(--meadow-paper-edge)]"),
             )}
           >
-            <div className={cn("text-sm font-extrabold", isDark ? "text-[var(--ink-1)]" : "font-[var(--meadow-font-display)] text-[var(--meadow-ink)]")}>{label}</div>
+            <div className={cn("font-[var(--meadow-font-display)] text-sm font-extrabold", isDark ? "text-[var(--ink-1)]" : "text-[var(--meadow-ink)]")}>{label}</div>
             <div className={cn("mt-3 h-2 overflow-hidden rounded", isDark ? "bg-[var(--teal)]/20" : "bg-[var(--meadow-royal)]/20")}>
               <div className={cn("h-full rounded", isDark ? "bg-[var(--teal)]" : "bg-[var(--meadow-royal)]")} style={{ width: index === 1 ? "68%" : "32%" }} />
             </div>
@@ -788,6 +788,7 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
 }
 
 function MapPreviewCard({ isDark }: { isDark?: boolean }) {
+  const maskId = React.useId();
   const roadMajor = isDark ? "#3c4060" : "#ffffff";
   const roadMinor = isDark ? "#333758" : "#ede8d8";
   const building = isDark ? "#35385a" : "#e0d8c4";
@@ -846,7 +847,7 @@ function MapPreviewCard({ isDark }: { isDark?: boolean }) {
 
         {/* Route — dashed wipe-in via mask, endpoints match pin tips */}
         <defs>
-          <mask id="route-reveal">
+          <mask id={maskId}>
             <motion.path
               d="M 38 64 L 75 40"
               stroke="white"
@@ -864,7 +865,7 @@ function MapPreviewCard({ isDark }: { isDark?: boolean }) {
           stroke={isDark ? "#ffd86a" : "#444444"}
           strokeWidth="2.5"
           strokeDasharray="5 3"
-          mask="url(#route-reveal)"
+          mask={`url(#${maskId})`}
         />
 
         {/* Pin A — tip at (38, 64), on land near park */}
