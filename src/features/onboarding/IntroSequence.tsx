@@ -628,7 +628,7 @@ function ThemeChoicePanel({
     if (mode === "constellation") {
       return active
         ? "border-transparent bg-[#f0eaff] text-[#1c1f3a] shadow-sm"
-        : "border-transparent bg-[rgba(255,255,255,0.08)] text-[#c2bdee]";
+        : "border-transparent bg-[#3d3f5d] text-[#c2bdee]";
     }
     return active
       ? isDark
@@ -724,7 +724,7 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
           initial={{ y: -80, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 0.25, duration: 0.55, ease: "easeOut" }}
-          className={cn("absolute left-[62%] top-[35%]", isDark ? "text-[var(--flag)]" : "text-[var(--meadow-forest)]")}
+          className="absolute left-[62%] top-[35%] text-[#e53935]"
         >
           <MapPin className="h-10 w-10 fill-current" />
         </motion.div>
@@ -850,15 +850,27 @@ function MapPreviewCard({ isDark }: { isDark?: boolean }) {
         <rect x="80" y="34" width="5" height="6" rx="0.5" fill={building} />
         <rect x="74" y="43" width="4" height="4" rx="0.5" fill={building} />
 
-        {/* Route — marching dashed line */}
-        <motion.path
+        {/* Route — dashed wipe-in via mask */}
+        <defs>
+          <mask id="route-reveal">
+            <motion.path
+              d="M 32 79 L 84 26"
+              stroke="white"
+              strokeWidth="6"
+              fill="none"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 2, repeat: Infinity, repeatDelay: 0.8, ease: "easeOut" }}
+            />
+          </mask>
+        </defs>
+        <path
           d="M 32 79 L 84 26"
           fill="none"
           stroke={isDark ? "#ffd86a" : "#444444"}
           strokeWidth="2.5"
           strokeDasharray="5 3"
-          animate={{ strokeDashoffset: [8, 0] }}
-          transition={{ duration: 0.6, repeat: Infinity, ease: "linear" }}
+          mask="url(#route-reveal)"
         />
         <circle cx="32" cy="79" r="3.5" fill="var(--flag)" />
         <circle cx="84" cy="26" r="3.5" fill="var(--flag)" />
