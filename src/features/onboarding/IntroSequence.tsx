@@ -363,7 +363,7 @@ export function IntroSequence({
             <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
           </Button>
           {safeBeat < 1 ? (
-            <p className="mt-4 font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--meadow-ink-soft)]">
+            <p className={cn("mt-4 font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em]", isDarkPreview ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]")}>
               Tap or press space to continue
             </p>
           ) : null}
@@ -650,16 +650,15 @@ function ThemeChoicePanel({
           );
         })}
       </div>
-      {value === "auto" ? (
-        <p
-          className={cn(
-            "text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] transition-colors duration-500",
-            isDark ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]"
-          )}
-        >
-          Auto will open in {resolvedTheme === "constellation" ? "dark" : "light"} mode now
-        </p>
-      ) : null}
+      <p
+        className={cn(
+          "text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] transition-colors duration-500",
+          isDark ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]",
+          value !== "auto" && "invisible"
+        )}
+      >
+        Auto will open in {resolvedTheme === "constellation" ? "dark" : "light"} mode now
+      </p>
     </div>
   );
 }
@@ -696,7 +695,7 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
       <div
         className={cn(
           "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)]",
-          isDark ? "border-[#2d314d] bg-[#1a1c2c]" : "border-[var(--meadow-paper-edge)] bg-[#eaf2da]",
+          isDark ? "border-[#2d314d] bg-[#1c1f3a]" : "border-[var(--meadow-paper-edge)] bg-[#eaf2da]",
         )}
       >
         <div
@@ -848,7 +847,7 @@ function IntroBackdrop({ beat, isDark }: { beat: number; isDark?: boolean }) {
           "absolute inset-0 transition-opacity duration-1000",
           isDark ? "opacity-100" : "opacity-0"
         )}
-        style={{ background: "radial-gradient(circle at 50% 35%, #1a1c2c 0%, #0c0d14 66%)" }}
+        style={{ background: "radial-gradient(circle at 50% 35%, #242746 0%, #1c1f3a 66%)" }}
       />
 
       {/* Sun / Moon — all beats so the transition fires on the theme beat */}
@@ -877,7 +876,7 @@ function IntroBackdrop({ beat, isDark }: { beat: number; isDark?: boolean }) {
 
       {/* Ground haze — non-theme beats only (would compete with ThemeChoicePanel) */}
       {!isThemeBeat && (
-        <div className="absolute -bottom-16 left-1/2 h-48 w-[120%] -translate-x-1/2 rounded-[50%] bg-[var(--meadow-forest)]/10" />
+        <div className={cn("absolute -bottom-16 left-1/2 h-48 w-[120%] -translate-x-1/2 rounded-[50%]", isDark ? "bg-[var(--map-forest)]/10" : "bg-[var(--meadow-forest)]/10")} />
       )}
 
       {/* Subtle grid overlay — theme beat only */}
