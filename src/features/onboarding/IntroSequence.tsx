@@ -269,7 +269,13 @@ export function IntroSequence({
     <div
       ref={rootRef}
       data-role="intro-sequence"
-      className={cn("fixed inset-0 z-[60] overflow-hidden bg-[var(--meadow-bg)] text-[var(--meadow-ink)]", isDarkPreview && "dark")}
+      className={cn(
+        "fixed inset-0 z-[60] overflow-hidden transition-colors duration-500",
+        isDarkPreview && "dark",
+        isDarkPreview
+          ? "bg-[var(--bg-paper)] text-[var(--ink-1)]"
+          : "bg-[var(--meadow-bg)] text-[var(--meadow-ink)]"
+      )}
       onClick={() => {
         if (!isThemeBeat) {
           advance("surface-click");
@@ -285,7 +291,12 @@ export function IntroSequence({
             event.stopPropagation();
             previous("back-button");
           }}
-          className="absolute left-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/70 text-[var(--meadow-ink-soft)] shadow-[var(--shadow-card)] backdrop-blur transition-colors hover:text-[var(--meadow-ink)]"
+          className={cn(
+            "absolute left-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[var(--shadow-card)] backdrop-blur transition-all",
+            isDarkPreview
+              ? "border-[var(--ink-3)] bg-[var(--card)]/70 text-[var(--ink-2)]"
+              : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/70 text-[var(--meadow-ink-soft)]"
+          )}
           aria-label="Previous intro frame"
         >
           <ChevronLeft className="h-4 w-4" aria-hidden />
@@ -295,7 +306,12 @@ export function IntroSequence({
       <button
         type="button"
         onClick={skip}
-        className="absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/80 text-[var(--meadow-ink-soft)] shadow-[var(--shadow-card)] backdrop-blur"
+        className={cn(
+          "absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[var(--shadow-card)] backdrop-blur transition-all",
+          isDarkPreview
+            ? "border-[var(--ink-3)] bg-[var(--card)]/80 text-[var(--ink-2)]"
+            : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/80 text-[var(--meadow-ink-soft)]"
+        )}
         aria-label="Skip"
       >
         <X className="h-4 w-4" aria-hidden />
@@ -309,7 +325,11 @@ export function IntroSequence({
           <span
             key={i}
             className={cn("h-1.5 rounded-full transition-all duration-300", i === safeBeat ? "w-6" : "w-1.5")}
-            style={{ background: i <= safeBeat ? "var(--meadow-primary)" : "var(--meadow-paper-edge)" }}
+            style={{
+              background: i <= safeBeat
+                ? (isDarkPreview ? "var(--flag)" : "var(--meadow-primary)")
+                : (isDarkPreview ? "var(--ink-3)" : "var(--meadow-paper-edge)")
+            }}
           />
         ))}
       </div>
@@ -338,7 +358,10 @@ export function IntroSequence({
               advance("cta");
             }}
             className="mt-8 h-12 rounded-full px-7 font-[var(--meadow-font-display)] text-base font-extrabold"
-            style={{ background: "var(--meadow-primary)", color: "var(--meadow-primary-ink)" }}
+            style={{
+              background: isDarkPreview ? "var(--flag)" : "var(--meadow-primary)",
+              color: isDarkPreview ? "white" : "var(--meadow-primary-ink)",
+            }}
           >
             {current.cta}
             <ArrowRight className="ml-2 h-4 w-4" aria-hidden />
