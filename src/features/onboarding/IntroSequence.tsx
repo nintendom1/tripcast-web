@@ -349,6 +349,7 @@ export function IntroSequence({
               value={themeChoice}
               resolvedTheme={resolvedTheme}
               onChange={chooseTheme}
+              isDark={isDarkPreview}
             />
           ) : null}
           <Button
@@ -610,10 +611,12 @@ function ThemeChoicePanel({
   value,
   resolvedTheme,
   onChange,
+  isDark,
 }: {
   value: ThemeMode;
   resolvedTheme: "meadow" | "constellation";
   onChange: (mode: ThemeMode) => void;
+  isDark?: boolean;
 }) {
   const choices: Array<{ mode: ThemeMode; label: string; Icon: LucideIcon }> = [
     { mode: "meadow", label: "Light", Icon: Sun },
@@ -636,10 +639,14 @@ function ThemeChoicePanel({
               onClick={() => onChange(mode)}
               aria-pressed={active}
               className={cn(
-                "grid min-h-20 justify-items-center gap-2 rounded-2xl border px-2 py-3 font-[var(--meadow-font-display)] text-sm font-extrabold shadow-[var(--shadow-card)] transition-transform active:scale-[0.98]",
+                "grid min-h-20 justify-items-center gap-2 rounded-2xl border px-2 py-3 font-[var(--meadow-font-display)] text-sm font-extrabold shadow-[var(--shadow-card)] transition-all active:scale-[0.98]",
                 active
-                  ? "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
-                  : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]",
+                  ? isDark
+                    ? "border-[var(--flag)] bg-[var(--flag)] text-[var(--ink-on-brand)]"
+                    : "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
+                  : isDark
+                    ? "border-[var(--ink-3)] bg-[var(--card)] text-[var(--foreground)]"
+                    : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]"
               )}
             >
               <Icon className="h-5 w-5" aria-hidden />
@@ -649,7 +656,12 @@ function ThemeChoicePanel({
         })}
       </div>
       {value === "auto" ? (
-        <p className="text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--meadow-ink-soft)]">
+        <p
+          className={cn(
+            "text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] transition-colors duration-500",
+            isDark ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]"
+          )}
+        >
           Auto will open in {resolvedTheme === "constellation" ? "dark" : "light"} mode now
         </p>
       ) : null}
