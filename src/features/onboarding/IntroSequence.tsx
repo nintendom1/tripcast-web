@@ -794,18 +794,26 @@ function MapPreviewCard({ isDark }: { isDark?: boolean }) {
 
       {/* Route line + waypoints */}
       <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100">
+        {/* River */}
+        <line x1="0" y1="28" x2="55" y2="72" stroke={isDark ? "#1e3a5c" : "#b3def0"} strokeWidth="4" strokeLinecap="round" />
+        {/* Street grid */}
+        <line x1="0" y1="45" x2="100" y2="45" stroke={isDark ? "#3a3f5c" : "#c8c0a8"} strokeWidth="1" />
+        <line x1="0" y1="65" x2="100" y2="65" stroke={isDark ? "#3a3f5c" : "#c8c0a8"} strokeWidth="1" />
+        <line x1="40" y1="0" x2="40" y2="100" stroke={isDark ? "#3a3f5c" : "#c8c0a8"} strokeWidth="1" />
+        <line x1="65" y1="0" x2="65" y2="100" stroke={isDark ? "#3a3f5c" : "#c8c0a8"} strokeWidth="1" />
+        {/* Route */}
         <motion.path
-          d="M 20 80 Q 40 20 80 40"
+          d="M 20 72 L 80 38"
           fill="none"
           stroke={isDark ? "#ffd86a" : "#444444"}
-          strokeWidth="3"
+          strokeWidth="2.5"
           strokeDasharray="6 4"
           initial={{ pathLength: 0 }}
           animate={{ pathLength: 1 }}
           transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
         />
-        <circle cx="20" cy="80" r="3.5" fill="var(--flag)" />
-        <circle cx="80" cy="40" r="3.5" fill="var(--flag)" />
+        <circle cx="20" cy="72" r="3.5" fill="var(--flag)" />
+        <circle cx="80" cy="38" r="3.5" fill="var(--flag)" />
       </svg>
 
       {/* Cartographic grid overlay */}
