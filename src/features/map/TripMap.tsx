@@ -73,7 +73,6 @@ import {
   type FocusGeometry,
 } from "./focusCoordinate";
 import { useTripPath } from "./useTripPath";
-import { useLiveTrailPath } from "./useLiveTrailPath";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
@@ -1004,11 +1003,14 @@ export default function TripMap({
     role === "follower" ? { token } : "skip",
   );
   const liveTrailEnabled = role === "traveler" && travelerLiveTrailStatus?.enabled === true;
-  const liveTrailSamples =
-    role === "traveler"
-      ? (travelerLiveTrailStatus?.samples ?? [])
-      : (followerLiveTrail?.visible ? followerLiveTrail.samples : []);
-  const liveTrailPathVisible = liveTrailSamples.length >= 2;
+  const liveTrailSamples = useMemo(
+    () =>
+      role === "traveler"
+        ? (travelerLiveTrailStatus?.samples ?? [])
+        : (followerLiveTrail?.visible ? followerLiveTrail.samples : []),
+    [role, travelerLiveTrailStatus, followerLiveTrail],
+  );
+  const liveTrailPathVisible = liveTrailSamples.length >= 1;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
     const val = localStorage.getItem("tripcast.showTripPath");
@@ -1036,12 +1038,15 @@ export default function TripMap({
   useTripPath(
     mapInstance,
     checkpoints,
-    livePosition ?? (role === "follower" ? (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null) : null),
+    role === "traveler"
+      ? (isLocationSharing ? livePosition : null)
+      : (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null),
     showPath,
     replayActive ? replayPlayheadTime : null,
     routeLineColor,
+    liveTrailSamples,
+    liveTrailPathVisible,
   );
-  useLiveTrailPath(mapInstance, liveTrailSamples, liveTrailPathVisible, routeLineColor);
 
   const handleCloakingPinClick = useCallback(
     (pin: CloakingPin) => {
@@ -1075,16 +1080,38 @@ export default function TripMap({
   const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
   const journalEvents = useMemo(() => queriedJournalEvents ?? [], [queriedJournalEvents]);
   const replayPins = useMemo<ReplayPin[]>(() => {
-    return journalEvents
+    const checkpointPins: ReplayPin[] = journalEvents
       .filter(isFiniteReplayCoordinate)
       .map((event) => ({
         eventId: event._id,
         occurredAt: event.occurredAt,
         lat: event.lat,
         lon: event.lon,
-      }))
-      .sort((a, b) => a.occurredAt - b.occurredAt);
-  }, [journalEvents]);
+      }));
+
+    if (!liveTrailPathVisible || liveTrailSamples.length === 0) {
+      return checkpointPins.sort((a, b) => a.occurredAt - b.occurredAt);
+    }
+
+    // Include decimated breadcrumbs so the camera follows the trail during replay.
+    const MIN_REPLAY_BC_INTERVAL_MS = 60_000;
+    let lastKeptAt = -Infinity;
+    const breadcrumbPins: ReplayPin[] = [];
+    for (const s of [...liveTrailSamples].sort((a, b) => a.sampledAt - b.sampledAt)) {
+      if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
+      if (s.sampledAt - lastKeptAt >= MIN_REPLAY_BC_INTERVAL_MS) {
+        breadcrumbPins.push({
+          eventId: `bc-${s.sampledAt}`,
+          occurredAt: s.sampledAt,
+          lat: s.lat,
+          lon: s.lon,
+        });
+        lastKeptAt = s.sampledAt;
+      }
+    }
+
+    return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
+  }, [journalEvents, liveTrailSamples, liveTrailPathVisible]);
   const replayStartTime = replayPins[0]?.occurredAt ?? null;
   const replayEndTime = replayPins.at(-1)?.occurredAt ?? null;
   const canReplayTrip = replayPins.length > 1 && replayStartTime !== null && replayEndTime !== null;
