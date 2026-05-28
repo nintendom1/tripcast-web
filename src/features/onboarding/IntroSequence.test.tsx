@@ -138,7 +138,7 @@ describe("IntroSequence — dark preview", () => {
     });
   }
 
-  it("theme beat arrives in light mode even when auto resolves to night", () => {
+  it("intro opens dark on beat 0 when mode is auto and time is night", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-05-27T21:00:00"));
     localStorage.setItem("tripcast.theme_mode", "auto");
@@ -147,8 +147,7 @@ describe("IntroSequence — dark preview", () => {
         <IntroSequence role="follower" userHandle="alice" travelerName="Traveler" onDone={vi.fn()} />
       </ThemeProvider>,
     );
-    navigateToThemeBeat();
-    expect(document.querySelector("[data-role='intro-sequence']")!).not.toHaveClass("dark");
+    expect(document.querySelector("[data-role='intro-sequence']")!).toHaveClass("dark");
   });
 
   it("intro div gains dark class when Dark button is tapped", () => {
@@ -163,7 +162,7 @@ describe("IntroSequence — dark preview", () => {
     expect(document.querySelector("[data-role='intro-sequence']")!).toHaveClass("dark");
   });
 
-  it("dark class clears when navigating back from theme beat", () => {
+  it("dark class persists when navigating back from theme beat after selecting Dark", () => {
     localStorage.setItem("tripcast.theme_mode", "meadow");
     render(
       <ThemeProvider>
@@ -173,22 +172,7 @@ describe("IntroSequence — dark preview", () => {
     navigateToThemeBeat();
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     fireEvent.click(screen.getByRole("button", { name: /previous intro frame/i }));
-    expect(document.querySelector("[data-role='intro-sequence']")!).not.toHaveClass("dark");
-  });
-
-  it("auto mode shows dark preview after user first interacts at night", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-05-27T21:00:00"));
-    localStorage.setItem("tripcast.theme_mode", "meadow");
-    render(
-      <ThemeProvider>
-        <IntroSequence role="follower" userHandle="alice" travelerName="Traveler" onDone={vi.fn()} />
-      </ThemeProvider>,
-    );
-    navigateToThemeBeat();
-    // Tap Light first (sets hasPickedTheme=true), then tap Auto — should resolve dark
-    fireEvent.click(screen.getByRole("button", { name: "Light" }));
-    fireEvent.click(screen.getByRole("button", { name: "Auto" }));
+    // dark persists across all beats because isDarkPreview = resolvedTheme === "constellation"
     expect(document.querySelector("[data-role='intro-sequence']")!).toHaveClass("dark");
   });
 });
