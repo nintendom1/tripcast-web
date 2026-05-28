@@ -148,7 +148,6 @@ describe("IntroSequence — dark preview", () => {
       </ThemeProvider>,
     );
     navigateToThemeBeat();
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(document.querySelector("[data-role='intro-sequence']")!).not.toHaveClass("dark");
   });
 
@@ -161,7 +160,6 @@ describe("IntroSequence — dark preview", () => {
     );
     navigateToThemeBeat();
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(document.querySelector("[data-role='intro-sequence']")!).toHaveClass("dark");
   });
 
@@ -175,7 +173,6 @@ describe("IntroSequence — dark preview", () => {
     navigateToThemeBeat();
     fireEvent.click(screen.getByRole("button", { name: "Dark" }));
     fireEvent.click(screen.getByRole("button", { name: /previous intro frame/i }));
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(document.querySelector("[data-role='intro-sequence']")!).not.toHaveClass("dark");
   });
 
@@ -192,7 +189,6 @@ describe("IntroSequence — dark preview", () => {
     // Tap Light first (sets hasPickedTheme=true), then tap Auto — should resolve dark
     fireEvent.click(screen.getByRole("button", { name: "Light" }));
     fireEvent.click(screen.getByRole("button", { name: "Auto" }));
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(document.querySelector("[data-role='intro-sequence']")!).toHaveClass("dark");
   });
 });

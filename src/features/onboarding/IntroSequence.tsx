@@ -743,9 +743,59 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
     );
   }
 
+  if (beat === LAST_BEAT_INDEX) {
+    return <MapPreviewCard isDark={isDark} />;
+  }
+
   return (
     <div className="mx-auto w-fit rounded-full bg-[var(--meadow-paper)] p-5 shadow-[var(--shadow-card)]">
       <Sparkles className="h-16 w-16 text-[var(--meadow-primary)]" aria-hidden />
+    </div>
+  );
+}
+
+function MapPreviewCard({ isDark }: { isDark?: boolean }) {
+  return (
+    <div
+      className={cn(
+        "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)] transition-colors duration-500",
+        isDark ? "bg-[#1a1c2c] border-[#2d314d]" : "bg-[#eaf2da] border-[var(--meadow-paper-edge)]"
+      )}
+    >
+      {/* Terrain blobs — land regions */}
+      <div
+        className="absolute inset-0 opacity-40"
+        style={{
+          backgroundImage: isDark
+            ? "radial-gradient(circle at 20% 30%, #24273a 0%, transparent 40%), radial-gradient(circle at 80% 70%, #24273a 0%, transparent 40%)"
+            : "radial-gradient(circle at 20% 30%, #bcd58a 0%, transparent 40%), radial-gradient(circle at 80% 70%, #bcd58a 0%, transparent 40%)",
+        }}
+      />
+
+      {/* Route line + waypoints */}
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100">
+        <motion.path
+          d="M 20 80 Q 40 20 80 40"
+          fill="none"
+          stroke={isDark ? "#ffd86a" : "#444444"}
+          strokeWidth="3"
+          strokeDasharray="6 4"
+          initial={{ pathLength: 0 }}
+          animate={{ pathLength: 1 }}
+          transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
+        />
+        <circle cx="20" cy="80" r="3.5" fill="var(--flag)" />
+        <circle cx="80" cy="40" r="3.5" fill="var(--flag)" />
+      </svg>
+
+      {/* Cartographic grid overlay */}
+      <div
+        className="absolute inset-0 opacity-[0.08]"
+        style={{
+          backgroundImage: "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
+          backgroundSize: "20px 20px",
+        }}
+      />
     </div>
   );
 }
