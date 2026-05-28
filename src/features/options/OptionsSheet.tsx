@@ -9,11 +9,13 @@ import {
   Database,
   Download,
   Eye,
+  EyeOff,
   Flag,
   LogOut,
   Play,
   Route,
   ShieldAlert,
+  Trash2,
   Trophy,
   Moon,
   Sun,
@@ -34,6 +36,7 @@ import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
+  CloakingPin,
   LiveTrailDeletePreview,
   MissionModerationMode,
   MissionRateLimitPreset,
@@ -81,7 +84,7 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "debug-logs";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "debug-logs" | "cloaking-pins";
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -714,6 +717,11 @@ export default function OptionsSheet({
               title="Live Trail"
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "cloaking-pins" ? (
+            <SubViewHeader
+              title="Cloaking Zones"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
           ) : view === "emergency-reset" ? (
             <EmergencyResetContent
               token={session.token}
@@ -747,6 +755,12 @@ export default function OptionsSheet({
                 <LiveTrailSettingsSheet token={session.token} log={log} />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "cloaking-pins" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <CloakingPinsSheet token={session.token} log={log} />
+              </OptionsContentFrame>
+            </SheetBody>
           ) : view === "options" ? (
             <OptionsHome
               role={role}
@@ -757,6 +771,7 @@ export default function OptionsSheet({
               onReplayFollowerTour={onReplayFollowerTour}
               onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
               onLiveTrail={() => { music.sfx("page"); navigateTo("live-trail"); }}
+              onCloakingPins={() => { music.sfx("page"); navigateTo("cloaking-pins"); }}
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
@@ -861,6 +876,7 @@ function OptionsHome({
   onReplayFollowerTour,
   onTravelFunds,
   onLiveTrail,
+  onCloakingPins,
   onBulkImport,
   onBulkExport,
   onEmergencyReset,
@@ -876,6 +892,7 @@ function OptionsHome({
   onReplayFollowerTour: () => void;
   onTravelFunds: () => void;
   onLiveTrail: () => void;
+  onCloakingPins: () => void;
   onDebugLogs: () => void;
   onBulkImport: () => void;
   onBulkExport: () => void;
@@ -941,6 +958,17 @@ function OptionsHome({
                 onClick={() => {
                   log.logUi("action:live-trail-settings");
                   onLiveTrail();
+                }}
+              />
+            ) : null}
+            {role === "traveler" ? (
+              <OptionsRow
+                icon={EyeOff}
+                title="Cloaking Zones"
+                detail="GPS exclusion zones and auto-pause settings"
+                onClick={() => {
+                  log.logUi("action:cloaking-pins-settings");
+                  onCloakingPins();
                 }}
               />
             ) : null}
@@ -1434,5 +1462,119 @@ function OptionsRow({
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ink-3)]" aria-hidden />
     </button>
+  );
+}
+
+const TIMEOUT_OPTIONS = [
+  { value: "0", label: "Off" },
+  { value: "5", label: "5 min" },
+  { value: "15", label: "15 min" },
+  { value: "30", label: "30 min" },
+];
+
+const RADIUS_OPTIONS = [
+  { value: "100", label: "100 m" },
+  { value: "200", label: "200 m" },
+  { value: "500", label: "500 m" },
+  { value: "1000", label: "1 km" },
+];
+
+function CloakingPinsSheet({ token, log }: { token: string; log: DebugLogger }) {
+  const pins = useQuery(tripcastApi.cloakingPins.travelerListCloakingPins, { token });
+  const deletePin = useMutation(tripcastApi.cloakingPins.travelerDeleteCloakingPin);
+
+  const [timeoutMinutes, setTimeoutMinutes] = useState<string>(() => {
+    try { return localStorage.getItem("tripcast.cloaking.autoDisableGpsTimeoutMinutes") ?? "5"; } catch { return "5"; }
+  });
+  const [defaultRadius, setDefaultRadius] = useState<string>(() => {
+    try { return localStorage.getItem("tripcast.cloaking.defaultCloakingRadiusMeters") ?? "200"; } catch { return "200"; }
+  });
+
+  useEffect(() => {
+    log.logInteraction("cloaking-pins:settings:open");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function handleTimeoutChange(value: string) {
+    setTimeoutMinutes(value);
+    try { localStorage.setItem("tripcast.cloaking.autoDisableGpsTimeoutMinutes", value); } catch { /* storage unavailable */ }
+  }
+
+  function handleRadiusChange(value: string) {
+    setDefaultRadius(value);
+    try { localStorage.setItem("tripcast.cloaking.defaultCloakingRadiusMeters", value); } catch { /* storage unavailable */ }
+  }
+
+  function handleDelete(pin: CloakingPin) {
+    log.logInteraction("cloaking-pins:delete", { pinId: pin._id });
+    deletePin({ token, pinId: pin._id }).catch((err: unknown) => {
+      log.error("cloaking-pins:delete:error", "mutation", {
+        message: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
+  const resolvedTimeoutValue = TIMEOUT_OPTIONS.some((o) => o.value === timeoutMinutes) ? timeoutMinutes : "5";
+  const resolvedRadiusValue = RADIUS_OPTIONS.some((o) => o.value === defaultRadius) ? defaultRadius : "200";
+
+  return (
+    <div className="grid gap-8">
+      <OptionsSection label="Preferences">
+        <OptionsGroup>
+          <div className="px-4 py-3 sm:px-5">
+            <p className="mb-3 text-base font-medium text-[var(--ink-1)]">Auto-pause timeout</p>
+            <OptionsSegmentedControl
+              value={resolvedTimeoutValue}
+              options={TIMEOUT_OPTIONS}
+              onChange={handleTimeoutChange}
+            />
+          </div>
+          <div className="px-4 py-3 sm:px-5">
+            <p className="mb-3 text-base font-medium text-[var(--ink-1)]">Default zone radius</p>
+            <OptionsSegmentedControl
+              value={resolvedRadiusValue}
+              options={RADIUS_OPTIONS}
+              onChange={handleRadiusChange}
+            />
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Active Zones">
+        {pins === undefined ? null : pins.length === 0 ? (
+          <p className="text-sm text-[var(--ink-3)]">
+            No zones yet. Right-click or long-press the map to add one.
+          </p>
+        ) : (
+          <OptionsGroup>
+            {pins.map((pin) => (
+              <div
+                key={pin._id}
+                className="flex min-h-16 items-center gap-4 px-4 py-3 sm:px-5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-medium text-[var(--ink-1)]">
+                    {pin.label ?? `${pin.lat.toFixed(4)}, ${pin.lon.toFixed(4)}`}
+                  </p>
+                  <p className="text-sm text-[var(--ink-3)]">
+                    {pin.radiusMeters >= 1000
+                      ? `${(pin.radiusMeters / 1000).toFixed(1)} km radius`
+                      : `${pin.radiusMeters} m radius`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Delete cloaking zone"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-xl text-[var(--ink-3)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-danger)]"
+                  onClick={() => handleDelete(pin)}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
+            ))}
+          </OptionsGroup>
+        )}
+      </OptionsSection>
+    </div>
   );
 }

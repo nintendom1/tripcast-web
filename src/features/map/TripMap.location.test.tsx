@@ -50,6 +50,10 @@ vi.mock("./useLiveTrailPath", () => ({
   useLiveTrailPath: vi.fn(),
 }));
 
+vi.mock("./useCloakingZones", () => ({
+  useCloakingZones: vi.fn(),
+}));
+
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 vi.mock("maplibre-gl", () => {

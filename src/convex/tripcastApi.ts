@@ -860,6 +860,15 @@ export type LinkedCostMap = {
   byCheckpointId: Record<string, number>;
 };
 
+export type CloakingPin = {
+  _id: string;
+  lat: number;
+  lon: number;
+  radiusMeters: number;
+  label?: string;
+  createdAt: number;
+};
+
 // ---------------------------------------------------------------------------
 // Bulk Import types
 // ---------------------------------------------------------------------------
@@ -1857,6 +1866,32 @@ export const tripcastApi = {
       "mutation",
       "public",
       { resetToken: string; newPassword: string },
+      null
+    >,
+  },
+  cloakingPins: {
+    travelerListCloakingPins: (anyApi as any).cloakingPins.travelerListCloakingPins as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      CloakingPin[]
+    >,
+    travelerAddCloakingPin: (anyApi as any).cloakingPins.travelerAddCloakingPin as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; lat: number; lon: number; radiusMeters: number; label?: string },
+      string
+    >,
+    travelerUpdateCloakingPin: (anyApi as any).cloakingPins.travelerUpdateCloakingPin as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; pinId: string; radiusMeters: number; label?: string },
+      null
+    >,
+    travelerDeleteCloakingPin: (anyApi as any).cloakingPins.travelerDeleteCloakingPin as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; pinId: string },
       null
     >,
   },
