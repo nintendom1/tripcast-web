@@ -619,6 +619,26 @@ function ThemeChoicePanel({
     { mode: "auto", label: "Auto", Icon: Sparkles },
   ];
 
+  function buttonClass(mode: ThemeMode, active: boolean): string {
+    if (mode === "meadow") {
+      return active
+        ? "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
+        : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]";
+    }
+    if (mode === "constellation") {
+      return active
+        ? "border-transparent bg-[#f0eaff] text-[#1c1f3a] shadow-sm"
+        : "border-transparent bg-[rgba(255,255,255,0.08)] text-[#c2bdee]";
+    }
+    return active
+      ? isDark
+        ? "border-transparent bg-[var(--ink-1)] text-[var(--primary-foreground)] shadow-sm"
+        : "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
+      : isDark
+        ? "border-transparent bg-[var(--meter-track)] text-[var(--ink-2)]"
+        : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]";
+  }
+
   return (
     <div
       className="mt-6 grid w-full max-w-sm gap-3"
@@ -635,13 +655,7 @@ function ThemeChoicePanel({
               aria-pressed={active}
               className={cn(
                 "grid min-h-20 justify-items-center gap-2 rounded-2xl border px-2 py-3 font-[var(--meadow-font-display)] text-sm font-extrabold shadow-[var(--shadow-card)] transition-all active:scale-[0.98]",
-                active
-                  ? isDark
-                    ? "border-[var(--flag)] bg-[var(--flag)] text-[var(--ink-on-brand)]"
-                    : "border-[var(--meadow-primary)] bg-[var(--meadow-primary)] text-[var(--meadow-primary-ink)]"
-                  : isDark
-                    ? "border-[var(--ink-3)] bg-[var(--card)] text-[var(--foreground)]"
-                    : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]"
+                buttonClass(mode, active),
               )}
             >
               <Icon className="h-5 w-5" aria-hidden />
