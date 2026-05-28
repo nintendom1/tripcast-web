@@ -6,12 +6,13 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { Crosshair, DollarSign, Play, X } from "lucide-react";
+import { Crosshair, DollarSign, EyeOff, Play, Trash2, X } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
   type BadgeType,
   type Checkpoint,
+  type CloakingPin,
   type JournalEvent,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
@@ -73,6 +74,7 @@ import {
 } from "./focusCoordinate";
 import { useTripPath } from "./useTripPath";
 import { useLiveTrailPath } from "./useLiveTrailPath";
+import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
 import { isEnabled, isCategoryEnabled, log as rawLog, logMapError, logMapEvent } from "../../debug/debugLogger";
@@ -496,6 +498,110 @@ function TripReplayHud({
   );
 }
 
+const CLOAKING_RADIUS_OPTIONS = [
+  { value: 100, label: "100 m" },
+  { value: 200, label: "200 m" },
+  { value: 500, label: "500 m" },
+  { value: 1000, label: "1 km" },
+];
+
+function CloakingPinSheet({
+  pin,
+  token,
+  onClose,
+  onDeleted,
+}: {
+  pin: CloakingPin;
+  token: string;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [labelInput, setLabelInput] = useState(pin.label ?? "");
+  const [radiusMeters, setRadiusMeters] = useState(pin.radiusMeters);
+  const updatePin = useMutation(tripcastApi.cloakingPins.travelerUpdateCloakingPin);
+  const deletePin = useMutation(tripcastApi.cloakingPins.travelerDeleteCloakingPin);
+
+  const isDirty = labelInput !== (pin.label ?? "") || radiusMeters !== pin.radiusMeters;
+
+  function handleSave() {
+    updatePin({ token, pinId: pin._id, radiusMeters, label: labelInput.trim() || undefined })
+      .then(onClose)
+      .catch(() => {});
+  }
+
+  function handleDelete() {
+    deletePin({ token, pinId: pin._id }).catch(() => {});
+    onDeleted();
+  }
+
+  return (
+    <div className="flex flex-col gap-5 px-4 pb-6 pt-4">
+      <div className="flex items-center gap-3">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#6b7280] text-white shadow-sm">
+          <EyeOff className="h-4 w-4" />
+        </span>
+        <div>
+          <h2 className="font-[var(--font-display)] text-lg font-extrabold tracking-tight text-[var(--ink-1)]">
+            Cloaking Zone
+          </h2>
+          <p className="text-xs text-[var(--ink-3)]">
+            {pin.lat.toFixed(5)}, {pin.lon.toFixed(5)}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-[var(--ink-2)]">Label (optional)</label>
+        <input
+          type="text"
+          value={labelInput}
+          onChange={(e) => setLabelInput(e.target.value)}
+          placeholder="e.g. Home, Hotel"
+          maxLength={60}
+          className="w-full rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper-2)] px-3 py-2 text-sm text-[var(--ink-1)] placeholder:text-[var(--ink-3)] focus:outline-none focus:ring-2 focus:ring-[#7a9cdc]"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-xs font-medium text-[var(--ink-2)]">Zone radius</label>
+        <div className="flex gap-1.5">
+          {CLOAKING_RADIUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={`flex-1 rounded-lg border px-2 py-2 text-xs font-medium transition-colors ${
+                radiusMeters === opt.value
+                  ? "border-[#7a9cdc] bg-[#7a9cdc] text-white"
+                  : "border-[var(--line-soft)] bg-[var(--bg-paper-2)] text-[var(--ink-2)] hover:bg-[var(--bg-paper-3)]"
+              }`}
+              onClick={() => setRadiusMeters(opt.value)}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {isDirty && (
+          <button
+            className="w-full rounded-lg bg-[#7a9cdc] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+            onClick={handleSave}
+          >
+            Save changes
+          </button>
+        )}
+        <button
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-500 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+          onClick={handleDelete}
+        >
+          <Trash2 className="h-4 w-4" />
+          Delete zone
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ConvexCheckpointSheet({
   selectedCoordinate,
   token,
@@ -787,6 +893,11 @@ export default function TripMap({
   const snappedReplayEventRef = useRef<string | null>(null);
   const finaleReplayStartedRef = useRef(false);
   const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cloakingPinsRef = useRef<CloakingPin[]>([]);
+  const insideCloakingZoneRef = useRef(false);
+  const enteredCloakAtRef = useRef<number | null>(null);
+  const cloakToastShownRef = useRef(false);
+  const cloakAutoShutoffFiredRef = useRef(false);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   // Focus-observability: pendingFocusRef carries the in-flight focus so the next
   // programmatic moveend can log where the pin actually settled; focusAdjustArmRef
@@ -825,6 +936,7 @@ export default function TripMap({
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
+  const [selectedCloakingPin, setSelectedCloakingPin] = useState<CloakingPin | null>(null);
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
   const [journalDebugSource, setJournalDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
@@ -874,6 +986,11 @@ export default function TripMap({
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
   const recordLiveTrailSample = useMutation(tripcastApi.liveTrail.travelerRecordLiveTrailSample);
+  const addCloakingPin = useMutation(tripcastApi.cloakingPins.travelerAddCloakingPin);
+  const cloakingPinsData = useQuery(
+    tripcastApi.cloakingPins.travelerListCloakingPins,
+    role === "traveler" ? { token } : "skip",
+  );
   const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
@@ -925,6 +1042,21 @@ export default function TripMap({
     routeLineColor,
   );
   useLiveTrailPath(mapInstance, liveTrailSamples, liveTrailPathVisible, routeLineColor);
+
+  const handleCloakingPinClick = useCallback(
+    (pin: CloakingPin) => {
+      music.sfx("tap");
+      setSelectedCloakingPin(pin);
+      mapInstance?.easeTo({ center: [pin.lon, pin.lat], duration: 500 });
+    },
+    [music, mapInstance],
+  );
+
+  useCloakingZones(
+    mapInstance,
+    role === "traveler" ? (cloakingPinsData ?? []) : [],
+    handleCloakingPinClick,
+  );
 
   useEffect(() => {
     logMapEvent("map:trip-path:gating", {
@@ -1902,6 +2034,37 @@ export default function TripMap({
   }, [liveTrailEnabled, travelerLiveTrailStatus]);
 
   useEffect(() => {
+    const pins = cloakingPinsData ?? [];
+    cloakingPinsRef.current = pins;
+
+    // Re-evaluate zone membership whenever pins change (e.g. deleted while inside).
+    // Uses livePositionRef so position changes don't trigger this effect.
+    if (insideCloakingZoneRef.current) {
+      const pos = livePositionRef.current;
+      const stillInside =
+        pos !== null &&
+        pins.some((pin) => distanceMeters({ lat: pos.lat, lon: pos.lon }, { lat: pin.lat, lon: pin.lon }) <= pin.radiusMeters);
+      if (!stillInside) {
+        insideCloakingZoneRef.current = false;
+        enteredCloakAtRef.current = null;
+        cloakToastShownRef.current = false;
+        cloakAutoShutoffFiredRef.current = false;
+        try { localStorage.removeItem("tripcast.cloaking.enteredAt"); } catch { /* storage unavailable */ }
+      }
+    }
+  }, [cloakingPinsData]);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("tripcast.cloaking.enteredAt");
+      if (stored) {
+        const ts = Number(stored);
+        if (!isNaN(ts)) enteredCloakAtRef.current = ts;
+      }
+    } catch { /* storage unavailable */ }
+  }, []);
+
+  useEffect(() => {
     if (!liveTrailPathVisible) return;
     log.logMap("live-trail:render", {
       role,
@@ -1929,6 +2092,57 @@ export default function TripMap({
       const nextPosition = { lat, lon };
       livePositionRef.current = nextPosition;
       setLivePosition(nextPosition);
+
+      // ── Cloaking zone suppression ─────────────────────────────────────────
+      const pins = cloakingPinsRef.current;
+      const nowInsideZone =
+        pins.length > 0 &&
+        pins.some((pin) => distanceMeters({ lat, lon }, { lat: pin.lat, lon: pin.lon }) <= pin.radiusMeters);
+
+      if (nowInsideZone) {
+        if (!insideCloakingZoneRef.current) {
+          insideCloakingZoneRef.current = true;
+          cloakToastShownRef.current = false;
+          cloakAutoShutoffFiredRef.current = false;
+          if (!enteredCloakAtRef.current) {
+            const ts = Date.now();
+            enteredCloakAtRef.current = ts;
+            try { localStorage.setItem("tripcast.cloaking.enteredAt", String(ts)); } catch { /* storage unavailable */ }
+          }
+        }
+        const enteredAt = enteredCloakAtRef.current;
+        if (enteredAt) {
+          const elapsed = Date.now() - enteredAt;
+          if (!cloakToastShownRef.current && elapsed >= 30_000) {
+            cloakToastShownRef.current = true;
+            showToast("You have entered a cloaked zone.");
+          }
+          try {
+            const timeoutMinutes = Number(
+              localStorage.getItem("tripcast.cloaking.autoDisableGpsTimeoutMinutes") ?? "5",
+            );
+            if (
+              timeoutMinutes > 0 &&
+              !cloakAutoShutoffFiredRef.current &&
+              elapsed >= timeoutMinutes * 60_000 &&
+              isLocationSharingRef.current
+            ) {
+              cloakAutoShutoffFiredRef.current = true;
+              stopLocationSharing();
+            }
+          } catch { /* storage unavailable */ }
+        }
+        return;
+      }
+
+      if (!nowInsideZone && insideCloakingZoneRef.current) {
+        insideCloakingZoneRef.current = false;
+        enteredCloakAtRef.current = null;
+        cloakToastShownRef.current = false;
+        cloakAutoShutoffFiredRef.current = false;
+        try { localStorage.removeItem("tripcast.cloaking.enteredAt"); } catch { /* storage unavailable */ }
+      }
+      // ── End cloaking ──────────────────────────────────────────────────────
 
       if (isLocationSharingRef.current) {
         publishTravelerLocation(nextPosition, accuracy);
@@ -2149,6 +2363,10 @@ export default function TripMap({
         log.logInteraction("live-trail:permission:request", {
           available: Boolean(navigator.geolocation),
         });
+      }
+      if (insideCloakingZoneRef.current) {
+        showToast("You are currently in a cloaked zone.");
+        return;
       }
       isLocationSharingRef.current = true;
       setIsLocationSharing(true);
@@ -2891,6 +3109,22 @@ export default function TripMap({
               Add Pin
             </button>
           )}
+          {role === "traveler" && (
+            <button
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-[var(--bg-paper-2)] text-[var(--ink-1)]"
+              onClick={() => {
+                const defaultRadius = Number(
+                  localStorage.getItem("tripcast.cloaking.defaultCloakingRadiusMeters") ?? "200",
+                );
+                addCloakingPin({ token, lat: contextMenu.lat, lon: contextMenu.lon, radiusMeters: defaultRadius }).catch(() => {});
+                music.sfx("pin");
+                log.logUi("map:context-menu:add-cloaking-zone", { lat: contextMenu.lat, lon: contextMenu.lon });
+                setContextMenu(null);
+              }}
+            >
+              Add Cloaking Zone
+            </button>
+          )}
           <button
             className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-[var(--bg-paper-2)] text-[var(--ink-1)]"
             onClick={(e) => {
@@ -3210,6 +3444,36 @@ export default function TripMap({
               />
             )}
           </div>
+        </SheetContent>
+      </Sheet>
+
+      <Sheet
+        open={selectedCloakingPin !== null}
+        modal={false}
+        onOpenChange={(open) => {
+          if (!open) {
+            music.sfx("close");
+            setSelectedCloakingPin(null);
+          }
+        }}
+      >
+        <SheetContent
+          side="bottom"
+          showBackdrop={false}
+          mapAdjacent
+          className="z-[10] max-h-[78dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+          data-role="cloaking-pin-sheet"
+        >
+          <SheetCloseButton aria-label="Close cloaking zone" />
+          {selectedCloakingPin && (
+            <CloakingPinSheet
+              key={selectedCloakingPin._id}
+              pin={selectedCloakingPin}
+              token={token}
+              onClose={() => { music.sfx("close"); setSelectedCloakingPin(null); }}
+              onDeleted={() => { music.sfx("close"); setSelectedCloakingPin(null); }}
+            />
+          )}
         </SheetContent>
       </Sheet>
 
