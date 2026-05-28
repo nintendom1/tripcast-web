@@ -282,7 +282,7 @@ export function IntroSequence({
         }
       }}
     >
-      <IntroBackdrop beat={safeBeat} />
+      <IntroBackdrop beat={safeBeat} isDark={isDarkPreview} />
 
       {safeBeat > 0 ? (
         <button
@@ -707,18 +707,87 @@ function SceneCard({ beat }: { beat: number }) {
   );
 }
 
-function IntroBackdrop({ beat }: { beat: number }) {
+function IntroBackdrop({ beat, isDark }: { beat: number; isDark?: boolean }) {
+  const isThemeBeat = beat === LAST_BEAT_INDEX;
+
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,var(--meadow-paper)_0%,var(--meadow-bg)_66%)]" />
+      {/* Light radial — fades out when isDark */}
+      <div
+        className={cn(
+          "absolute inset-0 transition-opacity duration-1000",
+          isDark ? "opacity-0" : "opacity-100"
+        )}
+        style={{ background: "radial-gradient(circle at 50% 35%, var(--meadow-paper) 0%, var(--meadow-bg) 66%)" }}
+      />
+
+      {/* Dark radial — fades in when isDark */}
+      <div
+        className={cn(
+          "absolute inset-0 transition-opacity duration-1000",
+          isDark ? "opacity-100" : "opacity-0"
+        )}
+        style={{ background: "radial-gradient(circle at 50% 35%, #1a1c2c 0%, #0c0d14 66%)" }}
+      />
+
+      {/* Sun / Moon — all beats so the transition fires on the theme beat */}
       <motion.div
-        className="absolute right-10 top-16 h-24 w-24 rounded-full bg-[var(--meadow-gold)]/40"
+        className={cn(
+          "absolute right-10 top-16 h-24 w-24 rounded-full transition-colors duration-1000",
+          isDark ? "bg-slate-200/20" : "bg-[var(--meadow-gold)]/40"
+        )}
         animate={{ scale: beat % 2 === 0 ? 1 : 1.08, opacity: [0.45, 0.7, 0.45] }}
         transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
       />
-      <div className="absolute left-8 top-32 h-10 w-28 rounded-full bg-white/65" />
-      <div className="absolute right-16 top-44 h-8 w-24 rounded-full bg-white/55" />
-      <div className="absolute -bottom-16 left-1/2 h-48 w-[120%] -translate-x-1/2 rounded-[50%] bg-[var(--meadow-forest)]/10" />
+
+      {/* Clouds — all beats; fade out when isDark so the transition fires on the theme beat */}
+      <div
+        className={cn(
+          "absolute left-8 top-32 h-10 w-28 rounded-full bg-white/65 transition-opacity duration-700",
+          isDark ? "opacity-0" : "opacity-100"
+        )}
+      />
+      <div
+        className={cn(
+          "absolute right-16 top-44 h-8 w-24 rounded-full bg-white/55 transition-opacity duration-700",
+          isDark ? "opacity-0" : "opacity-100"
+        )}
+      />
+
+      {/* Ground haze — non-theme beats only (would compete with ThemeChoicePanel) */}
+      {!isThemeBeat && (
+        <div className="absolute -bottom-16 left-1/2 h-48 w-[120%] -translate-x-1/2 rounded-[50%] bg-[var(--meadow-forest)]/10" />
+      )}
+
+      {/* Subtle grid overlay — theme beat only */}
+      {isThemeBeat && (
+        <div
+          className="absolute inset-0 opacity-[0.03]"
+          style={{
+            backgroundImage: "linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)",
+            backgroundSize: "60px 60px",
+          }}
+        />
+      )}
+
+      {/* Starfield — theme beat + dark only; golden dots pulse subtly */}
+      {isThemeBeat && isDark && (
+        <motion.div
+          className="absolute inset-0"
+          animate={{ opacity: [0.04, 0.14, 0.04] }}
+          transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+          style={{
+            backgroundImage: [
+              "radial-gradient(circle, #ffd86a 1px, transparent 1px)",
+              "radial-gradient(circle, #ffd86a 1px, transparent 1px)",
+              "radial-gradient(circle, #ffd86a 1.5px, transparent 1.5px)",
+              "radial-gradient(circle, #ffd86a 1px, transparent 1px)",
+            ].join(", "),
+            backgroundSize: "120px 80px, 90px 110px, 150px 70px, 80px 130px",
+            backgroundPosition: "20px 15px, 60px 45px, 10px 70px, 80px 10px",
+          }}
+        />
+      )}
     </div>
   );
 }
