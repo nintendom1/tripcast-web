@@ -792,24 +792,32 @@ function MapPreviewCard({ isDark }: { isDark?: boolean }) {
   const roadMinor = isDark ? "#333758" : "#ede8d8";
   const building = isDark ? "#35385a" : "#e0d8c4";
 
+  const pinFill = "#e53935";
+
   return (
     <div
       className={cn(
         "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)] transition-colors duration-500",
         isDark ? "border-[#2d314d]" : "border-[var(--meadow-paper-edge)]"
       )}
+      style={{ background: "var(--map-water)" }}
     >
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice">
+      {/*
+       * viewBox="0 25 100 50" shows a landscape slice of the 100×100 canvas.
+       * preserveAspectRatio="meet" keeps the full slice visible without cropping;
+       * the div background (--map-water) fills any letterbox margins seamlessly.
+       */}
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 25 100 50" preserveAspectRatio="xMidYMid meet">
         {/* Ocean background */}
         <rect x="0" y="0" width="100" height="100" fill="var(--map-water)" />
 
-        {/* Land mass — irregular coastline from upper-right down to lower-left */}
+        {/* Land mass */}
         <path
           d="M 42 0 L 100 0 L 100 100 L 52 100 Q 36 95 28 80 Q 18 62 24 44 Q 30 26 38 12 Q 40 5 42 0 Z"
           fill="var(--map-land)"
         />
 
-        {/* Bay — water cutting into the land from the left */}
+        {/* Bay */}
         <path
           d="M 26 46 Q 15 54 20 67 Q 24 76 30 81"
           fill="none"
@@ -818,43 +826,29 @@ function MapPreviewCard({ isDark }: { isDark?: boolean }) {
           strokeLinecap="round"
         />
 
-        {/* Park — lower portion of land */}
+        {/* Park */}
         <path
           d="M 40 66 Q 52 59 64 63 Q 74 67 70 81 Q 64 91 48 89 Q 36 86 38 75 Z"
           fill="var(--map-park)"
         />
 
-        {/* Minor road — curves across land */}
-        <path
-          d="M 100 40 Q 80 44 65 47 Q 48 51 34 49"
-          fill="none"
-          stroke={roadMinor}
-          strokeWidth="1.2"
-        />
+        {/* Minor road */}
+        <path d="M 100 40 Q 80 44 65 47 Q 48 51 34 49" fill="none" stroke={roadMinor} strokeWidth="1.2" />
 
-        {/* Major road — curves top to bottom */}
-        <path
-          d="M 66 0 Q 60 28 54 52 Q 50 68 52 100"
-          fill="none"
-          stroke={roadMajor}
-          strokeWidth="2.5"
-        />
+        {/* Major road */}
+        <path d="M 66 0 Q 60 28 54 52 Q 50 68 52 100" fill="none" stroke={roadMajor} strokeWidth="2.5" />
 
-        {/* Building cluster — upper right */}
-        <rect x="74" y="10" width="7" height="5" rx="0.5" fill={building} />
-        <rect x="83" y="8" width="5" height="7" rx="0.5" fill={building} />
-        <rect x="76" y="17" width="9" height="4" rx="0.5" fill={building} />
-
-        {/* Building cluster — mid right */}
+        {/* Building cluster (within visible y=25–75 band) */}
         <rect x="72" y="37" width="6" height="4" rx="0.5" fill={building} />
         <rect x="80" y="34" width="5" height="6" rx="0.5" fill={building} />
         <rect x="74" y="43" width="4" height="4" rx="0.5" fill={building} />
+        <rect x="80" y="43" width="6" height="3" rx="0.5" fill={building} />
 
-        {/* Route — dashed wipe-in via mask */}
+        {/* Route — dashed wipe-in via mask, endpoints match pin tips */}
         <defs>
           <mask id="route-reveal">
             <motion.path
-              d="M 32 79 L 84 26"
+              d="M 38 64 L 75 40"
               stroke="white"
               strokeWidth="6"
               fill="none"
@@ -865,15 +859,27 @@ function MapPreviewCard({ isDark }: { isDark?: boolean }) {
           </mask>
         </defs>
         <path
-          d="M 32 79 L 84 26"
+          d="M 38 64 L 75 40"
           fill="none"
           stroke={isDark ? "#ffd86a" : "#444444"}
           strokeWidth="2.5"
           strokeDasharray="5 3"
           mask="url(#route-reveal)"
         />
-        <circle cx="32" cy="79" r="3.5" fill="var(--flag)" />
-        <circle cx="84" cy="26" r="3.5" fill="var(--flag)" />
+
+        {/* Pin A — tip at (38, 64), on land near park */}
+        <g fill={pinFill}>
+          <circle cx="38" cy="57.5" r="4.5" />
+          <polygon points="38,64 34.5,59 41.5,59" />
+        </g>
+        <circle cx="38" cy="57.5" r="1.8" fill="white" />
+
+        {/* Pin B — tip at (75, 40), on land upper-right */}
+        <g fill={pinFill}>
+          <circle cx="75" cy="33.5" r="4.5" />
+          <polygon points="75,40 71.5,35 78.5,35" />
+        </g>
+        <circle cx="75" cy="33.5" r="1.8" fill="white" />
       </svg>
     </div>
   );
