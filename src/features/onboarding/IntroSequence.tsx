@@ -343,7 +343,7 @@ export function IntroSequence({
           transition={{ duration: 0.42, ease: "easeOut" }}
           className="relative z-[1] flex h-full flex-col items-center justify-center px-5 pb-12 pt-16"
         >
-          <BeatScene beat={safeBeat} current={current} userHandle={userHandle} travelerName={travelerName} />
+          <BeatScene beat={safeBeat} current={current} userHandle={userHandle} travelerName={travelerName} isDark={isDarkPreview} />
           {isThemeBeat ? (
             <ThemeChoicePanel
               value={themeChoice}
@@ -544,11 +544,13 @@ function BeatScene({
   current,
   userHandle,
   travelerName,
+  isDark,
 }: {
   beat: number;
   current: Beat;
   userHandle: string;
   travelerName: string;
+  isDark?: boolean;
 }) {
   const Icon = current.Icon;
   const pose = beat === 0 ? "wave" : beat === 4 ? "cheer" : beat === 5 ? "idle" : "point";
@@ -556,19 +558,48 @@ function BeatScene({
   return (
     <div className="grid w-full max-w-sm translate-y-3 justify-items-center text-center">
       <div className="mb-5 h-32 w-full">
-        <SceneCard beat={beat} />
+        <SceneCard beat={beat} isDark={isDark} />
       </div>
       <div className="mb-8 grid w-full grid-cols-[82px_minmax(0,1fr)] items-end gap-3">
         <IntroMascot pose={pose} size={3.4} />
-        <div className="min-w-0 rounded-2xl border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] px-4 py-3 text-left text-sm font-semibold leading-snug text-[var(--meadow-ink)] shadow-[var(--shadow-card)]">
-          {beat === 0 ? `Hi @${userHandle}. ${current.body}` : beat === 1 ? `${travelerName} posts the moments. You get the thread.` : current.body}
+        <div
+          className={cn(
+            "min-w-0 rounded-2xl border px-4 py-3 text-left text-sm font-semibold leading-snug shadow-[var(--shadow-card)] transition-colors duration-500",
+            isDark
+              ? "border-[var(--ink-3)] bg-[var(--card)] text-[var(--foreground)]"
+              : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]"
+          )}
+        >
+          {beat === 0
+            ? `Hi @${userHandle}. ${current.body}`
+            : beat === 1
+              ? `${travelerName} posts the moments. You get the thread.`
+              : current.body}
         </div>
       </div>
-      <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] px-3 py-1.5 font-[var(--meadow-font-display)] text-[11px] font-extrabold uppercase tracking-[0.12em] text-[var(--meadow-ink-soft)]">
-        <Icon className="h-3.5 w-3.5 text-[var(--meadow-primary)]" aria-hidden />
+      <div
+        className={cn(
+          "mb-3 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-[var(--meadow-font-display)] text-[11px] font-extrabold uppercase tracking-[0.12em] transition-colors duration-500",
+          isDark
+            ? "border-[var(--ink-3)] bg-[var(--card)] text-[var(--ink-2)]"
+            : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink-soft)]"
+        )}
+      >
+        <Icon
+          className={cn(
+            "h-3.5 w-3.5 transition-colors duration-500",
+            isDark ? "text-[var(--flag)]" : "text-[var(--meadow-primary)]"
+          )}
+          aria-hidden
+        />
         {current.kicker}
       </div>
-      <h1 className="font-[var(--meadow-font-display)] text-3xl font-extrabold leading-tight text-[var(--meadow-ink)]">
+      <h1
+        className={cn(
+          "font-[var(--meadow-font-display)] text-3xl font-extrabold leading-tight transition-colors duration-500",
+          isDark ? "text-[var(--foreground)]" : "text-[var(--meadow-ink)]"
+        )}
+      >
         {current.title}
       </h1>
     </div>
@@ -626,7 +657,7 @@ function ThemeChoicePanel({
   );
 }
 
-function SceneCard({ beat }: { beat: number }) {
+function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
   if (beat === 1) {
     return (
       <div className="grid h-full grid-cols-3 items-center gap-2">
