@@ -115,13 +115,21 @@ Do not read these files by default. Read them only when relevant.
 
 When creating a frontend git worktree:
 
-1. Copy `.env.local` from the primary frontend checkout into the new worktree.
+1. Copy `.env.local` from the primary frontend checkout into the new worktree. This is to prevent VITE_CONVEX_URL= errors when the developer manually tests.
 2. Check whether `node_modules/.bin/tsc` exists.
 3. If missing, run `npm install`.
 4. Treat `tsc is not recognized` as missing dependencies, not as a TypeScript failure.
 5. Rerun `npm run validate` after installing dependencies.
 
 Do not symlink or reuse `node_modules` across worktrees by default, especially on Windows.
+
+## Planning Mode Behavior
+Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Include file names.
+Have a section for UX flow to understand where/how the app user will interact with it.
+Ask clarifying questions — one at a time, understand purpose/constraints/success criteria
+Ambiguity check: Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
+Write design doc — save to plans/YYYY-MM-DD-<topic>-design.md
+User reviews written spec — ask user to review the spec file before proceeding
 
 ## Developer Preferences
 * Defer Unit Tests until the Developer has manually verified the implementation unless instructed otherwise. 

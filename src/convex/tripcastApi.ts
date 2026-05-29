@@ -622,6 +622,10 @@ export type TravelerPreferences = {
   travelerTimeZoneSource?: "device" | "manual";
   travelerTimeZoneUpdatedAt?: number;
   allowFollowersTripPath: boolean;
+  sleepHoursEnabled: boolean;
+  sleepStartMinutes?: number;
+  sleepEndMinutes?: number;
+  sleepStaleThresholdMs: number;
   updatedAt: number | null;
 };
 
@@ -1614,6 +1618,18 @@ export const tripcastApi = {
       "mutation",
       "public",
       { token: string; allowFollowersTripPath?: boolean },
+      null
+    >,
+    travelerUpdateSleepHours: (anyApi as any).travelerPreferences.travelerUpdateSleepHours as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        sleepHoursEnabled?: boolean;
+        sleepStartMinutes?: number;
+        sleepEndMinutes?: number;
+        sleepStaleThresholdMs?: number;
+      },
       null
     >,
   },

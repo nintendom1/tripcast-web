@@ -1,4 +1,9 @@
 import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
+import {
+  localHHMMToUtcMinutes,
+  utcMinutesToLocalTimeString,
+  STALE_THRESHOLD_OPTIONS,
+} from "../../lib/sleepTimeUtils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMutation, useQuery } from "convex/react";
 import { motion } from "framer-motion";
@@ -319,10 +324,12 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
   const currentActivity = useQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
   const stalenessSettings = useQuery(tripcastApi.currentActivity.travelerGetStalenessSettings, { token });
+  const prefs = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
   const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
   const setActivity = useMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
   const updateStalenessSettings = useMutation(tripcastApi.currentActivity.travelerUpdateStalenessSettings);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
+  const updateSleepHours = useMutation(tripcastApi.travelerPreferences.travelerUpdateSleepHours);
 
   const { state: statePersonality } = useSheetPersonalities();
   const log = useDebugLogger("TravelerStateSheet", "src/features/travelstate/TravelerStateSheet.tsx");
@@ -359,6 +366,11 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [sleepHours, setSleepHours] = useState<number | undefined>();
   const [activeMin, setActiveMin] = useState<number | undefined>();
   const [biometricNote, setBiometricNote] = useState("");
+
+  const [sleepEnabled, setSleepEnabled] = useState(false);
+  const [sleepStart, setSleepStart] = useState("22:00");
+  const [sleepEnd, setSleepEnd] = useState("07:00");
+  const [sleepThresholdMs, setSleepThresholdMs] = useState(3_600_000);
 
   // Visibility form
   const [showTravelerState, setShowTravelerState] = useState(DEFAULT_VISIBILITY.showTravelerState);
@@ -477,6 +489,26 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     setStalenessHours(msToHours(settings.resetAfterMs));
   }, [stalenessSettings]);
 
+  useEffect(() => {
+    if (!prefs) return;
+    setSleepEnabled(prefs.sleepHoursEnabled ?? false);
+    if (prefs.sleepStartMinutes !== undefined)
+      setSleepStart(utcMinutesToLocalTimeString(prefs.sleepStartMinutes));
+    if (prefs.sleepEndMinutes !== undefined)
+      setSleepEnd(utcMinutesToLocalTimeString(prefs.sleepEndMinutes));
+    setSleepThresholdMs(prefs.sleepStaleThresholdMs ?? 3_600_000);
+  }, [prefs]);
+
+  useEffect(() => {
+    if (!prefs) return;
+    console.log("[TravelerStateSheet] sleep prefs loaded", {
+      sleepEnabled: prefs.sleepHoursEnabled,
+      sleepStartMinutes: prefs.sleepStartMinutes,
+      sleepEndMinutes: prefs.sleepEndMinutes,
+      sleepStaleThresholdMs: prefs.sleepStaleThresholdMs,
+    });
+  }, [prefs]);
+
   function toIsoLocal(ts: number) {
     const d = new Date(ts);
     const pad = (n: number) => String(n).padStart(2, "0");
@@ -533,6 +565,18 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
       normalizeOptionalText(stalenessEmoji) !== current.fallbackEmoji ||
       getStalenessResetAfterMs() !== current.resetAfterMs
     );
+  }
+
+  async function handleSleepSave() {
+    const [startHH, startMM] = sleepStart.split(":").map(Number);
+    const [endHH, endMM] = sleepEnd.split(":").map(Number);
+    await updateSleepHours({
+      token,
+      sleepHoursEnabled: sleepEnabled,
+      sleepStartMinutes: localHHMMToUtcMinutes(startHH, startMM),
+      sleepEndMinutes: localHHMMToUtcMinutes(endHH, endMM),
+      sleepStaleThresholdMs: sleepThresholdMs,
+    });
   }
 
   async function handleSaveStatus() {
@@ -982,6 +1026,62 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               )}
             </div>
 
+            <StateSegment
+              title="Sleep Hours"
+              hint="Sets your activity to 'Sleeping 🛌' when you go quiet during these hours."
+            >
+              <ToggleRow
+                label="Enable sleep hours"
+                checked={sleepEnabled}
+                onChange={(v) => {
+                  setSleepEnabled(v);
+                  updateSleepHours({ token, sleepHoursEnabled: v }).catch(() => {});
+                }}
+              />
+              {sleepEnabled && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8 }}>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
+                      Bedtime
+                      <input
+                        type="time"
+                        value={sleepStart}
+                        onChange={(e) => setSleepStart(e.target.value)}
+                        onBlur={handleSleepSave}
+                        style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
+                      />
+                    </label>
+                    <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
+                      Wake time
+                      <input
+                        type="time"
+                        value={sleepEnd}
+                        onChange={(e) => setSleepEnd(e.target.value)}
+                        onBlur={handleSleepSave}
+                        style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
+                      />
+                    </label>
+                  </div>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
+                    Set sleeping status after
+                    <select
+                      value={sleepThresholdMs}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setSleepThresholdMs(v);
+                        updateSleepHours({ token, sleepStaleThresholdMs: v }).catch(() => {});
+                      }}
+                      style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
+                    >
+                      {STALE_THRESHOLD_OPTIONS.map((opt) => (
+                        <option key={opt.valueMs} value={opt.valueMs}>{opt.label} of inactivity</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+            </StateSegment>
+
             <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] p-2">
               <ToggleRow
                 label="Auto-set activity when stale"
@@ -989,7 +1089,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                 onChange={setStalenessEnabled}
               />
               <div className="flex flex-wrap gap-2 sm:grid sm:grid-cols-[72px_1fr_92px]">
-                <div className="grid gap-1.5">
+                <div className="grid min-w-0 gap-1.5">
                   <label htmlFor="stale-activity-emoji" className={stateLabelClass}>
                     Fallback Emoji
                   </label>
@@ -1001,10 +1101,10 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     maxLength={10}
                     placeholder="🙂"
                     disabled={!stalenessEnabled}
-                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)] disabled:opacity-50", stateInputClass)}
+                    className={cn("h-9 w-full px-3 text-sm placeholder:text-[var(--ink-3)] disabled:opacity-50", stateInputClass)}
                   />
                 </div>
-                <div className="grid gap-1.5">
+                <div className="grid min-w-0 gap-1.5">
                   <label htmlFor="stale-activity-title" className={stateLabelClass}>
                     Fallback
                   </label>
@@ -1014,10 +1114,10 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     value={stalenessTitle}
                     onChange={(e) => setStalenessTitle(e.target.value.slice(0, 80))}
                     disabled={!stalenessEnabled}
-                    className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
+                    className={cn("h-9 w-full px-3 text-sm disabled:opacity-50", stateInputClass)}
                   />
                 </div>
-                <div className="grid gap-1.5">
+                <div className="grid min-w-0 gap-1.5">
                   <label htmlFor="stale-activity-hours" className={stateLabelClass}>
                     Hours
                   </label>
@@ -1030,7 +1130,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     value={stalenessHours}
                     onChange={(e) => setStalenessHours(Number(e.target.value) || 4)}
                     disabled={!stalenessEnabled}
-                    className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
+                    className={cn("h-9 w-full px-3 text-sm disabled:opacity-50", stateInputClass)}
                   />
                 </div>
               </div>
