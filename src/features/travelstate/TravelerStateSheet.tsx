@@ -1026,6 +1026,62 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               )}
             </div>
 
+            <StateSegment
+              title="Sleep Hours"
+              hint="Sets your activity to 'Sleeping 🛌' when you go quiet during these hours."
+            >
+              <ToggleRow
+                label="Enable sleep hours"
+                checked={sleepEnabled}
+                onChange={(v) => {
+                  setSleepEnabled(v);
+                  updateSleepHours({ token, sleepHoursEnabled: v }).catch(() => {});
+                }}
+              />
+              {sleepEnabled && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8 }}>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
+                      Bedtime
+                      <input
+                        type="time"
+                        value={sleepStart}
+                        onChange={(e) => setSleepStart(e.target.value)}
+                        onBlur={handleSleepSave}
+                        style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
+                      />
+                    </label>
+                    <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
+                      Wake time
+                      <input
+                        type="time"
+                        value={sleepEnd}
+                        onChange={(e) => setSleepEnd(e.target.value)}
+                        onBlur={handleSleepSave}
+                        style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
+                      />
+                    </label>
+                  </div>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
+                    Set sleeping status after
+                    <select
+                      value={sleepThresholdMs}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setSleepThresholdMs(v);
+                        updateSleepHours({ token, sleepStaleThresholdMs: v }).catch(() => {});
+                      }}
+                      style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
+                    >
+                      {STALE_THRESHOLD_OPTIONS.map((opt) => (
+                        <option key={opt.valueMs} value={opt.valueMs}>{opt.label} of inactivity</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+            </StateSegment>
+
             <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] p-2">
               <ToggleRow
                 label="Auto-set activity when stale"
@@ -1083,70 +1139,11 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         )}
 
         {tab === "auto" && (
-          <>
-            <div className="grid gap-4 px-4 pt-4">
-              <StateSegment
-                title="Sleep Hours"
-                hint="Sets your activity to 'Sleeping 🛌' when you go quiet during these hours."
-              >
-                <ToggleRow
-                  label="Enable sleep hours"
-                  checked={sleepEnabled}
-                  onChange={(v) => {
-                    setSleepEnabled(v);
-                    updateSleepHours({ token, sleepHoursEnabled: v }).catch(() => {});
-                  }}
-                />
-                {sleepEnabled && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 8 }}>
-                    <div style={{ display: "flex", gap: 12 }}>
-                      <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
-                        Bedtime
-                        <input
-                          type="time"
-                          value={sleepStart}
-                          onChange={(e) => setSleepStart(e.target.value)}
-                          onBlur={handleSleepSave}
-                          style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
-                        />
-                      </label>
-                      <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
-                        Wake time
-                        <input
-                          type="time"
-                          value={sleepEnd}
-                          onChange={(e) => setSleepEnd(e.target.value)}
-                          onBlur={handleSleepSave}
-                          style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
-                        />
-                      </label>
-                    </div>
-                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 13, color: "var(--ink-2)" }}>
-                      Set sleeping status after
-                      <select
-                        value={sleepThresholdMs}
-                        onChange={(e) => {
-                          const v = Number(e.target.value);
-                          setSleepThresholdMs(v);
-                          updateSleepHours({ token, sleepStaleThresholdMs: v }).catch(() => {});
-                        }}
-                        style={{ fontSize: 15, padding: "6px 8px", borderRadius: 8, border: "1px solid var(--border-1)", background: "var(--bg-card)", color: "var(--ink-1)" }}
-                      >
-                        {STALE_THRESHOLD_OPTIONS.map((opt) => (
-                          <option key={opt.valueMs} value={opt.valueMs}>{opt.label} of inactivity</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                )}
-              </StateSegment>
-            </div>
-            <AutoStateTab
-              token={token}
-              onToast={onToast}
-              onFooterActionChange={handleAutoFooterActionChange}
-            />
-          </>
+          <AutoStateTab
+            token={token}
+            onToast={onToast}
+            onFooterActionChange={handleAutoFooterActionChange}
+          />
         )}
 
         {tab === "visibility" && (
