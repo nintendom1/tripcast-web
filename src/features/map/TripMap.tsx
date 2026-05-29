@@ -2104,7 +2104,10 @@ export default function TripMap({
   // (Capacitor) build use the background-capable watcher so location keeps
   // emitting while the phone is locked; on web fall back to the browser API.
   useEffect(() => {
-    if (role !== "traveler" || !isLocationSharing) return;
+    if (role !== "traveler" || !isLocationSharing) {
+      setLocationStale(false);
+      return;
+    }
 
     lastLocationFixAtRef.current = Date.now();
     setLocationStale(false);
@@ -2196,60 +2199,58 @@ export default function TripMap({
       log.logInteraction("live-trail:permission:result", { result: "denied", code });
     };
 
+    let cleanup: () => void = () => {};
+
     if (isNativeLocationAvailable()) {
       log.logInteraction("live-trail:native-watch:start", {});
       const stop = startNativeLocationWatch(
         (fix) => handleFix(fix.lat, fix.lon, fix.accuracy),
         handleError,
       );
-      return () => {
+      cleanup = () => {
         log.logInteraction("live-trail:native-watch:stop", {});
         stop();
       };
+    } else if (navigator.geolocation) {
+      const watchId = navigator.geolocation.watchPosition(
+        (pos) => handleFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined),
+        handleError,
+        { enableHighAccuracy: true },
+      );
+      browserLocationWatchRef.current = watchId;
+      cleanup = () => {
+        navigator.geolocation.clearWatch(watchId);
+        if (browserLocationWatchRef.current === watchId) {
+          browserLocationWatchRef.current = null;
+        }
+      };
     }
 
-    if (!navigator.geolocation) return;
-
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => handleFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined),
-      handleError,
-      { enableHighAccuracy: true },
-    );
-
-    browserLocationWatchRef.current = watchId;
+    // Native only: if LIVE is on but no fix has landed in a while, the plugin
+    // may have silently stalled (iOS background-task timeout, system location
+    // throttling). Try a one-shot getCurrentPosition poke — it bypasses the
+    // distanceFilter, so it succeeds even when the user is standing still. Only
+    // if the poke itself fails do we surface the stale banner.
+    const STALE_AFTER_MS = 20 * 60_000;
+    const staleInterval = setInterval(() => {
+      if (!isNativeLocationAvailable()) return;
+      const last = lastLocationFixAtRef.current;
+      if (last !== null && Date.now() - last > STALE_AFTER_MS) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => handleFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined),
+          () => setLocationStale(true),
+          { timeout: 10000 },
+        );
+      }
+    }, 60_000);
 
     return () => {
-      navigator.geolocation.clearWatch(watchId);
-      if (browserLocationWatchRef.current === watchId) {
-        browserLocationWatchRef.current = null;
-      }
+      cleanup();
+      clearInterval(staleInterval);
     };
   // publish* only uses refs plus stable mutation inputs.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocationSharing, role, token]);
-
-  // Native only: if LIVE is on but no fix has landed in a while, the app is
-  // likely no longer emitting — commonly a lapsed 7-day free-signing build, or
-  // location access turned off. Surface a banner instead of failing silently.
-  useEffect(() => {
-    if (!isNativeLocationAvailable() || role !== "traveler" || !isLocationSharing) {
-      setLocationStale(false);
-      return;
-    }
-    const STALE_AFTER_MS = 5 * 60_000;
-    const id = setInterval(() => {
-      const last = lastLocationFixAtRef.current;
-      if (last !== null && Date.now() - last > STALE_AFTER_MS) {
-        setLocationStale((prev) => {
-          if (!prev) {
-            log.logInteraction("live-trail:location-stale", { sinceMs: Date.now() - last });
-          }
-          return true;
-        });
-      }
-    }, 30_000);
-    return () => clearInterval(id);
-  }, [isLocationSharing, role, log]);
+  }, [isLocationSharing, role, token, log]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
