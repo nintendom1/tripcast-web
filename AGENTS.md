@@ -122,3 +122,6 @@ When creating a frontend git worktree:
 5. Rerun `npm run validate` after installing dependencies.
 
 Do not symlink or reuse `node_modules` across worktrees by default, especially on Windows.
+
+## Developer Preferences
+* Defer Unit Tests until the Developer has manually verified the implementation unless instructed otherwise. 
