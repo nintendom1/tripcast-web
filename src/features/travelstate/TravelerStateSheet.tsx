@@ -1089,7 +1089,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                 onChange={setStalenessEnabled}
               />
               <div className="flex flex-wrap gap-2 sm:grid sm:grid-cols-[72px_1fr_92px]">
-                <div className="grid gap-1.5">
+                <div className="grid min-w-0 gap-1.5">
                   <label htmlFor="stale-activity-emoji" className={stateLabelClass}>
                     Fallback Emoji
                   </label>
@@ -1101,10 +1101,10 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     maxLength={10}
                     placeholder="🙂"
                     disabled={!stalenessEnabled}
-                    className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)] disabled:opacity-50", stateInputClass)}
+                    className={cn("h-9 w-full px-3 text-sm placeholder:text-[var(--ink-3)] disabled:opacity-50", stateInputClass)}
                   />
                 </div>
-                <div className="grid gap-1.5">
+                <div className="grid min-w-0 gap-1.5">
                   <label htmlFor="stale-activity-title" className={stateLabelClass}>
                     Fallback
                   </label>
@@ -1114,10 +1114,10 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     value={stalenessTitle}
                     onChange={(e) => setStalenessTitle(e.target.value.slice(0, 80))}
                     disabled={!stalenessEnabled}
-                    className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
+                    className={cn("h-9 w-full px-3 text-sm disabled:opacity-50", stateInputClass)}
                   />
                 </div>
-                <div className="grid gap-1.5">
+                <div className="grid min-w-0 gap-1.5">
                   <label htmlFor="stale-activity-hours" className={stateLabelClass}>
                     Hours
                   </label>
@@ -1130,7 +1130,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     value={stalenessHours}
                     onChange={(e) => setStalenessHours(Number(e.target.value) || 4)}
                     disabled={!stalenessEnabled}
-                    className={cn("h-9 px-3 text-sm disabled:opacity-50", stateInputClass)}
+                    className={cn("h-9 w-full px-3 text-sm disabled:opacity-50", stateInputClass)}
                   />
                 </div>
               </div>
