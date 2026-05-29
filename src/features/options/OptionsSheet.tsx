@@ -1,4 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
+import maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
@@ -63,6 +65,7 @@ import BulkExportSheet from "./BulkExportSheet";
 import { TERMS } from "../../copy/terminology";
 import { triggerMapCooldown } from "../map/mapService";
 import { triggerCrash } from "../../debug/crashTrigger";
+import { getMapStyleResolution } from "../map/mapService";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -150,6 +153,30 @@ function formatDateInputValue(ms: number, timeZone: string) {
     // Fall back to UTC below.
   }
   return new Date(ms).toISOString().slice(0, 10);
+}
+
+function formatTimeInputValue(ms: number, timeZone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      hour: "2-digit",
+      minute: "2-digit",
+    }).formatToParts(new Date(ms));
+    const hour = parts.find((part) => part.type === "hour")?.value;
+    const minute = parts.find((part) => part.type === "minute")?.value;
+    if (hour && minute) return `${hour}:${minute}`;
+  } catch {
+    // Fall back to UTC below.
+  }
+  const date = new Date(ms);
+  return `${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")}`;
+}
+
+function combineDateTime(date: string, time: string) {
+  if (!date) return "";
+  if (!time) return date;
+  return `${date}T${time}`;
 }
 
 type LiveTrailPreviewSample = LiveTrailDeletePreview["samples"][number];
@@ -413,14 +440,19 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
 
   const timeZone = preferences?.travelerTimeZone ?? fallbackTimeZone;
   const [startDate, setStartDate] = useState(() => formatDateInputValue(Date.now(), fallbackTimeZone));
+  const [startTime, setStartTime] = useState(() => "00:00");
   const [endDate, setEndDate] = useState(() => formatDateInputValue(Date.now(), fallbackTimeZone));
+  const [endTime, setEndTime] = useState(() => "23:59");
   const [savingField, setSavingField] = useState<"enabled" | "visibility" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const rangeIsValid = Boolean(startDate && endDate && startDate <= endDate);
+
+  const combinedStart = combineDateTime(startDate, startTime);
+  const combinedEnd = combineDateTime(endDate, endTime);
+  const rangeIsValid = Boolean(startDate && endDate && combinedStart <= combinedEnd);
 
   const preview = useQuery(
     tripcastApi.liveTrail.travelerPreviewLiveTrailDeleteRange,
-    rangeIsValid ? { token, startDate, endDate, timeZone } : "skip",
+    rangeIsValid ? { token, startDate: combinedStart, endDate: combinedEnd, timeZone } : "skip",
   );
 
   const enabled = status?.enabled ?? false;
@@ -435,21 +467,21 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   useEffect(() => {
     if (!rangeIsValid) return;
     log.logInteraction("live-trail:preview:request", {
-      startDate,
-      endDate,
+      startDate: combinedStart,
+      endDate: combinedEnd,
       timeZone,
     });
-  }, [endDate, log, rangeIsValid, startDate, timeZone]);
+  }, [combinedEnd, combinedStart, log, rangeIsValid, timeZone]);
 
-  useEffect(() => {
-    if (!preview) return;
-    log.logInteraction("live-trail:preview:result", {
-      startDate,
-      endDate,
-      timeZone: preview.timeZone,
-      count: preview.count,
-    });
-  }, [endDate, log, preview, startDate]);
+  function setQuickRange(minutes: number) {
+    const now = Date.now();
+    const startMs = now - minutes * 60 * 1000;
+    setStartDate(formatDateInputValue(startMs, timeZone));
+    setStartTime(formatTimeInputValue(startMs, timeZone));
+    setEndDate(formatDateInputValue(now, timeZone));
+    setEndTime(formatTimeInputValue(now, timeZone));
+    log.logInteraction("live-trail:quick-range", { minutes });
+  }
 
   async function handleEnabledChange(nextEnabled: boolean) {
     if (savingField) return;
@@ -490,13 +522,18 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
     setSavingField("delete");
     setError(null);
     log.logInteraction("live-trail:delete-range:confirm", {
-      startDate,
-      endDate,
+      startDate: combinedStart,
+      endDate: combinedEnd,
       timeZone,
       previewCount,
     });
     try {
-      const result = await deleteRange({ token, startDate, endDate, timeZone });
+      const result = await deleteRange({
+        token,
+        startDate: combinedStart,
+        endDate: combinedEnd,
+        timeZone,
+      });
       log.logInteraction("live-trail:delete-range:result", {
         deleted: result.deleted,
         ok: true,
@@ -534,32 +571,66 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
       <OptionsSection label="Delete Trail">
         <OptionsGroup>
           <div className="grid gap-5 p-4 sm:p-5">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "30 min", min: 30 },
+                { label: "1 hour", min: 60 },
+                { label: "8 hours", min: 480 },
+                { label: "24 hours", min: 1440 },
+              ].map((range) => (
+                <button
+                  key={range.label}
+                  type="button"
+                  onClick={() => setQuickRange(range.min)}
+                  className="rounded-full bg-[var(--meter-track)] px-3 py-1 text-xs font-semibold text-[var(--ink-2)] transition-colors hover:bg-[var(--line-soft)]"
+                >
+                  {range.label}
+                </button>
+              ))}
+            </div>
+
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
-                Start date
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
-                />
-              </label>
-              <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
-                End date
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
-                />
-              </label>
+              <div className="grid gap-2">
+                <span className="text-sm font-semibold text-[var(--ink-1)]">Start</span>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                    className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                  />
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(event) => setStartTime(event.target.value)}
+                    className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <span className="text-sm font-semibold text-[var(--ink-1)]">End</span>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                    className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                  />
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(event) => setEndTime(event.target.value)}
+                    className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="grid gap-2">
-              <LiveTrailPreviewMap samples={preview?.samples ?? []} />
+              <LiveTrailPreviewMap samples={preview?.samples ?? []} log={log} />
               <p className="text-sm text-[var(--ink-3)]" aria-live="polite">
                 {!rangeIsValid
-                  ? "Choose an end date on or after the start date."
+                  ? "Choose an end time after the start time."
                   : preview
                     ? `${previewCount} breadcrumb${previewCount === 1 ? "" : "s"} selected in ${timeZone}.`
                     : `Loading preview in ${timeZone}...`}
@@ -573,6 +644,7 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
               onClick={() => void handleDeleteRange()}
               className="w-full sm:w-fit"
             >
+              <Trash2 className="mr-2 h-4 w-4" aria-hidden />
               {savingField === "delete" ? "Deleting..." : "Delete selected breadcrumbs"}
             </Button>
 
@@ -584,42 +656,238 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   );
 }
 
-function LiveTrailPreviewMap({ samples }: { samples: LiveTrailPreviewSample[] }) {
-  const points = useMemo(() => {
-    if (samples.length === 0) return "";
-    if (samples.length === 1) return "120,70";
+function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample[]; log: DebugLogger }) {
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const { resolvedMapBase, resolvedTheme } = useTheme();
+  const lineColor = resolvedTheme === "constellation" ? "#ffd86a" : "#d92332";
 
-    const minLat = Math.min(...samples.map((sample) => sample.lat));
-    const maxLat = Math.max(...samples.map((sample) => sample.lat));
-    const minLon = Math.min(...samples.map((sample) => sample.lon));
-    const maxLon = Math.max(...samples.map((sample) => sample.lon));
-    const latSpan = Math.max(maxLat - minLat, 0.000001);
-    const lonSpan = Math.max(maxLon - minLon, 0.000001);
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return;
 
-    return samples
-      .map((sample) => {
-        const x = 16 + ((sample.lon - minLon) / lonSpan) * 208;
-        const y = 124 - ((sample.lat - minLat) / latSpan) * 108;
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(" ");
-  }, [samples]);
+    const styleUrl = getMapStyleResolution(resolvedMapBase).styleUrl;
+    if (!styleUrl) {
+      log.error("minimap:init:missing-style", "map", { resolvedMapBase });
+      return;
+    }
+
+    log.logMap("minimap:init:start", { styleUrl, resolvedMapBase });
+    const map = new maplibregl.Map({
+      container: mapContainerRef.current,
+      style: styleUrl,
+      attributionControl: false,
+      interactive: false,
+      center: [0, 0],
+      zoom: 1,
+    });
+
+    map.on("load", () => {
+      log.logMap("minimap:load:success");
+      setMapLoaded(true);
+    });
+
+    map.on("error", (e) => {
+      log.error("minimap:error", "map", { error: e.error?.message ?? String(e) });
+    });
+
+    mapRef.current = map;
+
+    return () => {
+      log.logMap("minimap:remove");
+      map.remove();
+      mapRef.current = null;
+      setMapLoaded(false);
+    };
+  }, [resolvedMapBase, log]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapLoaded) return;
+
+    const sourceId = "trail-preview";
+    const lineLayerId = "trail-line";
+    const pointLayerId = "trail-points";
+
+    const sorted = [...samples].sort((a, b) => a.sampledAt - b.sampledAt);
+    const features: GeoJSON.Feature[] = [];
+
+    if (sorted.length > 1) {
+      features.push({
+        type: "Feature",
+        properties: { kind: "line" },
+        geometry: {
+          type: "LineString",
+          coordinates: sorted.map((s) => [s.lon, s.lat]),
+        },
+      });
+    }
+
+    sorted.forEach((s) => {
+      features.push({
+        type: "Feature",
+        properties: { kind: "point" },
+        geometry: {
+          type: "Point",
+          coordinates: [s.lon, s.lat],
+        },
+      });
+    });
+
+    const geojson: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features,
+    };
+
+    log.logMap("minimap:sync:data", {
+      sampleCount: sorted.length,
+      hasLine: sorted.length > 1,
+      firstCoord: sorted[0] ? [sorted[0].lon, sorted[0].lat] : null,
+    });
+
+    const sync = () => {
+      if (!map.isStyleLoaded()) {
+        log.warn("minimap:sync:skipped-style-not-ready");
+        return;
+      }
+
+      try {
+        const rect = mapContainerRef.current?.getBoundingClientRect();
+        log.logMap("minimap:sync:start", { 
+          sampleCount: sorted.length,
+          width: rect?.width,
+          height: rect?.height,
+          visible: rect && rect.width > 0 && rect.height > 0
+        });
+
+        // Ensure map matches container size
+        map.resize();
+
+        if (!map.getSource(sourceId)) {
+          log.logMap("minimap:layers:add");
+          map.addSource(sourceId, { type: "geojson", data: geojson });
+          map.addLayer({
+            id: lineLayerId,
+            type: "line",
+            source: sourceId,
+            filter: ["==", ["get", "kind"], "line"],
+            layout: { "line-join": "round", "line-cap": "round" },
+            paint: {
+              "line-color": lineColor,
+              "line-width": 4,
+              "line-dasharray": [2, 1],
+            },
+          });
+          map.addLayer({
+            id: pointLayerId,
+            type: "circle",
+            source: sourceId,
+            filter: ["==", ["get", "kind"], "point"],
+            paint: {
+              "circle-radius": 5,
+              "circle-color": "#ffffff",
+              "circle-stroke-color": lineColor,
+              "circle-stroke-width": 2,
+            },
+          });
+        } else {
+          log.logMap("minimap:layers:update");
+          (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(geojson);
+          map.setPaintProperty(lineLayerId, "line-color", lineColor);
+          map.setPaintProperty(pointLayerId, "circle-stroke-color", lineColor);
+        }
+
+        if (sorted.length > 0) {
+          if (sorted.length === 1) {
+            log.logMap("minimap:jump-to", { lon: sorted[0].lon, lat: sorted[0].lat });
+            map.jumpTo({
+              center: [sorted[0].lon, sorted[0].lat],
+              zoom: 14,
+            });
+          } else {
+            const bounds = new maplibregl.LngLatBounds();
+            sorted.forEach((s) => bounds.extend([s.lon, s.lat]));
+            log.logMap("minimap:fit-bounds", { bounds: bounds.toArray() });
+            map.fitBounds(bounds, { padding: 40, animate: false, maxZoom: 15 });
+          }
+        }
+      } catch (e) {
+        log.error("minimap:sync:error", "map", { message: e instanceof Error ? e.message : String(e) });
+      }
+    };
+
+    let resizeObserver: ResizeObserver | null = null;
+    let rafHandle: number | null = null;
+
+    const runOrScheduleSync = () => {
+      const container = mapContainerRef.current;
+      if (!container) {
+        sync();
+        return;
+      }
+      const height = container.getBoundingClientRect().height;
+      if (height > 0) {
+        sync();
+      } else {
+        // Container height is 0 (shouldn't normally happen with the wrapper div fix, but guard anyway).
+        resizeObserver = new ResizeObserver((entries) => {
+          const bcrH = entries[0]?.contentRect.height ?? 0;
+          if (bcrH > 0 || container.offsetHeight > 0) {
+            resizeObserver?.disconnect();
+            resizeObserver = null;
+            if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
+            sync();
+          }
+        });
+        resizeObserver.observe(container);
+
+        // rAF polling as fallback if ResizeObserver doesn't fire
+        const poll = () => {
+          if ((mapContainerRef.current?.getBoundingClientRect().height ?? 0) > 0 ||
+              (mapContainerRef.current as HTMLElement | null)?.offsetHeight) {
+            resizeObserver?.disconnect();
+            resizeObserver = null;
+            rafHandle = null;
+            sync();
+          } else {
+            rafHandle = requestAnimationFrame(poll);
+          }
+        };
+        rafHandle = requestAnimationFrame(poll);
+      }
+    };
+
+    if (map.isStyleLoaded()) {
+      runOrScheduleSync();
+    } else {
+      log.logMap("minimap:wait-style-load");
+      map.once("load", runOrScheduleSync);
+    }
+
+    return () => {
+      resizeObserver?.disconnect();
+      resizeObserver = null;
+      if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
+    };
+  }, [samples, lineColor, log, mapLoaded]);
 
   return (
     <div
       role="img"
       aria-label="Live Trail deletion preview map"
-      className="overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--meter-track)]"
+      className="relative h-40 w-full overflow-hidden rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)]"
     >
-      <svg viewBox="0 0 240 140" className="block h-40 w-full" aria-hidden>
-        <rect width="240" height="140" fill="var(--meter-track)" />
-        <path d="M0 108 C54 88 95 116 142 92 S206 57 240 67" fill="none" stroke="var(--line-soft)" strokeWidth="2" />
-        <path d="M0 47 C39 65 82 39 130 50 S199 81 240 39" fill="none" stroke="var(--line-soft)" strokeWidth="2" />
-        {samples.length > 1 ? (
-          <polyline points={points} fill="none" stroke="var(--flag)" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-        ) : null}
-        {samples.length === 1 ? <circle cx="120" cy="70" r="5" fill="var(--flag)" /> : null}
-      </svg>
+      {/* Wrapper owns the absolute positioning so MapLibre's .maplibregl-map CSS (position:relative) can't collapse it */}
+      <div className="absolute inset-0">
+        <div ref={mapContainerRef} className="h-full w-full" />
+      </div>
+      {samples.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-paper)]/50 backdrop-blur-[2px]">
+          <p className="font-[var(--font-mono)] text-[10px] font-medium uppercase tracking-wider text-[var(--ink-3)]">
+            No breadcrumbs in range
+          </p>
+        </div>
+      )}
     </div>
   );
 }

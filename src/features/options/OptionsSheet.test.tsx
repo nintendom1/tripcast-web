@@ -1,17 +1,83 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
 import { ThemeProvider } from "../../providers/ThemeProvider";
+import * as mapService from "../map/mapService";
 import OptionsSheet from "./OptionsSheet";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
   useQuery: vi.fn(),
 }));
+
+vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
+
+// Captured by the hoisted mock factory — cleared per test in the LiveTrailPreviewMap describe.
+let minimapInstances: Array<{
+  container: HTMLElement;
+  handlers: Record<string, Array<() => void>>;
+  addSource: ReturnType<typeof vi.fn>;
+  addLayer: ReturnType<typeof vi.fn>;
+  getSource: ReturnType<typeof vi.fn>;
+  setPaintProperty: ReturnType<typeof vi.fn>;
+  resize: ReturnType<typeof vi.fn>;
+  jumpTo: ReturnType<typeof vi.fn>;
+  fitBounds: ReturnType<typeof vi.fn>;
+  isStyleLoaded: ReturnType<typeof vi.fn>;
+  remove: ReturnType<typeof vi.fn>;
+  fire(event: string): void;
+}> = [];
+
+vi.mock("maplibre-gl", () => {
+  class MockMap {
+    container: HTMLElement;
+    handlers: Record<string, Array<() => void>> = {};
+    addSource = vi.fn();
+    addLayer = vi.fn();
+    getSource = vi.fn(() => null);
+    setPaintProperty = vi.fn();
+    resize = vi.fn();
+    jumpTo = vi.fn();
+    fitBounds = vi.fn();
+    isStyleLoaded = vi.fn(() => true);
+    remove = vi.fn(() => { this.handlers = {}; });
+
+    constructor(options: { container: HTMLElement }) {
+      this.container = options.container;
+      minimapInstances.push(this as any);
+    }
+
+    on(event: string, handler: () => void) {
+      if (!this.handlers[event]) this.handlers[event] = [];
+      this.handlers[event].push(handler);
+      return this;
+    }
+
+    once(event: string, handler: () => void) {
+      const wrap = () => {
+        this.handlers[event] = (this.handlers[event] ?? []).filter((h) => h !== wrap);
+        handler();
+      };
+      return this.on(event, wrap);
+    }
+
+    fire(event: string) {
+      [...(this.handlers[event] ?? [])].forEach((h) => h());
+    }
+  }
+
+  class LngLatBounds {
+    private pts: [number, number][] = [];
+    extend(c: [number, number]) { this.pts.push(c); return this; }
+    toArray() { return this.pts; }
+  }
+
+  return { default: { Map: MockMap, LngLatBounds } };
+});
 
 vi.mock("../../components/ui/sheet", () => ({
   Sheet: ({ open, children }: { open: boolean; children: React.ReactNode }) => (
@@ -326,6 +392,36 @@ describe("OptionsSheet Live Trail settings", () => {
     });
   });
 
+  it("previews a deletion range with time precision and quick-fill buttons", async () => {
+    const { deleteLiveTrailRangeFn } = setupMocks({
+      travelerTimeZone: "America/Los_Angeles",
+      liveTrailPreview: {
+        startMs: Date.UTC(2026, 4, 1, 7),
+        endExclusiveMs: Date.UTC(2026, 4, 1, 8),
+        timeZone: "America/Los_Angeles",
+        count: 5,
+        samples: [],
+      },
+    });
+    renderOptions({ defaultView: "live-trail" });
+
+    expect(screen.getByText("30 min")).toBeInTheDocument();
+    expect(screen.getByText("1 hour")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("1 hour"));
+
+    expect(screen.getByText(/5 breadcrumbs selected/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Delete selected breadcrumbs/i }));
+
+    expect(deleteLiveTrailRangeFn).toHaveBeenCalledWith({
+      token: "test-token",
+      startDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+      endDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+      timeZone: "America/Los_Angeles",
+    });
+  });
+
   it("previews a deletion range and confirms only when breadcrumbs are selected", async () => {
     const { deleteLiveTrailRangeFn } = setupMocks({
       travelerTimeZone: "America/Los_Angeles",
@@ -349,8 +445,8 @@ describe("OptionsSheet Live Trail settings", () => {
 
     expect(deleteLiveTrailRangeFn).toHaveBeenCalledWith({
       token: "test-token",
-      startDate: expect.any(String),
-      endDate: expect.any(String),
+      startDate: expect.stringContaining("T"),
+      endDate: expect.stringContaining("T"),
       timeZone: "America/Los_Angeles",
     });
   });
@@ -427,5 +523,131 @@ describe("OptionsSheet appearance", () => {
 
     expect(labels).toEqual(["Light", "Dark"]);
     expect(within(appearanceSection!).getByRole("checkbox", { name: /automatic theme/i })).toBeChecked();
+  });
+});
+
+describe("LiveTrailPreviewMap", () => {
+  beforeEach(() => {
+    minimapInstances = [];
+    // Make container report a real height so sync fires immediately in most tests.
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 320, height: 160, top: 100, bottom: 260, left: 0, right: 320, x: 0, y: 100,
+      toJSON: () => ({}),
+    } as DOMRect);
+    // Provide a valid style URL so the map init effect doesn't return early.
+    vi.spyOn(mapService, "getMapStyleResolution").mockReturnValue({
+      styleUrl: "http://mock-tiles/style.json",
+      baseUrl: "http://mock-tiles",
+      source: "local-dev" as const,
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("wraps the MapLibre container in an absolute-inset-0 div so MapLibre CSS (position:relative) cannot collapse it", () => {
+    setupMocks();
+    renderOptions({ defaultView: "live-trail" });
+
+    const mapImg = screen.getByRole("img", { name: "Live Trail deletion preview map" });
+    const wrapper = mapImg.firstElementChild as HTMLElement;
+
+    // Outer div → wrapper with absolute inset-0 (owns the positioning)
+    expect(wrapper.className).toContain("absolute");
+    expect(wrapper.className).toContain("inset-0");
+
+    // MapLibre container is INSIDE the wrapper, not directly on the outer div
+    const inner = wrapper.firstElementChild as HTMLElement;
+    expect(inner).not.toBeNull();
+    expect(inner.className).toContain("h-full");
+    expect(inner.className).toContain("w-full");
+    expect(inner.className).not.toContain("absolute");
+  });
+
+  it("initializes MapLibre on the inner h-full div, not the absolute wrapper", async () => {
+    setupMocks();
+    renderOptions({ defaultView: "live-trail" });
+
+    await waitFor(() => expect(minimapInstances.length).toBeGreaterThan(0));
+
+    const { container } = minimapInstances.at(-1)!;
+    expect(container.className).toContain("h-full");
+    expect(container.className).not.toContain("absolute");
+    // Its direct parent is the absolute-inset-0 wrapper
+    expect(container.parentElement?.className).toContain("absolute");
+    expect(container.parentElement?.className).toContain("inset-0");
+  });
+
+  it("calls resize, addSource, addLayer, and jumpTo after load with a single breadcrumb", async () => {
+    setupMocks({
+      liveTrailPreview: {
+        startMs: 0,
+        endExclusiveMs: 1000,
+        timeZone: detectedTimeZone,
+        count: 1,
+        samples: [{ _id: "s1", lat: 47.4023, lon: -122.2015, sampledAt: 1000 }],
+      },
+    });
+    renderOptions({ defaultView: "live-trail" });
+
+    await waitFor(() => expect(minimapInstances.length).toBeGreaterThan(0));
+    const map = minimapInstances.at(-1)!;
+
+    await act(async () => { map.fire("load"); });
+
+    await waitFor(() => {
+      expect(map.resize).toHaveBeenCalled();
+      expect(map.addSource).toHaveBeenCalledWith(
+        "trail-preview",
+        expect.objectContaining({ type: "geojson" }),
+      );
+      expect(map.addLayer).toHaveBeenCalledTimes(2);
+      expect(map.jumpTo).toHaveBeenCalledWith({ center: [-122.2015, 47.4023], zoom: 14 });
+    });
+  });
+
+  it("calls fitBounds instead of jumpTo when there are multiple breadcrumbs", async () => {
+    setupMocks({
+      liveTrailPreview: {
+        startMs: 0,
+        endExclusiveMs: 2000,
+        timeZone: detectedTimeZone,
+        count: 2,
+        samples: [
+          { _id: "s1", lat: 47.40, lon: -122.20, sampledAt: 1000 },
+          { _id: "s2", lat: 47.41, lon: -122.21, sampledAt: 2000 },
+        ],
+      },
+    });
+    renderOptions({ defaultView: "live-trail" });
+
+    await waitFor(() => expect(minimapInstances.length).toBeGreaterThan(0));
+    const map = minimapInstances.at(-1)!;
+
+    await act(async () => { map.fire("load"); });
+
+    await waitFor(() => {
+      expect(map.fitBounds).toHaveBeenCalledWith(
+        expect.anything(),
+        { padding: 40, animate: false, maxZoom: 15 },
+      );
+      expect(map.jumpTo).not.toHaveBeenCalled();
+    });
+  });
+
+  it("shows the empty-state overlay when there are no breadcrumbs in the selected range", () => {
+    setupMocks({
+      liveTrailPreview: {
+        startMs: 0,
+        endExclusiveMs: 0,
+        timeZone: detectedTimeZone,
+        count: 0,
+        samples: [],
+      },
+    });
+    renderOptions({ defaultView: "live-trail" });
+
+    expect(screen.getByText("No breadcrumbs in range")).toBeInTheDocument();
   });
 });
