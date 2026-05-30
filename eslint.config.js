@@ -7,11 +7,13 @@ import tseslint from "typescript-eslint";
 export default tseslint.config({
   ignores: [
     "dist/**",
+    ".storybook/**",
     "node_modules/**",
     // Convex codegen — third-party output.
     "src/convex/**",
     // Xcode build output from `npm run ios:run` (gitignored, not source).
     "ios/**",
+    "storybook-static/**",
   ],
 }, {
   files: ["src/**/*.{ts,tsx}"],

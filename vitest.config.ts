@@ -11,7 +11,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src")
+      "@": path.resolve(__dirname, "./src"), "convex/react": path.resolve(__dirname, "./src/stories/convex-mock.tsx")
     }
   },
   test: {

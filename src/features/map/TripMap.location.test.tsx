@@ -544,7 +544,9 @@ describe("TripMap location marker", () => {
     expect(replayHud).toBeInTheDocument();
     expect(replayHud).toHaveClass("bottom-[88px]");
     await waitFor(() => {
-      expect(vi.mocked(useTripPath).mock.calls.some((call) => call[4] === 1000)).toBe(true);
+      // Look-ahead: trail reveals through the next checkpoint (3000), not just the
+      // current one (1000), so the user sees the upcoming segment.
+      expect(vi.mocked(useTripPath).mock.calls.some((call) => call[4] === 3000)).toBe(true);
       expect(mapEaseTo).toHaveBeenLastCalledWith(
         expect.objectContaining({ center: [-122.31, 47.61] }),
       );

@@ -6,7 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { Crosshair, DollarSign, EyeOff, Play, Trash2, X } from "lucide-react";
+import { Crosshair, DollarSign, EyeOff, Pause, Play, RotateCcw, Trash2, X } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -110,6 +110,48 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
+const REPLAY_BASE_BEAT_MS = 1000;
+const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
+
+type ReplayResume = { eventId: string; index: number };
+
+function readReplayResume(token: string): ReplayResume | null {
+  try {
+    const raw = localStorage.getItem(`${REPLAY_LAST_PIN_KEY_PREFIX}${token}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ReplayResume>;
+    if (typeof parsed.eventId !== "string" || typeof parsed.index !== "number") return null;
+    return { eventId: parsed.eventId, index: parsed.index };
+  } catch {
+    return null;
+  }
+}
+
+function writeReplayResume(token: string, value: ReplayResume) {
+  try {
+    localStorage.setItem(`${REPLAY_LAST_PIN_KEY_PREFIX}${token}`, JSON.stringify(value));
+  } catch {
+    // Quota or private-mode — silently swallow; resume is best-effort.
+  }
+}
+
+function clearReplayResume(token: string) {
+  try {
+    localStorage.removeItem(`${REPLAY_LAST_PIN_KEY_PREFIX}${token}`);
+  } catch {
+    // ignore
+  }
+}
+
+function resolveReplayResumeIndex(token: string, pins: ReplayPin[]): number {
+  if (pins.length === 0) return 0;
+  const stored = readReplayResume(token);
+  if (!stored) return 0;
+  const byId = pins.findIndex((p) => p.eventId === stored.eventId);
+  if (byId >= 0) return byId;
+  return Math.min(Math.max(0, stored.index), pins.length - 1);
+}
+
 const BOTTOM_SHEET_ERROR_CLASS =
   "absolute inset-x-0 bottom-0 z-[4] grid gap-3 border-t bg-background p-4 text-sm shadow-lg";
 const CARD_ERROR_CLASS =
@@ -131,6 +173,7 @@ type ReplayPin = {
   occurredAt: number;
   lat: number;
   lon: number;
+  kind: "checkpoint" | "breadcrumb";
 };
 
 type FocusEntry = {
@@ -403,28 +446,37 @@ function TravelerLocationMarker({
 }
 
 function TripReplayHud({
-  playheadTime,
-  startTime,
-  endTime,
+  playheadIndex,
+  endIndex,
+  currentPinKind,
+  currentPinTime,
   speed,
+  isPaused,
+  onTogglePause,
+  onRestart,
   onScrub,
   onSpeedChange,
   onShuttleStart,
   onShuttleEnd,
   onClose,
 }: {
-  playheadTime: number;
-  startTime: number;
-  endTime: number;
+  playheadIndex: number;
+  endIndex: number;
+  currentPinKind: "checkpoint" | "breadcrumb" | "end";
+  currentPinTime: number | null;
   speed: number;
-  onScrub: (time: number) => void;
+  isPaused: boolean;
+  onTogglePause: () => void;
+  onRestart: () => void;
+  onScrub: (index: number) => void;
   onSpeedChange: (speed: number) => void;
   onShuttleStart: () => void;
   onShuttleEnd: () => void;
   onClose: () => void;
 }) {
-  const duration = Math.max(1, endTime - startTime);
-  const progress = Math.round(((playheadTime - startTime) / duration) * 100);
+  const progress = endIndex > 0 ? Math.round((playheadIndex / endIndex) * 100) : 0;
+  const isEnd = currentPinKind === "end";
+  const kindLabel = currentPinKind === "checkpoint" ? "Stop" : currentPinKind === "breadcrumb" ? "Breadcrumb" : "End";
 
   return (
     <motion.div
@@ -436,25 +488,58 @@ function TripReplayHud({
       className="pointer-events-auto absolute bottom-[88px] left-1/2 z-[21] w-[calc(100%-24px)] max-w-[390px] -translate-x-1/2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-3 text-[var(--ink-1)] shadow-[var(--shadow-card)]"
       role="group"
       aria-label="Trip Replay"
+      data-replay-hud=""
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-            Trip Replay
+            Trip Replay · {kindLabel}
           </p>
           <p className="truncate text-xs font-semibold text-[var(--ink-1)]">
-            {formatReplayTime(playheadTime)}
+            {isEnd ? "End" : currentPinTime !== null ? formatReplayTime(currentPinTime) : ""}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close trip replay"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
-        >
-          <X className="h-3.5 w-3.5" aria-hidden="true" />
-          Close
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {isEnd ? (
+            <button
+              type="button"
+              onClick={onRestart}
+              aria-label="Replay from start"
+              className="inline-flex items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+            >
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              Replay
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onTogglePause}
+              aria-label={isPaused ? "Play replay" : "Pause replay"}
+              className="inline-flex items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+            >
+              {isPaused ? (
+                <>
+                  <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                  Play
+                </>
+              ) : (
+                <>
+                  <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+                  Pause
+                </>
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close trip replay"
+            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+            Close
+          </button>
+        </div>
       </div>
 
       <label className="mt-3 grid gap-1.5">
@@ -464,10 +549,10 @@ function TripReplayHud({
         </span>
         <input
           type="range"
-          min={startTime}
-          max={endTime}
-          step={Math.max(1, Math.round(duration / 200))}
-          value={Math.min(endTime, Math.max(startTime, playheadTime))}
+          min={0}
+          max={endIndex}
+          step={1}
+          value={Math.min(endIndex, Math.max(0, playheadIndex))}
           onChange={(event) => onScrub(Number(event.currentTarget.value))}
           className="h-2 w-full accent-[var(--flag)]"
           aria-label="Replay timeline"
@@ -974,8 +1059,9 @@ export default function TripMap({
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
   const [replayActive, setReplayActive] = useState(false);
-  const [replayPlayheadTime, setReplayPlayheadTime] = useState<number | null>(null);
+  const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
+  const [replayPaused, setReplayPaused] = useState(false);
   const canWrite = role === "traveler";
   const { resolvedMapBase, resolvedTheme } = useTheme();
   const routeLineColor = resolvedTheme === "constellation" ? "#ffd86a" : "#444444";
@@ -1043,19 +1129,6 @@ export default function TripMap({
     ? showTripPathLocal
     : travelerAllowsFollowerPath && showTripPathLocal;
 
-  useTripPath(
-    mapInstance,
-    checkpoints,
-    role === "traveler"
-      ? (isLocationSharing ? livePosition : null)
-      : (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null),
-    showPath,
-    replayActive ? replayPlayheadTime : null,
-    routeLineColor,
-    liveTrailSamples,
-    liveTrailPathVisible,
-  );
-
   const handleCloakingPinClick = useCallback(
     (pin: CloakingPin) => {
       music.sfx("tap");
@@ -1095,6 +1168,7 @@ export default function TripMap({
         occurredAt: event.occurredAt,
         lat: event.lat,
         lon: event.lon,
+        kind: "checkpoint" as const,
       }));
 
     if (!liveTrailPathVisible || liveTrailSamples.length === 0) {
@@ -1113,6 +1187,7 @@ export default function TripMap({
           occurredAt: s.sampledAt,
           lat: s.lat,
           lon: s.lon,
+          kind: "breadcrumb" as const,
         });
         lastKeptAt = s.sampledAt;
       }
@@ -1120,9 +1195,41 @@ export default function TripMap({
 
     return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
   }, [journalEvents, liveTrailSamples, liveTrailPathVisible]);
-  const replayStartTime = replayPins[0]?.occurredAt ?? null;
-  const replayEndTime = replayPins.at(-1)?.occurredAt ?? null;
-  const canReplayTrip = replayPins.length > 1 && replayStartTime !== null && replayEndTime !== null;
+  const replayEndIndex = replayPins.length;
+  const canReplayTrip = replayPins.length > 1;
+  // Categorize the current beat. End = synthetic terminal beat at index === length.
+  const currentReplayPin = replayPlayheadIndex !== null && replayPlayheadIndex < replayPins.length
+    ? replayPins[replayPlayheadIndex]
+    : null;
+  const currentReplayPinKind: "checkpoint" | "breadcrumb" = currentReplayPin?.kind ?? "checkpoint";
+  // Reveal-to timestamp = next checkpoint at-or-after current index (so the trail
+  // extends ahead to the next stop on breadcrumb beats, no further).
+  const replayRevealUpTo = useMemo(() => {
+    if (!replayActive || replayPlayheadIndex === null) return null;
+    if (replayPlayheadIndex >= replayPins.length) return Number.POSITIVE_INFINITY;
+    // Start strictly AFTER the current index so a checkpoint beat extends the trail
+    // forward to the next checkpoint (the segment the camera is about to traverse),
+    // not just up to the pin under the cursor.
+    for (let i = replayPlayheadIndex + 1; i < replayPins.length; i += 1) {
+      const pin = replayPins[i];
+      if (pin.kind === "checkpoint") return pin.occurredAt;
+    }
+    return replayPins[replayPins.length - 1]?.occurredAt ?? null;
+  }, [replayActive, replayPlayheadIndex, replayPins]);
+
+  useTripPath(
+    mapInstance,
+    checkpoints,
+    role === "traveler"
+      ? (isLocationSharing ? livePosition : null)
+      : (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null),
+    showPath,
+    replayRevealUpTo,
+    routeLineColor,
+    liveTrailSamples,
+    liveTrailPathVisible,
+  );
+
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
 
   const messages = useQuery(tripcastApi.messages.listMessages, { token }) ?? [];
@@ -1217,38 +1324,75 @@ export default function TripMap({
   }, []);
 
   useEffect(() => {
-    if (!replayActive || replayStartTime === null || replayEndTime === null) return;
-    if (replayPlayheadTime === null) {
-      setReplayPlayheadTime(replayStartTime);
-      return;
-    }
-    if (replayPlayheadTime >= replayEndTime) return;
+    if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
+    if (replayPlayheadIndex >= replayEndIndex) return;
 
-    const duration = Math.max(1, replayEndTime - replayStartTime);
-    const baseStepMs = Math.max(30_000, Math.round(duration / 120));
-    const interval = window.setInterval(() => {
-      setReplayPlayheadTime((current) => {
-        const currentTime = current ?? replayStartTime;
-        return Math.min(replayEndTime, currentTime + baseStepMs * replaySpeed);
+    // Variable beat: breadcrumb beats tick at 2x (half the duration); checkpoint
+    // beats use the base duration. Both scale by replaySpeed.
+    const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
+    const kindMultiplier = pin?.kind === "breadcrumb" ? 0.5 : 1;
+    const beatMs = Math.max(60, Math.round((REPLAY_BASE_BEAT_MS * kindMultiplier) / replaySpeed));
+    const timeout = window.setTimeout(() => {
+      setReplayPlayheadIndex((current) => {
+        if (current === null) return current;
+        return Math.min(replayEndIndex, current + 1);
       });
-    }, 1000);
-    return () => window.clearInterval(interval);
-  }, [replayActive, replayEndTime, replayPlayheadTime, replaySpeed, replayStartTime]);
+    }, beatMs);
+    return () => window.clearTimeout(timeout);
+  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, replaySpeed, replayPaused]);
 
   useEffect(() => {
-    if (!replayActive || replayPlayheadTime === null || replayPins.length === 0) return;
-    let targetIndex = -1;
-    for (let index = replayPins.length - 1; index >= 0; index -= 1) {
-      if (replayPins[index].occurredAt <= replayPlayheadTime) {
-        targetIndex = index;
-        break;
-      }
-    }
-    const target = replayPins[Math.max(0, targetIndex)];
-    if (!target || snappedReplayEventRef.current === target.eventId) return;
-    snappedReplayEventRef.current = target.eventId;
-
+    if (!replayActive || replayPlayheadIndex === null || replayPins.length === 0) return;
     const map = mapRef.current;
+
+    // End beat: fit the entire route in view.
+    if (replayPlayheadIndex >= replayPins.length) {
+      const endKey = "__end__";
+      if (snappedReplayEventRef.current === endKey) return;
+      snappedReplayEventRef.current = endKey;
+      if (!map || mapServiceUnavailableRef.current) {
+        log.logInteraction("replay:coordinate-snap:blocked", {
+          eventId: endKey,
+          reason: map ? "map-service-unavailable" : "map-unavailable",
+        });
+        return;
+      }
+      let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+      for (const pin of replayPins) {
+        if (pin.lat < minLat) minLat = pin.lat;
+        if (pin.lat > maxLat) maxLat = pin.lat;
+        if (pin.lon < minLon) minLon = pin.lon;
+        if (pin.lon > maxLon) maxLon = pin.lon;
+      }
+      log.logInteraction("replay:fit-end", { total: replayPins.length });
+      log.logMap("map:camera:focus", {
+        trigger: "replay:fit-end",
+        minLat, maxLat, minLon, maxLon,
+      });
+      pendingFocusRef.current = null;
+      focusAdjustArmRef.current = null;
+      // The TripReplayHud is the bottom occluder during replay; treat it like a
+      // sheet so fitBounds keeps the route above it.
+      const padding = readOccluderPadding(map, {
+        topOccluderEl: cardsWrapperRef.current,
+        sheetSelector: "[data-replay-hud]",
+      });
+      map.fitBounds(
+        [[minLon, minLat], [maxLon, maxLat]],
+        { padding, duration: 800, maxZoom: 14 },
+      );
+      return;
+    }
+
+    const target = replayPins[replayPlayheadIndex];
+    if (!target) return;
+    const snapKey = `${replayPlayheadIndex}:${target.eventId}`;
+    if (snappedReplayEventRef.current === snapKey) return;
+    snappedReplayEventRef.current = snapKey;
+
+    // Persist the resume point on every successful pin transition (not End).
+    writeReplayResume(token, { eventId: target.eventId, index: replayPlayheadIndex });
+
     if (!map || mapServiceUnavailableRef.current) {
       log.logInteraction("replay:coordinate-snap:blocked", {
         eventId: target.eventId,
@@ -1259,8 +1403,9 @@ export default function TripMap({
 
     log.logInteraction("replay:coordinate-snap", {
       eventId: target.eventId,
-      index: Math.max(0, targetIndex),
+      index: replayPlayheadIndex,
       total: replayPins.length,
+      kind: target.kind,
       lat: roundedCoordinate(target.lat),
       lon: roundedCoordinate(target.lon),
     });
@@ -1300,7 +1445,7 @@ export default function TripMap({
       duration: 550,
       padding: geometry.padding,
     });
-  }, [log, replayActive, replayPins, replayPlayheadTime]);
+  }, [log, replayActive, replayPins, replayPlayheadIndex, token]);
 
   useEffect(() => {
     if (!finaleReplayActive) {
@@ -1308,26 +1453,71 @@ export default function TripMap({
         finaleReplayStartedRef.current = false;
         snappedReplayEventRef.current = null;
         setReplayActive(false);
-        setReplayPlayheadTime(null);
+        setReplayPlayheadIndex(null);
+        setReplayPaused(false);
         log.logInteraction("finale:map-replay:stop");
       }
       return;
     }
 
-    if (!canReplayTrip || replayStartTime === null) return;
+    if (!canReplayTrip) return;
+    const resumeIndex = resolveReplayResumeIndex(token, replayPins);
     if (!finaleReplayStartedRef.current) {
       snappedReplayEventRef.current = null;
       finaleReplayStartedRef.current = true;
       setReplaySpeed((speed) => Math.max(speed, 2));
       log.logInteraction("finale:map-replay:start", {
         totalPins: replayPins.length,
-        startAt: replayStartTime,
-        endAt: replayEndTime,
+        resumeIndex,
       });
     }
     setReplayActive(true);
-    setReplayPlayheadTime(replayStartTime);
-  }, [canReplayTrip, finaleReplayActive, log, replayEndTime, replayPins.length, replayStartTime]);
+    setReplayPlayheadIndex(resumeIndex);
+  }, [canReplayTrip, finaleReplayActive, log, replayPins, token]);
+
+  // Close replay if any sheet/panel/menu opens. Pin taps, dock taps, and the
+  // right-click context menu all funnel through these states, so a single effect
+  // catches everything the user might do that isn't map panning/zooming. Finale
+  // replays are not interactive — let them play through.
+  useEffect(() => {
+    if (!replayActive || finaleReplayActive) return;
+    const anyUiOpen =
+      selectedStoryDetail !== null ||
+      isJournalOpen ||
+      isMessagingOpen ||
+      isTravelFundsSheetOpen ||
+      isVotePanelOpen ||
+      isTravelerStateOpen ||
+      isAchievementsOpen ||
+      isMissionsPanelOpen ||
+      selectedCloakingPin !== null ||
+      contextMenu !== null ||
+      storyPrefill !== null;
+    if (!anyUiOpen) return;
+    music.sfx("close");
+    snappedReplayEventRef.current = null;
+    setReplayActive(false);
+    setReplayPlayheadIndex(null);
+    setReplayPaused(false);
+    log.logInteraction("replay:close", { reason: "ui-opened", speed: replaySpeed });
+  }, [
+    replayActive,
+    finaleReplayActive,
+    selectedStoryDetail,
+    isJournalOpen,
+    isMessagingOpen,
+    isTravelFundsSheetOpen,
+    isVotePanelOpen,
+    isTravelerStateOpen,
+    isAchievementsOpen,
+    isMissionsPanelOpen,
+    selectedCloakingPin,
+    contextMenu,
+    storyPrefill,
+    log,
+    music,
+    replaySpeed,
+  ]);
 
   useEffect(() => {
     logMapEvent("map:proxy-url:resolved", {
@@ -2301,9 +2491,11 @@ export default function TripMap({
     setSelectedStoryDetail(null);
     snappedReplayEventRef.current = null;
     setReplayActive(false);
-    setReplayPlayheadTime(null);
+    setReplayPlayheadIndex(null);
+    setReplayPaused(false);
+    clearReplayResume(token);
     lastLiveTrailSampleRef.current = null;
-  }, [tripDataResetNonce]);
+  }, [tripDataResetNonce, token]);
 
   function publishTravelerLocation(
     position: { lat: number; lon: number },
@@ -2413,33 +2605,45 @@ export default function TripMap({
   }
 
   function handleStartReplay() {
-    if (!canReplayTrip || replayStartTime === null) {
+    if (!canReplayTrip) {
       log.logInteraction("replay:start:boundary", { reason: "no-coordinate-pins" });
       showToast("Trip Replay needs at least one located journal event.");
       return;
     }
     music.sfx("page");
+    // Close any UI that the close-on-interaction effect would otherwise treat as
+    // a reason to immediately close the replay we're about to start.
+    setSelectedStoryDetail(null);
+    setIsJournalOpen(false);
+    setIsMessagingOpen(false);
+    setIsTravelFundsSheetOpen(false);
+    setIsVotePanelOpen(false);
+    setIsTravelerStateOpen(false);
+    setIsAchievementsOpen(false);
+    setIsMissionsPanelOpen(false);
+    setSelectedCloakingPin(null);
+    setContextMenu(null);
+    setStoryPrefill(null);
     snappedReplayEventRef.current = null;
+    const resumeIndex = resolveReplayResumeIndex(token, replayPins);
     setReplayActive(true);
-    setReplayPlayheadTime(replayStartTime);
+    setReplayPlayheadIndex(resumeIndex);
     log.logInteraction("replay:start", {
       totalPins: replayPins.length,
-      startAt: replayStartTime,
-      endAt: replayEndTime,
+      resumeIndex,
       speed: replaySpeed,
     });
   }
 
-  function handleReplayScrub(time: number) {
-    if (replayStartTime === null || replayEndTime === null) return;
-    const nextTime = Math.min(replayEndTime, Math.max(replayStartTime, time));
-    setReplayPlayheadTime(nextTime);
+  function handleReplayScrub(index: number) {
+    const nextIndex = Math.min(replayEndIndex, Math.max(0, Math.round(index)));
+    setReplayPlayheadIndex(nextIndex);
+    // Touching the timeline implies the user wants to dwell on a specific pin —
+    // auto-pause so they aren't fighting the auto-advance.
+    setReplayPaused(true);
     log.logInteraction("replay:timeline:scrub", {
-      playheadTime: nextTime,
-      progress:
-        replayEndTime === replayStartTime
-          ? 100
-          : Math.round(((nextTime - replayStartTime) / (replayEndTime - replayStartTime)) * 100),
+      index: nextIndex,
+      progress: replayEndIndex === 0 ? 100 : Math.round((nextIndex / replayEndIndex) * 100),
     });
   }
 
@@ -2468,8 +2672,26 @@ export default function TripMap({
     music.sfx("close");
     snappedReplayEventRef.current = null;
     setReplayActive(false);
-    setReplayPlayheadTime(null);
+    setReplayPlayheadIndex(null);
+    setReplayPaused(false);
     log.logInteraction("replay:close", { speed: replaySpeed });
+  }
+
+  function handleToggleReplayPause() {
+    setReplayPaused((prev) => {
+      log.logInteraction(prev ? "replay:resume" : "replay:pause", {
+        index: replayPlayheadIndex,
+        speed: replaySpeed,
+      });
+      return !prev;
+    });
+  }
+
+  function handleRestartReplay() {
+    snappedReplayEventRef.current = null;
+    setReplayPlayheadIndex(0);
+    setReplayPaused(false);
+    log.logInteraction("replay:restart", { speed: replaySpeed });
   }
 
   function handleRequestCoordinatePick(
@@ -3054,12 +3276,16 @@ export default function TripMap({
       </AnimatePresence>
 
       <AnimatePresence>
-        {replayActive && replayPlayheadTime !== null && replayStartTime !== null && replayEndTime !== null ? (
+        {replayActive && replayPlayheadIndex !== null ? (
           <TripReplayHud
-            playheadTime={replayPlayheadTime}
-            startTime={replayStartTime}
-            endTime={replayEndTime}
+            playheadIndex={replayPlayheadIndex}
+            endIndex={replayEndIndex}
+            currentPinKind={replayPlayheadIndex >= replayPins.length ? "end" : currentReplayPinKind}
+            currentPinTime={currentReplayPin?.occurredAt ?? null}
             speed={replaySpeed}
+            isPaused={replayPaused}
+            onTogglePause={handleToggleReplayPause}
+            onRestart={handleRestartReplay}
             onScrub={handleReplayScrub}
             onSpeedChange={handleReplaySpeedChange}
             onShuttleStart={handleReplayShuttleStart}
