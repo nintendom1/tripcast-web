@@ -2,14 +2,12 @@ import { useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Mission, MissionStatus, JournalEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Mission, MissionStatus, JournalEvent, Role } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { LocationPickerField } from "../map/MapPicker";
-import TravelFundsInlineSection, {
-  type TravelFundsInlineState,
-} from "../travelfunds/TravelFundsInlineSection";
+import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
@@ -55,7 +53,7 @@ type Props = {
    *  "Complete Mission" action. The parent (TripMap) owns the story-prefill
    *  state, opens AddCheckpointSheet, and calls travelerCompleteMission
    *  after the resulting story lands. */
-  onCompleteAsStory?: (Mission: Mission, transaction?: TransactionInlineInput) => void;
+  onCompleteAsStory?: (Mission: Mission) => void;
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: JournalEvent) => void;
   /** Provenance for the debug "Active UI Context" — where the detail was opened
@@ -131,7 +129,6 @@ export default function MissionDetailSheet({
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
-  const [completionTxState, setCompletionTxState] = useState<TravelFundsInlineState>(null);
 
   const accept = useMutation(tripcastApi.missions.travelerAcceptMission);
   const drop = useMutation(tripcastApi.missions.travelerDropMission);
@@ -328,26 +325,11 @@ export default function MissionDetailSheet({
 
   async function handleComplete() {
     if (!Mission) return;
-    // Block save when the inline Travel Funds section is open with
-    // partial/invalid data — surface the error rather than silently dropping
-    // the transaction.
-    if (completionTxState && "error" in completionTxState) {
-      setActionError(completionTxState.error);
-      return;
-    }
-    const inlineTransaction =
-      completionTxState && "value" in completionTxState
-        ? completionTxState.value
-        : undefined;
     setIsWorking(true);
     log.logUi("action:complete", { missionId: Mission._id });
     setActionError(null);
     try {
-      await complete({
-        token,
-        missionId: Mission._id,
-        transaction: inlineTransaction,
-      });
+      await complete({ token, missionId: Mission._id });
       onClose();
     } catch (e) {
       setActionError(friendlyError(e));
@@ -358,14 +340,8 @@ export default function MissionDetailSheet({
 
   function handleCompleteAsStory() {
     if (!Mission || !onCompleteAsStory) return;
-    if (completionTxState && "error" in completionTxState) {
-      setActionError(completionTxState.error);
-      return;
-    }
     log.logUi("action:complete-story", { missionId: Mission._id });
-    const transaction =
-      completionTxState && "value" in completionTxState ? completionTxState.value : undefined;
-    onCompleteAsStory(Mission, transaction);
+    onCompleteAsStory(Mission);
   }
 
   async function handleMarkInProgress() {
@@ -756,22 +732,6 @@ export default function MissionDetailSheet({
           <p className={missionHintClass}>
             Completing this Mission will mark the linked Current Activity as done and open the Story form.
           </p>
-          {isTraveler && (
-            <TravelFundsInlineSection
-              token={token}
-              prefill={{
-                title: c.title,
-                ...(c.estimatedCostUsd !== undefined
-                  ? {
-                      localAmount: c.estimatedCostUsd,
-                      currencyCode: "USD",
-                      localCurrencyPerUsd: 1,
-                    }
-                  : {}),
-              }}
-              onChange={setCompletionTxState}
-            />
-          )}
           {onCompleteAsStory && (
             <Button
               size="sm"
@@ -1065,6 +1025,16 @@ export default function MissionDetailSheet({
           sourceId={c._id}
           editable={false}
         />
+
+        {isTraveler && (
+          <div className="border-t border-[var(--line-soft)] pt-3">
+            <LinkedTransactionsSection
+              token={token}
+              mode="linked"
+              target={{ type: "mission", id: c._id }}
+            />
+          </div>
+        )}
       </section>
 
       {/* ── Linked ──────────────────────────────────────────────────── */}

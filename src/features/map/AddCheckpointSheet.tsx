@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ChevronLeft, ImagePlus, Trash2 } from "lucide-react";
 
-import type { AddCheckpointArgs, CheckpointSource, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { AddCheckpointArgs, CheckpointSource } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -37,7 +37,6 @@ export type CheckpointPrefill = {
   locationLabel?: string;
   missionId?: string;
   completeMission?: boolean;
-  transaction?: TransactionInlineInput;
 };
 
 type AddCheckpointSheetProps = {

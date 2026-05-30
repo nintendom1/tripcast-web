@@ -27,6 +27,7 @@ import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
+import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import {
   MOOD_LABELS,
@@ -670,6 +671,7 @@ export default function StoryDetailSheet({
                   imageUrl={currentImageUrl ?? undefined}
                   onImageLoad={() => log.logInteraction("story-image:render", { source: "stored" })}
                   onImageError={() => log.error("story-image:render:error", "ui", { source: "stored" })}
+                  isTraveler={isTraveler}
                 />
               ) : (
                 <ActivityContent event={displayEvent} />
@@ -715,6 +717,7 @@ function NarrativeContent({
   imageUrl,
   onImageLoad,
   onImageError,
+  isTraveler,
 }: {
   event: JournalEvent;
   token?: string;
@@ -725,6 +728,7 @@ function NarrativeContent({
   imageUrl?: string;
   onImageLoad?: () => void;
   onImageError?: () => void;
+  isTraveler: boolean;
 }) {
   return (
     <>
@@ -757,6 +761,16 @@ function NarrativeContent({
       {event.checkpointId && token && role ? (
         <div className="mt-4">
           <AttributionBlock token={token} viewerRole={role} sourceType="story" sourceId={event.checkpointId} editable={false} />
+        </div>
+      ) : null}
+
+      {isTraveler && token && event.checkpointId ? (
+        <div className="mt-4 border-t border-[var(--line-soft)] pt-3">
+          <LinkedTransactionsSection
+            token={token}
+            mode="linked"
+            target={{ type: "checkpoint", id: event.checkpointId }}
+          />
         </div>
       ) : null}
 
