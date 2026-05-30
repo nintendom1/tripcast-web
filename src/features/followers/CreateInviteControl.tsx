@@ -6,12 +6,34 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 
 const INVITE_DISMISS_MS = 60_000;
+const DEFAULT_PUBLIC_APP_URL = "https://nintendom1.github.io/tripcast-web/";
 const invitePanelClass = "flex items-center gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2";
 const inviteErrorClass = "rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-xs text-[var(--ink-danger)]";
 
 type CreateInviteControlProps = {
   token: string;
 };
+
+function ensureTrailingSlash(url: string) {
+  return url.endsWith("/") ? url : `${url}/`;
+}
+
+function getPublicAppUrl() {
+  const configured = import.meta.env.VITE_PUBLIC_APP_URL?.trim();
+  if (configured) return ensureTrailingSlash(configured);
+
+  if (import.meta.env.PROD && import.meta.env.BASE_URL === "./") {
+    return DEFAULT_PUBLIC_APP_URL;
+  }
+
+  return ensureTrailingSlash(new URL(import.meta.env.BASE_URL, window.location.origin).toString());
+}
+
+function buildInviteUrl(inviteToken: string) {
+  const inviteUrl = new URL(getPublicAppUrl());
+  inviteUrl.searchParams.set("invite", inviteToken);
+  return inviteUrl.toString();
+}
 
 export default function CreateInviteControl({ token }: CreateInviteControlProps) {
   const createInvite = useMutation(tripcastApi.followerAdmin.createInvite);
@@ -57,8 +79,7 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
     setIsPending(true);
     try {
       const result = await createInvite({ token });
-      const url = `${window.location.origin}?invite=${result.inviteToken}`;
-      setInviteUrl(url);
+      setInviteUrl(buildInviteUrl(result.inviteToken));
       clearCopiedTimer();
       setCopied(false);
     } catch (err) {

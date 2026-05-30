@@ -17,6 +17,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: undefined,
@@ -24,6 +25,31 @@ afterEach(() => {
 });
 
 describe("CreateInviteControl", () => {
+  it("uses the configured public app URL for invite links", async () => {
+    vi.stubEnv("VITE_PUBLIC_APP_URL", "https://nintendom1.github.io/tripcast-web");
+
+    render(<CreateInviteControl token="test-token" />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /create invite link/i }));
+    });
+
+    expect(screen.getByText("https://nintendom1.github.io/tripcast-web/?invite=invite-tok")).toBeInTheDocument();
+  });
+
+  it("falls back to the Vite base URL for local invite links", async () => {
+    vi.stubEnv("VITE_PUBLIC_APP_URL", "");
+    vi.stubEnv("BASE_URL", "/tripcast-web/");
+
+    render(<CreateInviteControl token="test-token" />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /create invite link/i }));
+    });
+
+    expect(screen.getByText("http://localhost:3000/tripcast-web/?invite=invite-tok")).toBeInTheDocument();
+  });
+
   it("restarts the copied state timer on repeated copies", async () => {
     vi.useFakeTimers();
     const writeText = vi.fn().mockResolvedValue(undefined);
