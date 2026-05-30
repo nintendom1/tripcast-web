@@ -1,10 +1,9 @@
-import { useEffect } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
-import type { Mission, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Mission } from "../../convex/tripcastApi";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { getActiveUiContext, resetActiveUiContextForTests } from "../../debug/activeUiContext";
 import MissionDetailSheet from "./MissionDetailSheet";
@@ -14,27 +13,8 @@ vi.mock("convex/react", () => ({
   useQuery: vi.fn(),
 }));
 
-const inlineTransaction: TransactionInlineInput = {
-  title: "Mission cost",
-  category: "event",
-  currencyCode: "USD",
-  localAmount: 20,
-  localCurrencyPerUsd: 1,
-  countsTowardMeter: true,
-  visibility: "public",
-};
-
-vi.mock("../travelfunds/TravelFundsInlineSection", () => ({
-  default: function TravelFundsInlineSectionMock({
-    onChange,
-  }: {
-    onChange: (value: { value: TransactionInlineInput }) => void;
-  }) {
-    useEffect(() => {
-      onChange({ value: inlineTransaction });
-    }, [onChange]);
-    return <div data-testid="inline-funds" />;
-  },
+vi.mock("../travelfunds/LinkedTransactionsSection", () => ({
+  default: () => <div data-testid="linked-transactions-mock" />,
 }));
 
 const Mission: Mission = {
@@ -160,7 +140,7 @@ describe("MissionDetailSheet — active UI context", () => {
 });
 
 describe("MissionDetailSheet", () => {
-  it("passes inline Travel Funds data into Complete as story", async () => {
+  it("invokes Complete as Story with the mission only (transactions are managed separately)", async () => {
     const onCompleteAsStory = vi.fn();
 
     render(
@@ -175,7 +155,7 @@ describe("MissionDetailSheet", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Complete as story" }));
 
-    expect(onCompleteAsStory).toHaveBeenCalledWith(Mission, inlineTransaction);
+    expect(onCompleteAsStory).toHaveBeenCalledWith(Mission);
   });
 });
 

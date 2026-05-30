@@ -844,6 +844,9 @@ export type UpdateTransactionArgs = {
   linkedActivityId?: string;
   linkedMissionId?: string;
   linkedCheckpointId?: string;
+  /** Selective unlink. JSON drops undefined on the wire, so callers send
+   *  field names here to explicitly clear specific link fields. */
+  clearLinks?: Array<"activity" | "mission" | "checkpoint">;
   occurredAt?: number;
 };
 
@@ -1974,6 +1977,18 @@ export const tripcastApi = {
       "public",
       { token: string },
       LinkedCostMap
+    >,
+    travelerListTransactionsForTarget: (anyApi as any).travelFunds.travelerListTransactionsForTarget as FunctionReference<
+      "query",
+      "public",
+      { token: string; targetType: "mission" | "checkpoint"; targetId: string },
+      Transaction[]
+    >,
+    travelerListUnlinkedTransactions: (anyApi as any).travelFunds.travelerListUnlinkedTransactions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      Transaction[]
     >,
   },
   messages: {

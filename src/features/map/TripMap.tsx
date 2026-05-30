@@ -16,6 +16,7 @@ import {
   type JournalEvent,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
+  type Transaction,
 } from "../../convex/tripcastApi";
 import AddCheckpointSheet, {
   type CheckpointPrefill,
@@ -44,9 +45,7 @@ import {
   openNativeLocationSettings,
   startNativeLocationWatch,
 } from "../../native/locationWatcher";
-import TravelFundsInlineSection, {
-  type TravelFundsInlineState,
-} from "../travelfunds/TravelFundsInlineSection";
+import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import {
   Sheet,
   SheetCloseButton,
@@ -606,7 +605,6 @@ function ConvexCheckpointSheet({
   token,
   onClose,
   prefill,
-  transactionPrefill,
   onCheckpointCreated,
   onBack,
   debugSource,
@@ -615,12 +613,6 @@ function ConvexCheckpointSheet({
   token: string;
   onClose: () => void;
   prefill?: CheckpointPrefill;
-  transactionPrefill?: {
-    title?: string;
-    localAmount?: number;
-    currencyCode?: string;
-    localCurrencyPerUsd?: number;
-  };
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
   debugSource?: DebugOpenSource;
@@ -631,6 +623,7 @@ function ConvexCheckpointSheet({
   const completeMissionAsStory = useMutation(
     tripcastApi.missions.travelerCompleteMissionAsStory,
   );
+  const updateTransaction = useMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
   const isFromMission = Boolean(prefill?.missionId);
   const badgeDefinitions = useQuery(
     tripcastApi.badges.listBadgeDefinitions,
@@ -639,7 +632,10 @@ function ConvexCheckpointSheet({
 
   const [stateOpen, setStateOpen] = useState(false);
   const [awardBadgeType, setAwardBadgeType] = useState<BadgeType | null>(null);
-  const [transactionState, setTransactionState] = useState<TravelFundsInlineState>(null);
+  // Pre-creation staging: transactions picked or newly-created via the
+  // TransactionPickerSheet, linked to the new checkpoint after save. Cleared
+  // when the sheet closes.
+  const [stagedTransactions, setStagedTransactions] = useState<Transaction[]>([]);
   const [moodValue, setMoodValue] = useState<import("../../convex/tripcastApi").TravelerMoodValue | undefined>();
   const [energyLevel, setEnergyLevel] = useState<import("../../convex/tripcastApi").TravelerEnergyLevel | undefined>();
   const [stomachLevel, setStomachLevel] = useState<import("../../convex/tripcastApi").TravelerStomachLevel | undefined>();
@@ -657,27 +653,18 @@ function ConvexCheckpointSheet({
       setStressLevel(undefined);
       setScheduleLevel(undefined);
       setQuickNote("");
-      setTransactionState(null);
       setAwardBadgeType(null);
+      setStagedTransactions([]);
     }
   }, [selectedCoordinate]);
 
   async function handleSave(args: Omit<AddCheckpointArgs, "token">): Promise<string> {
-    // Block save when the inline Travel Funds section is open with
-    // partial/invalid data — surface the error rather than silently dropping
-    // the transaction. AddCheckpointSheet's onSubmit catches and displays this.
-    if (transactionState && "error" in transactionState) {
-      throw new Error(transactionState.error);
-    }
-    const inlineTransaction =
-      transactionState && "value" in transactionState
-        ? transactionState.value
-        : prefill?.transaction;
+    let checkpointId: string;
     if (prefill?.missionId && prefill.completeMission !== false) {
       if (args.lat === undefined || args.lon === undefined) {
         throw new Error("A map location is required to complete as story.");
       }
-      return completeMissionAsStory({
+      checkpointId = await completeMissionAsStory({
         token,
         missionId: prefill.missionId,
         title: args.title,
@@ -687,25 +674,45 @@ function ConvexCheckpointSheet({
         lon: args.lon,
         source: args.source,
         imageId: args.imageId,
-        transaction: inlineTransaction,
         awardBadgeType: awardBadgeType ?? undefined,
       });
+    } else {
+      checkpointId = await addCheckpoint({
+        ...args,
+        token,
+        moodValue,
+        energyLevel,
+        energyScore: energyLevel ? ENERGY_SCORE_FOR_LEVEL[energyLevel] : undefined,
+        stomachLevel,
+        stomachScore: stomachLevel ? STOMACH_SCORE_FOR_LEVEL[stomachLevel] : undefined,
+        stressLevel,
+        stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
+        schedulePressureLevel: scheduleLevel,
+        statusNote: quickNote.trim() || undefined,
+        imageId: args.imageId,
+      });
     }
-    return addCheckpoint({
-      ...args,
-      token,
-      moodValue,
-      energyLevel,
-      energyScore: energyLevel ? ENERGY_SCORE_FOR_LEVEL[energyLevel] : undefined,
-      stomachLevel,
-      stomachScore: stomachLevel ? STOMACH_SCORE_FOR_LEVEL[stomachLevel] : undefined,
-      stressLevel,
-      stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
-      schedulePressureLevel: scheduleLevel,
-      statusNote: quickNote.trim() || undefined,
-      imageId: args.imageId,
-      transaction: inlineTransaction,
-    });
+    // Link each staged transaction to the new checkpoint. Per-tx try/catch so
+    // one failure doesn't strand the rest — the checkpoint exists either way.
+    for (const tx of stagedTransactions) {
+      try {
+        await updateTransaction({
+          token,
+          transactionId: tx._id,
+          linkedCheckpointId: checkpointId,
+        });
+        log.logFunds("transaction:link-after-save", {
+          transactionId: tx._id,
+          checkpointId,
+        });
+      } catch (linkError) {
+        log.error("transaction:link-after-save:error", "funds", {
+          transactionId: tx._id,
+          message: linkError instanceof Error ? linkError.message : String(linkError),
+        });
+      }
+    }
+    return checkpointId;
   }
 
   function Chips<T extends string>({ values, labels, selected, onSelect }: { values: T[]; labels: Record<T, string>; selected: T | undefined; onSelect: (v: T) => void }) {
@@ -812,10 +819,11 @@ function ConvexCheckpointSheet({
           </p>
         </div>
       )}
-      <TravelFundsInlineSection
+      <LinkedTransactionsSection
         token={token}
-        prefill={transactionPrefill}
-        onChange={setTransactionState}
+        mode="staging"
+        staged={stagedTransactions}
+        onStagedChange={setStagedTransactions}
       />
     </div>
   );
@@ -2741,7 +2749,7 @@ export default function TripMap({
     locationLabel?: string;
     lat?: number;
     lon?: number;
-  }, transaction?: import("../../convex/tripcastApi").TransactionInlineInput) {
+  }) {
     music.sfx("page");
     setCheckInDebugSource({ source: "missions:complete-as-story", sourceLabel: "Mission detail -> Complete as Story" });
     setIsMissionsPanelOpen(false);
@@ -2751,7 +2759,6 @@ export default function TripMap({
       title: Mission.title,
       note: Mission.description,
       locationLabel: Mission.locationLabel,
-      transaction,
     });
     // Remember which mission to land on if the Traveler backs out of the story
     // form — the MissionPanel re-opens directly on this detail view.
@@ -3265,7 +3272,6 @@ export default function TripMap({
             setPendingOpenDetailMissionId(null);
           }}
           prefill={storyPrefill ?? undefined}
-          transactionPrefill={storyPrefill?.transaction}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
           debugSource={checkInDebugSource}

@@ -11,6 +11,7 @@ import type {
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 import {
   CATEGORY_OPTIONS,
   COMMON_CURRENCIES,
@@ -36,6 +37,8 @@ export type TransactionFormValues = {
   countsTowardMeter: boolean;
   visibility: TransactionVisibility;
   linkedActivityId?: string;
+  linkedMissionId?: string;
+  linkedCheckpointId?: string;
   occurredAt?: number;
 };
 
@@ -46,6 +49,14 @@ type TransactionFormProps = {
   onSubmit: (values: TransactionFormValues) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
+  /** Pre-creation linking target. When `mode === "add"`, the submitted values
+   *  carry this through to the backend so the new transaction is linked
+   *  atomically. Ignored in edit mode (edit uses the row's existing link). */
+  prefillMissionId?: string;
+  prefillCheckpointId?: string;
+  /** Called when the user clicks "Unlink" in edit mode. Parent fires the
+   *  updateTransaction mutation clearing the link field. */
+  onUnlink?: () => Promise<void>;
   submitLabel?: string;
 };
 
@@ -60,8 +71,12 @@ export default function TransactionForm({
   onSubmit,
   onCancel,
   onDelete,
+  prefillMissionId,
+  prefillCheckpointId,
+  onUnlink,
   submitLabel,
 }: TransactionFormProps) {
+  const log = useDebugLogger("TransactionForm", "src/features/travelfunds/TransactionForm.tsx");
   const activity = useQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
 
   const [title, setTitle] = useState(initial?.title ?? "");
@@ -94,7 +109,13 @@ export default function TransactionForm({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const hasExistingLink = Boolean(
+    initial &&
+      (initial.linkedMissionId || initial.linkedCheckpointId || initial.linkedActivityId),
+  );
 
   // When the activity query loads, default the link checkbox for add mode
   useEffect(() => {
@@ -135,6 +156,10 @@ export default function TransactionForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    // Block the synthetic submit from bubbling to any ancestor <form> in the
+    // React tree — the picker may be rendered inside AddCheckpointSheet's
+    // form, and React events bubble through portals.
+    e.stopPropagation();
     setError(null);
     if (!title.trim()) {
       setError("Title is required.");
@@ -170,8 +195,39 @@ export default function TransactionForm({
         countsTowardMeter,
         visibility,
         linkedActivityId: linkToActivity && activity ? activity._id : undefined,
+        ...(mode === "add" && prefillMissionId ? { linkedMissionId: prefillMissionId } : {}),
+        ...(mode === "add" && prefillCheckpointId
+          ? { linkedCheckpointId: prefillCheckpointId }
+          : {}),
       };
-      await onSubmit(values);
+      log.logFunds("transaction:submit", {
+        mode,
+        prefillMissionId: prefillMissionId ?? null,
+        prefillCheckpointId: prefillCheckpointId ?? null,
+        linkedActivityId: values.linkedActivityId ?? null,
+        linkedMissionId: values.linkedMissionId ?? null,
+        linkedCheckpointId: values.linkedCheckpointId ?? null,
+        currencyCode: values.currencyCode,
+        localAmount: values.localAmount,
+        usdAmount: usdPreview,
+        category: values.category,
+        visibility: values.visibility,
+        countsTowardMeter: values.countsTowardMeter,
+      });
+      try {
+        await onSubmit(values);
+        log.logFunds("transaction:submit:success", { mode });
+      } catch (submitError) {
+        log.error("transaction:submit:error", "funds", {
+          mode,
+          message:
+            submitError instanceof Error ? submitError.message : String(submitError),
+          linkedActivityId: values.linkedActivityId ?? null,
+          linkedMissionId: values.linkedMissionId ?? null,
+          linkedCheckpointId: values.linkedCheckpointId ?? null,
+        });
+        throw submitError;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -189,6 +245,19 @@ export default function TransactionForm({
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsDeleting(false);
+    }
+  }
+
+  async function handleUnlink() {
+    if (!onUnlink) return;
+    setIsUnlinking(true);
+    setError(null);
+    try {
+      await onUnlink();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsUnlinking(false);
     }
   }
 
@@ -356,6 +425,21 @@ export default function TransactionForm({
         </label>
       )}
 
+      {mode === "edit" && hasExistingLink && onUnlink && (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] px-2.5 py-1.5 text-xs text-[var(--ink-2)]">
+          <span>This transaction is linked to a story, mission, or activity.</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleUnlink}
+            disabled={isUnlinking || isSubmitting || isDeleting}
+          >
+            {isUnlinking ? "Unlinking…" : "Unlink"}
+          </Button>
+        </div>
+      )}
+
       {error && (
         <p className={errorClass} role="alert">{error}</p>
       )}
@@ -367,7 +451,7 @@ export default function TransactionForm({
             variant="ghost"
             className={dangerGhostClass}
             onClick={handleDelete}
-            disabled={isDeleting || isSubmitting}
+            disabled={isDeleting || isSubmitting || isUnlinking}
           >
             {isDeleting ? "Deleting…" : "Delete"}
           </Button>
@@ -375,10 +459,10 @@ export default function TransactionForm({
           <span />
         )}
         <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting || isDeleting}>
+          <Button type="button" variant="outline" onClick={onCancel} disabled={isSubmitting || isDeleting || isUnlinking}>
             Cancel
           </Button>
-          <Button type="submit" disabled={isSubmitting || isDeleting}>
+          <Button type="submit" disabled={isSubmitting || isDeleting || isUnlinking}>
             {isSubmitting ? "Saving…" : submitLabel ?? (mode === "add" ? "Add" : "Save")}
           </Button>
         </div>

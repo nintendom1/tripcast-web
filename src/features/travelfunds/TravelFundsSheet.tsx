@@ -6,11 +6,11 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import type { Transaction } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
-import { SwipeRow } from "../../components/ui/SwipeRow";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { cn } from "@/lib/utils";
-import { formatLocal, formatUsd, getCategoryEmoji, getCategoryLabel } from "./currency";
+import { formatUsd } from "./currency";
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
+import TransactionRows from "./TransactionRows";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
@@ -408,116 +408,6 @@ function SummaryView({
       </div>
     </>
   );
-}
-
-function TransactionRows({
-  transactions,
-  onSelect,
-  onRequestDelete,
-}: {
-  transactions: Transaction[];
-  onSelect: (tx: Transaction) => void;
-  onRequestDelete: (tx: Transaction) => void;
-}) {
-  const [swipedId, setSwipedId] = useState<string | null>(null);
-  if (transactions.length === 0) {
-    return (
-      <p className="py-6 text-center text-sm text-[var(--ink-3)]">
-        No transactions yet. Tap "Spend" to add one.
-      </p>
-    );
-  }
-  return (
-    <ul className="flex flex-col gap-2">
-      {transactions.map((tx) => {
-        const isUsd = tx.currencyCode === "USD";
-        const isNegative = tx.usdAmount < 0;
-        const row = (
-          <button
-            type="button"
-            onClick={() => onSelect(tx)}
-            className="flex w-full items-start gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
-            aria-label={`Edit ${tx.title}`}
-          >
-            <span
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base"
-              style={{ background: "color-mix(in oklab, var(--meadow-forest) 14%, var(--bg-paper))" }}
-              aria-hidden="true"
-            >
-              {getCategoryEmoji(tx.category)}
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="flex items-baseline justify-between gap-2">
-                <span className="truncate font-[var(--font-display)] text-sm font-bold text-[var(--ink-1)]">
-                  {tx.title}
-                </span>
-                <span
-                  className={cn(
-                    "shrink-0 font-[var(--font-display)] text-sm font-bold",
-                    isNegative ? "text-[var(--green)]" : "text-[var(--ink-1)]",
-                  )}
-                >
-                  {formatUsd(tx.usdAmount)}
-                </span>
-              </span>
-              <span className="flex items-start justify-between gap-2 font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
-                <span className="min-w-0">
-                  <span className="block truncate">
-                    {getCategoryLabel(tx.category)} · {formatLedgerTimestamp(tx.occurredAt)}
-                  </span>
-                  {!isUsd && (
-                    <span className="block truncate normal-case tracking-normal text-[var(--ink-2)]">
-                      {formatLocal(tx.localAmount, tx.currencyCode)}
-                    </span>
-                  )}
-                </span>
-                <span className="flex shrink-0 items-center gap-1">
-                  {!tx.countsTowardMeter && (
-                    <span className="rounded-full bg-[var(--meter-track)] px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-2)]">
-                      Not counted
-                    </span>
-                  )}
-                  {tx.visibility === "summary_only" && (
-                    <span
-                      className="rounded-full px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-1)]"
-                      style={{ background: "color-mix(in oklab, var(--amber) 18%, transparent)" }}
-                    >
-                      Summary
-                    </span>
-                  )}
-                  {tx.visibility === "private" && (
-                    <span className="rounded-full bg-[var(--meter-track)] px-1.5 py-0.5 text-[9px] tracking-normal text-[var(--ink-2)]">
-                      Private
-                    </span>
-                  )}
-                </span>
-              </span>
-            </span>
-          </button>
-        );
-        return (
-          <li key={tx._id}>
-            <SwipeRow
-              id={tx._id}
-              openId={swipedId}
-              onOpenChange={setSwipedId}
-              onEdit={() => onSelect(tx)}
-              onDelete={() => onRequestDelete(tx)}
-            >
-              {row}
-            </SwipeRow>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-function formatLedgerTimestamp(ms: number): string {
-  const date = new Date(ms);
-  const day = date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const time = date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return `${day} · ${time}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import { FilterButton } from "../../components/ui/FilterButton";
 import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Mission, JournalEvent, Role, TransactionInlineInput } from "../../convex/tripcastApi";
+import type { Mission, JournalEvent, Role } from "../../convex/tripcastApi";
 import { getLocalDateKey } from "../achievements/dateUtils";
 import MissionCard from "./MissionCard";
 import MissionProposalForm from "./MissionProposalForm";
@@ -43,7 +43,7 @@ type Props = {
   pendingOpenMissionId?: string | null;
   onClearPendingMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
-  onCompleteAsStory?: (Mission: Mission, transaction?: TransactionInlineInput) => void;
+  onCompleteAsStory?: (Mission: Mission) => void;
   /** When set + the panel is open, navigate straight to the matching mission's
    *  detail view rather than the list. Used by the Complete-as-Story → Back
    *  flow so dismissing the story form returns the Traveler to the mission's
@@ -365,8 +365,8 @@ export default function MissionPanel({
                 onRequestCoordinatePick={onRequestCoordinatePick}
                 onCompleteAsStory={
                   onCompleteAsStory
-                    ? (Mission, transaction) => {
-                        onCompleteAsStory(Mission, transaction);
+                    ? (Mission) => {
+                        onCompleteAsStory(Mission);
                         goToList(null);
                       }
                     : undefined
