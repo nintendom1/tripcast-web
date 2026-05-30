@@ -77,13 +77,13 @@ export function useTripPath(
 
     const cpPoints: UnifiedPoint[] = checkpoints
       .filter((cp) => cp.lat !== undefined && cp.lon !== undefined)
-      .filter((cp) => playheadTime === null || cp.createdAt <= playheadTime)
       .map((cp) => ({
         lat: cp.lat!,
         lon: cp.lon!,
-        timestamp: cp.createdAt,
+        timestamp: cp.happenedAt ?? cp.createdAt,
         kind: "checkpoint" as const,
-      }));
+      }))
+      .filter((p) => playheadTime === null || p.timestamp <= playheadTime);
 
     const bcPoints: UnifiedPoint[] = showBreadcrumbs
       ? liveTrailSamples
