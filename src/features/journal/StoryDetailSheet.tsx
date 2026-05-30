@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { ChevronLeft, ChevronRight, ImagePlus, Trash2 } from "lucide-react";
+import Zoom from "react-medium-image-zoom";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -8,7 +9,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { StatBar } from "../../components/rpg/StatBar";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { JournalEvent, Role } from "../../convex/tripcastApi";
+import type { JournalEvent, Role, StoryImageSize } from "../../convex/tripcastApi";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import {
@@ -192,6 +193,7 @@ export default function StoryDetailSheet({
   const [editShowInStory, setEditShowInStory] = useState(true);
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const [editImagePreviewUrl, setEditImagePreviewUrl] = useState<string | null>(null);
+  const [editImageSize, setEditImageSize] = useState<StoryImageSize>("medium");
   const [editClearImage, setEditClearImage] = useState(false);
   const [editHappenedAt, setEditHappenedAt] = useState<string>("");
   const [editHappenedAtInitial, setEditHappenedAtInitial] = useState<string>("");
@@ -268,6 +270,7 @@ export default function StoryDetailSheet({
     setEditShowInStory(displayEvent.narrativeLevel !== "activity");
     setEditImageFile(null);
     setEditImagePreviewUrl(null);
+    setEditImageSize(displayEvent.imageSize ?? "medium");
     setEditClearImage(false);
     const initialHappenedAt = toLocalDatetimeInputValue(new Date(displayEvent.occurredAt));
     setEditHappenedAt(initialHappenedAt);
@@ -371,6 +374,7 @@ export default function StoryDetailSheet({
         lat: editLat,
         lon: editLon,
         ...(imageId ? { imageId } : {}),
+        imageSize: editImageSize,
         ...(!editImageFile && editClearImage ? { clearImage: true } : {}),
         showInStory: editShowInStory,
         ...(happenedAtChanged ? { happenedAt: happenedAtMs } : {}),
@@ -385,6 +389,7 @@ export default function StoryDetailSheet({
         lat: editLat,
         lon: editLon,
         imageId: imageId ?? (editClearImage ? undefined : event.imageId),
+        imageSize: editImageSize,
         narrativeLevel: editShowInStory ? "narrative" : "activity",
         ...(happenedAtChanged ? { occurredAt: happenedAtMs } : {}),
       });
@@ -611,6 +616,32 @@ export default function StoryDetailSheet({
                         />
                       </label>
                     )}
+
+                    {(editImagePreviewUrl || (!editClearImage && currentImageUrl)) && (
+                      <div className="mt-1 flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Display Size</span>
+                        <div className="flex p-0.5 bg-[var(--bg-paper)] rounded-lg border border-[var(--line-soft)]">
+                          {(["compact", "medium", "large"] as const).map((size) => (
+                            <button
+                              key={size}
+                              type="button"
+                              onClick={() => {
+                                setEditImageSize(size);
+                                log.logInteraction("story-image:size-change", { size });
+                              }}
+                              className={cn(
+                                "flex-1 px-2 py-1 text-[11px] font-bold capitalize rounded-md transition-all",
+                                editImageSize === size
+                                  ? "bg-[var(--bg-card)] text-[var(--ink-1)] shadow-sm border border-[var(--line-soft)]"
+                                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)] border border-transparent"
+                              )}
+                            >
+                              {size}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[var(--ink-1)]">
                     <input
@@ -730,17 +761,34 @@ function NarrativeContent({
   onImageError?: () => void;
   isTraveler: boolean;
 }) {
+  const imageSize = event.imageSize ?? "medium";
+
   return (
     <>
       <div className="flow-root">
         {imageUrl ? (
-          <img
-            src={imageUrl}
-            alt=""
-            className="mb-3 max-h-72 w-full rounded-md object-cover shadow-sm sm:float-right sm:mb-2 sm:ml-4 sm:w-52"
-            onLoad={onImageLoad}
-            onError={onImageError}
-          />
+          <div
+            data-testid="story-image-container"
+            className={cn(
+              "mb-3 rounded-md shadow-sm overflow-hidden",
+              imageSize === "compact" && "float-right ml-3 w-32 sm:ml-4 sm:w-40",
+              imageSize === "medium" && "w-full sm:float-right sm:ml-4 sm:w-64",
+              imageSize === "large" && "w-full mb-4"
+            )}
+          >
+            <Zoom>
+              <img
+                src={imageUrl}
+                alt=""
+                className={cn(
+                  "w-full rounded-md object-cover",
+                  imageSize === "compact" ? "aspect-square" : "max-h-96"
+                )}
+                onLoad={onImageLoad}
+                onError={onImageError}
+              />
+            </Zoom>
+          </div>
         ) : null}
         {event.body ? (
           <RevealText

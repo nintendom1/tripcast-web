@@ -136,9 +136,9 @@ describe("StoryDetailSheet", () => {
       "instant",
     );
 
-    const image = document.querySelector("img");
-    expect(image).toHaveClass("sm:float-right");
-    expect(image).toHaveClass("w-full");
+    const container = screen.getByTestId("story-image-container");
+    expect(container).toHaveClass("sm:float-right");
+    expect(container).toHaveClass("w-full");
   });
 
   it("renders Prev and Next story controls with boundary states", () => {
@@ -287,6 +287,7 @@ describe("StoryDetailSheet — inline edit mode", () => {
       locationLabel: "Seattle",
       lat: 47.6,
       lon: -122.3,
+      imageSize: "medium",
       showInStory: true,
     });
   });
