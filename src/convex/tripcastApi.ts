@@ -22,6 +22,9 @@ export type Checkpoint = {
   source: CheckpointSource;
   /** Optional link to the mission a Story narrates (Complete-as-story flow). */
   missionId?: string;
+  /** Editable retroactive "Happened at" time. Falls back to createdAt for
+   *  chronological sorting (Journal, Story navigation, Trail, Replay). */
+  happenedAt?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -40,6 +43,9 @@ export type AddCheckpointArgs = {
   // the checkpoint and threaded into the emitted story event so
   // the Story tab can fold the paired mission_completed row.
   missionId?: string;
+  // Optional retroactive "Happened at" time. When provided the story
+  // journal event's occurredAt is set to this instead of the server clock.
+  happenedAt?: number;
   // Optional inline state snapshot (atomic with checkpoint save)
   moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
@@ -67,6 +73,9 @@ export type UpdateCheckpointArgs = {
   lon?: number;
   imageId?: string;
   clearImage?: boolean;
+  /** Editable retroactive "Happened at" time. Patches the checkpoint and
+   *  the linked story journal event's occurredAt in lock-step. */
+  happenedAt?: number;
 };
 
 export type DeleteCheckpointArgs = {

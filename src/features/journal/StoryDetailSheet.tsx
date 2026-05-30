@@ -44,6 +44,27 @@ function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+function toLocalDatetimeInputValue(date: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return (
+    date.getFullYear() +
+    "-" + pad(date.getMonth() + 1) +
+    "-" + pad(date.getDate()) +
+    "T" + pad(date.getHours()) +
+    ":" + pad(date.getMinutes())
+  );
+}
+
+function parseLocalDatetimeInputValue(value: string): number | null {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+// Treat any drift larger than ~1 minute between happenedAt and createdAt as
+// "manually set" — the picker is minute-precision so anything smaller is noise.
+const MANUAL_TIME_THRESHOLD_MS = 60_000;
+
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString([], {
     weekday: "short",
@@ -171,6 +192,8 @@ export default function StoryDetailSheet({
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const [editImagePreviewUrl, setEditImagePreviewUrl] = useState<string | null>(null);
   const [editClearImage, setEditClearImage] = useState(false);
+  const [editHappenedAt, setEditHappenedAt] = useState<string>("");
+  const [editHappenedAtInitial, setEditHappenedAtInitial] = useState<string>("");
   const [isWorking, setIsWorking] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
@@ -227,7 +250,8 @@ export default function StoryDetailSheet({
         current.lat === event.lat &&
         current.lon === event.lon &&
         current.imageId === event.imageId &&
-        current.narrativeLevel === event.narrativeLevel;
+        current.narrativeLevel === event.narrativeLevel &&
+        current.occurredAt === event.occurredAt;
       return parentCaughtUp ? null : current;
     });
   }, [event]);
@@ -244,6 +268,9 @@ export default function StoryDetailSheet({
     setEditImageFile(null);
     setEditImagePreviewUrl(null);
     setEditClearImage(false);
+    const initialHappenedAt = toLocalDatetimeInputValue(new Date(displayEvent.occurredAt));
+    setEditHappenedAt(initialHappenedAt);
+    setEditHappenedAtInitial(initialHappenedAt);
     setActionError(null);
     setIsEditing(true);
   }
@@ -331,6 +358,9 @@ export default function StoryDetailSheet({
             return uploadedImageId;
           })()
         : undefined;
+      const happenedAtMs = parseLocalDatetimeInputValue(editHappenedAt);
+      const happenedAtChanged =
+        editHappenedAt !== editHappenedAtInitial && happenedAtMs !== null;
       await updateCheckpoint({
         token,
         checkpointId: event.checkpointId,
@@ -342,6 +372,7 @@ export default function StoryDetailSheet({
         ...(imageId ? { imageId } : {}),
         ...(!editImageFile && editClearImage ? { clearImage: true } : {}),
         showInStory: editShowInStory,
+        ...(happenedAtChanged ? { happenedAt: happenedAtMs } : {}),
       });
       music.sfx("success");
       log.logInteraction("form:submit:success", {});
@@ -354,6 +385,7 @@ export default function StoryDetailSheet({
         lon: editLon,
         imageId: imageId ?? (editClearImage ? undefined : event.imageId),
         narrativeLevel: editShowInStory ? "narrative" : "activity",
+        ...(happenedAtChanged ? { occurredAt: happenedAtMs } : {}),
       });
       setIsEditing(false);
       setEditImageFile(null);
@@ -439,6 +471,9 @@ export default function StoryDetailSheet({
                 </SheetTitle>
                 <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
                   {formatDate(displayEvent.occurredAt)} · {formatTime(displayEvent.occurredAt)}
+                  {Math.abs(displayEvent.occurredAt - displayEvent.createdAt) > MANUAL_TIME_THRESHOLD_MS ? (
+                    <span className="ml-2 normal-case tracking-normal text-[var(--amber)]">(Edited)</span>
+                  ) : null}
                 </p>
                 {displayEvent.locationLabel ? (
                   <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
@@ -525,6 +560,21 @@ export default function StoryDetailSheet({
                   <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
                     Story / Notes
                     <Textarea maxLength={1000} value={editBody} onChange={(e) => setEditBody(e.target.value)} rows={5} />
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+                    Happened at
+                    <Input
+                      type="datetime-local"
+                      value={editHappenedAt}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        log.logInteraction("happened-at:change", {
+                          oldTime: editHappenedAt,
+                          newTime: next,
+                        });
+                        setEditHappenedAt(next);
+                      }}
+                    />
                   </label>
                   <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
                     <div className="flex items-center justify-between gap-3">

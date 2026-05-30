@@ -63,6 +63,28 @@ function formatCoordinate(value: number) {
   return value.toFixed(6);
 }
 
+// Render a Date as a value the native `datetime-local` input understands.
+// We work in the user's local zone in the UI and convert to UTC epoch ms on
+// save — the schema column stores UTC.
+function toLocalDatetimeInputValue(date: Date) {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return (
+    date.getFullYear() +
+    "-" + pad(date.getMonth() + 1) +
+    "-" + pad(date.getDate()) +
+    "T" + pad(date.getHours()) +
+    ":" + pad(date.getMinutes())
+  );
+}
+
+function parseLocalDatetimeInputValue(value: string): number | null {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+const FUTURE_WARNING_MS = 24 * 60 * 60 * 1000;
+
 function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   if (message.toLowerCase().includes("too many") || message.toLowerCase().includes("rate")) {
@@ -91,6 +113,9 @@ export default function AddCheckpointSheet({
   const [isSaving, setIsSaving] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [happenedAtInput, setHappenedAtInput] = useState<string>(() =>
+    toLocalDatetimeInputValue(new Date()),
+  );
   const music = useMusicSafe();
 
   const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
@@ -128,6 +153,7 @@ export default function AddCheckpointSheet({
     setIsSaving(false);
     setImageFile(null);
     setImagePreviewUrl(null);
+    setHappenedAtInput(toLocalDatetimeInputValue(new Date()));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCoordinate, prefill]);
 
@@ -180,8 +206,21 @@ export default function AddCheckpointSheet({
       return;
     }
 
+    const happenedAtMs = parseLocalDatetimeInputValue(happenedAtInput);
+    if (happenedAtInput && happenedAtMs === null) {
+      setError("Please enter a valid date and time.");
+      return;
+    }
+
     setIsSaving(true);
-    log.logInteraction("form:submit", { isFromMission, showInStory, source: selectedCoordinate.source });
+    log.logInteraction("form:submit", {
+      isFromMission,
+      showInStory,
+      source: selectedCoordinate.source,
+      happenedAtSet: happenedAtMs !== null,
+      happenedAtFromNowMs:
+        happenedAtMs !== null ? happenedAtMs - Date.now() : null,
+    });
 
     try {
       const imageId = imageFile
@@ -206,6 +245,7 @@ export default function AddCheckpointSheet({
         imageId,
         source: selectedCoordinate.source,
         missionId: prefill?.missionId,
+        ...(happenedAtMs !== null ? { happenedAt: happenedAtMs } : {}),
       });
       log.logInteraction("submit:success", { checkpointId });
       music.sfx("pin");
@@ -277,6 +317,33 @@ export default function AddCheckpointSheet({
               rows={isFromMission ? 5 : 3}
               value={note}
             />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+            Happened at
+            <Input
+              type="datetime-local"
+              value={happenedAtInput}
+              onChange={(e) => {
+                const next = e.target.value;
+                log.logInteraction("happened-at:change", {
+                  oldTime: happenedAtInput,
+                  newTime: next,
+                });
+                setHappenedAtInput(next);
+              }}
+            />
+            {(() => {
+              const ms = parseLocalDatetimeInputValue(happenedAtInput);
+              if (ms === null) return null;
+              if (ms - Date.now() > FUTURE_WARNING_MS) {
+                return (
+                  <span className="text-xs font-normal text-[var(--amber)]">
+                    Heads up — that's more than 24h in the future.
+                  </span>
+                );
+              }
+              return null;
+            })()}
           </label>
           {onUploadImage ? (
             <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
