@@ -86,6 +86,14 @@ TripCast Web is the React/Vite frontend using MapLibre GL JS and Base UI.
 
 Do not claim a code task complete until `npm run validate` passes.
 
+## Storybook
+
+Storybook is available for isolated component development and review. Use it to inspect UI states without launching the full app.
+- **Run**: `npm run storybook`
+- **Build**: `npm run build-storybook`
+- **Location**: Stories are colocated with components or in `src/stories`.
+- **Fixtures**: Fake data for stories should be placed in `src/stories/fixtures/tripcast.ts`.
+
 ## Read-On-Demand Agent Procedures
 
 Do not read these files by default. Read them only when relevant.
