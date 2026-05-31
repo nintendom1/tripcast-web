@@ -65,7 +65,7 @@ const COMMON_QUERY_MOCKS = [
   { query: tripcastApi.missions.travelerListMissions, result: [] },
   { query: tripcastApi.journalEvents.listJournalEvents, result: [] },
   { query: tripcastApi.attributions.listAttributionsForSource, result: { attributions: [], publicCopy: "" } },
-  { query: tripcastApi.travelFunds.travelerGetConfig, result: null },
+  { query: tripcastApi.travelFunds.travelerGetConfig, result: { enabled: false } },
 ];
 
 const meta = {
