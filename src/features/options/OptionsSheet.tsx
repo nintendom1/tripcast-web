@@ -1901,7 +1901,7 @@ function CloakingPinsSheet({ token, log }: { token: string; log: DebugLogger }) 
   );
 }
 
-function TripTickerSettings() {
+export function TripTickerSettings() {
   const {
     settings,
     updateSettings,
