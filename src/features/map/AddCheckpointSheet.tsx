@@ -37,6 +37,7 @@ export type CheckpointPrefill = {
   locationLabel?: string;
   missionId?: string;
   completeMission?: boolean;
+  mysteryReveal?: boolean;
 };
 
 type AddCheckpointSheetProps = {

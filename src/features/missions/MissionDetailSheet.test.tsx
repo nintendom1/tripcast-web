@@ -201,3 +201,75 @@ describe("MissionDetailSheet — sectioned redesign", () => {
     );
   });
 });
+
+describe("MissionDetailSheet — Delete on terminal statuses", () => {
+  it.each(["completed", "dropped"] as const)(
+    'exposes "Delete mission" for %s missions (traveler)',
+    (status) => {
+      const ch: Mission = { _id: `ch-${status}`, title: "M", status, source: "traveler", createdAt: 1, updatedAt: 1 };
+      render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
+      expect(screen.getByRole("button", { name: "Delete mission" })).toBeInTheDocument();
+    },
+  );
+
+  it("does not expose 'Delete mission' to followers on terminal statuses", () => {
+    const ch: Mission = { _id: "ch-fo", title: "M", status: "completed", source: "follower", createdAt: 1, updatedAt: 1 };
+    render(<MissionDetailSheet Mission={ch} token="t" role="follower" onClose={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: "Delete mission" })).not.toBeInTheDocument();
+  });
+
+  it("opens the inline confirm panel when Delete mission is clicked on a completed mission", async () => {
+    const user = userEvent.setup();
+    const ch: Mission = { _id: "ch-del", title: "M", status: "completed", source: "traveler", createdAt: 1, updatedAt: 1 };
+    render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Delete mission" }));
+    expect(screen.getByRole("button", { name: /Yes, delete/ })).toBeInTheDocument();
+  });
+});
+
+describe("MissionDetailSheet — Mystery treatment", () => {
+  const mysteryMissionRecord = {
+    _id: "mm-1",
+    mysteryMissionId: "kyoto-fushimi-001",
+    state: "signal",
+    mysteryText: "ReD PAth",
+    region: "Kyoto",
+  };
+
+  function mockMystery(record: typeof mysteryMissionRecord | (typeof mysteryMissionRecord & { trueIntent: string; locationName: string; state: "revealed" })) {
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (ref === tripcastApi.mysteryMissions.getMysteryMission) return record;
+      return undefined;
+    });
+  }
+
+  it("renders the RadioTower chip with 'Unknown Signal' for a visible mystery", () => {
+    mockMystery(mysteryMissionRecord);
+    const ch: Mission = { _id: "ch-m1", title: "ReD PAth", status: "visible", source: "mystery", sourceMysteryMissionId: "mm-1", createdAt: 1, updatedAt: 1 };
+    const { container } = render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
+    expect(screen.getByText("Unknown Signal")).toBeInTheDocument();
+    expect(container.querySelector(".mystery-theme")).not.toBeNull();
+  });
+
+  it("labels the chip 'Active' while in progress and 'Revealed' once completed", () => {
+    mockMystery(mysteryMissionRecord);
+    const active: Mission = { _id: "ch-m2", title: "ReD PAth", status: "in_progress", source: "mystery", sourceMysteryMissionId: "mm-1", createdAt: 1, updatedAt: 1 };
+    const { rerender } = render(<MissionDetailSheet Mission={active} token="t" role="traveler" onClose={vi.fn()} />);
+    expect(screen.getByText("Active")).toBeInTheDocument();
+
+    mockMystery({ ...mysteryMissionRecord, state: "revealed", trueIntent: "Fushimi Inari", locationName: "Fushimi Inari Taisha" });
+    const done: Mission = { ...active, _id: "ch-m3", status: "completed" };
+    rerender(<MissionDetailSheet Mission={done} token="t" role="traveler" onClose={vi.fn()} />);
+    expect(screen.getByText("Revealed")).toBeInTheDocument();
+    expect(screen.getByText("True Intent Revealed")).toBeInTheDocument();
+    expect(screen.getByText("Fushimi Inari")).toBeInTheDocument();
+  });
+
+  it("labels the chip 'Dismissed' for a dropped mystery", () => {
+    mockMystery(mysteryMissionRecord);
+    const ch: Mission = { _id: "ch-m4", title: "ReD PAth", status: "dropped", source: "mystery", sourceMysteryMissionId: "mm-1", createdAt: 1, updatedAt: 1 };
+    render(<MissionDetailSheet Mission={ch} token="t" role="traveler" onClose={vi.fn()} />);
+    expect(screen.getByText("Dismissed")).toBeInTheDocument();
+  });
+});

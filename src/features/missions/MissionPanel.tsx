@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { Plus, Trophy } from "lucide-react";
+import { Plus, RadioTower, Trophy } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
 import { LocationPickerField } from "../map/MapPicker";
 
@@ -41,9 +41,12 @@ type Props = {
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   isPickingCoordinate?: boolean;
   pendingOpenMissionId?: string | null;
+  pendingOpenMysteryMissionId?: string | null;
   onClearPendingMission?: () => void;
+  onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onCompleteAsStory?: (Mission: Mission) => void;
+  onMysteryMissionReveal?: () => void;
   /** When set + the panel is open, navigate straight to the matching mission's
    *  detail view rather than the list. Used by the Complete-as-Story → Back
    *  flow so dismissing the story form returns the Traveler to the mission's
@@ -91,9 +94,12 @@ export default function MissionPanel({
   onRequestCoordinatePick,
   isPickingCoordinate,
   pendingOpenMissionId,
+  pendingOpenMysteryMissionId,
   onClearPendingMission,
+  onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onCompleteAsStory,
+  onMysteryMissionReveal,
   pendingOpenDetailMissionId,
   onClearPendingDetail,
   onRequestNavigateToVote,
@@ -171,7 +177,18 @@ export default function MissionPanel({
       ? { token, missionId: pendingOpenDetailMissionId }
       : "skip",
   );
-
+  const pendingDetailMysteryMission = useQuery(
+    tripcastApi.mysteryMissions.getMysteryMission,
+    pendingOpenMysteryMissionId && open
+      ? { token, mysteryMissionId: pendingOpenMysteryMissionId }
+      : "skip",
+  );
+  const pendingMysteryLinkedMission = useQuery(
+    tripcastApi.missions.getMission,
+    pendingDetailMysteryMission?.linkedMissionId && open
+      ? { token, missionId: pendingDetailMysteryMission.linkedMissionId }
+      : "skip",
+  );
   useEffect(() => {
     if (!open || !pendingOpenDetailMissionId) return;
     if (pendingDetailMission === undefined) return; // still loading
@@ -193,6 +210,41 @@ export default function MissionPanel({
     // one-shot navigation behavior we want here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, pendingOpenDetailMissionId, pendingDetailMission]);
+
+  // Mystery pin navigation: every Mystery row has a linkedMissionId after
+  // import (see ensureLinkedMission in tripcast-backend/convex/mysteryMissions.ts),
+  // so we always open the linked normal Mission's detail view.
+  useEffect(() => {
+    if (!open || !pendingOpenMysteryMissionId) return;
+    if (pendingDetailMysteryMission === undefined) return;
+    if (pendingDetailMysteryMission === null) {
+      setViewMode("list");
+      setSelectedMission(null);
+      onClearPendingMysteryMission?.();
+      return;
+    }
+    if (!pendingDetailMysteryMission.linkedMissionId) {
+      log.warn("mystery:no-linked-mission", "error", { mysteryMissionId: pendingDetailMysteryMission._id });
+      setViewMode("list");
+      setSelectedMission(null);
+      onClearPendingMysteryMission?.();
+      return;
+    }
+    if (pendingMysteryLinkedMission === undefined) return;
+    if (pendingMysteryLinkedMission === null) {
+      setViewMode("list");
+      setSelectedMission(null);
+      onClearPendingMysteryMission?.();
+      return;
+    }
+    setSelectedMission({
+      Mission: pendingMysteryLinkedMission,
+      isOwn: role === "traveler" || Boolean(pendingMysteryLinkedMission.proposedByUserId === userId),
+    });
+    setViewMode("detail");
+    onClearPendingMysteryMission?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pendingOpenMysteryMissionId, pendingDetailMysteryMission, pendingMysteryLinkedMission]);
 
   // Entering the detail view auto-focuses the map on the mission's coordinates
   // — same UX as opening a story. The explicit "View on map" link in the
@@ -239,6 +291,11 @@ export default function MissionPanel({
   const isTraveler = role === "traveler";
   const headerTitle = isTraveler ? TITLE_BY_VIEW[viewMode].traveler : TITLE_BY_VIEW[viewMode].follower;
   const showBack = viewMode !== "list";
+  const isMysteryDetail = viewMode === "detail" && selectedMission?.Mission.source === "mystery";
+  const headerAccentColor = isMysteryDetail ? "#09090b" : missionsPersonality.color;
+  const headerGradientBg = isMysteryDetail
+    ? "linear-gradient(180deg, #18181b 0%, var(--bg-paper) 100%)"
+    : `linear-gradient(180deg, ${missionsPersonality.bg} 0%, var(--bg-paper) 100%)`;
 
   return (
     <Sheet
@@ -255,13 +312,14 @@ export default function MissionPanel({
           // Capped so the map keeps a visible band above the sheet for focus centering.
           "z-[10] max-h-[62dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
           isPickingCoordinate && "invisible pointer-events-none",
+          isMysteryDetail && "mystery-theme",
         )}
         data-role="missions-sheet"
       >
-          <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: missionsPersonality.color }} />
+          <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: headerAccentColor }} />
         <div
           className="relative flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
-            style={{ background: `linear-gradient(180deg, ${missionsPersonality.bg} 0%, var(--bg-paper) 100%)` }}
+            style={{ background: headerGradientBg }}
         >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
@@ -272,9 +330,9 @@ export default function MissionPanel({
                 <span
                   aria-hidden="true"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
-                  style={{ background: missionsPersonality.color }}
+                  style={{ background: headerAccentColor }}
                 >
-                  <Trophy className="h-4 w-4" />
+                  {isMysteryDetail ? <RadioTower className="h-4 w-4" /> : <Trophy className="h-4 w-4" />}
                 </span>
                 <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
                   {headerTitle}
@@ -384,6 +442,7 @@ export default function MissionPanel({
                 }
                 onRequestNavigateToVote={onRequestNavigateToVote}
                 onOpenLinkedStory={onOpenLinkedStory}
+                onMysteryMissionReveal={onMysteryMissionReveal}
                 debugSource={debugSource}
               />
             </SheetBody>
@@ -482,6 +541,8 @@ function TravelerListView({
     return c.status === filter;
   }) ?? [];
 
+  const feedItems = filtered.map((item) => ({ kind: "mission" as const, item }));
+
   return (
     <>
       <SheetBody
@@ -489,12 +550,13 @@ function TravelerListView({
       >
         {allMissions === undefined ? (
           <PendingNotice label="Loading missions..." />
-        ) : filtered.length === 0 ? (
+        ) : feedItems.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--ink-3)]">
             {filter === "all" ? "No missions yet." : `No ${filter.replace(/_/g, " ")} missions.`}
           </p>
         ) : (
-          filtered.map((c) => {
+          feedItems.map((entry) => {
+            const c = entry.item;
             const card = (
               <MissionCard
                 Mission={c}
@@ -805,17 +867,19 @@ function FollowerListView({
             No active missions right now.
           </p>
         ) : (
-          publicMissions.map((c) => (
-            <div key={c._id}>
-              <MissionCard
-                Mission={c}
-                token={token}
-                isOwn={mineIds.has(c._id)}
-                isHighlighted={c._id === highlightedMissionId}
-                onClick={() => onOpenDetail(c, mineIds.has(c._id))}
-              />
-            </div>
-          ))
+          <>
+            {publicMissions.map((c) => (
+              <div key={c._id}>
+                <MissionCard
+                  Mission={c}
+                  token={token}
+                  isOwn={mineIds.has(c._id)}
+                  isHighlighted={c._id === highlightedMissionId}
+                  onClick={() => onOpenDetail(c, mineIds.has(c._id))}
+                />
+              </div>
+            ))}
+          </>
         )}
       </SheetBody>
     </>

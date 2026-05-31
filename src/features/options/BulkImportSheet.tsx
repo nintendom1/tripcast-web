@@ -90,6 +90,20 @@ const SAMPLE_JSON = `{
       "estimatedEnergyImpact": "medium"
     },
     {
+      "kind": "mystery_mission",
+      "ref": "mystery:gas-works-sundial",
+      "id": "seattle-gas-works-001",
+      "lat": 47.6456,
+      "lon": -122.3344,
+      "region": "Seattle",
+      "locationName": "Gas Works Park Sundial",
+      "mysteryText": "sUn//dIaL",
+      "trueIntent": "The old industrial park hides one of Seattle's better skyline angles and a playful hilltop sundial.",
+      "spawnRadiusMiles": 3,
+      "priority": 2,
+      "tags": ["seattle", "park", "skyline"]
+    },
+    {
       "kind": "transaction",
       "ref": "tx:coffee",
       "timeZone": "America/Los_Angeles",
@@ -138,7 +152,7 @@ const BULK_IMPORT_SCHEMA = {
       type: "object",
       required: ["kind"],
       properties: {
-        kind: { enum: ["checkin", "story", "transaction", "mission", "route_vote", "vote"] },
+        kind: { enum: ["checkin", "story", "transaction", "mission", "mystery_mission", "route_vote", "vote"] },
         ref: { type: "string", maxLength: 80 },
         timeZone: { type: "string" },
         occurredAt: { $ref: "#/definitions/timestamp" },
@@ -199,6 +213,38 @@ const BULK_IMPORT_SCHEMA = {
               sourceRouteVoteOptionRef: { type: "string", maxLength: 80 },
             },
             required: ["title"],
+          },
+        },
+        {
+          if: { properties: { kind: { const: "mystery_mission" } } },
+          then: {
+            properties: {
+              id: { type: "string", maxLength: 120 },
+              mysteryMissionId: { type: "string", maxLength: 120 },
+              lat: { type: "number", minimum: -90, maximum: 90 },
+              lon: { type: "number", minimum: -180, maximum: 180 },
+              region: { type: "string", maxLength: 120 },
+              locationName: { type: "string", maxLength: 160 },
+              mysteryText: { type: "string", maxLength: 120 },
+              trueIntent: { type: "string", maxLength: 1000 },
+              spawnRadiusMiles: { type: "number" },
+              priority: { type: "number" },
+              tags: { type: "array", items: { type: "string", maxLength: 40 } },
+              recommendedTimeOfDay: { type: "string", maxLength: 80 },
+              estimatedVisitMinutes: { type: "number" },
+              difficulty: { type: "string", maxLength: 60 },
+              sourceHint: { type: "string", maxLength: 200 },
+              expiresAt: { $ref: "#/definitions/timestamp" },
+              spoilerSummary: { type: "string", maxLength: 500 },
+              locationType: { type: "string", maxLength: 80 },
+              indoorOutdoor: { type: "string", maxLength: 40 },
+              transitFriendly: { type: "boolean" },
+              requiresTicket: { type: "boolean" },
+              timeSensitive: { type: "boolean" },
+              completedAt: { $ref: "#/definitions/timestamp" },
+              dismissedAt: { $ref: "#/definitions/timestamp" },
+            },
+            required: ["lat", "lon", "mysteryText", "trueIntent"],
           },
         },
         {
@@ -390,7 +436,7 @@ export default function BulkImportSheet({
             <>
               <p className="text-sm leading-relaxed text-[var(--ink-2)]">
                 Paste a JSON array or {"{ timeZone, entries }"} object with up to 50 entries.
-                Supported kinds are checkin, story, transaction, mission, and route vote.
+                Supported kinds are checkin, story, transaction, mission, Mystery Mission, and route vote.
                 Timestamps can be epoch milliseconds, ISO strings with an offset, or YYYY-MM-DD dates.
               </p>
               <textarea
@@ -512,7 +558,8 @@ export default function BulkImportSheet({
                 </p>
                 <p className="mt-1 text-sm text-[var(--ink-2)]">
                   {result.counts.checkins} check-ins, {result.counts.transactions} transactions,{" "}
-                  {result.counts.missions} missions, {result.counts.routeVotes} route votes.
+                  {result.counts.missions} missions, {result.counts.mysteryMissions} mystery missions,{" "}
+                  {result.counts.routeVotes} route votes.
                 </p>
               </div>
               <Button
@@ -556,11 +603,12 @@ function PreviewSummary({ preview }: { preview: BulkImportPreview | undefined })
     );
   }
   return (
-    <div className="grid grid-cols-4 gap-2">
+    <div className="grid grid-cols-5 gap-2">
       {[
         ["Pins", preview.counts.checkins],
         ["Funds", preview.counts.transactions],
         ["Missions", preview.counts.missions],
+        ["Mystery", preview.counts.mysteryMissions],
         ["Votes", preview.counts.routeVotes],
       ].map(([label, value]) => (
         <div key={label} className={cn("rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-center shadow-sm")}>

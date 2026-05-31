@@ -19,19 +19,21 @@ vi.mock("./lib/auth", () => ({
 }));
 
 // Mock TripMap and its props to trigger onMapLoaded
-vi.mock("./features/map/TripMap", () => ({
-  default: ({ onMapLoaded, finaleReplayActive }: any) => {
-    // Trigger onMapLoaded when the component mounts
-    React.useEffect(() => {
-      onMapLoaded?.();
-    }, [onMapLoaded]);
+function MockTripMap({ onMapLoaded, finaleReplayActive }: any) {
+  // Trigger onMapLoaded when the component mounts
+  React.useEffect(() => {
+    onMapLoaded?.();
+  }, [onMapLoaded]);
 
-    return (
-      <div data-testid="trip-map">
-        {finaleReplayActive && <div data-testid="credits-active" />}
-      </div>
-    );
-  },
+  return (
+    <div data-testid="trip-map">
+      {finaleReplayActive && <div data-testid="credits-active" />}
+    </div>
+  );
+}
+
+vi.mock("./features/map/TripMap", () => ({
+  default: MockTripMap,
 }));
 
 // Mock CreditsOverlay
@@ -65,7 +67,8 @@ function setupSessionMocks(role: "traveler" | "follower", creditsEnded = false) 
     sessionType: "legacy" as const,
   });
 
-  vi.mocked(convexReact.useQuery).mockImplementation((query: any) => {
+  vi.mocked(convexReact.useQuery).mockImplementation((...args: any[]) => {
+    const query = args[0];
     if (query === tripcastApi.auth.currentSession || query === tripcastApi.followers.followerCurrentSession) {
       return { role, sessionId: "test-session" };
     }
