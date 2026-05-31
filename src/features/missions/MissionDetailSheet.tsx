@@ -11,6 +11,7 @@ import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection"
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
+import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { cn } from "@/lib/utils";
@@ -56,12 +57,24 @@ type Props = {
   onCompleteAsStory?: (Mission: Mission) => void;
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: JournalEvent) => void;
+  onMysteryMissionReveal?: () => void;
   /** Provenance for the debug "Active UI Context" — where the detail was opened
    *  from. Threaded down from MissionPanel. */
   debugSource?: { source: string; sourceLabel: string };
 };
 
-function statusLabel(status: string): string {
+function statusLabel(status: string, source?: string): string {
+  if (source === "mystery") {
+    const mysteryLabels: Record<string, string> = {
+      proposed: "Unlocked",
+      visible: "Unlocked",
+      planned: "Unlocked",
+      in_progress: "Active",
+      completed: "Completed",
+      dropped: "Dropped",
+    };
+    return mysteryLabels[status] ?? status;
+  }
   const labels: Record<string, string> = {
     proposed: "Pending review",
     visible: "Accepted",
@@ -100,6 +113,7 @@ export default function MissionDetailSheet({
   onCompleteAsStory,
   onRequestNavigateToVote,
   onOpenLinkedStory,
+  onMysteryMissionReveal,
   debugSource,
 }: Props) {
   const log = useDebugLogger("MissionDetailSheet", "src/features/missions/MissionDetailSheet.tsx");
@@ -129,6 +143,7 @@ export default function MissionDetailSheet({
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
+  const [mysteryEditOpen, setMysteryEditOpen] = useState(false);
 
   const accept = useMutation(tripcastApi.missions.travelerAcceptMission);
   const drop = useMutation(tripcastApi.missions.travelerDropMission);
@@ -147,6 +162,11 @@ export default function MissionDetailSheet({
     Mission ? { token, missionId: Mission._id } : "skip",
   );
   const c = liveMission ?? Mission;
+  const mysteryMissionId = c?.source === "mystery" ? c.sourceMysteryMissionId : undefined;
+  const linkedMysteryMission = useQuery(
+    tripcastApi.mysteryMissions.getMysteryMission,
+    mysteryMissionId ? { token, mysteryMissionId } : "skip",
+  );
 
   const currentActivity = useQuery(
     tripcastApi.currentActivity.travelerGetCurrentActivity,
@@ -181,6 +201,7 @@ export default function MissionDetailSheet({
   const isTraveler = role === "traveler";
   const canAct = !isWorking;
   const status = c.status;
+  const isMysteryMission = c.source === "mystery";
   const hasLocation = c.lat !== undefined && c.lon !== undefined;
   const conflictingMission = (inProgressMissions ?? []).find((ch) => ch._id !== c._id) ?? null;
   const hasMeta =
@@ -192,6 +213,11 @@ export default function MissionDetailSheet({
 
   function openEditMode() {
     log.logUi("action:edit-open", { missionId: c!._id });
+    if (c!.source === "mystery" && c!.sourceMysteryMissionId) {
+      setMysteryEditOpen(true);
+      setActionError(null);
+      return;
+    }
     log.logForm("form:open");
     setEditTitle(c!.title);
     setEditDesc(c!.description ?? "");
@@ -330,6 +356,7 @@ export default function MissionDetailSheet({
     setActionError(null);
     try {
       await complete({ token, missionId: Mission._id });
+      if (isMysteryMission) onMysteryMissionReveal?.();
       onClose();
     } catch (e) {
       setActionError(friendlyError(e));
@@ -614,7 +641,7 @@ export default function MissionDetailSheet({
             disabled={!canAct}
             onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
           >
-            Mark &lsquo;In Progress&rsquo;
+            {isMysteryMission ? "Start Mission" : <>Mark &lsquo;In Progress&rsquo;</>}
           </Button>
           <Button
             variant="outline"
@@ -672,7 +699,7 @@ export default function MissionDetailSheet({
             disabled={!canAct}
             onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
           >
-            Mark &lsquo;In Progress&rsquo;
+            {isMysteryMission ? "Start Mission" : <>Mark &lsquo;In Progress&rsquo;</>}
           </Button>
           <Button
             variant="outline"
@@ -794,7 +821,7 @@ export default function MissionDetailSheet({
           actions and field edits stay visually separate. */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">
-          {statusLabel(status)}
+          {statusLabel(status, c.source)}
         </span>
       </div>
 
@@ -1003,6 +1030,19 @@ export default function MissionDetailSheet({
           </div>
         )}
 
+        {isMysteryMission && linkedMysteryMission?.trueIntent ? (
+          <div className="rounded-md border border-zinc-600 bg-zinc-950 p-3 text-zinc-100">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Mystery revealed</p>
+            {linkedMysteryMission.locationName ? (
+              <p className="mt-1 text-sm font-semibold">{linkedMysteryMission.locationName}</p>
+            ) : null}
+            <p className="mt-1 text-sm text-zinc-200">{linkedMysteryMission.trueIntent}</p>
+            {linkedMysteryMission.spoilerSummary ? (
+              <p className="mt-2 text-xs text-zinc-400">{linkedMysteryMission.spoilerSummary}</p>
+            ) : null}
+          </div>
+        ) : null}
+
         {/* Traveler response (preset + note) — visible to both roles */}
         {(c.travelerResponsePreset || c.travelerResponseNote) && !c.silentDrop && (
           <div className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 flex flex-col gap-1.5">
@@ -1085,6 +1125,12 @@ export default function MissionDetailSheet({
           )}
         </section>
       )}
+      <MysteryMissionEditSheet
+        open={mysteryEditOpen}
+        token={token}
+        mysteryMissionId={mysteryMissionId ?? null}
+        onOpenChange={setMysteryEditOpen}
+      />
     </div>
   );
 }

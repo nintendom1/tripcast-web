@@ -69,11 +69,11 @@ export default function MysteryMissionMarkers({
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
   const revealedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const result = useQuery(tripcastApi.mysteryMissions.listMysteryMissionMapPins, {
-    token,
-    includeDebugAll: debugShowAll,
-  });
-  const pins = useMemo(() => result?.rows ?? [], [result?.rows]);
+  const result = useQuery(
+    tripcastApi.mysteryMissions.listMysteryMissionMapPins,
+    debugShowAll ? { token, includeDebugAll: true } : "skip",
+  );
+  const pins = useMemo(() => (debugShowAll ? result?.rows ?? [] : []), [debugShowAll, result?.rows]);
 
   useEffect(() => {
     const revealed = new Set(pins.filter((pin) => pin.state === "revealed").map((pin) => pin._id));

@@ -118,7 +118,7 @@ export type MissionStatus =
   | "completed"
   | "dropped";
 
-export type MissionSource = "route_vote" | "follower" | "traveler";
+export type MissionSource = "route_vote" | "follower" | "traveler" | "mystery";
 
 export type MissionModerationMode = "manual_review" | "auto_publish";
 
@@ -291,6 +291,7 @@ export type Mission = {
   source: MissionSource;
   sourceRouteVoteId?: string;
   sourceRouteVoteOptionId?: string;
+  sourceMysteryMissionId?: string;
   /** Reciprocal link set when a pre-existing Mission won a route vote.
    *  Does not change the Mission source/sourceRouteVoteId. */
   linkedRouteVoteId?: string;
@@ -359,6 +360,7 @@ export type MysteryMissionFeedItem = {
   completedAt?: number;
   dismissedAt?: number;
   linkedCheckpointId?: string;
+  linkedMissionId?: string;
   distanceMiles?: number;
 };
 
@@ -420,6 +422,7 @@ export type MysteryMissionExportRow = {
   completedAt?: number;
   dismissedAt?: number;
   linkedCheckpointId?: string;
+  linkedMissionId?: string;
 };
 
 export type MysteryMissionManagementList = {
@@ -1658,6 +1661,12 @@ export const tripcastApi = {
       { token: string },
       MysteryMissionManagementList
     >,
+    travelerGetMysteryMissionForEdit: (anyApi as any).mysteryMissions.travelerGetMysteryMissionForEdit as FunctionReference<
+      "query",
+      "public",
+      { token: string; mysteryMissionId: string },
+      MysteryMissionExportRow | null
+    >,
     travelerExportMysteryMissions: (anyApi as any).mysteryMissions.travelerExportMysteryMissions as FunctionReference<
       "query",
       "public",
@@ -1700,6 +1709,8 @@ export const tripcastApi = {
       {
         token: string;
         mysteryMissionId: string;
+        lat?: number;
+        lon?: number;
         region?: string;
         locationName?: string;
         mysteryText?: string;
@@ -1707,8 +1718,17 @@ export const tripcastApi = {
         spawnRadiusMiles?: number;
         priority?: number;
         tags?: string[];
-        estimatedVisitMinutes?: number;
-        difficulty?: string;
+        recommendedTimeOfDay?: string | null;
+        estimatedVisitMinutes?: number | null;
+        difficulty?: string | null;
+        sourceHint?: string | null;
+        expiresAt?: number | null;
+        spoilerSummary?: string | null;
+        locationType?: string | null;
+        indoorOutdoor?: string | null;
+        transitFriendly?: boolean | null;
+        requiresTicket?: boolean | null;
+        timeSensitive?: boolean | null;
       },
       null
     >,

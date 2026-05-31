@@ -3020,6 +3020,7 @@ export default function TripMap({
   function handleCompleteAsStory(Mission: {
     _id: string;
     status?: string;
+    source?: string;
     title?: string;
     description?: string;
     locationLabel?: string;
@@ -3032,6 +3033,7 @@ export default function TripMap({
     setStoryPrefill({
       missionId: Mission._id,
       completeMission: Mission.status === "in_progress",
+      mysteryReveal: Mission.source === "mystery",
       title: Mission.title,
       note: Mission.description,
       locationLabel: Mission.locationLabel,
@@ -3111,7 +3113,7 @@ export default function TripMap({
     }
     if (prefill?.completeMission) {
       music.sfx("success");
-      showToast("Mission completed.");
+      showToast(prefill.mysteryReveal ? "Mystery Mission revealed." : "Mission completed.", prefill.mysteryReveal ? "mystery" : "default");
     } else if (prefill?.missionId) {
       music.sfx("success");
       showToast("Story added to mission.");
@@ -3878,6 +3880,10 @@ export default function TripMap({
           onRequestNavigateToMission={handleNavigateToMission}
           onCompleteAsStory={handleCompleteAsStory}
           onCompleteMysteryAsStory={handleCompleteMysteryAsStory}
+          onMysteryMissionReveal={() => {
+            music.sfx("success");
+            showToast("Mystery Mission revealed.", "mystery");
+          }}
           pendingOpenDetailMissionId={pendingOpenDetailMissionId}
           prefilledCoordinate={missionPrefillCoordinate}
           onClearPrefill={() => setMissionPrefillCoordinate(null)}

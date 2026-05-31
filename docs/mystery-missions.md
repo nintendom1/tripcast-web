@@ -1,11 +1,12 @@
 # Mystery Missions
 
-Mystery Missions are Traveler-imported proximity signals. They are not normal Missions and they do not call an LLM. The backend stores them separately, then exposes redacted feed/map rows so Travelers and Followers can be surprised by black/grey pins without seeing `trueIntent` early.
+Mystery Missions are Traveler-imported proximity signals. They do not call an LLM. The backend stores the full Mystery Mission record separately and creates a linked normal Mission row so unlocked mysteries can use the same list, map, start, active, and completion workflow as other Missions.
 
 ## Visibility
 
 - Imported dormant Mystery Missions are visible only in Traveler management.
-- Eligible Mystery Missions appear in the normal Mission list and on the map for both roles.
+- Eligible Mystery Missions appear as linked normal Mission rows in the normal Mission list and on the map for both roles.
+- The linked Mission skips Proposed and displays `visible`/`planned` as Unlocked, `in_progress` as Active, and `completed` as Completed.
 - `trueIntent`, exact `locationName`, and spoiler summaries stay hidden until completion.
 - Completed Mystery Missions remain visible as revealed greyscale Mission rows and map pins.
 - Dismissed Mystery Missions are Traveler-management/debug data and do not appear to Followers.
@@ -14,14 +15,22 @@ Mystery Missions are Traveler-imported proximity signals. They are not normal Mi
 
 Normal visibility uses fresh shared Traveler location, radius, expiration, completion/dismissal state, and high-velocity suppression. If live location is stale or paused, dormant Mystery pins do not spawn.
 
-Options -> Mystery Missions includes **Debug: show all map pins**. This is Traveler-only and local to the browser via `localStorage`. It shows dormant imported pins on the map as unrevealed `signal` pins, bypassing proximity and velocity checks, so the Traveler can plan a walk without spoiling or completing anything.
+Options -> Mystery Missions includes **Debug: show all map pins**. This is Traveler-only and local to the browser via `localStorage`. It shows dormant imported pins on the map as unrevealed `signal` pins, bypassing proximity and velocity checks, so the Traveler can plan a walk without unlocking, revealing, starting, or completing anything.
 
-Mystery map pins use MapLibre's built-in marker geometry with Mystery-only decoration layered on top. This keeps their coordinate anchoring identical to normal Mission pins while preserving the fizzle effect.
+Unlocked Mystery Mission map pins are normal Mission pins with a darker greyscale color treatment. Debug dormant pins still use the fizzle decoration, but the overlay is only rendered when the debug toggle is on.
 
 ## Reveal Feedback
 
-When a Mystery Mission transitions to revealed while the app is open, the map marker subscription fires a greyscale toast and success sound for both Travelers and Followers. Traveler no-story and Story-completion paths also show the greyscale reveal toast.
+When the Traveler completes a linked Mystery Mission, the backend marks the Mystery record revealed. Traveler no-story and Story-completion paths show the greyscale reveal toast and success sound. Followers receive the same completed Mission state through the normal Mission subscriptions.
 
 ## Management
 
-The management sheet is spoiler-safe by default. In Spoiler Safe mode, the list uses generic “Mystery Signal” labels and exposes practical metadata plus edit/delete controls. Turning Spoiler Safe off reveals and allows editing `mysteryText`, `trueIntent`, and exact location name.
+The management sheet is spoiler-safe by default. In Spoiler Safe mode, the list uses generic “Mystery Signal” labels and exposes practical metadata plus edit/delete controls.
+
+The Traveler full-data edit sheet is reachable from:
+
+- Options -> Mystery Missions -> Imported signals -> Edit.
+- Mission list -> select an unlocked Mystery Mission -> Edit.
+- Map pin -> select an unlocked Mystery Mission -> Edit.
+
+The full-data editor intentionally shows all fields, including `mysteryText`, `trueIntent`, coordinates, timing, tags, and spoiler metadata. Editing a Mystery Mission also updates its linked Mission's safe public fields without resetting lifecycle progress.

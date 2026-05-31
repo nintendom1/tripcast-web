@@ -49,6 +49,7 @@ type Props = {
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onCompleteAsStory?: (Mission: Mission) => void;
   onCompleteMysteryAsStory?: (mission: MysteryMissionFeedItem) => void;
+  onMysteryMissionReveal?: () => void;
   /** When set + the panel is open, navigate straight to the matching mission's
    *  detail view rather than the list. Used by the Complete-as-Story → Back
    *  flow so dismissing the story form returns the Traveler to the mission's
@@ -102,6 +103,7 @@ export default function MissionPanel({
   onRequestNavigateToMission,
   onCompleteAsStory,
   onCompleteMysteryAsStory,
+  onMysteryMissionReveal,
   pendingOpenDetailMissionId,
   onClearPendingDetail,
   onRequestNavigateToVote,
@@ -189,13 +191,6 @@ export default function MissionPanel({
       ? { token, missionId: pendingOpenDetailMissionId }
       : "skip",
   );
-  const pendingDetailMysteryMission = useQuery(
-    tripcastApi.mysteryMissions.getMysteryMission,
-    pendingOpenMysteryMissionId && open
-      ? { token, mysteryMissionId: pendingOpenMysteryMissionId }
-      : "skip",
-  );
-
   useEffect(() => {
     if (!open || !pendingOpenDetailMissionId) return;
     if (pendingDetailMission === undefined) return; // still loading
@@ -222,19 +217,12 @@ export default function MissionPanel({
 
   useEffect(() => {
     if (!open || !pendingOpenMysteryMissionId) return;
-    if (pendingDetailMysteryMission === undefined) return;
-    if (pendingDetailMysteryMission === null) {
-      onClearPendingMysteryMission?.();
-      setViewMode("list");
-      setSelectedMysteryMission(null);
-      return;
-    }
+    setViewMode("list");
     setSelectedMission(null);
-    setSelectedMysteryMission(pendingDetailMysteryMission);
-    setViewMode("detail");
+    setSelectedMysteryMission(null);
     onClearPendingMysteryMission?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pendingOpenMysteryMissionId, pendingDetailMysteryMission]);
+  }, [open, pendingOpenMysteryMissionId]);
 
   // Entering the detail view auto-focuses the map on the mission's coordinates
   // — same UX as opening a story. The explicit "View on map" link in the
@@ -385,7 +373,6 @@ export default function MissionPanel({
                 onClearPendingMysteryMission={onClearPendingMysteryMission}
                 onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
-                onOpenMysteryDetail={goToMysteryDetail}
                 onRequestDelete={(c) => setPendingDelete(c)}
               />
             ) : (
@@ -398,7 +385,6 @@ export default function MissionPanel({
                 onClearPendingMysteryMission={onClearPendingMysteryMission}
                 onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
-                onOpenMysteryDetail={goToMysteryDetail}
               />
             )
           ) : viewMode === "create" ? (
@@ -478,6 +464,7 @@ export default function MissionPanel({
                 }
                 onRequestNavigateToVote={onRequestNavigateToVote}
                 onOpenLinkedStory={onOpenLinkedStory}
+                onMysteryMissionReveal={onMysteryMissionReveal}
                 debugSource={debugSource}
               />
             </SheetBody>
@@ -513,7 +500,6 @@ function TravelerListView({
   onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onOpenDetail,
-  onOpenMysteryDetail,
   onRequestDelete,
 }: {
   token: string;
@@ -524,17 +510,12 @@ function TravelerListView({
   onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
-  onOpenMysteryDetail: (mission: MysteryMissionFeedItem) => void;
   onRequestDelete?: (c: Mission) => void;
 }) {
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const allMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
-  const mysteryFeed = useQuery(tripcastApi.mysteryMissions.listMysteryMissionFeed, {
-    token,
-    includeDismissed: true,
-  });
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   function clearHighlightTimers() {
@@ -581,15 +562,17 @@ function TravelerListView({
   }, [pendingOpenMissionId, allMissions]);
 
   useEffect(() => {
-    if (!pendingOpenMysteryMissionId || !mysteryFeed) return;
-    const mission = mysteryFeed.rows?.find((row) => row._id === pendingOpenMysteryMissionId);
+    if (!pendingOpenMysteryMissionId || !allMissions) return;
+    const mission = allMissions.find((row) => row.sourceMysteryMissionId === pendingOpenMysteryMissionId);
     if (mission) {
-      onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
-      queueMissionHighlight(pendingOpenMysteryMissionId);
+      if (mission.lat !== undefined && mission.lon !== undefined) {
+        onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
+      }
+      queueMissionHighlight(mission._id);
       onClearPendingMysteryMission?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOpenMysteryMissionId, mysteryFeed]);
+  }, [pendingOpenMysteryMissionId, allMissions]);
 
   const filtered = allMissions?.filter((c) => {
     if (filter === "all") return true;
@@ -597,29 +580,14 @@ function TravelerListView({
     return c.status === filter;
   }) ?? [];
 
-  const mysteryRows = mysteryFeed?.rows ?? [];
-  const filteredMystery = mysteryRows.filter((mission) => {
-    if (filter === "all") return true;
-    if (filter === "visible") return mission.state === "signal";
-    if (filter === "completed") return mission.state === "revealed";
-    if (filter === "dropped") return mission.state === "dismissed";
-    return false;
-  }) ?? [];
-
-  const feedItems: Array<
-    | { kind: "mission"; item: Mission }
-    | { kind: "mystery"; item: MysteryMissionFeedItem }
-  > = [
-    ...filteredMystery.map((item) => ({ kind: "mystery" as const, item })),
-    ...filtered.map((item) => ({ kind: "mission" as const, item })),
-  ];
+  const feedItems = filtered.map((item) => ({ kind: "mission" as const, item }));
 
   return (
     <>
       <SheetBody
         className="min-h-0 space-y-2 px-4 pb-4 pt-3"
       >
-        {allMissions === undefined || mysteryFeed === undefined ? (
+        {allMissions === undefined ? (
           <PendingNotice label="Loading missions..." />
         ) : feedItems.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--ink-3)]">
@@ -627,17 +595,6 @@ function TravelerListView({
           </p>
         ) : (
           feedItems.map((entry) => {
-            if (entry.kind === "mystery") {
-              return (
-                <div key={`mystery-${entry.item._id}`}>
-                  <MysteryMissionCard
-                    mission={entry.item}
-                    isHighlighted={entry.item._id === highlightedMissionId}
-                    onClick={() => onOpenMysteryDetail(entry.item)}
-                  />
-                </div>
-              );
-            }
             const c = entry.item;
             const card = (
               <MissionCard
@@ -826,7 +783,6 @@ function FollowerListView({
   onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onOpenDetail,
-  onOpenMysteryDetail,
 }: {
   token: string;
   userId?: string;
@@ -836,19 +792,16 @@ function FollowerListView({
   onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
-  onOpenMysteryDetail: (mission: MysteryMissionFeedItem) => void;
 }) {
   const [tab, setTab] = useState<FollowerTab>("active");
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const myMissions = useQuery(tripcastApi.missions.followerListMyMissions, { token });
-  const mysteryFeed = useQuery(tripcastApi.mysteryMissions.listMysteryMissionFeed, { token });
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   const mine = myMissions?.mine ?? [];
   const publicMissions = myMissions?.public ?? [];
-  const mysteryMissions = mysteryFeed?.rows ?? [];
   const mineIds = new Set(mine.map((c) => c._id));
 
   function clearHighlightTimers() {
@@ -897,15 +850,17 @@ function FollowerListView({
   }, [pendingOpenMissionId, myMissions]);
 
   useEffect(() => {
-    if (!pendingOpenMysteryMissionId || !mysteryFeed) return;
-    const mission = mysteryMissions.find((row) => row._id === pendingOpenMysteryMissionId);
+    if (!pendingOpenMysteryMissionId || !myMissions) return;
+    const mission = publicMissions.find((row) => row.sourceMysteryMissionId === pendingOpenMysteryMissionId);
     if (mission) {
-      onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
-      queueMissionHighlight(pendingOpenMysteryMissionId);
+      if (mission.lat !== undefined && mission.lon !== undefined) {
+        onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
+      }
+      queueMissionHighlight(mission._id);
       onClearPendingMysteryMission?.();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOpenMysteryMissionId, mysteryFeed]);
+  }, [pendingOpenMysteryMissionId, myMissions]);
 
   return (
     <>
@@ -943,7 +898,7 @@ function FollowerListView({
       <SheetBody
         className="min-h-0 space-y-2 px-4 pb-4 pt-2"
       >
-        {myMissions === undefined || mysteryFeed === undefined ? (
+        {myMissions === undefined ? (
           <PendingNotice label="Loading missions..." />
         ) : tab === "mine" ? (
           mine.length === 0 ? (
@@ -963,21 +918,12 @@ function FollowerListView({
               </div>
             ))
           )
-        ) : publicMissions.length === 0 && mysteryMissions.length === 0 ? (
+        ) : publicMissions.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--ink-3)]">
             No active missions right now.
           </p>
         ) : (
           <>
-            {mysteryMissions.map((mission) => (
-              <div key={`mystery-${mission._id}`}>
-                <MysteryMissionCard
-                  mission={mission}
-                  isHighlighted={mission._id === highlightedMissionId}
-                  onClick={() => onOpenMysteryDetail(mission)}
-                />
-              </div>
-            ))}
             {publicMissions.map((c) => (
               <div key={c._id}>
                 <MissionCard

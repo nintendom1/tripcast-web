@@ -14,6 +14,14 @@ const STATUS_COLORS: Record<string, string> = {
   dropped: "#94a3b8",      // muted — dropped
 };
 
+const MYSTERY_STATUS_COLORS: Record<string, string> = {
+  visible: "#09090b",
+  planned: "#09090b",
+  in_progress: "#27272a",
+  completed: "#3f3f46",
+  dropped: "#71717a",
+};
+
 type Props = {
   map: maplibregl.Map | null;
   token: string;
@@ -24,10 +32,14 @@ type Props = {
 function createPopupContent(Mission: Mission) {
   const wrapper = document.createElement("div");
   wrapper.className = "checkpoint-popup";
+  const isMystery = Mission.source === "mystery";
+  const color = isMystery
+    ? MYSTERY_STATUS_COLORS[Mission.status] ?? "#09090b"
+    : STATUS_COLORS[Mission.status] ?? "#1e3a5f";
 
   const label = document.createElement("small");
-  label.textContent = "Mission";
-  label.style.color = STATUS_COLORS[Mission.status] ?? "#1e3a5f";
+  label.textContent = isMystery ? "Mystery Mission" : "Mission";
+  label.style.color = color;
   label.style.fontWeight = "700";
   label.style.textTransform = "uppercase";
   label.style.fontSize = "10px";
@@ -38,7 +50,13 @@ function createPopupContent(Mission: Mission) {
   title.textContent = Mission.title;
   wrapper.appendChild(title);
 
-  if (Mission.status === "proposed") {
+  if (isMystery && (Mission.status === "visible" || Mission.status === "planned")) {
+    const note = document.createElement("small");
+    note.textContent = "Unlocked";
+    note.style.color = "#52525b";
+    note.style.display = "block";
+    wrapper.appendChild(note);
+  } else if (Mission.status === "proposed") {
     const note = document.createElement("small");
     note.textContent = "Pending review";
     note.style.color = "#64748b";
@@ -46,8 +64,8 @@ function createPopupContent(Mission: Mission) {
     wrapper.appendChild(note);
   } else if (Mission.status === "in_progress") {
     const note = document.createElement("small");
-    note.textContent = "In progress";
-    note.style.color = "#d97706";
+    note.textContent = isMystery ? "Active" : "In progress";
+    note.style.color = isMystery ? "#3f3f46" : "#d97706";
     note.style.display = "block";
     wrapper.appendChild(note);
   } else if (Mission.status === "completed") {
@@ -78,7 +96,9 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
     markersRef.current = pins
       .filter((c) => c.lat !== undefined && c.lon !== undefined)
       .map((Mission) => {
-        const color = STATUS_COLORS[Mission.status] ?? "#1e3a5f";
+        const color = Mission.source === "mystery"
+          ? MYSTERY_STATUS_COLORS[Mission.status] ?? "#09090b"
+          : STATUS_COLORS[Mission.status] ?? "#1e3a5f";
         const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
           createPopupContent(Mission),
         );

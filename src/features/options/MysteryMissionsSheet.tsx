@@ -15,6 +15,7 @@ import {
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import MysteryMissionEditSheet from "../missions/MysteryMissionEditSheet";
 import { cn } from "@/lib/utils";
 
 const SAMPLE_JSON = `{
@@ -106,19 +107,8 @@ export default function MysteryMissionsSheet({
       return false;
     }
   });
-  const [editingMission, setEditingMission] = useState<MysteryMissionExportRow | null>(null);
+  const [editingMissionId, setEditingMissionId] = useState<string | null>(null);
   const [deleteMissionId, setDeleteMissionId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({
-    region: "",
-    locationName: "",
-    mysteryText: "",
-    trueIntent: "",
-    spawnRadiusMiles: "30",
-    priority: "0",
-    tags: "",
-    estimatedVisitMinutes: "",
-    difficulty: "",
-  });
   const log = useDebugLogger("MysteryMissionsSheet", "src/features/options/MysteryMissionsSheet.tsx");
   const music = useMusicSafe();
 
@@ -159,7 +149,6 @@ export default function MysteryMissionsSheet({
   );
   const setEnabled = useMutation(tripcastApi.mysteryMissions.travelerSetMysteryMissionsEnabled);
   const importMissions = useMutation(tripcastApi.mysteryMissions.travelerImportMysteryMissions);
-  const patchMission = useMutation(tripcastApi.mysteryMissions.travelerPatchMysteryMission);
   const deleteMission = useMutation(tripcastApi.mysteryMissions.travelerDeleteMysteryMission);
 
   const enabled = settings?.enabled ?? false;
@@ -194,45 +183,7 @@ export default function MysteryMissionsSheet({
   }
 
   function openEdit(row: MysteryMissionExportRow) {
-    setEditingMission(row);
-    setEditForm({
-      region: row.region ?? "",
-      locationName: row.locationName ?? "",
-      mysteryText: row.mysteryText,
-      trueIntent: row.trueIntent,
-      spawnRadiusMiles: String(row.spawnRadiusMiles),
-      priority: String(row.priority),
-      tags: row.tags?.join(", ") ?? "",
-      estimatedVisitMinutes: row.estimatedVisitMinutes ? String(row.estimatedVisitMinutes) : "",
-      difficulty: row.difficulty ?? "",
-    });
-  }
-
-  async function saveEdit() {
-    if (!editingMission || working) return;
-    setWorking(true);
-    setCommitError(null);
-    try {
-      await patchMission({
-        token,
-        mysteryMissionId: editingMission._id,
-        region: editForm.region,
-        locationName: spoilerSafe ? undefined : editForm.locationName,
-        mysteryText: spoilerSafe ? undefined : editForm.mysteryText,
-        trueIntent: spoilerSafe ? undefined : editForm.trueIntent,
-        spawnRadiusMiles: Number(editForm.spawnRadiusMiles),
-        priority: Number(editForm.priority),
-        tags: editForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
-        estimatedVisitMinutes: editForm.estimatedVisitMinutes ? Number(editForm.estimatedVisitMinutes) : undefined,
-        difficulty: editForm.difficulty,
-      });
-      setEditingMission(null);
-      music.sfx("success");
-    } catch (error) {
-      setCommitError(errorText(error));
-    } finally {
-      setWorking(false);
-    }
+    setEditingMissionId(row._id);
   }
 
   async function confirmDelete(rowId: string) {
@@ -294,6 +245,7 @@ export default function MysteryMissionsSheet({
   }
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="bottom"
@@ -396,63 +348,6 @@ export default function MysteryMissionsSheet({
             ) : null}
           </section>
 
-          {editingMission ? (
-            <section className="grid gap-3 rounded-xl border border-zinc-500/40 bg-[var(--bg-card)] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold">Edit imported signal</p>
-                <Button type="button" size="sm" variant="outline" onClick={() => setEditingMission(null)}>
-                  Close
-                </Button>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                  Region
-                  <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.region} onChange={(event) => setEditForm((form) => ({ ...form, region: event.target.value }))} />
-                </label>
-                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                  Difficulty
-                  <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.difficulty} onChange={(event) => setEditForm((form) => ({ ...form, difficulty: event.target.value }))} />
-                </label>
-                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                  Radius miles
-                  <input type="number" className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.spawnRadiusMiles} onChange={(event) => setEditForm((form) => ({ ...form, spawnRadiusMiles: event.target.value }))} />
-                </label>
-                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                  Priority
-                  <input type="number" className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.priority} onChange={(event) => setEditForm((form) => ({ ...form, priority: event.target.value }))} />
-                </label>
-                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                  Visit minutes
-                  <input type="number" className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.estimatedVisitMinutes} onChange={(event) => setEditForm((form) => ({ ...form, estimatedVisitMinutes: event.target.value }))} />
-                </label>
-                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                  Tags
-                  <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.tags} onChange={(event) => setEditForm((form) => ({ ...form, tags: event.target.value }))} />
-                </label>
-              </div>
-              {!spoilerSafe ? (
-                <div className="grid gap-2">
-                  <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                    Mystery text
-                    <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.mysteryText} onChange={(event) => setEditForm((form) => ({ ...form, mysteryText: event.target.value }))} />
-                  </label>
-                  <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                    True intent
-                    <textarea className="min-h-20 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.trueIntent} onChange={(event) => setEditForm((form) => ({ ...form, trueIntent: event.target.value }))} />
-                  </label>
-                  <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
-                    Location name
-                    <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.locationName} onChange={(event) => setEditForm((form) => ({ ...form, locationName: event.target.value }))} />
-                  </label>
-                </div>
-              ) : null}
-              {commitError ? <p role="alert" className="text-sm text-[var(--ink-danger)]">{commitError}</p> : null}
-              <Button type="button" disabled={working} onClick={saveEdit}>
-                {working ? "Saving..." : "Save edits"}
-              </Button>
-            </section>
-          ) : null}
-
           <section className="grid gap-3">
             <div className="flex flex-wrap justify-between gap-2">
               <Button type="button" variant="outline" onClick={() => setSpoilerSafe((value) => !value)}>
@@ -549,5 +444,14 @@ export default function MysteryMissionsSheet({
         </SheetBody>
       </SheetContent>
     </Sheet>
+    <MysteryMissionEditSheet
+      open={editingMissionId !== null}
+      token={token}
+      mysteryMissionId={editingMissionId}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setEditingMissionId(null);
+      }}
+    />
+    </>
   );
 }
