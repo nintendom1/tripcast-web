@@ -33,8 +33,14 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
   const credits = useQuery(tripcastApi.endTrip.getTripCredits, { token });
   const queriedEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
   const queriedMissions = useQuery(
-    role === "traveler" ? tripcastApi.missions.travelerListMissions : tripcastApi.missions.followerListMissions,
+    role === "traveler"
+      ? tripcastApi.missions.travelerListMissions
+      : tripcastApi.missions.followerListMissions,
     { token },
+  );
+  const followerPreferences = useQuery(
+    tripcastApi.travelerPreferences.followerGetPreferences,
+    role === "follower" ? { token } : "skip",
   );
   const log = useDebugLogger("CreditsOverlay", "src/features/endtrip/CreditsOverlay.tsx");
   const ref = useRef<HTMLDivElement>(null);
@@ -64,8 +70,20 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
 
   const leaderboard = credits?.leaderboard ?? [];
   const stats = useMemo(() => {
-    const events = queriedEvents ?? [];
-    const missions = queriedMissions ?? [];
+    const cutoffAt = followerPreferences?.visible
+      ? (followerPreferences as any).followerContentCutoffAt
+      : undefined;
+
+    const events = (queriedEvents ?? []).filter((e) => {
+      if (role === "traveler" || !cutoffAt) return true;
+      return e.occurredAt >= cutoffAt;
+    });
+
+    const missions = (queriedMissions ?? []).filter((m) => {
+      if (role === "traveler" || !cutoffAt) return true;
+      return (m as any).occurredAt ? (m as any).occurredAt >= cutoffAt : true;
+    });
+
     const storyCount = events.filter((event) => event.type === "story").length;
     const routeSteps = events.filter((event) => event.lat !== undefined && event.lon !== undefined).length;
     const completedMissions = missions.filter((mission) => mission.status === "completed").length;
