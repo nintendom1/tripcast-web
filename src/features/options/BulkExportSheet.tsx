@@ -45,6 +45,7 @@ export default function BulkExportSheet({
   const [range, setRange] = useState<"all" | "custom">("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [includeMysteryMissions, setIncludeMysteryMissions] = useState(false);
   const [copied, setCopied] = useState(false);
   const music = useMusicSafe();
   const { resolvedTheme } = useTheme();
@@ -69,7 +70,7 @@ export default function BulkExportSheet({
 
   const queryResult = useQuery(
     tripcastApi.bulkImport.travelerExportTripData,
-    open ? { token, startMs, endMs } : "skip"
+    open ? { token, startMs, endMs, includeMysteryMissions } : "skip"
   );
   const data = isBulkExportResult(queryResult) ? queryResult : undefined;
 
@@ -175,6 +176,25 @@ export default function BulkExportSheet({
                 </label>
               </div>
             )}
+
+            <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
+              <input
+                type="checkbox"
+                checked={includeMysteryMissions}
+                onChange={(event) => {
+                  log.logUi("action:include-mystery", { enabled: event.currentTarget.checked });
+                  setIncludeMysteryMissions(event.currentTarget.checked);
+                }}
+                className="mt-1 h-4 w-4"
+                style={{ accentColor: "var(--ink-1)" }}
+              />
+              <span className="grid gap-1">
+                <span className="font-medium">Include Mystery Missions</span>
+                <span className="text-[var(--ink-2)]">
+                  Adds full Mystery Mission definitions, including true intent and spoiler metadata.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">

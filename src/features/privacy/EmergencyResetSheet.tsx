@@ -180,7 +180,7 @@ export function EmergencyResetContent({
                 <h3 className="text-sm font-semibold text-[var(--ink-1)]">Emergency Reset</h3>
                 <p className="mt-1 text-sm text-[var(--ink-2)]">
                   This will delete shared trip data, including checkpoints, live location,
-                  route votes, traveler state, current activity, and journal entries.
+                  route votes, Mystery Missions, traveler state, current activity, and journal entries.
                 </p>
                 {includeAuthSessions ? (
                   <p className="mt-2 text-sm text-[var(--ink-2)]">
@@ -235,7 +235,7 @@ export function EmergencyResetContent({
                 <div className="grid gap-1">
                   <h3 className="text-sm font-semibold text-[var(--ink-1)]">Delete Shared Trip Data</h3>
                   <p className="text-sm text-[var(--ink-2)]">
-                    Remove checkpoints, live location, route votes, traveler state,
+                    Remove checkpoints, live location, route votes, Mystery Missions, traveler state,
                     current activity, and journal entries in one reset request. Sessions are
                     only revoked when selected below.
                   </p>

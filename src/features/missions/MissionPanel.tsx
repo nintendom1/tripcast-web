@@ -191,6 +191,18 @@ export default function MissionPanel({
       ? { token, missionId: pendingOpenDetailMissionId }
       : "skip",
   );
+  const pendingDetailMysteryMission = useQuery(
+    tripcastApi.mysteryMissions.getMysteryMission,
+    pendingOpenMysteryMissionId && open
+      ? { token, mysteryMissionId: pendingOpenMysteryMissionId }
+      : "skip",
+  );
+  const pendingMysteryLinkedMission = useQuery(
+    tripcastApi.missions.getMission,
+    pendingDetailMysteryMission?.linkedMissionId && open
+      ? { token, missionId: pendingDetailMysteryMission.linkedMissionId }
+      : "skip",
+  );
   useEffect(() => {
     if (!open || !pendingOpenDetailMissionId) return;
     if (pendingDetailMission === undefined) return; // still loading
@@ -217,12 +229,33 @@ export default function MissionPanel({
 
   useEffect(() => {
     if (!open || !pendingOpenMysteryMissionId) return;
-    setViewMode("list");
+    if (pendingDetailMysteryMission === undefined) return;
+    if (pendingDetailMysteryMission === null) {
+      setViewMode("list");
+      setSelectedMission(null);
+      setSelectedMysteryMission(null);
+      onClearPendingMysteryMission?.();
+      return;
+    }
+    if (pendingDetailMysteryMission.linkedMissionId) {
+      if (pendingMysteryLinkedMission === undefined) return;
+      if (pendingMysteryLinkedMission !== null) {
+        setSelectedMission({
+          Mission: pendingMysteryLinkedMission,
+          isOwn: role === "traveler" || Boolean(pendingMysteryLinkedMission.proposedByUserId === userId),
+        });
+        setSelectedMysteryMission(null);
+        setViewMode("detail");
+        onClearPendingMysteryMission?.();
+        return;
+      }
+    }
     setSelectedMission(null);
-    setSelectedMysteryMission(null);
+    setSelectedMysteryMission(pendingDetailMysteryMission);
+    setViewMode("detail");
     onClearPendingMysteryMission?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pendingOpenMysteryMissionId]);
+  }, [open, pendingOpenMysteryMissionId, pendingDetailMysteryMission, pendingMysteryLinkedMission]);
 
   // Entering the detail view auto-focuses the map on the mission's coordinates
   // — same UX as opening a story. The explicit "View on map" link in the

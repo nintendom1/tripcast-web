@@ -1007,7 +1007,7 @@ export type CloakingPin = {
 // Bulk Import types
 // ---------------------------------------------------------------------------
 
-export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote";
+export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote" | "mystery_mission";
 export type BulkImportTimestamp = number | string;
 
 export type BulkImportRouteVoteOption = {
@@ -1078,6 +1078,37 @@ export type BulkImportEntry =
       when?: BulkImportTimestamp;
     }
   | {
+      kind: "mystery_mission";
+      ref?: string;
+      id?: string;
+      mysteryMissionId?: string;
+      timeZone?: string;
+      lat: number;
+      lon: number;
+      region?: string;
+      locationName?: string;
+      mysteryText: string;
+      trueIntent: string;
+      spawnRadiusMiles?: number;
+      priority?: number;
+      tags?: string[];
+      recommendedTimeOfDay?: string;
+      estimatedVisitMinutes?: number;
+      difficulty?: string;
+      sourceHint?: string;
+      expiresAt?: BulkImportTimestamp;
+      spoilerSummary?: string;
+      locationType?: string;
+      indoorOutdoor?: string;
+      transitFriendly?: boolean;
+      requiresTicket?: boolean;
+      timeSensitive?: boolean;
+      completedAt?: BulkImportTimestamp;
+      dismissedAt?: BulkImportTimestamp;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
+    }
+  | {
       kind: "route_vote" | "vote";
       ref?: string;
       timeZone?: string;
@@ -1105,6 +1136,7 @@ export type BulkImportCounts = {
   transactions: number;
   missions: number;
   routeVotes: number;
+  mysteryMissions: number;
 };
 
 export type BulkImportPreviewError = {
@@ -1205,7 +1237,7 @@ export const tripcastApi = {
     travelerExportTripData: (anyApi as any).bulkImport.travelerExportTripData as FunctionReference<
       "query",
       "public",
-      { token: string; startMs?: number; endMs?: number },
+      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean },
       BulkImportPayload
     >,
   },
