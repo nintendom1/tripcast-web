@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { ChevronLeft, ImagePlus, Trash2 } from "lucide-react";
 
-import type { AddCheckpointArgs, CheckpointSource } from "../../convex/tripcastApi";
+import type { AddCheckpointArgs, CheckpointSource, StoryImageSize } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -83,6 +83,11 @@ function parseLocalDatetimeInputValue(value: string): number | null {
 }
 
 const FUTURE_WARNING_MS = 24 * 60 * 60 * 1000;
+const STORY_IMAGE_SIZES = ["compact", "medium", "large"] as const;
+
+function getDefaultStoryImageSize(): StoryImageSize {
+  return typeof window !== "undefined" && window.innerWidth < 640 ? "compact" : "medium";
+}
 
 function friendlyError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
@@ -112,6 +117,7 @@ export default function AddCheckpointSheet({
   const [isSaving, setIsSaving] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [imageSize, setImageSize] = useState<StoryImageSize>(() => getDefaultStoryImageSize());
   const [happenedAtInput, setHappenedAtInput] = useState<string>(() =>
     toLocalDatetimeInputValue(new Date()),
   );
@@ -152,6 +158,7 @@ export default function AddCheckpointSheet({
     setIsSaving(false);
     setImageFile(null);
     setImagePreviewUrl(null);
+    setImageSize(getDefaultStoryImageSize());
     setHappenedAtInput(toLocalDatetimeInputValue(new Date()));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCoordinate, prefill]);
@@ -242,6 +249,7 @@ export default function AddCheckpointSheet({
         lat: selectedCoordinate.lat,
         lon: selectedCoordinate.lon,
         imageId,
+        imageSize,
         source: selectedCoordinate.source,
         missionId: prefill?.missionId,
         ...(happenedAtMs !== null ? { happenedAt: happenedAtMs } : {}),
@@ -379,6 +387,30 @@ export default function AddCheckpointSheet({
                   />
                 </label>
               )}
+              <div className="mt-1 flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">
+                  Display Size
+                </span>
+                <div className="flex rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-0.5">
+                  {STORY_IMAGE_SIZES.map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => {
+                        setImageSize(size);
+                        log.logInteraction("story-image:size-change", { size });
+                      }}
+                      className={
+                        imageSize === size
+                          ? "flex-1 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 py-1 text-[11px] font-bold capitalize text-[var(--ink-1)] shadow-sm transition-all"
+                          : "flex-1 rounded-md border border-transparent px-2 py-1 text-[11px] font-bold capitalize text-[var(--ink-3)] transition-all hover:text-[var(--ink-2)]"
+                      }
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : null}
           <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[var(--ink-1)]">

@@ -24,7 +24,14 @@ function createMemoryStorage(): Storage {
   };
 }
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
 if (typeof window !== "undefined") {
+  window.ResizeObserver = ResizeObserverMock;
   const local = typeof window.localStorage?.clear === "function"
     ? window.localStorage
     : createMemoryStorage();

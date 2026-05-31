@@ -7,6 +7,8 @@ import type { FunctionReference } from "convex/server";
 
 export type Role = "traveler" | "follower";
 
+export type StoryImageSize = "compact" | "medium" | "large";
+
 export type CheckpointSource = "right_click" | "tap_add_mode" | "long_press" | "current_activity" | "inline_form";
 
 export type Checkpoint = {
@@ -19,6 +21,7 @@ export type Checkpoint = {
   lat?: number;
   lon?: number;
   imageId?: string;
+  imageSize?: StoryImageSize;
   source: CheckpointSource;
   /** Optional link to the mission a Story narrates (Complete-as-story flow). */
   missionId?: string;
@@ -38,6 +41,7 @@ export type AddCheckpointArgs = {
   lat?: number;
   lon?: number;
   imageId?: string;
+  imageSize?: StoryImageSize;
   source: CheckpointSource;
   // Optional link back to the mission a Story narrates. Persisted on
   // the checkpoint and threaded into the emitted story event so
@@ -72,6 +76,7 @@ export type UpdateCheckpointArgs = {
   lat?: number;
   lon?: number;
   imageId?: string;
+  imageSize?: StoryImageSize;
   clearImage?: boolean;
   /** Editable retroactive "Happened at" time. Patches the checkpoint and
    *  the linked story journal event's occurredAt in lock-step. */
@@ -716,6 +721,7 @@ export type JournalEvent = {
   lat?: number;
   lon?: number;
   imageId?: string;
+  imageSize?: StoryImageSize;
   checkpointId?: string;
   routeVoteId?: string;
   missionId?: string;
@@ -1449,6 +1455,7 @@ export const tripcastApi = {
         lon: number;
         source: CheckpointSource;
         imageId?: string;
+        imageSize?: StoryImageSize;
         transaction?: TransactionInlineInput;
         awardBadgeType?: BadgeType;
       },

@@ -17,7 +17,7 @@ import { FilterButton } from "../../components/ui/FilterButton";
 import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { JournalEvent, JournalEventType, JournalNarrativeLevel, Role } from "../../convex/tripcastApi";
+import type { JournalEvent, JournalEventType, JournalNarrativeLevel, Role, StoryImageSize } from "../../convex/tripcastApi";
 import {
   Sheet,
   SheetBody,
@@ -178,6 +178,7 @@ export default function JournalSheet({
   const [storyLon, setStoryLon] = useState<number | undefined>(undefined);
   const [storyImageFile, setStoryImageFile] = useState<File | null>(null);
   const [storyImagePreviewUrl, setStoryImagePreviewUrl] = useState<string | null>(null);
+  const [storyImageSize, setStoryImageSize] = useState<StoryImageSize>("medium");
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -211,6 +212,7 @@ export default function JournalSheet({
     setCreateError(null);
     setStoryImageFile(null);
     setStoryImagePreviewUrl(null);
+    setStoryImageSize(window.innerWidth < 640 ? "compact" : "medium");
   }, [open]);
   useEffect(() => {
     return () => {
@@ -291,6 +293,7 @@ export default function JournalSheet({
         lat: storyLat,
         lon: storyLon,
         imageId,
+        imageSize: storyImageSize,
         showInStory: true,
         source: "inline_form",
       });
@@ -433,6 +436,32 @@ export default function JournalSheet({
                     />
                   </label>
                 )}
+
+                    {storyImagePreviewUrl && (
+                      <div className="mt-1 flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Display Size</span>
+                        <div className="flex p-0.5 bg-[var(--bg-paper)] rounded-lg border border-[var(--line-soft)]">
+                          {(["compact", "medium", "large"] as const).map((size) => (
+                            <button
+                              key={size}
+                              type="button"
+                              onClick={() => {
+                                setStoryImageSize(size);
+                                log.logInteraction("story-image:size-change", { size });
+                              }}
+                              className={cn(
+                                "flex-1 px-2 py-1 text-[11px] font-bold capitalize rounded-md transition-all",
+                                storyImageSize === size
+                                  ? "bg-[var(--bg-card)] text-[var(--ink-1)] shadow-sm border border-[var(--line-soft)]"
+                                  : "text-[var(--ink-3)] hover:text-[var(--ink-2)] border border-transparent"
+                              )}
+                            >
+                              {size}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
               </div>
               <Input
                 placeholder="Location (optional)"

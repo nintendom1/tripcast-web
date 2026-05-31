@@ -6,6 +6,7 @@ import App from "./App";
 import { MusicProvider } from "./providers/MusicProvider";
 import { ReadingSpeedProvider } from "./providers/ReadingSpeedProvider";
 import "./styles.css";
+import "react-medium-image-zoom/dist/styles.css";
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL as string | undefined;
 
