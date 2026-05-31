@@ -949,6 +949,7 @@ type TripMapProps = {
   tripDataResetNonce?: number;
   finaleReplayActive?: boolean;
   onOpenDebugPanel?: () => void;
+  onMapLoaded?: () => void;
 };
 
 export default function TripMap({
@@ -958,6 +959,7 @@ export default function TripMap({
   tripDataResetNonce = 0,
   finaleReplayActive = false,
   onOpenDebugPanel,
+  onMapLoaded,
 }: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -2013,6 +2015,7 @@ export default function TripMap({
         styleUrl: activeMapStyleUrlRef.current ?? initialMapStyleUrl,
         zoom: map.getZoom(),
       });
+      onMapLoaded?.();
     });
 
     map.on("error", (event) => {
