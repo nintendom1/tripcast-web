@@ -5,11 +5,13 @@ import { FilterButton } from "../../components/ui/FilterButton";
 import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Mission, JournalEvent, Role } from "../../convex/tripcastApi";
+import type { Mission, JournalEvent, MysteryMissionFeedItem, Role } from "../../convex/tripcastApi";
 import { getLocalDateKey } from "../achievements/dateUtils";
 import MissionCard from "./MissionCard";
+import MysteryMissionCard from "./MysteryMissionCard";
 import MissionProposalForm from "./MissionProposalForm";
 import MissionDetailSheet from "./MissionDetailSheet";
+import MysteryMissionDetailSheet from "./MysteryMissionDetailSheet";
 import {
   Sheet,
   SheetBackButton,
@@ -41,9 +43,12 @@ type Props = {
   onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
   isPickingCoordinate?: boolean;
   pendingOpenMissionId?: string | null;
+  pendingOpenMysteryMissionId?: string | null;
   onClearPendingMission?: () => void;
+  onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onCompleteAsStory?: (Mission: Mission) => void;
+  onCompleteMysteryAsStory?: (mission: MysteryMissionFeedItem) => void;
   /** When set + the panel is open, navigate straight to the matching mission's
    *  detail view rather than the list. Used by the Complete-as-Story → Back
    *  flow so dismissing the story form returns the Traveler to the mission's
@@ -91,9 +96,12 @@ export default function MissionPanel({
   onRequestCoordinatePick,
   isPickingCoordinate,
   pendingOpenMissionId,
+  pendingOpenMysteryMissionId,
   onClearPendingMission,
+  onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onCompleteAsStory,
+  onCompleteMysteryAsStory,
   pendingOpenDetailMissionId,
   onClearPendingDetail,
   onRequestNavigateToVote,
@@ -105,6 +113,7 @@ export default function MissionPanel({
   const { missions: missionsPersonality } = useSheetPersonalities();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedMission, setSelectedMission] = useState<SelectedMission | null>(null);
+  const [selectedMysteryMission, setSelectedMysteryMission] = useState<MysteryMissionFeedItem | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Mission | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [travelerFilter, setTravelerFilter] = useState<TravelerFilter>("all");
@@ -145,6 +154,7 @@ export default function MissionPanel({
     if (!open) {
       setViewMode("list");
       setSelectedMission(null);
+      setSelectedMysteryMission(null);
       onClearPrefill?.();
     } else if (prefilledCoordinate) {
       setViewMode("create");
@@ -159,7 +169,15 @@ export default function MissionPanel({
     if (!pendingOpenMissionId) return;
     setViewMode("list");
     setSelectedMission(null);
+    setSelectedMysteryMission(null);
   }, [pendingOpenMissionId]);
+
+  useEffect(() => {
+    if (!pendingOpenMysteryMissionId) return;
+    setViewMode("list");
+    setSelectedMission(null);
+    setSelectedMysteryMission(null);
+  }, [pendingOpenMysteryMissionId]);
 
   // Back-from-story navigation: the parent (TripMap) sets this when the
   // Traveler hits "← Back" inside AddCheckpointSheet's mission-completion
@@ -169,6 +187,12 @@ export default function MissionPanel({
     tripcastApi.missions.getMission,
     pendingOpenDetailMissionId && open
       ? { token, missionId: pendingOpenDetailMissionId }
+      : "skip",
+  );
+  const pendingDetailMysteryMission = useQuery(
+    tripcastApi.mysteryMissions.getMysteryMission,
+    pendingOpenMysteryMissionId && open
+      ? { token, mysteryMissionId: pendingOpenMysteryMissionId }
       : "skip",
   );
 
@@ -181,18 +205,36 @@ export default function MissionPanel({
       onClearPendingDetail?.();
       setViewMode("list");
       setSelectedMission(null);
+      setSelectedMysteryMission(null);
       return;
     }
     setSelectedMission({
       Mission: pendingDetailMission,
       isOwn: role === "traveler" || Boolean(pendingDetailMission.proposedByUserId === userId),
     });
+    setSelectedMysteryMission(null);
     setViewMode("detail");
     onClearPendingDetail?.();
     // pendingDetailMission / onClearPendingDetail are stable enough for the
     // one-shot navigation behavior we want here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, pendingOpenDetailMissionId, pendingDetailMission]);
+
+  useEffect(() => {
+    if (!open || !pendingOpenMysteryMissionId) return;
+    if (pendingDetailMysteryMission === undefined) return;
+    if (pendingDetailMysteryMission === null) {
+      onClearPendingMysteryMission?.();
+      setViewMode("list");
+      setSelectedMysteryMission(null);
+      return;
+    }
+    setSelectedMission(null);
+    setSelectedMysteryMission(pendingDetailMysteryMission);
+    setViewMode("detail");
+    onClearPendingMysteryMission?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, pendingOpenMysteryMissionId, pendingDetailMysteryMission]);
 
   // Entering the detail view auto-focuses the map on the mission's coordinates
   // — same UX as opening a story. The explicit "View on map" link in the
@@ -208,17 +250,29 @@ export default function MissionPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, selectedMission?.Mission._id]);
 
+  useEffect(() => {
+    if (viewMode !== "detail" || !selectedMysteryMission) return;
+    onRequestNavigateToMission?.({
+      lat: selectedMysteryMission.lat,
+      lon: selectedMysteryMission.lon,
+    });
+    // onRequestNavigateToMission is stable enough for our purposes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, selectedMysteryMission?._id]);
+
   function goToList(sound: "page" | "success" | null = "page") {
     log.logUi("action:view-list");
     if (sound) music.sfx(sound);
     setViewMode("list");
     setSelectedMission(null);
+    setSelectedMysteryMission(null);
   }
 
   function goToCreate() {
     log.logUi("action:create-open");
     music.sfx("page");
     setSelectedMission(null);
+    setSelectedMysteryMission(null);
     setViewMode("create");
   }
 
@@ -226,6 +280,15 @@ export default function MissionPanel({
     log.logUi("action:view-detail", { missionId: Mission._id });
     music.sfx("page");
     setSelectedMission({ Mission, isOwn });
+    setSelectedMysteryMission(null);
+    setViewMode("detail");
+  }
+
+  function goToMysteryDetail(mission: MysteryMissionFeedItem) {
+    log.logUi("action:view-mystery-detail", { mysteryMissionId: mission._id });
+    music.sfx("page");
+    setSelectedMission(null);
+    setSelectedMysteryMission(mission);
     setViewMode("detail");
   }
 
@@ -317,9 +380,12 @@ export default function MissionPanel({
                 token={token}
                 filter={travelerFilter}
                 pendingOpenMissionId={pendingOpenMissionId}
+                pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
                 onClearPendingMission={onClearPendingMission}
+                onClearPendingMysteryMission={onClearPendingMysteryMission}
                 onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
+                onOpenMysteryDetail={goToMysteryDetail}
                 onRequestDelete={(c) => setPendingDelete(c)}
               />
             ) : (
@@ -327,9 +393,12 @@ export default function MissionPanel({
                 token={token}
                 userId={userId}
                 pendingOpenMissionId={pendingOpenMissionId}
+                pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
                 onClearPendingMission={onClearPendingMission}
+                onClearPendingMysteryMission={onClearPendingMysteryMission}
                 onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
+                onOpenMysteryDetail={goToMysteryDetail}
               />
             )
           ) : viewMode === "create" ? (
@@ -349,6 +418,31 @@ export default function MissionPanel({
                   onSuccess={() => goToList("success")}
                 />
               )}
+            </SheetBody>
+          ) : viewMode === "detail" && selectedMysteryMission ? (
+            <SheetBody className="p-0">
+              <MysteryMissionDetailSheet
+                mission={selectedMysteryMission}
+                token={token}
+                role={role}
+                onClose={() => goToList()}
+                onCompleteAsStory={
+                  onCompleteMysteryAsStory
+                    ? (mission) => {
+                        onCompleteMysteryAsStory(mission);
+                        goToList(null);
+                      }
+                    : undefined
+                }
+                onViewOnMap={() => {
+                  onRequestNavigateToMission?.({
+                    lat: selectedMysteryMission.lat,
+                    lon: selectedMysteryMission.lon,
+                  });
+                  goToList("page");
+                }}
+                debugSource={debugSource}
+              />
             </SheetBody>
           ) : viewMode === "detail" && selectedMission ? (
             <SheetBody className="p-0">
@@ -414,23 +508,33 @@ function TravelerListView({
   token,
   filter,
   pendingOpenMissionId,
+  pendingOpenMysteryMissionId,
   onClearPendingMission,
+  onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onOpenDetail,
+  onOpenMysteryDetail,
   onRequestDelete,
 }: {
   token: string;
   filter: TravelerFilter;
   pendingOpenMissionId?: string | null;
+  pendingOpenMysteryMissionId?: string | null;
   onClearPendingMission?: () => void;
+  onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
+  onOpenMysteryDetail: (mission: MysteryMissionFeedItem) => void;
   onRequestDelete?: (c: Mission) => void;
 }) {
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const allMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const mysteryFeed = useQuery(tripcastApi.mysteryMissions.listMysteryMissionFeed, {
+    token,
+    includeDismissed: true,
+  });
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   function clearHighlightTimers() {
@@ -476,25 +580,64 @@ function TravelerListView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingOpenMissionId, allMissions]);
 
+  useEffect(() => {
+    if (!pendingOpenMysteryMissionId || !mysteryFeed) return;
+    const mission = mysteryFeed.rows.find((row) => row._id === pendingOpenMysteryMissionId);
+    if (mission) {
+      onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
+      queueMissionHighlight(pendingOpenMysteryMissionId);
+      onClearPendingMysteryMission?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenMysteryMissionId, mysteryFeed]);
+
   const filtered = allMissions?.filter((c) => {
     if (filter === "all") return true;
     if (filter === "visible") return c.status === "visible" || c.status === "planned";
     return c.status === filter;
   }) ?? [];
 
+  const filteredMystery = mysteryFeed?.rows.filter((mission) => {
+    if (filter === "all") return true;
+    if (filter === "visible") return mission.state === "signal";
+    if (filter === "completed") return mission.state === "revealed";
+    if (filter === "dropped") return mission.state === "dismissed";
+    return false;
+  }) ?? [];
+
+  const feedItems: Array<
+    | { kind: "mission"; item: Mission }
+    | { kind: "mystery"; item: MysteryMissionFeedItem }
+  > = [
+    ...filteredMystery.map((item) => ({ kind: "mystery" as const, item })),
+    ...filtered.map((item) => ({ kind: "mission" as const, item })),
+  ];
+
   return (
     <>
       <SheetBody
         className="min-h-0 space-y-2 px-4 pb-4 pt-3"
       >
-        {allMissions === undefined ? (
+        {allMissions === undefined || mysteryFeed === undefined ? (
           <PendingNotice label="Loading missions..." />
-        ) : filtered.length === 0 ? (
+        ) : feedItems.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--ink-3)]">
             {filter === "all" ? "No missions yet." : `No ${filter.replace(/_/g, " ")} missions.`}
           </p>
         ) : (
-          filtered.map((c) => {
+          feedItems.map((entry) => {
+            if (entry.kind === "mystery") {
+              return (
+                <div key={`mystery-${entry.item._id}`}>
+                  <MysteryMissionCard
+                    mission={entry.item}
+                    isHighlighted={entry.item._id === highlightedMissionId}
+                    onClick={() => onOpenMysteryDetail(entry.item)}
+                  />
+                </div>
+              );
+            }
+            const c = entry.item;
             const card = (
               <MissionCard
                 Mission={c}
@@ -677,26 +820,34 @@ type FollowerTab = "mine" | "active";
 function FollowerListView({
   token,
   pendingOpenMissionId,
+  pendingOpenMysteryMissionId,
   onClearPendingMission,
+  onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onOpenDetail,
+  onOpenMysteryDetail,
 }: {
   token: string;
   userId?: string;
   pendingOpenMissionId?: string | null;
+  pendingOpenMysteryMissionId?: string | null;
   onClearPendingMission?: () => void;
+  onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
+  onOpenMysteryDetail: (mission: MysteryMissionFeedItem) => void;
 }) {
   const [tab, setTab] = useState<FollowerTab>("active");
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const myMissions = useQuery(tripcastApi.missions.followerListMyMissions, { token });
+  const mysteryFeed = useQuery(tripcastApi.mysteryMissions.listMysteryMissionFeed, { token });
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   const mine = myMissions?.mine ?? [];
   const publicMissions = myMissions?.public ?? [];
+  const mysteryMissions = mysteryFeed?.rows ?? [];
   const mineIds = new Set(mine.map((c) => c._id));
 
   function clearHighlightTimers() {
@@ -744,6 +895,17 @@ function FollowerListView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingOpenMissionId, myMissions]);
 
+  useEffect(() => {
+    if (!pendingOpenMysteryMissionId || !mysteryFeed) return;
+    const mission = mysteryMissions.find((row) => row._id === pendingOpenMysteryMissionId);
+    if (mission) {
+      onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
+      queueMissionHighlight(pendingOpenMysteryMissionId);
+      onClearPendingMysteryMission?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingOpenMysteryMissionId, mysteryFeed]);
+
   return (
     <>
       <div className="flex gap-1.5 px-4 pt-3 pb-1" role="tablist" aria-label="Mission view">
@@ -780,7 +942,7 @@ function FollowerListView({
       <SheetBody
         className="min-h-0 space-y-2 px-4 pb-4 pt-2"
       >
-        {myMissions === undefined ? (
+        {myMissions === undefined || mysteryFeed === undefined ? (
           <PendingNotice label="Loading missions..." />
         ) : tab === "mine" ? (
           mine.length === 0 ? (
@@ -800,22 +962,33 @@ function FollowerListView({
               </div>
             ))
           )
-        ) : publicMissions.length === 0 ? (
+        ) : publicMissions.length === 0 && mysteryMissions.length === 0 ? (
           <p className="py-6 text-center text-sm text-[var(--ink-3)]">
             No active missions right now.
           </p>
         ) : (
-          publicMissions.map((c) => (
-            <div key={c._id}>
-              <MissionCard
-                Mission={c}
-                token={token}
-                isOwn={mineIds.has(c._id)}
-                isHighlighted={c._id === highlightedMissionId}
-                onClick={() => onOpenDetail(c, mineIds.has(c._id))}
-              />
-            </div>
-          ))
+          <>
+            {mysteryMissions.map((mission) => (
+              <div key={`mystery-${mission._id}`}>
+                <MysteryMissionCard
+                  mission={mission}
+                  isHighlighted={mission._id === highlightedMissionId}
+                  onClick={() => onOpenMysteryDetail(mission)}
+                />
+              </div>
+            ))}
+            {publicMissions.map((c) => (
+              <div key={c._id}>
+                <MissionCard
+                  Mission={c}
+                  token={token}
+                  isOwn={mineIds.has(c._id)}
+                  isHighlighted={c._id === highlightedMissionId}
+                  onClick={() => onOpenDetail(c, mineIds.has(c._id))}
+                />
+              </div>
+            ))}
+          </>
         )}
       </SheetBody>
     </>

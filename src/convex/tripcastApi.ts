@@ -331,6 +331,114 @@ export type MissionContentArgs = {
   estimatedEnergyImpact?: EnergyImpact;
 };
 
+export type MysteryMissionState = "signal" | "revealed" | "dismissed";
+
+export type MysteryMissionFeedItem = {
+  kind: "mystery_mission";
+  _id: string;
+  mysteryMissionId: string;
+  state: MysteryMissionState;
+  lat: number;
+  lon: number;
+  region?: string;
+  mysteryText: string;
+  trueIntent?: string;
+  locationName?: string;
+  spoilerSummary?: string;
+  spawnRadiusMiles: number;
+  priority: number;
+  tags?: string[];
+  recommendedTimeOfDay?: string;
+  estimatedVisitMinutes?: number;
+  difficulty?: string;
+  locationType?: string;
+  indoorOutdoor?: string;
+  transitFriendly?: boolean;
+  requiresTicket?: boolean;
+  timeSensitive?: boolean;
+  completedAt?: number;
+  dismissedAt?: number;
+  linkedCheckpointId?: string;
+  distanceMiles?: number;
+};
+
+export type MysteryMissionFeed = {
+  rows: MysteryMissionFeedItem[];
+  meta: {
+    suppressedByVelocity: boolean;
+    travelerLocationKnown: boolean;
+    displayLimit: number;
+  };
+};
+
+export type MysteryMissionImportPreview = {
+  valid: boolean;
+  maxMissions: number;
+  counts: { total: number; create: number; update: number };
+  existingIds: string[];
+  errors: Array<{ index?: number; id?: string; field?: string; message: string }>;
+  rows: Array<{
+    index: number;
+    id: string;
+    region?: string;
+    tags?: string[];
+    difficulty?: string;
+    estimatedVisitMinutes?: number;
+    priority: number;
+  }>;
+};
+
+export type MysteryMissionImportResult = {
+  imported: number;
+  created: number;
+  updated: number;
+};
+
+export type MysteryMissionExportRow = {
+  id: string;
+  lat: number;
+  lon: number;
+  region?: string;
+  locationName?: string;
+  mysteryText: string;
+  trueIntent: string;
+  spawnRadiusMiles: number;
+  priority: number;
+  tags?: string[];
+  recommendedTimeOfDay?: string;
+  estimatedVisitMinutes?: number;
+  difficulty?: string;
+  sourceHint?: string;
+  expiresAt?: number;
+  spoilerSummary?: string;
+  locationType?: string;
+  indoorOutdoor?: string;
+  transitFriendly?: boolean;
+  requiresTicket?: boolean;
+  timeSensitive?: boolean;
+  completedAt?: number;
+  dismissedAt?: number;
+  linkedCheckpointId?: string;
+};
+
+export type MysteryMissionManagementList = {
+  settings: { enabled: boolean };
+  counts: {
+    total: number;
+    signal: number;
+    dormant: number;
+    completed: number;
+    dismissed: number;
+  };
+  rows: MysteryMissionExportRow[];
+};
+
+export type MysteryMissionExport = {
+  version: 1;
+  exportedAt: number;
+  missions: MysteryMissionExportRow[];
+};
+
 // ---------------------------------------------------------------------------
 // Achievements / scoring types
 // ---------------------------------------------------------------------------
@@ -1515,6 +1623,74 @@ export const tripcastApi = {
       "mutation",
       "public",
       { token: string; moderationMode?: MissionModerationMode; rateLimitPreset?: MissionRateLimitPreset },
+      null
+    >,
+  },
+  mysteryMissions: {
+    travelerGetMysteryMissionSettings: (anyApi as any).mysteryMissions.travelerGetMysteryMissionSettings as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { enabled: boolean; updatedAt: number | null }
+    >,
+    travelerSetMysteryMissionsEnabled: (anyApi as any).mysteryMissions.travelerSetMysteryMissionsEnabled as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; enabled: boolean },
+      null
+    >,
+    previewMysteryMissionImport: (anyApi as any).mysteryMissions.previewMysteryMissionImport as FunctionReference<
+      "query",
+      "public",
+      { token: string; payload: any },
+      MysteryMissionImportPreview
+    >,
+    travelerImportMysteryMissions: (anyApi as any).mysteryMissions.travelerImportMysteryMissions as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; payload: any },
+      MysteryMissionImportResult
+    >,
+    travelerListMysteryMissions: (anyApi as any).mysteryMissions.travelerListMysteryMissions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      MysteryMissionManagementList
+    >,
+    travelerExportMysteryMissions: (anyApi as any).mysteryMissions.travelerExportMysteryMissions as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      MysteryMissionExport
+    >,
+    listMysteryMissionFeed: (anyApi as any).mysteryMissions.listMysteryMissionFeed as FunctionReference<
+      "query",
+      "public",
+      { token: string; includeDismissed?: boolean },
+      MysteryMissionFeed
+    >,
+    listMysteryMissionMapPins: (anyApi as any).mysteryMissions.listMysteryMissionMapPins as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      MysteryMissionFeed
+    >,
+    getMysteryMission: (anyApi as any).mysteryMissions.getMysteryMission as FunctionReference<
+      "query",
+      "public",
+      { token: string; mysteryMissionId: string },
+      MysteryMissionFeedItem | null
+    >,
+    travelerDismissMysteryMission: (anyApi as any).mysteryMissions.travelerDismissMysteryMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; mysteryMissionId: string },
+      null
+    >,
+    travelerCompleteMysteryMission: (anyApi as any).mysteryMissions.travelerCompleteMysteryMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; mysteryMissionId: string; checkpointId?: string },
       null
     >,
   },
