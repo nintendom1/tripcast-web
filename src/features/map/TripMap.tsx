@@ -76,6 +76,7 @@ import { useTripPath } from "./useTripPath";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
+import { cn } from "../../lib/utils";
 import { isEnabled, isCategoryEnabled, log as rawLog, logMapError, logMapEvent } from "../../debug/debugLogger";
 import {
   MOOD_LABELS,
@@ -1026,6 +1027,14 @@ export default function TripMap({
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastVariant, setToastVariant] = useState<"default" | "mystery">("default");
+  const [debugShowAllMysteryPins, setDebugShowAllMysteryPins] = useState(() => {
+    try {
+      return localStorage.getItem("tripcast.mystery.showAllPinsDebug") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [selectedStoryDetail, setSelectedStoryDetail] = useState<SelectedStoryDetail | null>(null);
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
@@ -1317,14 +1326,37 @@ export default function TripMap({
     musicRef.current = music;
   }, [music]);
 
-  const showToast = useCallback((message: string) => {
+  useEffect(() => {
+    function syncDebugPins(event?: Event) {
+      const custom = event as CustomEvent<{ enabled?: boolean }>;
+      if (custom.detail && typeof custom.detail.enabled === "boolean") {
+        setDebugShowAllMysteryPins(custom.detail.enabled);
+        return;
+      }
+      try {
+        setDebugShowAllMysteryPins(localStorage.getItem("tripcast.mystery.showAllPinsDebug") === "true");
+      } catch {
+        setDebugShowAllMysteryPins(false);
+      }
+    }
+    window.addEventListener("tripcast:mystery-debug-pins", syncDebugPins);
+    window.addEventListener("storage", syncDebugPins);
+    return () => {
+      window.removeEventListener("tripcast:mystery-debug-pins", syncDebugPins);
+      window.removeEventListener("storage", syncDebugPins);
+    };
+  }, []);
+
+  const showToast = useCallback((message: string, variant: "default" | "mystery" = "default") => {
     musicRef.current.sfx("toast");
     if (toastTimeoutRef.current !== null) {
       clearTimeout(toastTimeoutRef.current);
     }
+    setToastVariant(variant);
     setToastMessage(message);
     toastTimeoutRef.current = setTimeout(() => {
       setToastMessage(null);
+      setToastVariant("default");
       toastTimeoutRef.current = null;
     }, 3200);
   }, []);
@@ -3067,7 +3099,7 @@ export default function TripMap({
         checkpointId: _id,
       }).then(() => {
         music.sfx("success");
-        showToast("Mystery Mission revealed.");
+        showToast("Mystery Mission revealed.", "mystery");
       }).catch((error: unknown) => {
         log.error("mystery:complete-story:error", "mutation", {
           message: error instanceof Error ? error.message : String(error),
@@ -3267,7 +3299,12 @@ export default function TripMap({
       <MysteryMissionMarkers
         map={mapInstance}
         token={token}
+        debugShowAll={debugShowAllMysteryPins}
         onMysteryMissionClick={handleNavigateToMysteryMissionDetail}
+        onMysteryMissionReveal={() => {
+          music.sfx("success");
+          showToast("Mystery Mission revealed.", "mystery");
+        }}
       />
       <MissionMarkers
         map={mapInstance}
@@ -3335,7 +3372,12 @@ export default function TripMap({
             exit={{ y: 16, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="status"
-            className="absolute bottom-[112px] left-1/2 z-[6] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--ink-1)] shadow-lg"
+            className={cn(
+              "absolute bottom-[112px] left-1/2 z-[6] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md px-4 py-2 text-sm font-medium shadow-lg",
+              toastVariant === "mystery"
+                ? "border border-zinc-500/60 bg-zinc-950 text-zinc-100"
+                : "bg-[var(--bg-card)] text-[var(--ink-1)]",
+            )}
           >
             {toastMessage}
           </motion.div>

@@ -395,6 +395,7 @@ export type MysteryMissionImportResult = {
 };
 
 export type MysteryMissionExportRow = {
+  _id: string;
   id: string;
   lat: number;
   lon: number;
@@ -1672,7 +1673,7 @@ export const tripcastApi = {
     listMysteryMissionMapPins: (anyApi as any).mysteryMissions.listMysteryMissionMapPins as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; includeDebugAll?: boolean },
       MysteryMissionFeed
     >,
     getMysteryMission: (anyApi as any).mysteryMissions.getMysteryMission as FunctionReference<
@@ -1691,6 +1692,30 @@ export const tripcastApi = {
       "mutation",
       "public",
       { token: string; mysteryMissionId: string; checkpointId?: string },
+      null
+    >,
+    travelerPatchMysteryMission: (anyApi as any).mysteryMissions.travelerPatchMysteryMission as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        mysteryMissionId: string;
+        region?: string;
+        locationName?: string;
+        mysteryText?: string;
+        trueIntent?: string;
+        spawnRadiusMiles?: number;
+        priority?: number;
+        tags?: string[];
+        estimatedVisitMinutes?: number;
+        difficulty?: string;
+      },
+      null
+    >,
+    travelerDeleteMysteryMission: (anyApi as any).mysteryMissions.travelerDeleteMysteryMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; mysteryMissionId: string },
       null
     >,
   },

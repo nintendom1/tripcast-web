@@ -3,7 +3,7 @@ import { Check, ClipboardList, Copy, Download, Eye, EyeOff, FileJson, RadioTower
 import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { MysteryMissionImportPreview, MysteryMissionImportResult } from "../../convex/tripcastApi";
+import type { MysteryMissionExportRow, MysteryMissionImportPreview, MysteryMissionImportResult } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import {
   Sheet,
@@ -99,6 +99,26 @@ export default function MysteryMissionsSheet({
   const [working, setWorking] = useState(false);
   const [copied, setCopied] = useState<"schema" | "export" | null>(null);
   const [spoilerSafe, setSpoilerSafe] = useState(true);
+  const [debugShowAllPins, setDebugShowAllPins] = useState(() => {
+    try {
+      return localStorage.getItem("tripcast.mystery.showAllPinsDebug") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [editingMission, setEditingMission] = useState<MysteryMissionExportRow | null>(null);
+  const [deleteMissionId, setDeleteMissionId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    region: "",
+    locationName: "",
+    mysteryText: "",
+    trueIntent: "",
+    spawnRadiusMiles: "30",
+    priority: "0",
+    tags: "",
+    estimatedVisitMinutes: "",
+    difficulty: "",
+  });
   const log = useDebugLogger("MysteryMissionsSheet", "src/features/options/MysteryMissionsSheet.tsx");
   const music = useMusicSafe();
 
@@ -139,9 +159,12 @@ export default function MysteryMissionsSheet({
   );
   const setEnabled = useMutation(tripcastApi.mysteryMissions.travelerSetMysteryMissionsEnabled);
   const importMissions = useMutation(tripcastApi.mysteryMissions.travelerImportMysteryMissions);
+  const patchMission = useMutation(tripcastApi.mysteryMissions.travelerPatchMysteryMission);
+  const deleteMission = useMutation(tripcastApi.mysteryMissions.travelerDeleteMysteryMission);
 
   const enabled = settings?.enabled ?? false;
   const counts = management?.counts;
+  const managementRows = management?.rows ?? [];
   const exportText = useMemo(
     () => (exportData ? JSON.stringify(exportData, null, 2) : ""),
     [exportData],
@@ -156,6 +179,74 @@ export default function MysteryMissionsSheet({
     } catch (error) {
       setPayload(null);
       setParseError(errorText(error));
+    }
+  }
+
+  function handleDebugPinsChange(enabled: boolean) {
+    setDebugShowAllPins(enabled);
+    try {
+      localStorage.setItem("tripcast.mystery.showAllPinsDebug", enabled ? "true" : "false");
+      window.dispatchEvent(new CustomEvent("tripcast:mystery-debug-pins", { detail: { enabled } }));
+    } catch {
+      // Ignore storage failures; the sheet state still reflects the click.
+    }
+    log.logUi("action:debug-show-all-pins", { enabled });
+  }
+
+  function openEdit(row: MysteryMissionExportRow) {
+    setEditingMission(row);
+    setEditForm({
+      region: row.region ?? "",
+      locationName: row.locationName ?? "",
+      mysteryText: row.mysteryText,
+      trueIntent: row.trueIntent,
+      spawnRadiusMiles: String(row.spawnRadiusMiles),
+      priority: String(row.priority),
+      tags: row.tags?.join(", ") ?? "",
+      estimatedVisitMinutes: row.estimatedVisitMinutes ? String(row.estimatedVisitMinutes) : "",
+      difficulty: row.difficulty ?? "",
+    });
+  }
+
+  async function saveEdit() {
+    if (!editingMission || working) return;
+    setWorking(true);
+    setCommitError(null);
+    try {
+      await patchMission({
+        token,
+        mysteryMissionId: editingMission._id,
+        region: editForm.region,
+        locationName: spoilerSafe ? undefined : editForm.locationName,
+        mysteryText: spoilerSafe ? undefined : editForm.mysteryText,
+        trueIntent: spoilerSafe ? undefined : editForm.trueIntent,
+        spawnRadiusMiles: Number(editForm.spawnRadiusMiles),
+        priority: Number(editForm.priority),
+        tags: editForm.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
+        estimatedVisitMinutes: editForm.estimatedVisitMinutes ? Number(editForm.estimatedVisitMinutes) : undefined,
+        difficulty: editForm.difficulty,
+      });
+      setEditingMission(null);
+      music.sfx("success");
+    } catch (error) {
+      setCommitError(errorText(error));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function confirmDelete(rowId: string) {
+    if (working) return;
+    setWorking(true);
+    setCommitError(null);
+    try {
+      await deleteMission({ token, mysteryMissionId: rowId });
+      setDeleteMissionId(null);
+      music.sfx("success");
+    } catch (error) {
+      setCommitError(errorText(error));
+    } finally {
+      setWorking(false);
     }
   }
 
@@ -249,7 +340,118 @@ export default function MysteryMissionsSheet({
                 <CountTile label="Gone" value={counts.dismissed} />
               </div>
             ) : null}
+
+            <label className="flex min-h-14 cursor-pointer items-center justify-between rounded-xl border border-zinc-500/40 bg-zinc-950 px-4 py-3 text-zinc-100">
+              <span>
+                <span className="block text-sm font-semibold">Debug: show all map pins</span>
+                <span className="block text-xs text-zinc-400">Shows dormant imported pins without revealing true intent.</span>
+              </span>
+              <input
+                type="checkbox"
+                checked={debugShowAllPins}
+                onChange={(event) => handleDebugPinsChange(event.target.checked)}
+                className="h-5 w-5"
+                style={{ accentColor: "#18181b" }}
+              />
+            </label>
+
+            {managementRows.length ? (
+              <div className="grid gap-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)]">Imported signals</p>
+                {managementRows.slice(0, 80).map((row) => (
+                  <div key={row._id} className="grid gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className={cn("truncate text-sm font-semibold text-[var(--ink-1)]", spoilerSafe && "blur-sm select-none")}>
+                          {spoilerSafe ? "Mystery Signal" : row.mysteryText}
+                        </p>
+                        <p className="text-xs text-[var(--ink-3)]">
+                          {row.id} · {row.region ?? "Unknown region"} · priority {row.priority}
+                          {row.completedAt ? " · revealed" : row.dismissedAt ? " · dismissed" : ""}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <Button type="button" size="sm" variant="outline" onClick={() => openEdit(row)}>
+                          Edit
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setDeleteMissionId(row._id)}>
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                    {deleteMissionId === row._id ? (
+                      <div className="flex items-center justify-end gap-2 rounded-lg border border-[var(--ink-danger)] bg-[var(--bg-danger)] p-2">
+                        <span className="mr-auto text-xs text-[var(--ink-danger)]">Delete this Mystery Mission?</span>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setDeleteMissionId(null)}>
+                          Cancel
+                        </Button>
+                        <Button type="button" size="sm" disabled={working} onClick={() => confirmDelete(row._id)}>
+                          Delete
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </section>
+
+          {editingMission ? (
+            <section className="grid gap-3 rounded-xl border border-zinc-500/40 bg-[var(--bg-card)] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">Edit imported signal</p>
+                <Button type="button" size="sm" variant="outline" onClick={() => setEditingMission(null)}>
+                  Close
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                  Region
+                  <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.region} onChange={(event) => setEditForm((form) => ({ ...form, region: event.target.value }))} />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                  Difficulty
+                  <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.difficulty} onChange={(event) => setEditForm((form) => ({ ...form, difficulty: event.target.value }))} />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                  Radius miles
+                  <input type="number" className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.spawnRadiusMiles} onChange={(event) => setEditForm((form) => ({ ...form, spawnRadiusMiles: event.target.value }))} />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                  Priority
+                  <input type="number" className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.priority} onChange={(event) => setEditForm((form) => ({ ...form, priority: event.target.value }))} />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                  Visit minutes
+                  <input type="number" className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.estimatedVisitMinutes} onChange={(event) => setEditForm((form) => ({ ...form, estimatedVisitMinutes: event.target.value }))} />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                  Tags
+                  <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.tags} onChange={(event) => setEditForm((form) => ({ ...form, tags: event.target.value }))} />
+                </label>
+              </div>
+              {!spoilerSafe ? (
+                <div className="grid gap-2">
+                  <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                    Mystery text
+                    <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.mysteryText} onChange={(event) => setEditForm((form) => ({ ...form, mysteryText: event.target.value }))} />
+                  </label>
+                  <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                    True intent
+                    <textarea className="min-h-20 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.trueIntent} onChange={(event) => setEditForm((form) => ({ ...form, trueIntent: event.target.value }))} />
+                  </label>
+                  <label className="grid gap-1 text-xs font-semibold text-[var(--ink-3)]">
+                    Location name
+                    <input className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)]" value={editForm.locationName} onChange={(event) => setEditForm((form) => ({ ...form, locationName: event.target.value }))} />
+                  </label>
+                </div>
+              ) : null}
+              {commitError ? <p role="alert" className="text-sm text-[var(--ink-danger)]">{commitError}</p> : null}
+              <Button type="button" disabled={working} onClick={saveEdit}>
+                {working ? "Saving..." : "Save edits"}
+              </Button>
+            </section>
+          ) : null}
 
           <section className="grid gap-3">
             <div className="flex flex-wrap justify-between gap-2">

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { useQuery } from "convex/react";
 
@@ -8,7 +8,9 @@ import type { MysteryMissionFeedItem } from "../../convex/tripcastApi";
 type Props = {
   map: maplibregl.Map | null;
   token: string;
+  debugShowAll?: boolean;
   onMysteryMissionClick?: (missionId: string) => void;
+  onMysteryMissionReveal?: (mission: MysteryMissionFeedItem) => void;
 };
 
 function createMarkerElement(mission: MysteryMissionFeedItem) {
@@ -60,10 +62,36 @@ function createPopupContent(mission: MysteryMissionFeedItem) {
   return wrapper;
 }
 
-export default function MysteryMissionMarkers({ map, token, onMysteryMissionClick }: Props) {
+export default function MysteryMissionMarkers({
+  map,
+  token,
+  debugShowAll = false,
+  onMysteryMissionClick,
+  onMysteryMissionReveal,
+}: Props) {
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
-  const result = useQuery(tripcastApi.mysteryMissions.listMysteryMissionMapPins, { token });
-  const pins = result?.rows ?? [];
+  const revealedIdsRef = useRef<Set<string>>(new Set());
+  const initializedRef = useRef(false);
+  const result = useQuery(tripcastApi.mysteryMissions.listMysteryMissionMapPins, {
+    token,
+    includeDebugAll: debugShowAll,
+  });
+  const pins = useMemo(() => result?.rows ?? [], [result?.rows]);
+
+  useEffect(() => {
+    const revealed = new Set(pins.filter((pin) => pin.state === "revealed").map((pin) => pin._id));
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      revealedIdsRef.current = revealed;
+      return;
+    }
+    for (const pin of pins) {
+      if (pin.state === "revealed" && !revealedIdsRef.current.has(pin._id)) {
+        onMysteryMissionReveal?.(pin);
+      }
+    }
+    revealedIdsRef.current = revealed;
+  }, [onMysteryMissionReveal, pins]);
 
   useEffect(() => {
     if (!map) return;

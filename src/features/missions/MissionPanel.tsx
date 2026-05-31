@@ -582,7 +582,7 @@ function TravelerListView({
 
   useEffect(() => {
     if (!pendingOpenMysteryMissionId || !mysteryFeed) return;
-    const mission = mysteryFeed.rows.find((row) => row._id === pendingOpenMysteryMissionId);
+    const mission = mysteryFeed.rows?.find((row) => row._id === pendingOpenMysteryMissionId);
     if (mission) {
       onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
       queueMissionHighlight(pendingOpenMysteryMissionId);
@@ -597,7 +597,8 @@ function TravelerListView({
     return c.status === filter;
   }) ?? [];
 
-  const filteredMystery = mysteryFeed?.rows.filter((mission) => {
+  const mysteryRows = mysteryFeed?.rows ?? [];
+  const filteredMystery = mysteryRows.filter((mission) => {
     if (filter === "all") return true;
     if (filter === "visible") return mission.state === "signal";
     if (filter === "completed") return mission.state === "revealed";
