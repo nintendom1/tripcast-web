@@ -1070,7 +1070,6 @@ export default function TripMap({
   // can reopen MissionsPanel directly on the originating mission's detail
   // view (the four-button action set the Traveler expects to return to).
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
-  const [pendingMysteryCompletionId, setPendingMysteryCompletionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
@@ -1094,7 +1093,6 @@ export default function TripMap({
   );
   const recordLiveTrailSample = useMutation(tripcastApi.liveTrail.travelerRecordLiveTrailSample);
   const addCloakingPin = useMutation(tripcastApi.cloakingPins.travelerAddCloakingPin);
-  const completeMysteryMission = useMutation(tripcastApi.mysteryMissions.travelerCompleteMysteryMission);
   const cloakingPinsData = useQuery(
     tripcastApi.cloakingPins.travelerListCloakingPins,
     role === "traveler" ? { token } : "skip",
@@ -3055,29 +3053,6 @@ export default function TripMap({
     }
   }
 
-  function handleCompleteMysteryAsStory(mission: {
-    _id: string;
-    mysteryText: string;
-    region?: string;
-    locationName?: string;
-    lat: number;
-    lon: number;
-  }) {
-    music.sfx("page");
-    setCheckInDebugSource({ source: "mystery:complete-as-story", sourceLabel: "Mystery Mission -> Complete as Story" });
-    setIsMissionsPanelOpen(false);
-    setPendingMysteryCompletionId(mission._id);
-    setStoryPrefill({
-      title: mission.mysteryText,
-      locationLabel: mission.locationName ?? mission.region,
-    });
-    setSelectedCoordinate({
-      lat: mission.lat,
-      lon: mission.lon,
-      source: "current_activity",
-    });
-  }
-
   function handleBackFromStory() {
     music.sfx("page");
     // "← Back" inside AddCheckpointSheet's mission-completion mode: dismiss
@@ -3094,23 +3069,6 @@ export default function TripMap({
   function handleStoryCheckpointCreated(_id: string, prefill?: CheckpointPrefill) {
     setStoryPrefill(null);
     setPendingOpenDetailMissionId(null);
-    if (pendingMysteryCompletionId) {
-      void completeMysteryMission({
-        token,
-        mysteryMissionId: pendingMysteryCompletionId,
-        checkpointId: _id,
-      }).then(() => {
-        music.sfx("success");
-        showToast("Mystery Mission revealed.", "mystery");
-      }).catch((error: unknown) => {
-        log.error("mystery:complete-story:error", "mutation", {
-          message: error instanceof Error ? error.message : String(error),
-        });
-        showToast("Story saved, but Mystery reveal failed.");
-      });
-      setPendingMysteryCompletionId(null);
-      return;
-    }
     if (prefill?.completeMission) {
       music.sfx("success");
       showToast(prefill.mysteryReveal ? "Mystery Mission revealed." : "Mission completed.", prefill.mysteryReveal ? "mystery" : "default");
@@ -3603,7 +3561,6 @@ export default function TripMap({
             music.sfx("close");
             setSelectedCoordinate(null);
             setStoryPrefill(null);
-            setPendingMysteryCompletionId(null);
             // Swipe-down / escape dismissal — drop the pending detail return
             // so a later unrelated open of the missions panel doesn't surprise
             // the Traveler by jumping to this mission's detail.
@@ -3879,7 +3836,6 @@ export default function TripMap({
           onClearPendingMysteryMission={() => setPendingOpenMysteryMissionId(null)}
           onRequestNavigateToMission={handleNavigateToMission}
           onCompleteAsStory={handleCompleteAsStory}
-          onCompleteMysteryAsStory={handleCompleteMysteryAsStory}
           onMysteryMissionReveal={() => {
             music.sfx("success");
             showToast("Mystery Mission revealed.", "mystery");

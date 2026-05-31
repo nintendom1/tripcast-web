@@ -1,17 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { Plus, Trophy } from "lucide-react";
+import { Plus, RadioTower, Trophy } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
 import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import type { Mission, JournalEvent, MysteryMissionFeedItem, Role } from "../../convex/tripcastApi";
+import type { Mission, JournalEvent, Role } from "../../convex/tripcastApi";
 import { getLocalDateKey } from "../achievements/dateUtils";
 import MissionCard from "./MissionCard";
-import MysteryMissionCard from "./MysteryMissionCard";
 import MissionProposalForm from "./MissionProposalForm";
 import MissionDetailSheet from "./MissionDetailSheet";
-import MysteryMissionDetailSheet from "./MysteryMissionDetailSheet";
 import {
   Sheet,
   SheetBackButton,
@@ -48,7 +46,6 @@ type Props = {
   onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onCompleteAsStory?: (Mission: Mission) => void;
-  onCompleteMysteryAsStory?: (mission: MysteryMissionFeedItem) => void;
   onMysteryMissionReveal?: () => void;
   /** When set + the panel is open, navigate straight to the matching mission's
    *  detail view rather than the list. Used by the Complete-as-Story → Back
@@ -102,7 +99,6 @@ export default function MissionPanel({
   onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onCompleteAsStory,
-  onCompleteMysteryAsStory,
   onMysteryMissionReveal,
   pendingOpenDetailMissionId,
   onClearPendingDetail,
@@ -115,7 +111,6 @@ export default function MissionPanel({
   const { missions: missionsPersonality } = useSheetPersonalities();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedMission, setSelectedMission] = useState<SelectedMission | null>(null);
-  const [selectedMysteryMission, setSelectedMysteryMission] = useState<MysteryMissionFeedItem | null>(null);
   const [pendingDelete, setPendingDelete] = useState<Mission | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [travelerFilter, setTravelerFilter] = useState<TravelerFilter>("all");
@@ -156,7 +151,6 @@ export default function MissionPanel({
     if (!open) {
       setViewMode("list");
       setSelectedMission(null);
-      setSelectedMysteryMission(null);
       onClearPrefill?.();
     } else if (prefilledCoordinate) {
       setViewMode("create");
@@ -171,14 +165,12 @@ export default function MissionPanel({
     if (!pendingOpenMissionId) return;
     setViewMode("list");
     setSelectedMission(null);
-    setSelectedMysteryMission(null);
   }, [pendingOpenMissionId]);
 
   useEffect(() => {
     if (!pendingOpenMysteryMissionId) return;
     setViewMode("list");
     setSelectedMission(null);
-    setSelectedMysteryMission(null);
   }, [pendingOpenMysteryMissionId]);
 
   // Back-from-story navigation: the parent (TripMap) sets this when the
@@ -212,14 +204,12 @@ export default function MissionPanel({
       onClearPendingDetail?.();
       setViewMode("list");
       setSelectedMission(null);
-      setSelectedMysteryMission(null);
       return;
     }
     setSelectedMission({
       Mission: pendingDetailMission,
       isOwn: role === "traveler" || Boolean(pendingDetailMission.proposedByUserId === userId),
     });
-    setSelectedMysteryMission(null);
     setViewMode("detail");
     onClearPendingDetail?.();
     // pendingDetailMission / onClearPendingDetail are stable enough for the
@@ -227,31 +217,36 @@ export default function MissionPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, pendingOpenDetailMissionId, pendingDetailMission]);
 
+  // Mystery pin navigation: every Mystery row has a linkedMissionId after
+  // import (see ensureLinkedMission in tripcast-backend/convex/mysteryMissions.ts),
+  // so we always open the linked normal Mission's detail view.
   useEffect(() => {
     if (!open || !pendingOpenMysteryMissionId) return;
     if (pendingDetailMysteryMission === undefined) return;
     if (pendingDetailMysteryMission === null) {
       setViewMode("list");
       setSelectedMission(null);
-      setSelectedMysteryMission(null);
       onClearPendingMysteryMission?.();
       return;
     }
-    if (pendingDetailMysteryMission.linkedMissionId) {
-      if (pendingMysteryLinkedMission === undefined) return;
-      if (pendingMysteryLinkedMission !== null) {
-        setSelectedMission({
-          Mission: pendingMysteryLinkedMission,
-          isOwn: role === "traveler" || Boolean(pendingMysteryLinkedMission.proposedByUserId === userId),
-        });
-        setSelectedMysteryMission(null);
-        setViewMode("detail");
-        onClearPendingMysteryMission?.();
-        return;
-      }
+    if (!pendingDetailMysteryMission.linkedMissionId) {
+      log.warn("mystery:no-linked-mission", "data", { mysteryMissionId: pendingDetailMysteryMission._id });
+      setViewMode("list");
+      setSelectedMission(null);
+      onClearPendingMysteryMission?.();
+      return;
     }
-    setSelectedMission(null);
-    setSelectedMysteryMission(pendingDetailMysteryMission);
+    if (pendingMysteryLinkedMission === undefined) return;
+    if (pendingMysteryLinkedMission === null) {
+      setViewMode("list");
+      setSelectedMission(null);
+      onClearPendingMysteryMission?.();
+      return;
+    }
+    setSelectedMission({
+      Mission: pendingMysteryLinkedMission,
+      isOwn: role === "traveler" || Boolean(pendingMysteryLinkedMission.proposedByUserId === userId),
+    });
     setViewMode("detail");
     onClearPendingMysteryMission?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -271,29 +266,17 @@ export default function MissionPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode, selectedMission?.Mission._id]);
 
-  useEffect(() => {
-    if (viewMode !== "detail" || !selectedMysteryMission) return;
-    onRequestNavigateToMission?.({
-      lat: selectedMysteryMission.lat,
-      lon: selectedMysteryMission.lon,
-    });
-    // onRequestNavigateToMission is stable enough for our purposes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, selectedMysteryMission?._id]);
-
   function goToList(sound: "page" | "success" | null = "page") {
     log.logUi("action:view-list");
     if (sound) music.sfx(sound);
     setViewMode("list");
     setSelectedMission(null);
-    setSelectedMysteryMission(null);
   }
 
   function goToCreate() {
     log.logUi("action:create-open");
     music.sfx("page");
     setSelectedMission(null);
-    setSelectedMysteryMission(null);
     setViewMode("create");
   }
 
@@ -301,15 +284,6 @@ export default function MissionPanel({
     log.logUi("action:view-detail", { missionId: Mission._id });
     music.sfx("page");
     setSelectedMission({ Mission, isOwn });
-    setSelectedMysteryMission(null);
-    setViewMode("detail");
-  }
-
-  function goToMysteryDetail(mission: MysteryMissionFeedItem) {
-    log.logUi("action:view-mystery-detail", { mysteryMissionId: mission._id });
-    music.sfx("page");
-    setSelectedMission(null);
-    setSelectedMysteryMission(mission);
     setViewMode("detail");
   }
 
@@ -323,6 +297,11 @@ export default function MissionPanel({
   const isTraveler = role === "traveler";
   const headerTitle = isTraveler ? TITLE_BY_VIEW[viewMode].traveler : TITLE_BY_VIEW[viewMode].follower;
   const showBack = viewMode !== "list";
+  const isMysteryDetail = viewMode === "detail" && selectedMission?.Mission.source === "mystery";
+  const headerAccentColor = isMysteryDetail ? "#09090b" : missionsPersonality.color;
+  const headerGradientBg = isMysteryDetail
+    ? "linear-gradient(180deg, #18181b 0%, var(--bg-paper) 100%)"
+    : `linear-gradient(180deg, ${missionsPersonality.bg} 0%, var(--bg-paper) 100%)`;
 
   return (
     <Sheet
@@ -339,13 +318,14 @@ export default function MissionPanel({
           // Capped so the map keeps a visible band above the sheet for focus centering.
           "z-[10] max-h-[62dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
           isPickingCoordinate && "invisible pointer-events-none",
+          isMysteryDetail && "mystery-theme",
         )}
         data-role="missions-sheet"
       >
-          <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: missionsPersonality.color }} />
+          <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: headerAccentColor }} />
         <div
           className="relative flex items-start justify-between gap-2 border-b border-[var(--line-soft)] px-4 pb-3 pt-2"
-            style={{ background: `linear-gradient(180deg, ${missionsPersonality.bg} 0%, var(--bg-paper) 100%)` }}
+            style={{ background: headerGradientBg }}
         >
           <div className="flex min-w-0 flex-1 items-start gap-2">
             {showBack ? (
@@ -356,9 +336,9 @@ export default function MissionPanel({
                 <span
                   aria-hidden="true"
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
-                  style={{ background: missionsPersonality.color }}
+                  style={{ background: headerAccentColor }}
                 >
-                  <Trophy className="h-4 w-4" />
+                  {isMysteryDetail ? <RadioTower className="h-4 w-4" /> : <Trophy className="h-4 w-4" />}
                 </span>
                 <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
                   {headerTitle}
@@ -437,31 +417,6 @@ export default function MissionPanel({
                   onSuccess={() => goToList("success")}
                 />
               )}
-            </SheetBody>
-          ) : viewMode === "detail" && selectedMysteryMission ? (
-            <SheetBody className="p-0">
-              <MysteryMissionDetailSheet
-                mission={selectedMysteryMission}
-                token={token}
-                role={role}
-                onClose={() => goToList()}
-                onCompleteAsStory={
-                  onCompleteMysteryAsStory
-                    ? (mission) => {
-                        onCompleteMysteryAsStory(mission);
-                        goToList(null);
-                      }
-                    : undefined
-                }
-                onViewOnMap={() => {
-                  onRequestNavigateToMission?.({
-                    lat: selectedMysteryMission.lat,
-                    lon: selectedMysteryMission.lon,
-                  });
-                  goToList("page");
-                }}
-                debugSource={debugSource}
-              />
             </SheetBody>
           ) : viewMode === "detail" && selectedMission ? (
             <SheetBody className="p-0">

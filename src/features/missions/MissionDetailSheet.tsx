@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { Eye, MapPin, RadioTower } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, MissionStatus, JournalEvent, Role } from "../../convex/tripcastApi";
@@ -12,6 +13,7 @@ import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
+import CrypticText from "./CrypticText";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { cn } from "@/lib/utils";
@@ -468,7 +470,7 @@ export default function MissionDetailSheet({
 
   if (isEditing) {
     return (
-      <div className="flex flex-col gap-4 p-4 pt-0">
+      <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-[var(--ink-1)]">Edit Mission</span>
           <button
@@ -808,30 +810,120 @@ export default function MissionDetailSheet({
       )}
 
       {(status === "completed" || status === "dropped") && (
-        <p className="text-sm text-[var(--ink-3)]">
-          {status === "completed" ? "This Mission is complete." : "This Mission was dropped."}
-        </p>
+        <>
+          <p className="text-sm text-[var(--ink-3)]">
+            {status === "completed" ? "This Mission is complete." : "This Mission was dropped."}
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            <div className={dangerDividerClass} />
+            <span className={dangerLabelClass}>⚠ Danger</span>
+            <div className={dangerDividerClass} />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => {
+              log.logUi("action:delete-open", { missionId: c._id });
+              setShowDeleteConfirm(true);
+            }}
+            className={cn(dangerButtonClass, "w-fit")}
+          >
+            Delete mission
+          </Button>
+        </>
       )}
     </>
   );
 
-  return (
-    <div className="flex flex-col gap-4 p-4 pt-0">
-      {/* Header — status only; Edit lives in the About section so lifecycle
-          actions and field edits stay visually separate. */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">
-          {statusLabel(status, c.source)}
-        </span>
-      </div>
+  const mysteryStateLabel = status === "completed"
+    ? "Revealed"
+    : status === "in_progress"
+      ? "Active"
+      : "Unknown Signal";
 
-      {/* Title + description */}
-      <div className="flex flex-col gap-1.5">
-        <h2 className="text-base font-semibold text-[var(--ink-1)]">{c.title}</h2>
-        {c.description && (
-          <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
-        )}
-      </div>
+  return (
+    <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
+      {isMysteryMission ? (
+        <>
+          {/* Mystery hero — RadioTower chip + dark zinc card with CrypticText. */}
+          <div className="flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-zinc-500/50 bg-zinc-950 px-3 py-1 font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-100">
+              <RadioTower className="h-3.5 w-3.5" aria-hidden="true" />
+              {mysteryStateLabel}
+            </span>
+          </div>
+          <section className="grid gap-2 rounded-2xl border border-zinc-500/40 bg-zinc-950 p-4 text-zinc-100 shadow-[var(--shadow-card)]">
+            <p className="font-[var(--font-display)] text-xl font-extrabold leading-tight">
+              <CrypticText text={linkedMysteryMission?.mysteryText ?? c.title} />
+            </p>
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+              Blackbox itinerary fragment
+            </p>
+          </section>
+
+          {linkedMysteryMission?.trueIntent ? (
+            <section className="grid gap-2 rounded-xl border border-zinc-500/40 bg-[var(--bg-card)] p-3">
+              <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)]">
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                True Intent Revealed
+              </p>
+              {linkedMysteryMission.locationName ? (
+                <p className="text-sm font-semibold text-[var(--ink-1)]">{linkedMysteryMission.locationName}</p>
+              ) : null}
+              <p className="text-sm leading-relaxed text-[var(--ink-1)]">{linkedMysteryMission.trueIntent}</p>
+              {linkedMysteryMission.spoilerSummary ? (
+                <p className="text-xs text-[var(--ink-3)]">{linkedMysteryMission.spoilerSummary}</p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {(linkedMysteryMission?.region
+            || (linkedMysteryMission?.locationName && linkedMysteryMission?.trueIntent)
+            || (linkedMysteryMission?.tags?.length ?? 0) > 0) ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--ink-3)]">
+              {linkedMysteryMission?.region ? (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                  {linkedMysteryMission.region}
+                </span>
+              ) : null}
+              {linkedMysteryMission?.trueIntent && linkedMysteryMission?.locationName ? (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                  {linkedMysteryMission.locationName}
+                </span>
+              ) : null}
+              {linkedMysteryMission?.tags?.slice(0, 4).map((tag) => (
+                <span key={tag}>#{tag}</span>
+              ))}
+            </div>
+          ) : null}
+
+          {c.description && (
+            <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Header — status only; Edit lives in the About section so lifecycle
+              actions and field edits stay visually separate. */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">
+              {statusLabel(status, c.source)}
+            </span>
+          </div>
+
+          {/* Title + description */}
+          <div className="flex flex-col gap-1.5">
+            <h2 className="text-base font-semibold text-[var(--ink-1)]">{c.title}</h2>
+            {c.description && (
+              <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
+            )}
+          </div>
+        </>
+      )}
 
       {/* ── Next Steps ──────────────────────────────────────────────── */}
       <section className="flex flex-col gap-2">
@@ -1029,19 +1121,6 @@ export default function MissionDetailSheet({
             )}
           </div>
         )}
-
-        {isMysteryMission && linkedMysteryMission?.trueIntent ? (
-          <div className="rounded-md border border-zinc-600 bg-zinc-950 p-3 text-zinc-100">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Mystery revealed</p>
-            {linkedMysteryMission.locationName ? (
-              <p className="mt-1 text-sm font-semibold">{linkedMysteryMission.locationName}</p>
-            ) : null}
-            <p className="mt-1 text-sm text-zinc-200">{linkedMysteryMission.trueIntent}</p>
-            {linkedMysteryMission.spoilerSummary ? (
-              <p className="mt-2 text-xs text-zinc-400">{linkedMysteryMission.spoilerSummary}</p>
-            ) : null}
-          </div>
-        ) : null}
 
         {/* Traveler response (preset + note) — visible to both roles */}
         {(c.travelerResponsePreset || c.travelerResponseNote) && !c.silentDrop && (

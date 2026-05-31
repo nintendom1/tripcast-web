@@ -120,6 +120,26 @@
   }
 }
 
+/* Mystery Mission detail-sheet theme scope. Retints CSS custom properties under
+ * a wrapper so every descendant that consumes design tokens picks up the dark
+ * zinc palette. Apply on the sheet body wrapper only — popovers/portals must
+ * escape this scope so they stay in the standard theme. */
+.mystery-theme {
+  --bg-paper: #09090b;
+  --bg-card: #18181b;
+  --bg-paper-2: #27272a;
+  --line-soft: rgba(244, 244, 245, 0.12);
+  --ink-1: #fafafa;
+  --ink-2: #d4d4d8;
+  --ink-3: #a1a1aa;
+  --meter-track: #27272a;
+  --flag: #e4e4e7;
+  --ink-on-brand: #09090b;
+  --ink-on-dark: #09090b;
+  --bg-danger: rgba(239, 68, 68, 0.16);
+  --ink-danger: #fca5a5;
+}
+
 html,
 body,
 #root {

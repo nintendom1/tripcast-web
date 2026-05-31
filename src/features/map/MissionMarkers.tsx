@@ -14,12 +14,13 @@ const STATUS_COLORS: Record<string, string> = {
   dropped: "#94a3b8",      // muted — dropped
 };
 
+// listMissionMapPins only returns visible/planned/in_progress (+ proposed for traveler).
+// Completed/dropped Mystery linked Missions are excluded server-side so their pins
+// disappear like regular completed Missions do — see docs/mystery-missions.md.
 const MYSTERY_STATUS_COLORS: Record<string, string> = {
   visible: "#09090b",
   planned: "#09090b",
   in_progress: "#27272a",
-  completed: "#3f3f46",
-  dropped: "#71717a",
 };
 
 type Props = {
