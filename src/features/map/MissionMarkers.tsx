@@ -65,6 +65,8 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
 
   const pins = useQuery(tripcastApi.missions.listMissionMapPins, { token });
+  const preferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
+  const cutoffAt = preferences?.visible ? (preferences as any).followerContentCutoffAt : undefined;
 
   useEffect(() => {
     if (!map) return;
@@ -77,6 +79,7 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
 
     markersRef.current = pins
       .filter((c) => c.lat !== undefined && c.lon !== undefined)
+      .filter((c) => role === "traveler" || !cutoffAt || c.createdAt >= cutoffAt)
       .map((Mission) => {
         const color = STATUS_COLORS[Mission.status] ?? "#1e3a5f";
         const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(

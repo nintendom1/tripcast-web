@@ -360,4 +360,54 @@ describe("JournalSheet", () => {
       expect(onStorySelect).toHaveBeenCalledWith(travelerEvent);
     });
   });
+
+  describe("Follower content cutoff", () => {
+    const cutoffAt = new Date("2024-06-09").getTime();
+    const events = [
+      makeEvent({ _id: "old", title: "Old Story", occurredAt: new Date("2024-06-01").getTime() }),
+      makeEvent({ _id: "new", title: "New Story", occurredAt: new Date("2024-06-10").getTime() }),
+    ];
+
+    it("filters out old stories for followers when cutoff is set", () => {
+      vi.mocked(convexReact.useQuery).mockImplementation((...args: any[]) => {
+        const [ref] = args;
+        if (ref === tripcastApi.travelerPreferences.followerGetPreferences) {
+          return { visible: true, followerContentCutoffAt: cutoffAt };
+        }
+        return undefined;
+      });
+
+      render(<JournalSheet {...defaultProps} role="follower" events={events} />);
+      expect(screen.getByText("New Story")).toBeInTheDocument();
+      expect(screen.queryByText("Old Story")).not.toBeInTheDocument();
+    });
+
+    it("shows all stories for traveler even when cutoff is set", () => {
+      vi.mocked(convexReact.useQuery).mockImplementation((...args: any[]) => {
+        const [ref] = args;
+        if (ref === tripcastApi.travelerPreferences.followerGetPreferences) {
+          return { visible: true, followerContentCutoffAt: cutoffAt };
+        }
+        return undefined;
+      });
+
+      render(<JournalSheet {...defaultProps} role="traveler" events={events} />);
+      expect(screen.getByText("New Story")).toBeInTheDocument();
+      expect(screen.getByText("Old Story")).toBeInTheDocument();
+    });
+
+    it("shows all stories for follower when no cutoff is set", () => {
+      vi.mocked(convexReact.useQuery).mockImplementation((...args: any[]) => {
+        const [ref] = args;
+        if (ref === tripcastApi.travelerPreferences.followerGetPreferences) {
+          return { visible: true, followerContentCutoffAt: undefined };
+        }
+        return undefined;
+      });
+
+      render(<JournalSheet {...defaultProps} role="follower" events={events} />);
+      expect(screen.getByText("New Story")).toBeInTheDocument();
+      expect(screen.getByText("Old Story")).toBeInTheDocument();
+    });
+  });
 });

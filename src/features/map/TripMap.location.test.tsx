@@ -576,6 +576,7 @@ describe("TripMap location marker", () => {
         true,
         null,
         "#444444",
+        undefined,
         [],
         false,
       );
@@ -1220,6 +1221,7 @@ describe("TripMap location marker", () => {
         false,
         null,
         "#444444",
+        undefined,
         [],
         false,
       );
@@ -1244,6 +1246,7 @@ describe("TripMap location marker", () => {
         false,
         null,
         "#444444",
+        undefined,
         [
           { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
           { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
@@ -1267,6 +1270,7 @@ describe("TripMap location marker", () => {
         true,
         null,
         "#444444",
+        undefined,
         [],
         false,
       );
@@ -1284,6 +1288,7 @@ describe("TripMap location marker", () => {
         false,
         null,
         "#444444",
+        undefined,
         [],
         false,
       );
@@ -1305,6 +1310,7 @@ describe("TripMap location marker", () => {
         true,
         null,
         "#444444",
+        undefined,
         [],
         false,
       );
@@ -1322,6 +1328,7 @@ describe("TripMap location marker", () => {
         false,
         null,
         "#444444",
+        undefined,
         [],
         false,
       );
@@ -1342,6 +1349,7 @@ describe("TripMap location marker", () => {
         false,
         null,
         "#444444",
+        undefined,
         [],
         false,
       );
@@ -1368,6 +1376,7 @@ describe("TripMap location marker", () => {
         expect.anything(),
         null,
         "#444444",
+        undefined,
         [{ _id: "bc-1", lat: 47.615, lon: -122.335, sampledAt: 500 }],
         true,
       );
@@ -1387,6 +1396,7 @@ describe("TripMap location marker", () => {
         expect.anything(),
         null,
         "#444444",
+        undefined,
         [],
         false,
       );

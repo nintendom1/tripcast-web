@@ -69,6 +69,7 @@ export function useTripPath(
   visible: boolean,
   playheadTime: number | null = null,
   lineColor: string = "#444444",
+  cutoffAt?: number,
   liveTrailSamples: LiveTrailPoint[] = [],
   showBreadcrumbs: boolean = false,
 ) {
@@ -83,12 +84,14 @@ export function useTripPath(
         timestamp: cp.happenedAt ?? cp.createdAt,
         kind: "checkpoint" as const,
       }))
-      .filter((p) => playheadTime === null || p.timestamp <= playheadTime);
+      .filter((p) => playheadTime === null || p.timestamp <= playheadTime)
+      .filter((p) => !cutoffAt || p.timestamp >= cutoffAt);
 
     const bcPoints: UnifiedPoint[] = showBreadcrumbs
       ? liveTrailSamples
           .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon))
           .filter((s) => playheadTime === null || s.sampledAt <= playheadTime)
+          .filter((s) => !cutoffAt || s.sampledAt >= cutoffAt)
           .map((s) => ({
             lat: s.lat,
             lon: s.lon,
@@ -171,7 +174,7 @@ export function useTripPath(
       type: "FeatureCollection",
       features,
     } as GeoJSON.FeatureCollection<GeoJSON.LineString>;
-  }, [checkpoints, livePosition, visible, playheadTime, liveTrailSamples, showBreadcrumbs]);
+  }, [checkpoints, livePosition, visible, playheadTime, liveTrailSamples, showBreadcrumbs, cutoffAt]);
 
   useEffect(() => {
     if (!map) return;

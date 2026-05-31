@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Plus, Trophy } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
@@ -119,6 +119,10 @@ export default function MissionPanel({
     sourceLabel: debugSource?.sourceLabel ?? "Unknown",
     file: "src/features/missions/MissionPanel.tsx",
   }, { boundsSelector: "[data-role='missions-sheet']" });
+
+  const preferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" && open ? { token } : "skip");
+  const cutoffAt = preferences?.visible ? (preferences as any).followerContentCutoffAt : undefined;
+
   const deleteMission = useMutation(tripcastApi.missions.travelerDeleteMission);
 
   async function handleConfirmDelete() {
@@ -175,8 +179,11 @@ export default function MissionPanel({
   useEffect(() => {
     if (!open || !pendingOpenDetailMissionId) return;
     if (pendingDetailMission === undefined) return; // still loading
-    if (pendingDetailMission === null) {
-      // Mission was deleted while the user was writing the story — fall back
+    const isHiddenByCutoff =
+      role === "follower" && !!cutoffAt && pendingDetailMission && pendingDetailMission.createdAt < cutoffAt;
+
+    if (pendingDetailMission === null || isHiddenByCutoff) {
+      // Mission was deleted or hidden while the user was writing the story — fall back
       // to the list view and clear the pending id so we don't loop.
       onClearPendingDetail?.();
       setViewMode("list");
@@ -692,7 +699,19 @@ function FollowerListView({
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
-  const myMissions = useQuery(tripcastApi.missions.followerListMyMissions, { token });
+  const myMissionsQuery = useQuery(tripcastApi.missions.followerListMyMissions, { token });
+  const preferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, { token });
+  const cutoffAt = preferences?.visible ? (preferences as any).followerContentCutoffAt : undefined;
+
+  const myMissions = useMemo(() => {
+    if (!myMissionsQuery) return undefined;
+    if (!cutoffAt) return myMissionsQuery;
+    return {
+      mine: myMissionsQuery.mine.filter((m) => m.createdAt >= cutoffAt),
+      public: myMissionsQuery.public.filter((m) => m.createdAt >= cutoffAt),
+    };
+  }, [myMissionsQuery, cutoffAt]);
+
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   const mine = myMissions?.mine ?? [];
