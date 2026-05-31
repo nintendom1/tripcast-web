@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   BookOpen,
+  Bell,
   Bomb,
   Bug,
   ChevronRight,
@@ -65,6 +66,7 @@ import BulkImportSheet from "./BulkImportSheet";
 import BulkExportSheet from "./BulkExportSheet";
 import MysteryMissionsSheet from "./MysteryMissionsSheet";
 import { TERMS } from "../../copy/terminology";
+import { useTicker, TripTicker } from "../hud";
 import { triggerMapCooldown } from "../map/mapService";
 import { triggerCrash } from "../../debug/crashTrigger";
 import { getMapStyleResolution } from "../map/mapService";
@@ -89,7 +91,7 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "trip-ticker";
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -982,6 +984,11 @@ export default function OptionsSheet({
               title={TERMS.travelFunds}
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "trip-ticker" ? (
+            <SubViewHeader
+              title="Trip Ticker"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
           ) : view === "live-trail" ? (
             <SubViewHeader
               title="Live Trail"
@@ -1019,6 +1026,12 @@ export default function OptionsSheet({
                 />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "trip-ticker" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <TripTickerSettings />
+              </OptionsContentFrame>
+            </SheetBody>
           ) : view === "live-trail" ? (
             <SheetBody className="p-0">
               <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
@@ -1041,6 +1054,7 @@ export default function OptionsSheet({
               onReplayFollowerTour={onReplayFollowerTour}
               onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
               onLiveTrail={() => { music.sfx("page"); navigateTo("live-trail"); }}
+              onTripTicker={() => { music.sfx("page"); navigateTo("trip-ticker"); }}
               onCloakingPins={() => { music.sfx("page"); navigateTo("cloaking-pins"); }}
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
@@ -1146,6 +1160,7 @@ function OptionsHome({
   onReplayFollowerTour,
   onTravelFunds,
   onLiveTrail,
+  onTripTicker,
   onCloakingPins,
   onBulkImport,
   onBulkExport,
@@ -1162,6 +1177,7 @@ function OptionsHome({
   onReplayFollowerTour: () => void;
   onTravelFunds: () => void;
   onLiveTrail: () => void;
+  onTripTicker: () => void;
   onCloakingPins: () => void;
   onDebugLogs: () => void;
   onBulkImport: () => void;
@@ -1228,6 +1244,17 @@ function OptionsHome({
                 onClick={() => {
                   log.logUi("action:live-trail-settings");
                   onLiveTrail();
+                }}
+              />
+            ) : null}
+            {role === "traveler" ? (
+              <OptionsRow
+                icon={Bell}
+                title="Trip Ticker"
+                detail="Persistent scrolling notices and fun facts"
+                onClick={() => {
+                  log.logUi("action:trip-ticker-settings");
+                  onTripTicker();
                 }}
               />
             ) : null}
@@ -1869,6 +1896,182 @@ function CloakingPinsSheet({ token, log }: { token: string; log: DebugLogger }) 
             ))}
           </OptionsGroup>
         )}
+      </OptionsSection>
+    </div>
+  );
+}
+
+function TripTickerSettings() {
+  const {
+    settings,
+    updateSettings,
+    addPriorityMessage,
+    removePriorityMessage,
+    addFunFact,
+    removeFunFact,
+    clearAll,
+    currentMessage,
+    isPriority
+  } = useTicker();
+  const [priorityInput, setPriorityInput] = useState("");
+  const [funFactInput, setFunFactInput] = useState("");
+
+  return (
+    <div className="grid gap-8">
+      <OptionsSection label="Preview">
+        <OptionsGroup>
+          <div className="p-4 bg-[var(--bg-paper-2)]/30 rounded-lg overflow-hidden">
+            <TripTicker
+              message={currentMessage}
+              isPriority={isPriority}
+              className="border rounded shadow-inner"
+            />
+            {!currentMessage && (
+              <p className="text-center text-xs text-[var(--ink-3)] mt-2">
+                Ticker is currently hidden.
+              </p>
+            )}
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="General">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Ticker"
+            detail="Show the scrolling banner below the top bar."
+            checked={settings.enabled}
+            onChange={(checked) => updateSettings({ enabled: checked })}
+          />
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Priority Messages">
+        <p className="text-xs text-[var(--ink-3)] mb-2">
+          Priority messages loop continuously and take precedence over fun facts.
+        </p>
+        <OptionsGroup>
+          <div className="p-4 sm:p-5 flex gap-2">
+            <input
+              type="text"
+              value={priorityInput}
+              onChange={(e) => setPriorityInput(e.target.value)}
+              placeholder="Notice text (e.g. Low reception ahead)"
+              className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && priorityInput.trim()) {
+                  addPriorityMessage(priorityInput.trim());
+                  setPriorityInput("");
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                if (priorityInput.trim()) {
+                  addPriorityMessage(priorityInput.trim());
+                  setPriorityInput("");
+                }
+              }}
+            >
+              Add
+            </Button>
+          </div>
+          {settings.priorityMessages.map((msg) => (
+            <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
+              <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
+              <button
+                type="button"
+                onClick={() => removePriorityMessage(msg.id)}
+                className="text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Fun Facts">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Fun Facts"
+            detail="Show random trivia when no priority messages exist."
+            checked={settings.funFactsEnabled}
+            onChange={(checked) => updateSettings({ funFactsEnabled: checked })}
+          />
+          <div className="p-4 sm:p-5 flex flex-col gap-4">
+            <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
+              Minutes between fun facts
+              <select
+                value={settings.funFactIntervalMinutes}
+                onChange={(e) => updateSettings({ funFactIntervalMinutes: Number(e.target.value) })}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              >
+                {[1, 2, 5, 10, 20, 30, 60].map(m => (
+                  <option key={m} value={m}>{m} minutes</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={funFactInput}
+                onChange={(e) => setFunFactInput(e.target.value)}
+                placeholder="Fun fact text..."
+                className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && funFactInput.trim()) {
+                    addFunFact(funFactInput.trim());
+                    setFunFactInput("");
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (funFactInput.trim()) {
+                    addFunFact(funFactInput.trim());
+                    setFunFactInput("");
+                  }
+                }}
+              >
+                Add
+              </Button>
+            </div>
+          </div>
+          {settings.funFacts.map((msg) => (
+            <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
+              <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
+              <button
+                type="button"
+                onClick={() => removeFunFact(msg.id)}
+                className="text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Danger Zone">
+        <OptionsGroup>
+          <div className="p-4 sm:p-5">
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={() => {
+                if (confirm("Clear all ticker messages?")) {
+                  clearAll();
+                }
+              }}
+            >
+              Clear all messages
+            </Button>
+          </div>
+        </OptionsGroup>
       </OptionsSection>
     </div>
   );
