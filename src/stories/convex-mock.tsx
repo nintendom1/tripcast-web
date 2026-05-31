@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useState } from "react";
 const ConvexMockContext = createContext<any>({ queries: new Map(), mutations: new Map(), setQueryMock: () => {}, setMutationMock: () => {} });
 export const useQuery = (query: any, args: any) => {
   const context = useContext(ConvexMockContext);
@@ -28,10 +28,14 @@ export const useQueries = (queries: Record<string, any>) => {
 };
 export function ConvexProvider({ children }: { children: React.ReactNode }) { return <>{children}</>; }
 export function StorybookConvexProvider({ children }: { children: React.ReactNode }) {
-  const [queries] = useState(() => new Map());
-  const [mutations] = useState(() => new Map());
-  const setQueryMock = (query: any, result: any) => queries.set(query, result);
-  const setMutationMock = (mutation: any, result: any) => mutations.set(mutation, result);
+  const [queries, setQueries] = useState(() => new Map());
+  const [mutations, setMutations] = useState(() => new Map());
+  const setQueryMock = useCallback((query: any, result: any) => {
+    setQueries((current) => new Map(current).set(query, result));
+  }, []);
+  const setMutationMock = useCallback((mutation: any, result: any) => {
+    setMutations((current) => new Map(current).set(mutation, result));
+  }, []);
   return ( <ConvexMockContext.Provider value={{ queries, mutations, setQueryMock, setMutationMock }}>{children}</ConvexMockContext.Provider> );
 }
 export const useConvexMock = () => useContext(ConvexMockContext);
