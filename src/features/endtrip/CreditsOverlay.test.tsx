@@ -73,6 +73,9 @@ beforeEach(() => {
     ) {
       return missions as never;
     }
+    if (query === tripcastApi.travelerPreferences.followerGetPreferences) {
+      return { visible: true, followerContentCutoffAt: 2 } as never;
+    }
     return undefined as never;
   });
 });
@@ -92,5 +95,27 @@ describe("CreditsOverlay", () => {
     render(<CreditsOverlay token="t" role="follower" onClose={onClose} />);
     await user.click(screen.getByRole("button", { name: "Close to map archive" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("filters stats for followers based on cutoff", () => {
+    // events have occurredAt 1 and 3. Cutoff is 2.
+    // missions have occurredAt missing (defaults to true/show in current impl) or we could add it.
+
+    // With cutoff 2, only story-1 (occurredAt 3) should be counted.
+    render(<CreditsOverlay token="t" role="follower" onClose={vi.fn()} />);
+
+    // storyCount: 1, routeSteps: 1 (only story-1 has lat/lon), completedMissions: 1
+    expect(screen.getByText(/1 Stories · 1 completed Missions · 1 mapped stops/)).toBeInTheDocument();
+    // durationDays: max(1, ceil((3-3)/86400000)) = 1
+    expect(screen.getByText(/60 points · 2 badges · 2 followers · 1 days/)).toBeInTheDocument();
+  });
+
+  it("shows all stats for traveler regardless of cutoff", () => {
+    render(<CreditsOverlay token="t" role="traveler" onClose={vi.fn()} />);
+
+    // storyCount: 2, routeSteps: 1 (only story-1 has lat/lon), completedMissions: 1
+    expect(screen.getByText(/2 Stories · 1 completed Missions · 1 mapped stops/)).toBeInTheDocument();
+    // durationDays: max(1, ceil((3-1)/86400000)) = 1
+    expect(screen.getByText(/60 points · 2 badges · 2 followers · 1 days/)).toBeInTheDocument();
   });
 });
