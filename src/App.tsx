@@ -122,6 +122,8 @@ function ConnectedApp() {
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
   const [isEndTripOpen, setIsEndTripOpen] = useState(false);
   const [isCreditsOpen, setIsCreditsOpen] = useState(false);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [hasAutoOpenedCredits, setHasAutoOpenedCredits] = useState(false);
   const [optionsDefaultView, setOptionsDefaultView] = useState<OptionsView>("options");
   const [preserveDebugContext, setPreserveDebugContext] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
@@ -179,6 +181,11 @@ function ConnectedApp() {
   const activeSessionCheck =
     session?.sessionType === "follower" ? followerSessionCheck : legacySessionCheck;
 
+  const credits = useQuery(
+    tripcastApi.endTrip.getTripCredits,
+    session !== null && activeSessionCheck ? { token: session.token } : "skip",
+  );
+
   const signOutMutation = useMutation(tripcastApi.auth.signOut);
   const followerSignOutMutation = useMutation(tripcastApi.followers.followerSignOut);
   const recordDailyVisit = useMutation(tripcastApi.scoring.recordDailyVisit);
@@ -204,6 +211,27 @@ function ConnectedApp() {
       }
     };
   }, []);
+
+  // Auto-play credits finale when the trip is already ended on app load.
+  // Respects priority flows (intro sequence) and fires once per session.
+  useEffect(() => {
+    if (
+      credits?.ended &&
+      mapLoaded &&
+      !hasAutoOpenedCredits &&
+      !isIntroReplayOpen &&
+      !isCreateAccountIntroOpen
+    ) {
+      setIsCreditsOpen(true);
+      setHasAutoOpenedCredits(true);
+    }
+  }, [
+    credits?.ended,
+    mapLoaded,
+    hasAutoOpenedCredits,
+    isIntroReplayOpen,
+    isCreateAccountIntroOpen,
+  ]);
 
   // Daily-visit scoring: fire once per session token after the session
   // validates. Idempotent + no-op server-side when there is no scoring
@@ -511,6 +539,7 @@ function ConnectedApp() {
             locationResetNonce={locationResetNonce}
             tripDataResetNonce={tripDataResetNonce}
             finaleReplayActive={isCreditsOpen}
+            onMapLoaded={() => setMapLoaded(true)}
             onOpenDebugPanel={() => {
               music.sfx("open");
               setPreserveDebugContext(true);
