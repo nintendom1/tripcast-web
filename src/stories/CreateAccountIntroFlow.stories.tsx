@@ -1,6 +1,6 @@
 /** @tag ai-generated */
-import type { Meta, StoryObj } from "@storybook/react";
-import { CreateAccountIntroFlow } from "../IntroSequence";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { CreateAccountIntroFlow } from "../features/onboarding/IntroSequence";
 
 const meta: Meta<typeof CreateAccountIntroFlow> = {
   title: "Onboarding/CreateAccountIntroFlow",
@@ -24,7 +24,7 @@ type Story = StoryObj<typeof CreateAccountIntroFlow>;
 export const Default: Story = {};
 
 export const Dark: Story = {
-  parameters: {
+  globals: {
     theme: "constellation",
   },
 };

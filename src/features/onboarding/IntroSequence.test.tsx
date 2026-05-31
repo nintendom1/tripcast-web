@@ -207,4 +207,21 @@ describe("CreateAccountIntroFlow", () => {
     });
     expect(screen.getByRole("button", { name: /^skip$/i })).toBeInTheDocument();
   });
+
+  it("splash root renders with dark class when theme is constellation", () => {
+    localStorage.setItem("tripcast.theme_mode", "constellation");
+    render(
+      <ThemeProvider>
+        <CreateAccountIntroFlow
+          token="session-token"
+          role="follower"
+          accountLabel="alice"
+          userHandle="alice"
+          travelerName="Traveler"
+          onDone={vi.fn()}
+        />
+      </ThemeProvider>,
+    );
+    expect(document.querySelector("[data-role='create-account-intro']")!).toHaveClass("dark");
+  });
 });
