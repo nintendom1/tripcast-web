@@ -13,31 +13,28 @@ type Props = {
   onMysteryMissionReveal?: (mission: MysteryMissionFeedItem) => void;
 };
 
-function createMarkerElement(mission: MysteryMissionFeedItem) {
-  const wrapper = document.createElement("button");
-  wrapper.type = "button";
-  wrapper.className =
-    mission.state === "signal"
-      ? "mystery-pin mystery-pin--signal"
-      : "mystery-pin mystery-pin--revealed";
-  wrapper.setAttribute(
+function getMysteryMarkerColor(mission: MysteryMissionFeedItem) {
+  return mission.state === "signal" ? "#18181b" : "#3f3f46";
+}
+
+function decorateMarkerElement(element: HTMLElement, mission: MysteryMissionFeedItem) {
+  element.classList.add("mystery-pin");
+  element.classList.toggle("mystery-pin--signal", mission.state === "signal");
+  element.classList.toggle("mystery-pin--revealed", mission.state === "revealed");
+  element.setAttribute("role", "button");
+  element.setAttribute("tabindex", "0");
+  element.setAttribute(
     "aria-label",
     mission.state === "revealed" ? "Revealed Mystery Mission" : "Mystery Mission signal",
   );
-
-  const drop = document.createElement("span");
-  drop.className = "mystery-pin__drop";
-  wrapper.appendChild(drop);
 
   if (mission.state === "signal") {
     for (let i = 0; i < 5; i++) {
       const shard = document.createElement("span");
       shard.className = `mystery-pin__fizzle mystery-pin__fizzle--${i + 1}`;
-      wrapper.appendChild(shard);
+      element.appendChild(shard);
     }
   }
-
-  return wrapper;
 }
 
 function createPopupContent(mission: MysteryMissionFeedItem) {
@@ -100,17 +97,24 @@ export default function MysteryMissionMarkers({
     markersRef.current = [];
 
     markersRef.current = pins.map((mission) => {
-      const element = createMarkerElement(mission);
       const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
         createPopupContent(mission),
       );
-      const marker = new maplibregl.Marker({ element })
+      const marker = new maplibregl.Marker({ color: getMysteryMarkerColor(mission) })
         .setLngLat([mission.lon, mission.lat])
         .setPopup(popup)
         .addTo(map);
+      const element = marker.getElement();
+      decorateMarkerElement(element, mission);
 
       if (onMysteryMissionClick) {
         element.addEventListener("click", () => onMysteryMissionClick(mission._id));
+        element.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onMysteryMissionClick(mission._id);
+          }
+        });
       }
 
       return { marker, id: mission._id };

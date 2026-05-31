@@ -11,35 +11,11 @@
 }
 
 .mystery-pin {
-  position: relative;
-  display: grid;
-  width: 38px;
-  height: 50px;
-  place-items: start center;
-  border: 0;
-  background: transparent;
   cursor: pointer;
+}
+
+.mystery-pin > svg {
   filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.28));
-}
-
-.mystery-pin__drop {
-  position: absolute;
-  top: 2px;
-  left: 7px;
-  width: 24px;
-  height: 32px;
-  border: 1px solid rgba(255, 255, 255, 0.38);
-  border-radius: 50% 50% 50% 0;
-  background:
-    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.28) 0 20%, transparent 21%),
-    linear-gradient(135deg, #09090b, #52525b);
-  transform: rotate(-45deg);
-}
-
-.mystery-pin--revealed .mystery-pin__drop {
-  background:
-    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.34) 0 20%, transparent 21%),
-    linear-gradient(135deg, #27272a, #a1a1aa);
 }
 
 .mystery-pin__fizzle,
@@ -52,14 +28,14 @@
 }
 
 .mystery-pin__fizzle--1 {
-  left: 2px;
+  left: -4px;
   top: 7px;
   width: 11px;
   height: 7px;
 }
 
 .mystery-pin__fizzle--2 {
-  right: 2px;
+  right: -3px;
   top: 14px;
   width: 9px;
   height: 12px;
@@ -67,7 +43,7 @@
 }
 
 .mystery-pin__fizzle--3 {
-  left: 15px;
+  left: 12px;
   top: 0;
   width: 13px;
   height: 5px;
@@ -75,7 +51,7 @@
 }
 
 .mystery-pin__fizzle--4 {
-  left: 8px;
+  left: 5px;
   top: 30px;
   width: 16px;
   height: 6px;
@@ -83,7 +59,7 @@
 }
 
 .mystery-pin__fizzle--5 {
-  right: 7px;
+  right: 4px;
   top: 24px;
   width: 7px;
   height: 8px;
