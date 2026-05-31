@@ -651,3 +651,54 @@ describe("LiveTrailPreviewMap", () => {
     expect(screen.getByText("No breadcrumbs in range")).toBeInTheDocument();
   });
 });
+
+describe("OptionsSheet Privacy and Followers", () => {
+  it("shows the 'Follower content cutoff' control for Travelers", () => {
+    setupMocks();
+    renderOptions();
+    expect(screen.getByText("Privacy and Followers")).toBeInTheDocument();
+    expect(screen.getByText("Follower content cutoff")).toBeInTheDocument();
+  });
+
+  it("sets the content cutoff when date and time are entered and saved", async () => {
+    const { updatePreferencesFn } = setupMocks();
+    renderOptions();
+
+    const dateInput = screen.getByLabelText(/Cutoff Date/i);
+    const timeInput = screen.getByLabelText(/Cutoff Time/i);
+    const saveButton = screen.getByRole("button", { name: /Set Cutoff/i });
+
+    await userEvent.type(dateInput, "2024-06-09");
+    await userEvent.type(timeInput, "12:00");
+    await userEvent.click(saveButton);
+
+    expect(updatePreferencesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        followerContentCutoffAt: expect.any(Number),
+      })
+    );
+  });
+
+  it("clears the content cutoff when the clear button is clicked", async () => {
+    const { updatePreferencesFn } = setupMocks();
+    // Pre-seed with a cutoff
+    vi.mocked(convexReact.useQuery).mockImplementation((...args: any[]) => {
+      const [ref] = args;
+      if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
+        return { visible: true, followerContentCutoffAt: 1717934400000 };
+      }
+      return undefined;
+    });
+
+    renderOptions();
+
+    const clearButton = screen.getByRole("button", { name: /Clear/i });
+    await userEvent.click(clearButton);
+
+    expect(updatePreferencesFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        followerContentCutoffAt: null,
+      })
+    );
+  });
+});

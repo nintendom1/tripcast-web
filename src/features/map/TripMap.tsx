@@ -1110,13 +1110,28 @@ export default function TripMap({
     role === "follower" ? { token } : "skip",
   );
   const liveTrailEnabled = role === "traveler" && travelerLiveTrailStatus?.enabled === true;
-  const liveTrailSamples = useMemo(
-    () =>
-      role === "traveler"
-        ? (travelerLiveTrailStatus?.samples ?? [])
-        : (followerLiveTrail?.visible ? followerLiveTrail.samples : []),
-    [role, travelerLiveTrailStatus, followerLiveTrail],
+  const followerPreferences = useQuery(
+    tripcastApi.travelerPreferences.followerGetPreferences,
+    role === "follower" ? { token } : "skip",
   );
+
+  const travelerAllowsFollowerPath = followerPreferences?.visible
+    ? ((followerPreferences as any).allowFollowersTripPath ?? false)
+    : false;
+  const followerContentCutoffAt = followerPreferences?.visible
+    ? (followerPreferences as any).followerContentCutoffAt
+    : undefined;
+
+  const liveTrailSamples = useMemo(() => {
+    const all =
+      role === "traveler"
+        ? travelerLiveTrailStatus?.samples ?? []
+        : followerLiveTrail?.visible
+          ? followerLiveTrail.samples
+          : [];
+    if (role === "traveler" || !followerContentCutoffAt) return all;
+    return all.filter((s) => s.sampledAt >= followerContentCutoffAt);
+  }, [role, travelerLiveTrailStatus, followerLiveTrail, followerContentCutoffAt]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
@@ -1133,11 +1148,6 @@ export default function TripMap({
     return () => window.removeEventListener("tripcast.preferencesUpdated", handler);
   }, []);
 
-  const followerPreferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
-
-  const travelerAllowsFollowerPath = followerPreferences?.visible
-    ? ((followerPreferences as any).allowFollowersTripPath ?? false)
-    : false;
   const showPath = role === "traveler"
     ? showTripPathLocal
     : travelerAllowsFollowerPath && showTripPathLocal;
@@ -1172,7 +1182,11 @@ export default function TripMap({
   const currentSessionId = sessionData?.sessionId || followerSession?.sessionId;
 
   const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
-  const journalEvents = useMemo(() => queriedJournalEvents ?? [], [queriedJournalEvents]);
+  const journalEvents = useMemo(() => {
+    const all = queriedJournalEvents ?? [];
+    if (role === "traveler" || !followerContentCutoffAt) return all;
+    return all.filter((e) => e.occurredAt >= followerContentCutoffAt);
+  }, [queriedJournalEvents, role, followerContentCutoffAt]);
   const replayPins = useMemo<ReplayPin[]>(() => {
     const checkpointPins: ReplayPin[] = journalEvents
       .filter(isFiniteReplayCoordinate)
@@ -1239,6 +1253,7 @@ export default function TripMap({
     showPath,
     replayRevealUpTo,
     routeLineColor,
+    followerContentCutoffAt,
     liveTrailSamples,
     liveTrailPathVisible,
   );

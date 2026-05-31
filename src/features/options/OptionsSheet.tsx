@@ -2,6 +2,12 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 import {
   BookOpen,
   Bomb,
@@ -17,6 +23,7 @@ import {
   Play,
   RadioTower,
   Route,
+  Shield,
   ShieldAlert,
   Trash2,
   Trophy,
@@ -182,6 +189,151 @@ function combineDateTime(date: string, time: string) {
 }
 
 type LiveTrailPreviewSample = LiveTrailDeletePreview["samples"][number];
+
+function PrivacyFollowersSection({ token }: { token: string }) {
+  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
+  const updatePreferences = useMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const cutoffAt = preferences?.followerContentCutoffAt;
+  const timeZone = preferences?.travelerTimeZone ?? detectBrowserTimeZone() ?? "UTC";
+
+  const [date, setDate] = useState(() => (cutoffAt ? formatDateInputValue(cutoffAt, timeZone) : ""));
+  const [time, setTime] = useState(() => (cutoffAt ? formatTimeInputValue(cutoffAt, timeZone) : ""));
+
+  // Update local state when preferences load
+  useEffect(() => {
+    if (cutoffAt) {
+      setDate(formatDateInputValue(cutoffAt, timeZone));
+      setTime(formatTimeInputValue(cutoffAt, timeZone));
+    }
+  }, [cutoffAt, timeZone]);
+
+  async function handleSave() {
+    setError(null);
+    setSaving(true);
+    try {
+      let followerContentCutoffAt: number | null = null;
+      if (date && time) {
+        // Use the Traveler's saved timezone to parse the date/time string.
+        // This ensures the timestamp is correct even if the viewer's browser
+        // is in a different timezone.
+        const dt = dayjs.tz(`${date}T${time}`, timeZone);
+        followerContentCutoffAt = dt.valueOf();
+      }
+
+      await updatePreferences({ token, followerContentCutoffAt });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleClear() {
+    setError(null);
+    setSaving(true);
+    try {
+      await updatePreferences({ token, followerContentCutoffAt: null });
+      setDate("");
+      setTime("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <OptionsSection label="Privacy and Followers">
+      <OptionsGroup>
+        <div className="grid gap-4 p-4 sm:p-5">
+          <div className="flex items-start gap-4">
+            <OptionsIcon icon={Shield} />
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-semibold text-[var(--ink-1)]">Follower content cutoff</p>
+              <p className="text-sm text-[var(--ink-3)]">
+                Hide content older than this date/time from Followers.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <label
+                htmlFor="cutoff-date"
+                className="text-sm font-semibold text-[var(--ink-1)] text-xs uppercase tracking-wider opacity-70"
+              >
+                Cutoff Date
+              </label>
+              <input
+                id="cutoff-date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label
+                htmlFor="cutoff-time"
+                className="text-sm font-semibold text-[var(--ink-1)] text-xs uppercase tracking-wider opacity-70"
+              >
+                Cutoff Time
+              </label>
+              <input
+                id="cutoff-time"
+                type="time"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving || !date || !time}
+              onClick={handleSave}
+              className="flex-1"
+            >
+              {saving ? "Saving..." : "Set Cutoff"}
+            </Button>
+            {cutoffAt ? (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={saving}
+                onClick={handleClear}
+                className="text-[var(--ink-danger)] hover:bg-[var(--bg-danger)]"
+              >
+                Clear
+              </Button>
+            ) : null}
+          </div>
+
+          {error ? (
+            <p className="text-xs text-[var(--ink-danger)]" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {cutoffAt ? (
+            <p className="text-xs text-[var(--ink-3)]">
+              Current cutoff: {new Date(cutoffAt).toLocaleString()}
+            </p>
+          ) : (
+            <p className="text-xs text-[var(--ink-3)]">
+              No cutoff set. All content is visible to Followers.
+            </p>
+          )}
+        </div>
+      </OptionsGroup>
+    </OptionsSection>
+  );
+}
 
 function TravelerTimezoneSection({ token }: { token: string }) {
   const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, {
@@ -1213,6 +1365,7 @@ function OptionsHome({
       <OptionsContentFrame className="grid gap-10 py-8 pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
         {role === "traveler" ? developerSection : null}
 
+        <PrivacyFollowersSection token={session.token} />
         <AppearanceSection />
         <SoundSection />
         <ReadingSection />

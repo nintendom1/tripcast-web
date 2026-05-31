@@ -752,12 +752,18 @@ export type TravelerPreferences = {
   sleepStartMinutes?: number;
   sleepEndMinutes?: number;
   sleepStaleThresholdMs: number;
+  followerContentCutoffAt?: number;
   updatedAt: number | null;
 };
 
 export type TravelerPreferencesForFollower =
   | { visible: false }
-  | { visible: true; travelerTimeZone?: string; allowFollowersTripPath: boolean };
+  | {
+      visible: true;
+      travelerTimeZone?: string;
+      allowFollowersTripPath: boolean;
+      followerContentCutoffAt?: number;
+    };
 
 export type Message = {
   _id: string;
@@ -1889,7 +1895,7 @@ export const tripcastApi = {
     travelerUpdatePreferences: (anyApi as any).travelerPreferences.travelerUpdatePreferences as FunctionReference<
       "mutation",
       "public",
-      { token: string; allowFollowersTripPath?: boolean },
+      { token: string; allowFollowersTripPath?: boolean; followerContentCutoffAt?: number | null },
       null
     >,
     travelerUpdateSleepHours: (anyApi as any).travelerPreferences.travelerUpdateSleepHours as FunctionReference<

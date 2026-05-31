@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   Camera,
@@ -157,7 +157,7 @@ type JournalSheetProps = {
 };
 
 export default function JournalSheet({
-  events,
+  events: allEvents,
   token,
   open,
   role,
@@ -188,6 +188,14 @@ export default function JournalSheet({
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
   const calibration = useCenteringCalibration();
   const sheetPersonalities = useSheetPersonalities();
+  const preferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
+  const cutoffAt = preferences?.visible ? (preferences as any).followerContentCutoffAt : undefined;
+
+  const events = useMemo(() => {
+    if (role === "traveler" || !cutoffAt) return allEvents;
+    return allEvents.filter((e) => e.occurredAt >= cutoffAt);
+  }, [allEvents, role, cutoffAt]);
+
   useActiveUiContext(open, {
     sheetName: "JournalSheet",
     label: TERMS.journal,

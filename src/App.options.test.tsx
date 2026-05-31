@@ -93,7 +93,7 @@ describe("App: Options sheet — Traveler", () => {
     setupSessionMocks("traveler");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
-    expect(screen.getByRole("heading", { name: /followers/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /privacy and followers/i })).toBeInTheDocument();
   });
 
   it("shows Bulk Import and Bulk Export in the traveler Data / Dev section", async () => {
