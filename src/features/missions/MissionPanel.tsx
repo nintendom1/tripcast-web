@@ -230,7 +230,7 @@ export default function MissionPanel({
       return;
     }
     if (!pendingDetailMysteryMission.linkedMissionId) {
-      log.warn("mystery:no-linked-mission", "data", { mysteryMissionId: pendingDetailMysteryMission._id });
+      log.warn("mystery:no-linked-mission", "error", { mysteryMissionId: pendingDetailMysteryMission._id });
       setViewMode("list");
       setSelectedMission(null);
       onClearPendingMysteryMission?.();

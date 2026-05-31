@@ -837,11 +837,11 @@ export default function MissionDetailSheet({
     </>
   );
 
-  const mysteryStateLabel = status === "completed"
-    ? "Revealed"
-    : status === "in_progress"
-      ? "Active"
-      : "Unknown Signal";
+  const mysteryStateLabel =
+    status === "completed" ? "Revealed"
+      : status === "dropped" ? "Dismissed"
+        : status === "in_progress" ? "Active"
+          : "Unknown Signal";
 
   return (
     <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
@@ -879,23 +879,22 @@ export default function MissionDetailSheet({
             </section>
           ) : null}
 
-          {(linkedMysteryMission?.region
-            || (linkedMysteryMission?.locationName && linkedMysteryMission?.trueIntent)
-            || (linkedMysteryMission?.tags?.length ?? 0) > 0) ? (
-            <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--ink-3)]">
-              {linkedMysteryMission?.region ? (
+          {linkedMysteryMission ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--ink-3)] empty:hidden">
+              {linkedMysteryMission.region ? (
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                   {linkedMysteryMission.region}
                 </span>
               ) : null}
-              {linkedMysteryMission?.trueIntent && linkedMysteryMission?.locationName ? (
+              {/* Backend only returns locationName after reveal — see mysteryMissions.ts publicMission(). */}
+              {linkedMysteryMission.locationName ? (
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
                   {linkedMysteryMission.locationName}
                 </span>
               ) : null}
-              {linkedMysteryMission?.tags?.slice(0, 4).map((tag) => (
+              {linkedMysteryMission.tags?.slice(0, 4).map((tag) => (
                 <span key={tag}>#{tag}</span>
               ))}
             </div>
