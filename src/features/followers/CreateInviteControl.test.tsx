@@ -25,13 +25,41 @@ afterEach(() => {
 });
 
 describe("CreateInviteControl", () => {
+  it("creates single-use invites from Invite One", async () => {
+    const createInvite = vi.fn().mockResolvedValue({ inviteToken: "invite-one-tok" });
+    vi.mocked(convexReact.useMutation).mockReturnValue(createInvite as any);
+
+    render(<CreateInviteControl token="test-token" />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /invite one/i }));
+    });
+
+    expect(createInvite).toHaveBeenCalledWith({ token: "test-token", mode: "single" });
+    expect(screen.getByText(/usable once/i)).toBeInTheDocument();
+  });
+
+  it("creates reusable invites from Invite many", async () => {
+    const createInvite = vi.fn().mockResolvedValue({ inviteToken: "invite-many-tok" });
+    vi.mocked(convexReact.useMutation).mockReturnValue(createInvite as any);
+
+    render(<CreateInviteControl token="test-token" />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /invite many/i }));
+    });
+
+    expect(createInvite).toHaveBeenCalledWith({ token: "test-token", mode: "multi" });
+    expect(screen.getByText(/reusable until it expires/i)).toBeInTheDocument();
+  });
+
   it("uses the configured public app URL for invite links", async () => {
     vi.stubEnv("VITE_PUBLIC_APP_URL", "https://nintendom1.github.io/tripcast-web");
 
     render(<CreateInviteControl token="test-token" />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /create invite link/i }));
+      fireEvent.click(screen.getByRole("button", { name: /invite one/i }));
     });
 
     expect(screen.getByText("https://nintendom1.github.io/tripcast-web/?invite=invite-tok")).toBeInTheDocument();
@@ -44,7 +72,7 @@ describe("CreateInviteControl", () => {
     render(<CreateInviteControl token="test-token" />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /create invite link/i }));
+      fireEvent.click(screen.getByRole("button", { name: /invite one/i }));
     });
 
     expect(screen.getByText("http://localhost:3000/tripcast-web/?invite=invite-tok")).toBeInTheDocument();
@@ -61,7 +89,7 @@ describe("CreateInviteControl", () => {
     render(<CreateInviteControl token="test-token" />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /create invite link/i }));
+      fireEvent.click(screen.getByRole("button", { name: /invite one/i }));
     });
 
     const copyButton = screen.getByRole("button", { name: /copy invite link/i });
@@ -100,7 +128,7 @@ describe("CreateInviteControl", () => {
     render(<CreateInviteControl token="test-token" />);
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /create invite link/i }));
+      fireEvent.click(screen.getByRole("button", { name: /invite one/i }));
     });
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /copy invite link/i }));

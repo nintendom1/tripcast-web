@@ -1850,7 +1850,7 @@ export const tripcastApi = {
     createInvite: (anyApi as any).followerAdmin.createInvite as FunctionReference<
       "mutation",
       "public",
-      { token: string },
+      { token: string; mode?: "single" | "multi" },
       { inviteToken: string }
     >,
     listFollowers: (anyApi as any).followerAdmin.listFollowers as FunctionReference<

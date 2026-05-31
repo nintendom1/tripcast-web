@@ -14,6 +14,8 @@ type CreateInviteControlProps = {
   token: string;
 };
 
+type InviteMode = "single" | "multi";
+
 function ensureTrailingSlash(url: string) {
   return url.endsWith("/") ? url : `${url}/`;
 }
@@ -38,8 +40,9 @@ function buildInviteUrl(inviteToken: string) {
 export default function CreateInviteControl({ token }: CreateInviteControlProps) {
   const createInvite = useMutation(tripcastApi.followerAdmin.createInvite);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [inviteMode, setInviteMode] = useState<InviteMode>("single");
   const [copied, setCopied] = useState(false);
-  const [isPending, setIsPending] = useState(false);
+  const [pendingMode, setPendingMode] = useState<InviteMode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -73,13 +76,14 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
     }, 2000);
   }
 
-  async function handleCreate() {
-    if (isPending) return;
+  async function handleCreate(mode: InviteMode) {
+    if (pendingMode !== null) return;
     setError(null);
-    setIsPending(true);
+    setPendingMode(mode);
     try {
-      const result = await createInvite({ token });
+      const result = await createInvite({ token, mode });
       setInviteUrl(buildInviteUrl(result.inviteToken));
+      setInviteMode(mode);
       clearCopiedTimer();
       setCopied(false);
     } catch (err) {
@@ -90,7 +94,7 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
           : "Failed to create invite.",
       );
     } finally {
-      setIsPending(false);
+      setPendingMode(null);
     }
   }
 
@@ -125,13 +129,31 @@ export default function CreateInviteControl({ token }: CreateInviteControlProps)
             {copied ? "Copied!" : "Copy invite link"}
           </Button>
           <p className="text-xs text-[var(--ink-3)]">
-            Expires in 24 hours. Link clears automatically after 1 minute.
+            {inviteMode === "multi" ? "Reusable until it expires." : "Usable once."} Expires in 24 hours.
+            Link clears automatically after 1 minute.
           </p>
         </div>
       ) : (
-        <Button size="sm" variant="outline" type="button" disabled={isPending} onClick={handleCreate}>
-          {isPending ? "Creating…" : "Create Invite Link"}
-        </Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            size="sm"
+            variant="outline"
+            type="button"
+            disabled={pendingMode !== null}
+            onClick={() => handleCreate("single")}
+          >
+            {pendingMode === "single" ? "Creating…" : "Invite One"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            type="button"
+            disabled={pendingMode !== null}
+            onClick={() => handleCreate("multi")}
+          >
+            {pendingMode === "multi" ? "Creating…" : "Invite many"}
+          </Button>
+        </div>
       )}
       {error ? (
         <p role="alert" className={inviteErrorClass}>

@@ -10,7 +10,11 @@ const ConvexMockWrapper = ({ children, convexMocks }: { children: React.ReactNod
       if (Array.isArray(convexMocks.queries)) { convexMocks.queries.forEach(({ query, result }: any) => { setQueryMock(query, result); }); }
       else { Object.entries(convexMocks.queries).forEach(([query, result]) => { setQueryMock(query, result); }); }
     }
-  }, [convexMocks, setQueryMock]);
+    if (convexMocks?.mutations) {
+      if (Array.isArray(convexMocks.mutations)) { convexMocks.mutations.forEach(({ mutation, result }: any) => { setMutationMock(mutation, result); }); }
+      else { Object.entries(convexMocks.mutations).forEach(([mutation, result]) => { setMutationMock(mutation, result); }); }
+    }
+  }, [convexMocks, setMutationMock, setQueryMock]);
   return <>{children}</>;
 };
 const withConvex: Decorator = (Story, context) => {
