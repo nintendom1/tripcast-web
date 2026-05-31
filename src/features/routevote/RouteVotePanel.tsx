@@ -102,7 +102,7 @@ function OptionCheckbox({ checked }: { checked: boolean }) {
   );
 }
 
-function VoteCard({ vote, showTallies, onSelect }: VoteCardProps) {
+export function VoteCard({ vote, showTallies, onSelect }: VoteCardProps) {
   const { votes: votesPersonality, missions: missionPersonality } = useSheetPersonalities();
   const total = getVoteTotal(vote);
   const winner = vote.options.find((option) => option._id === vote.confirmedWinningOptionId);

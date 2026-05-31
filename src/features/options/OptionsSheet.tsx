@@ -1701,7 +1701,7 @@ function InfoRow({
   );
 }
 
-function OptionsRow({
+export function OptionsRow({
   icon: Icon,
   title,
   detail,
