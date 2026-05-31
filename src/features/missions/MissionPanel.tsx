@@ -167,12 +167,6 @@ export default function MissionPanel({
     setSelectedMission(null);
   }, [pendingOpenMissionId]);
 
-  useEffect(() => {
-    if (!pendingOpenMysteryMissionId) return;
-    setViewMode("list");
-    setSelectedMission(null);
-  }, [pendingOpenMysteryMissionId]);
-
   // Back-from-story navigation: the parent (TripMap) sets this when the
   // Traveler hits "← Back" inside AddCheckpointSheet's mission-completion
   // mode. We look up the Mission by id and drop the user straight back on
@@ -381,9 +375,7 @@ export default function MissionPanel({
                 token={token}
                 filter={travelerFilter}
                 pendingOpenMissionId={pendingOpenMissionId}
-                pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
                 onClearPendingMission={onClearPendingMission}
-                onClearPendingMysteryMission={onClearPendingMysteryMission}
                 onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
                 onRequestDelete={(c) => setPendingDelete(c)}
@@ -393,9 +385,7 @@ export default function MissionPanel({
                 token={token}
                 userId={userId}
                 pendingOpenMissionId={pendingOpenMissionId}
-                pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
                 onClearPendingMission={onClearPendingMission}
-                onClearPendingMysteryMission={onClearPendingMysteryMission}
                 onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
               />
@@ -483,9 +473,7 @@ function TravelerListView({
   token,
   filter,
   pendingOpenMissionId,
-  pendingOpenMysteryMissionId,
   onClearPendingMission,
-  onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onOpenDetail,
   onRequestDelete,
@@ -493,9 +481,7 @@ function TravelerListView({
   token: string;
   filter: TravelerFilter;
   pendingOpenMissionId?: string | null;
-  pendingOpenMysteryMissionId?: string | null;
   onClearPendingMission?: () => void;
-  onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
   onRequestDelete?: (c: Mission) => void;
@@ -548,19 +534,6 @@ function TravelerListView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingOpenMissionId, allMissions]);
-
-  useEffect(() => {
-    if (!pendingOpenMysteryMissionId || !allMissions) return;
-    const mission = allMissions.find((row) => row.sourceMysteryMissionId === pendingOpenMysteryMissionId);
-    if (mission) {
-      if (mission.lat !== undefined && mission.lon !== undefined) {
-        onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
-      }
-      queueMissionHighlight(mission._id);
-      onClearPendingMysteryMission?.();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOpenMysteryMissionId, allMissions]);
 
   const filtered = allMissions?.filter((c) => {
     if (filter === "all") return true;
@@ -766,18 +739,14 @@ type FollowerTab = "mine" | "active";
 function FollowerListView({
   token,
   pendingOpenMissionId,
-  pendingOpenMysteryMissionId,
   onClearPendingMission,
-  onClearPendingMysteryMission,
   onRequestNavigateToMission,
   onOpenDetail,
 }: {
   token: string;
   userId?: string;
   pendingOpenMissionId?: string | null;
-  pendingOpenMysteryMissionId?: string | null;
   onClearPendingMission?: () => void;
-  onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
 }) {
@@ -836,19 +805,6 @@ function FollowerListView({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingOpenMissionId, myMissions]);
-
-  useEffect(() => {
-    if (!pendingOpenMysteryMissionId || !myMissions) return;
-    const mission = publicMissions.find((row) => row.sourceMysteryMissionId === pendingOpenMysteryMissionId);
-    if (mission) {
-      if (mission.lat !== undefined && mission.lon !== undefined) {
-        onRequestNavigateToMission?.({ lat: mission.lat, lon: mission.lon });
-      }
-      queueMissionHighlight(mission._id);
-      onClearPendingMysteryMission?.();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingOpenMysteryMissionId, myMissions]);
 
   return (
     <>

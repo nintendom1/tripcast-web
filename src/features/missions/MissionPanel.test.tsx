@@ -230,6 +230,76 @@ describe("MissionPanel pending mission highlight", () => {
   });
 });
 
+describe("MissionPanel mystery pin navigation", () => {
+  it("navigates straight to the linked Mission's detail view when a mystery pin id is pending", async () => {
+    const linkedMission = {
+      _id: "ch-mystery-1",
+      _creationTime: 1,
+      title: "ReD PAth",
+      status: "visible",
+      source: "mystery",
+      sourceMysteryMissionId: "mm-1",
+      lat: 34.9671,
+      lon: 135.7727,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const mystery = {
+      _id: "mm-1",
+      mysteryMissionId: "kyoto-fushimi-001",
+      state: "signal",
+      mysteryText: "ReD PAth",
+      region: "Kyoto",
+      linkedMissionId: "ch-mystery-1",
+    };
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (ref === tripcastApi.mysteryMissions.getMysteryMission) return mystery;
+      if (ref === tripcastApi.missions.getMission) return linkedMission;
+      if (ref === tripcastApi.missions.travelerListMissions) return [linkedMission];
+      if (ref === tripcastApi.journalEvents.listJournalEvents) return [];
+      return undefined;
+    });
+    const onClearPendingMysteryMission = vi.fn();
+
+    renderPanel({
+      pendingOpenMysteryMissionId: "mm-1",
+      onClearPendingMysteryMission,
+    });
+
+    // Detail view renders the RadioTower chip for the mystery (not the list view).
+    expect(await screen.findByText("Unknown Signal")).toBeInTheDocument();
+    expect(screen.getByText("Next steps")).toBeInTheDocument();
+    expect(onClearPendingMysteryMission).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to list view when the mystery has no linkedMissionId", async () => {
+    const orphanMystery = {
+      _id: "mm-2",
+      mysteryMissionId: "no-link-001",
+      state: "signal",
+      mysteryText: "OrphAn",
+      linkedMissionId: undefined,
+    };
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (ref === tripcastApi.mysteryMissions.getMysteryMission) return orphanMystery;
+      if (ref === tripcastApi.missions.travelerListMissions) return [];
+      return undefined;
+    });
+    const onClearPendingMysteryMission = vi.fn();
+
+    renderPanel({
+      pendingOpenMysteryMissionId: "mm-2",
+      onClearPendingMysteryMission,
+    });
+
+    // No detail view section labels — empty list message renders instead.
+    expect(screen.queryByText("Next steps")).not.toBeInTheDocument();
+    expect(onClearPendingMysteryMission).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("MissionPanel Follower ownership", () => {
   it("lets a Follower withdraw a mission opened from Mine even when userId is not available", async () => {
     const user = userEvent.setup();
