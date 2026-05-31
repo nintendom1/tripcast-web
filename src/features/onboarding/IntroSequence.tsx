@@ -396,6 +396,8 @@ export function CreateAccountIntroFlow({
   const markIntroSeen = useMutation(tripcastApi.onboarding.markIntroSeen);
   const log = useDebugLogger("CreateAccountIntroFlow", "src/features/onboarding/IntroSequence.tsx");
   const music = useMusicSafe();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "constellation";
 
   // Punch lands a fun "plop" — the earliest sound a brand-new user hears.
   React.useEffect(() => {
@@ -486,11 +488,17 @@ export function CreateAccountIntroFlow({
     <div
       ref={rootRef}
       data-role="create-account-intro"
-      className="fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-[var(--meadow-bg)] px-6 text-center"
+      className={cn(
+        "fixed inset-0 z-[60] grid place-items-center overflow-hidden px-6 text-center transition-colors duration-500",
+        isDark && "dark",
+        isDark
+          ? "bg-[var(--bg-paper)] text-[var(--ink-1)]"
+          : "bg-[var(--meadow-bg)] text-[var(--meadow-ink)]"
+      )}
     >
       {/* Subtle mute toggle — top-right corner is otherwise empty here. */}
       <MusicMuteIndicator className="absolute right-4 top-4 z-10" />
-      <IntroBackdrop beat={0} />
+      <IntroBackdrop beat={0} isDark={isDark} />
       <AnimatePresence mode="wait">
         {stage === "welcome" || stage === "welcome-out" ? (
           <motion.h1
@@ -499,7 +507,10 @@ export function CreateAccountIntroFlow({
             animate={stage === "welcome-out" ? { opacity: 0, y: -8 } : { opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="relative z-[1] font-[var(--meadow-font-display)] text-5xl font-extrabold text-[var(--meadow-ink)]"
+            className={cn(
+              "relative z-[1] font-[var(--meadow-font-display)] text-5xl font-extrabold transition-colors duration-500",
+              isDark ? "text-[var(--foreground)]" : "text-[var(--meadow-ink)]"
+            )}
           >
             Welcome
           </motion.h1>
@@ -512,8 +523,13 @@ export function CreateAccountIntroFlow({
             transition={{ duration: stage === "punch" ? 1 : 1.5, ease: stage === "punch" ? "easeIn" : "easeOut" }}
             className="relative z-[1] grid gap-4 justify-items-center"
           >
-            <BrandCrest />
-            <div className="font-[var(--meadow-font-display)] text-4xl font-extrabold leading-none text-[var(--meadow-ink)]">
+            <BrandCrest isDark={isDark} />
+            <div
+              className={cn(
+                "font-[var(--meadow-font-display)] text-4xl font-extrabold leading-none transition-colors duration-500",
+                isDark ? "text-[var(--foreground)]" : "text-[var(--meadow-ink)]"
+              )}
+            >
               TripCast
             </div>
           </motion.div>
@@ -523,11 +539,11 @@ export function CreateAccountIntroFlow({
   );
 }
 
-function BrandCrest({ className }: { className?: string }) {
+function BrandCrest({ className, isDark }: { className?: string; isDark?: boolean }) {
   return (
     <span
       className={cn("grid h-20 w-20 place-items-center rounded-[26px] text-white shadow-[0_16px_40px_rgba(255,139,74,0.35)]", className)}
-      style={{ background: "var(--meadow-primary)" }}
+      style={{ background: isDark ? "var(--flag)" : "var(--meadow-primary)" }}
       aria-hidden="true"
     >
       <Flag className="h-10 w-10" strokeWidth={2.5} />
