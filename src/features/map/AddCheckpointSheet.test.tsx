@@ -133,6 +133,19 @@ describe("AddCheckpointSheet", () => {
     });
   });
 
+  it("passes the selected photo display size on submit", async () => {
+    const onSave = vi.fn().mockResolvedValue("id");
+    const user = userEvent.setup();
+    render(<AddCheckpointSheet {...makeProps({ onSave, onUploadImage: vi.fn() })} />);
+
+    await user.click(screen.getByRole("button", { name: /large/i }));
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ imageSize: "large" }));
+    });
+  });
+
   it("calls onClose after successful save", async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
