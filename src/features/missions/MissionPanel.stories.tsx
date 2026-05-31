@@ -11,6 +11,7 @@ export const Default: StoryObj<typeof meta> = {
     convexMocks: {
       queries: [
         { query: tripcastApi.missions.travelerListMissions, result: FAKE_MISSIONS },
+        { query: tripcastApi.mysteryMissions.listMysteryMissionFeed, result: { rows: [{ kind: "mystery_mission", _id: "mm1", mysteryMissionId: "kyoto-fushimi-001", state: "signal", lat: 34.9671, lon: 135.7727, region: "Kyoto", mysteryText: "ReD PAth", spawnRadiusMiles: 30, priority: 3 }], meta: { suppressedByVelocity: false, travelerLocationKnown: true, displayLimit: 3 } } },
         { query: tripcastApi.missionSettings.travelerGetMissionSettings, result: { moderationMode: "manual_review", rateLimitPreset: "off" } },
         { query: tripcastApi.attributions.listAttributionsForSource, result: { publicCopy: "Bob" } },
       ]

@@ -10,6 +10,136 @@
   box-sizing: border-box;
 }
 
+.mystery-pin {
+  cursor: pointer;
+}
+
+.mystery-pin > svg {
+  filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.28));
+}
+
+.mystery-pin__fizzle,
+.mystery-card-fizzle {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(24, 24, 27, 0.62);
+  mix-blend-mode: multiply;
+  animation: mystery-fizzle 720ms steps(2, end) infinite;
+}
+
+.mystery-pin__fizzle--1 {
+  left: -4px;
+  top: 7px;
+  width: 11px;
+  height: 7px;
+}
+
+.mystery-pin__fizzle--2 {
+  right: -3px;
+  top: 14px;
+  width: 9px;
+  height: 12px;
+  animation-delay: 110ms;
+}
+
+.mystery-pin__fizzle--3 {
+  left: 12px;
+  top: 0;
+  width: 13px;
+  height: 5px;
+  animation-delay: 190ms;
+}
+
+.mystery-pin__fizzle--4 {
+  left: 5px;
+  top: 30px;
+  width: 16px;
+  height: 6px;
+  animation-delay: 310ms;
+}
+
+.mystery-pin__fizzle--5 {
+  right: 4px;
+  top: 24px;
+  width: 7px;
+  height: 8px;
+  animation-delay: 430ms;
+}
+
+.mystery-card-fizzle {
+  background: rgba(63, 63, 70, 0.16);
+}
+
+.mystery-card-fizzle-a {
+  left: 14%;
+  top: 18%;
+  width: 18px;
+  height: 10px;
+}
+
+.mystery-card-fizzle-b {
+  right: 18%;
+  top: 42%;
+  width: 24px;
+  height: 8px;
+  animation-delay: 150ms;
+}
+
+.mystery-card-fizzle-c {
+  left: 44%;
+  bottom: 14%;
+  width: 15px;
+  height: 14px;
+  animation-delay: 280ms;
+}
+
+@keyframes mystery-fizzle {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+  35% {
+    opacity: 0.85;
+    transform: translate(2px, -1px);
+  }
+  70% {
+    opacity: 0.35;
+    transform: translate(-1px, 1px);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mystery-pin__fizzle,
+  .mystery-card-fizzle {
+    animation: none;
+    opacity: 0.18;
+  }
+}
+
+/* Mystery Mission detail-sheet theme scope. Retints CSS custom properties under
+ * a wrapper so every descendant that consumes design tokens picks up the dark
+ * zinc palette. Apply on the sheet body wrapper only — popovers/portals must
+ * escape this scope so they stay in the standard theme. */
+.mystery-theme {
+  --bg-paper: #09090b;
+  --bg-card: #18181b;
+  --bg-paper-2: #27272a;
+  --line-soft: rgba(244, 244, 245, 0.12);
+  --ink-1: #fafafa;
+  --ink-2: #d4d4d8;
+  --ink-3: #a1a1aa;
+  --meter-track: #27272a;
+  --flag: #e4e4e7;
+  --ink-on-brand: #09090b;
+  --ink-on-dark: #09090b;
+  --bg-danger: rgba(239, 68, 68, 0.16);
+  --ink-danger: #fca5a5;
+}
+
 html,
 body,
 #root {

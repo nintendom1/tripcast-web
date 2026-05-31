@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { Eye, MapPin, RadioTower } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, MissionStatus, JournalEvent, Role } from "../../convex/tripcastApi";
@@ -11,6 +12,8 @@ import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection"
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
+import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
+import CrypticText from "./CrypticText";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { cn } from "@/lib/utils";
@@ -56,12 +59,24 @@ type Props = {
   onCompleteAsStory?: (Mission: Mission) => void;
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: JournalEvent) => void;
+  onMysteryMissionReveal?: () => void;
   /** Provenance for the debug "Active UI Context" — where the detail was opened
    *  from. Threaded down from MissionPanel. */
   debugSource?: { source: string; sourceLabel: string };
 };
 
-function statusLabel(status: string): string {
+function statusLabel(status: string, source?: string): string {
+  if (source === "mystery") {
+    const mysteryLabels: Record<string, string> = {
+      proposed: "Unlocked",
+      visible: "Unlocked",
+      planned: "Unlocked",
+      in_progress: "Active",
+      completed: "Completed",
+      dropped: "Dropped",
+    };
+    return mysteryLabels[status] ?? status;
+  }
   const labels: Record<string, string> = {
     proposed: "Pending review",
     visible: "Accepted",
@@ -100,6 +115,7 @@ export default function MissionDetailSheet({
   onCompleteAsStory,
   onRequestNavigateToVote,
   onOpenLinkedStory,
+  onMysteryMissionReveal,
   debugSource,
 }: Props) {
   const log = useDebugLogger("MissionDetailSheet", "src/features/missions/MissionDetailSheet.tsx");
@@ -129,6 +145,7 @@ export default function MissionDetailSheet({
   const [actionError, setActionError] = useState<string | null>(null);
   const [isWorking, setIsWorking] = useState(false);
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
+  const [mysteryEditOpen, setMysteryEditOpen] = useState(false);
 
   const accept = useMutation(tripcastApi.missions.travelerAcceptMission);
   const drop = useMutation(tripcastApi.missions.travelerDropMission);
@@ -147,6 +164,11 @@ export default function MissionDetailSheet({
     Mission ? { token, missionId: Mission._id } : "skip",
   );
   const c = liveMission ?? Mission;
+  const mysteryMissionId = c?.source === "mystery" ? c.sourceMysteryMissionId : undefined;
+  const linkedMysteryMission = useQuery(
+    tripcastApi.mysteryMissions.getMysteryMission,
+    mysteryMissionId ? { token, mysteryMissionId } : "skip",
+  );
 
   const currentActivity = useQuery(
     tripcastApi.currentActivity.travelerGetCurrentActivity,
@@ -181,6 +203,7 @@ export default function MissionDetailSheet({
   const isTraveler = role === "traveler";
   const canAct = !isWorking;
   const status = c.status;
+  const isMysteryMission = c.source === "mystery";
   const hasLocation = c.lat !== undefined && c.lon !== undefined;
   const conflictingMission = (inProgressMissions ?? []).find((ch) => ch._id !== c._id) ?? null;
   const hasMeta =
@@ -192,6 +215,11 @@ export default function MissionDetailSheet({
 
   function openEditMode() {
     log.logUi("action:edit-open", { missionId: c!._id });
+    if (c!.source === "mystery" && c!.sourceMysteryMissionId) {
+      setMysteryEditOpen(true);
+      setActionError(null);
+      return;
+    }
     log.logForm("form:open");
     setEditTitle(c!.title);
     setEditDesc(c!.description ?? "");
@@ -330,6 +358,7 @@ export default function MissionDetailSheet({
     setActionError(null);
     try {
       await complete({ token, missionId: Mission._id });
+      if (isMysteryMission) onMysteryMissionReveal?.();
       onClose();
     } catch (e) {
       setActionError(friendlyError(e));
@@ -441,7 +470,7 @@ export default function MissionDetailSheet({
 
   if (isEditing) {
     return (
-      <div className="flex flex-col gap-4 p-4 pt-0">
+      <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-[var(--ink-1)]">Edit Mission</span>
           <button
@@ -614,7 +643,7 @@ export default function MissionDetailSheet({
             disabled={!canAct}
             onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
           >
-            Mark &lsquo;In Progress&rsquo;
+            {isMysteryMission ? "Start Mission" : <>Mark &lsquo;In Progress&rsquo;</>}
           </Button>
           <Button
             variant="outline"
@@ -672,7 +701,7 @@ export default function MissionDetailSheet({
             disabled={!canAct}
             onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
           >
-            Mark &lsquo;In Progress&rsquo;
+            {isMysteryMission ? "Start Mission" : <>Mark &lsquo;In Progress&rsquo;</>}
           </Button>
           <Button
             variant="outline"
@@ -781,30 +810,119 @@ export default function MissionDetailSheet({
       )}
 
       {(status === "completed" || status === "dropped") && (
-        <p className="text-sm text-[var(--ink-3)]">
-          {status === "completed" ? "This Mission is complete." : "This Mission was dropped."}
-        </p>
+        <>
+          <p className="text-sm text-[var(--ink-3)]">
+            {status === "completed" ? "This Mission is complete." : "This Mission was dropped."}
+          </p>
+          <div className="flex items-center gap-2 pt-1">
+            <div className={dangerDividerClass} />
+            <span className={dangerLabelClass}>⚠ Danger</span>
+            <div className={dangerDividerClass} />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={!canAct}
+            onClick={() => {
+              log.logUi("action:delete-open", { missionId: c._id });
+              setShowDeleteConfirm(true);
+            }}
+            className={cn(dangerButtonClass, "w-fit")}
+          >
+            Delete mission
+          </Button>
+        </>
       )}
     </>
   );
 
-  return (
-    <div className="flex flex-col gap-4 p-4 pt-0">
-      {/* Header — status only; Edit lives in the About section so lifecycle
-          actions and field edits stay visually separate. */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">
-          {statusLabel(status)}
-        </span>
-      </div>
+  const mysteryStateLabel =
+    status === "completed" ? "Revealed"
+      : status === "dropped" ? "Dismissed"
+        : status === "in_progress" ? "Active"
+          : "Unknown Signal";
 
-      {/* Title + description */}
-      <div className="flex flex-col gap-1.5">
-        <h2 className="text-base font-semibold text-[var(--ink-1)]">{c.title}</h2>
-        {c.description && (
-          <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
-        )}
-      </div>
+  return (
+    <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
+      {isMysteryMission ? (
+        <>
+          {/* Mystery hero — RadioTower chip + dark zinc card with CrypticText. */}
+          <div className="flex items-center justify-between gap-3">
+            <span className="inline-flex items-center gap-2 rounded-full border border-zinc-500/50 bg-zinc-950 px-3 py-1 font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-100">
+              <RadioTower className="h-3.5 w-3.5" aria-hidden="true" />
+              {mysteryStateLabel}
+            </span>
+          </div>
+          <section className="grid gap-2 rounded-2xl border border-zinc-500/40 bg-zinc-950 p-4 text-zinc-100 shadow-[var(--shadow-card)]">
+            <p className="font-[var(--font-display)] text-xl font-extrabold leading-tight">
+              <CrypticText text={linkedMysteryMission?.mysteryText ?? c.title} />
+            </p>
+            <p className="text-xs uppercase tracking-[0.16em] text-zinc-400">
+              Blackbox itinerary fragment
+            </p>
+          </section>
+
+          {linkedMysteryMission?.trueIntent ? (
+            <section className="grid gap-2 rounded-xl border border-zinc-500/40 bg-[var(--bg-card)] p-3">
+              <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)]">
+                <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                True Intent Revealed
+              </p>
+              {linkedMysteryMission.locationName ? (
+                <p className="text-sm font-semibold text-[var(--ink-1)]">{linkedMysteryMission.locationName}</p>
+              ) : null}
+              <p className="text-sm leading-relaxed text-[var(--ink-1)]">{linkedMysteryMission.trueIntent}</p>
+              {linkedMysteryMission.spoilerSummary ? (
+                <p className="text-xs text-[var(--ink-3)]">{linkedMysteryMission.spoilerSummary}</p>
+              ) : null}
+            </section>
+          ) : null}
+
+          {linkedMysteryMission ? (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-[var(--ink-3)] empty:hidden">
+              {linkedMysteryMission.region ? (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                  {linkedMysteryMission.region}
+                </span>
+              ) : null}
+              {/* Backend only returns locationName after reveal — see mysteryMissions.ts publicMission(). */}
+              {linkedMysteryMission.locationName ? (
+                <span className="inline-flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5" aria-hidden="true" />
+                  {linkedMysteryMission.locationName}
+                </span>
+              ) : null}
+              {linkedMysteryMission.tags?.slice(0, 4).map((tag) => (
+                <span key={tag}>#{tag}</span>
+              ))}
+            </div>
+          ) : null}
+
+          {c.description && (
+            <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
+          )}
+        </>
+      ) : (
+        <>
+          {/* Header — status only; Edit lives in the About section so lifecycle
+              actions and field edits stay visually separate. */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">
+              {statusLabel(status, c.source)}
+            </span>
+          </div>
+
+          {/* Title + description */}
+          <div className="flex flex-col gap-1.5">
+            <h2 className="text-base font-semibold text-[var(--ink-1)]">{c.title}</h2>
+            {c.description && (
+              <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
+            )}
+          </div>
+        </>
+      )}
 
       {/* ── Next Steps ──────────────────────────────────────────────── */}
       <section className="flex flex-col gap-2">
@@ -1085,6 +1203,12 @@ export default function MissionDetailSheet({
           )}
         </section>
       )}
+      <MysteryMissionEditSheet
+        open={mysteryEditOpen}
+        token={token}
+        mysteryMissionId={mysteryMissionId ?? null}
+        onOpenChange={setMysteryEditOpen}
+      />
     </div>
   );
 }

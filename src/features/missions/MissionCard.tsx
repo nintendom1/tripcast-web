@@ -1,6 +1,6 @@
 import type { Mission } from "../../convex/tripcastApi";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
-import { CheckSquare, Clock, DollarSign, MapPin, Trophy, Zap } from "lucide-react";
+import { CheckSquare, Clock, DollarSign, MapPin, RadioTower, Trophy, Zap } from "lucide-react";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 type Props = {
@@ -31,8 +31,12 @@ const STATUS_STYLES: Record<string, { text: string; background: string; border: 
 
 export default function MissionCard({ Mission, token, isOwn, isHighlighted, onClick }: Props) {
   const { missions: missionPersonality, votes: votesPersonality } = useSheetPersonalities();
+  const isMystery = Mission.source === "mystery";
   const statusLabel = STATUS_LABELS[Mission.status] ?? Mission.status;
-  const statusStyle = STATUS_STYLES[Mission.status] ?? STATUS_STYLES.proposed;
+  const statusStyle = isMystery
+    ? { text: "#18181b", background: "rgba(24,24,27,0.08)", border: "rgba(24,24,27,0.28)" }
+    : STATUS_STYLES[Mission.status] ?? STATUS_STYLES.proposed;
+  const iconColor = isMystery ? "#09090b" : missionPersonality.color;
 
   return (
     <button
@@ -42,10 +46,12 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
         isHighlighted ? "ring-2" : ""
       }`}
       style={{
-        borderColor: isHighlighted ? missionPersonality.color : "var(--line-soft)",
-        background: isHighlighted ? missionPersonality.bg : "var(--bg-card)",
+        borderColor: isHighlighted ? iconColor : isMystery ? "rgba(24,24,27,0.32)" : "var(--line-soft)",
+        background: isHighlighted
+          ? isMystery ? "rgba(24,24,27,0.08)" : missionPersonality.bg
+          : "var(--bg-card)",
         boxShadow: isHighlighted
-          ? `0 0 0 2px color-mix(in oklab, ${missionPersonality.color} 28%, transparent), var(--shadow-card)`
+          ? `0 0 0 2px color-mix(in oklab, ${iconColor} 28%, transparent), var(--shadow-card)`
           : undefined,
       }}
       onClick={onClick}
@@ -53,13 +59,17 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
       <span
         className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border"
         style={{
-          color: missionPersonality.color,
-          background: "color-mix(in oklab, var(--meadow-gold) 18%, var(--bg-paper))",
-          borderColor: "color-mix(in oklab, var(--meadow-gold) 45%, var(--line-soft))",
+          color: iconColor,
+          background: isMystery
+            ? "color-mix(in oklab, #09090b 10%, var(--bg-paper))"
+            : "color-mix(in oklab, var(--meadow-gold) 18%, var(--bg-paper))",
+          borderColor: isMystery
+            ? "rgba(24,24,27,0.36)"
+            : "color-mix(in oklab, var(--meadow-gold) 45%, var(--line-soft))",
         }}
         aria-hidden="true"
       >
-        <Trophy className="h-[18px] w-[18px]" />
+        {isMystery ? <RadioTower className="h-[18px] w-[18px]" /> : <Trophy className="h-[18px] w-[18px]" />}
       </span>
 
       <span className="flex min-w-0 flex-1 flex-col gap-1.5">

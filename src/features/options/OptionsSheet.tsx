@@ -15,6 +15,7 @@ import {
   Flag,
   LogOut,
   Play,
+  RadioTower,
   Route,
   ShieldAlert,
   Trash2,
@@ -62,6 +63,7 @@ import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import BulkImportSheet from "./BulkImportSheet";
 import BulkExportSheet from "./BulkExportSheet";
+import MysteryMissionsSheet from "./MysteryMissionsSheet";
 import { TERMS } from "../../copy/terminology";
 import { triggerMapCooldown } from "../map/mapService";
 import { triggerCrash } from "../../debug/crashTrigger";
@@ -87,7 +89,7 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "debug-logs" | "cloaking-pins";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins";
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -1320,6 +1322,7 @@ function OptionsHome({
                   onBulkExport();
                 }}
               />
+              <MysteryMissionsOptionsRow token={session.token} />
             </OptionsGroup>
           </OptionsSection>
 
@@ -1730,6 +1733,30 @@ export function OptionsRow({
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ink-3)]" aria-hidden />
     </button>
+  );
+}
+
+function MysteryMissionsOptionsRow({ token }: { token: string }) {
+  const [open, setOpen] = useState(false);
+  const log = useDebugLogger("MysteryMissionsOptionsRow", "src/features/options/OptionsSheet.tsx");
+
+  return (
+    <>
+      <OptionsRow
+        icon={RadioTower}
+        title="Mystery Missions"
+        detail="Import, export, and review proximity signals"
+        onClick={() => {
+          log.logUi("action:mystery-missions");
+          setOpen(true);
+        }}
+      />
+      <MysteryMissionsSheet
+        open={open}
+        token={token}
+        onOpenChange={setOpen}
+      />
+    </>
   );
 }
 

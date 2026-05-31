@@ -24,6 +24,7 @@ import AddCheckpointSheet, {
 } from "./AddCheckpointSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import MissionMarkers from "./MissionMarkers";
+import MysteryMissionMarkers from "./MysteryMissionMarkers";
 import MissionPanel from "../missions/MissionPanel";
 import RouteVotePanel from "../routevote/RouteVotePanel";
 import VoteTimeSplash from "../routevote/VoteTimeSplash";
@@ -75,6 +76,7 @@ import { useTripPath } from "./useTripPath";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
+import { cn } from "../../lib/utils";
 import { isEnabled, isCategoryEnabled, log as rawLog, logMapError, logMapEvent } from "../../debug/debugLogger";
 import {
   MOOD_LABELS,
@@ -1025,6 +1027,14 @@ export default function TripMap({
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastVariant, setToastVariant] = useState<"default" | "mystery">("default");
+  const [debugShowAllMysteryPins, setDebugShowAllMysteryPins] = useState(() => {
+    try {
+      return localStorage.getItem("tripcast.mystery.showAllPinsDebug") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [selectedStoryDetail, setSelectedStoryDetail] = useState<SelectedStoryDetail | null>(null);
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
@@ -1048,6 +1058,7 @@ export default function TripMap({
   const [storyDebugSource, setStoryDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [checkInDebugSource, setCheckInDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [pendingOpenMissionId, setPendingOpenMissionId] = useState<string | null>(null);
+  const [pendingOpenMysteryMissionId, setPendingOpenMysteryMissionId] = useState<string | null>(null);
   const [missionPrefillCoordinate, setMissionPrefillCoordinate] = useState<{ lat: number; lon: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; lat: number; lon: number } | null>(null);
   // Mission Complete-as-Story flow: when the Traveler picks the "Complete as story"
@@ -1313,14 +1324,37 @@ export default function TripMap({
     musicRef.current = music;
   }, [music]);
 
-  const showToast = useCallback((message: string) => {
+  useEffect(() => {
+    function syncDebugPins(event?: Event) {
+      const custom = event as CustomEvent<{ enabled?: boolean }>;
+      if (custom.detail && typeof custom.detail.enabled === "boolean") {
+        setDebugShowAllMysteryPins(custom.detail.enabled);
+        return;
+      }
+      try {
+        setDebugShowAllMysteryPins(localStorage.getItem("tripcast.mystery.showAllPinsDebug") === "true");
+      } catch {
+        setDebugShowAllMysteryPins(false);
+      }
+    }
+    window.addEventListener("tripcast:mystery-debug-pins", syncDebugPins);
+    window.addEventListener("storage", syncDebugPins);
+    return () => {
+      window.removeEventListener("tripcast:mystery-debug-pins", syncDebugPins);
+      window.removeEventListener("storage", syncDebugPins);
+    };
+  }, []);
+
+  const showToast = useCallback((message: string, variant: "default" | "mystery" = "default") => {
     musicRef.current.sfx("toast");
     if (toastTimeoutRef.current !== null) {
       clearTimeout(toastTimeoutRef.current);
     }
+    setToastVariant(variant);
     setToastMessage(message);
     toastTimeoutRef.current = setTimeout(() => {
       setToastMessage(null);
+      setToastVariant("default");
       toastTimeoutRef.current = null;
     }, 3200);
   }, []);
@@ -2878,6 +2912,21 @@ export default function TripMap({
     setPendingOpenDetailMissionId(missionId);
   }
 
+  function handleNavigateToMysteryMissionDetail(mysteryMissionId: string) {
+    log.logInteraction("panel:navigate", { from: "map", to: "Missions", mysteryMissionId });
+    music.sfx("page");
+    setMissionsDebugSource({ source: "map:mystery-pin", sourceLabel: "Mystery Pin -> Missions" });
+    setIsVotePanelOpen(false);
+    setVoteMapOverlay(null);
+    setVoteOptionNumberById(null);
+    setIsMissionsPanelOpen(true);
+    setIsJournalOpen(false);
+    setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
+    setIsMessagingOpen(false);
+    setPendingOpenMysteryMissionId(mysteryMissionId);
+  }
+
   function handleOpenLinkedStory(event: JournalEvent) {
     log.logInteraction("panel:navigate", { from: "Missions", to: "story", eventId: event._id });
     music.sfx("page");
@@ -2969,6 +3018,7 @@ export default function TripMap({
   function handleCompleteAsStory(Mission: {
     _id: string;
     status?: string;
+    source?: string;
     title?: string;
     description?: string;
     locationLabel?: string;
@@ -2981,6 +3031,7 @@ export default function TripMap({
     setStoryPrefill({
       missionId: Mission._id,
       completeMission: Mission.status === "in_progress",
+      mysteryReveal: Mission.source === "mystery",
       title: Mission.title,
       note: Mission.description,
       locationLabel: Mission.locationLabel,
@@ -3020,7 +3071,7 @@ export default function TripMap({
     setPendingOpenDetailMissionId(null);
     if (prefill?.completeMission) {
       music.sfx("success");
-      showToast("Mission completed.");
+      showToast(prefill.mysteryReveal ? "Mystery Mission revealed." : "Mission completed.", prefill.mysteryReveal ? "mystery" : "default");
     } else if (prefill?.missionId) {
       music.sfx("success");
       showToast("Story added to mission.");
@@ -3205,6 +3256,16 @@ export default function TripMap({
         fallbackOrigin={routeVoteFallbackOrigin}
         optionNumberById={voteOptionNumberById}
       />
+      <MysteryMissionMarkers
+        map={mapInstance}
+        token={token}
+        debugShowAll={debugShowAllMysteryPins}
+        onMysteryMissionClick={handleNavigateToMysteryMissionDetail}
+        onMysteryMissionReveal={() => {
+          music.sfx("success");
+          showToast("Mystery Mission revealed.", "mystery");
+        }}
+      />
       <MissionMarkers
         map={mapInstance}
         token={token}
@@ -3271,7 +3332,12 @@ export default function TripMap({
             exit={{ y: 16, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="status"
-            className="absolute bottom-[112px] left-1/2 z-[6] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md bg-[var(--bg-card)] px-4 py-2 text-sm font-medium text-[var(--ink-1)] shadow-lg"
+            className={cn(
+              "absolute bottom-[112px] left-1/2 z-[6] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md px-4 py-2 text-sm font-medium shadow-lg",
+              toastVariant === "mystery"
+                ? "border border-zinc-500/60 bg-zinc-950 text-zinc-100"
+                : "bg-[var(--bg-card)] text-[var(--ink-1)]",
+            )}
           >
             {toastMessage}
           </motion.div>
@@ -3765,9 +3831,15 @@ export default function TripMap({
           onRequestCoordinatePick={handleRequestMissionCoordinatePick}
           isPickingCoordinate={isPickingCoordinate}
           pendingOpenMissionId={pendingOpenMissionId}
+          pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
           onClearPendingMission={() => setPendingOpenMissionId(null)}
+          onClearPendingMysteryMission={() => setPendingOpenMysteryMissionId(null)}
           onRequestNavigateToMission={handleNavigateToMission}
           onCompleteAsStory={handleCompleteAsStory}
+          onMysteryMissionReveal={() => {
+            music.sfx("success");
+            showToast("Mystery Mission revealed.", "mystery");
+          }}
           pendingOpenDetailMissionId={pendingOpenDetailMissionId}
           prefilledCoordinate={missionPrefillCoordinate}
           onClearPrefill={() => setMissionPrefillCoordinate(null)}

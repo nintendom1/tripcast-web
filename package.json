@@ -22,6 +22,7 @@
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:ci": "vitest run --project=node",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
   },
