@@ -3417,9 +3417,7 @@ export default function TripMap({
 
       {/* Debug chip — only visible when debug logging is enabled */}
       {onOpenDebugPanel ? (
-        <div className="absolute right-3 top-12 z-[3]">
-          <DebugChip onOpen={onOpenDebugPanel} />
-        </div>
+        <DebugChip onOpen={onOpenDebugPanel} />
       ) : null}
 
       {/* Calibration indicator — signals that map sheets won't dismiss on map interaction */}
