@@ -121,6 +121,9 @@ const SOUNDTRACK_OPTIONS = [
   { value: "story", label: "Story" },
   { value: "vote", label: "Vote" },
   { value: "mission", label: "Mission" },
+  { value: "song1", label: "Song 1" },
+  { value: "song2", label: "Song 2" },
+  { value: "song3_night", label: "Night" },
 ] as const;
 
 const optionsContentFrameClass = "mx-auto w-full max-w-[1024px] px-4 sm:px-8 lg:px-10";

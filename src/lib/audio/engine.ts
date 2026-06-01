@@ -6,6 +6,9 @@
  */
 
 import { debugLoggerFor } from "@/debug/useDebugLogger";
+import { PATCHES, isPatchSoundtrack, type PatchSoundtrackId } from "./patches";
+import { computeLoopSeconds, scheduleOneLoop } from "./patchRenderer";
+import type { MusicEditorPatch } from "./patchTypes";
 
 export type AudioScenario = "idle" | "voteActive" | "missionActive" | "overBudget" | "story";
 
@@ -17,7 +20,8 @@ export type AudioSoundtrack =
   | "cafe"
   | "story"
   | "vote"
-  | "mission";
+  | "mission"
+  | PatchSoundtrackId;
 
 export type SfxName =
   | "pin"
@@ -141,7 +145,7 @@ const PROGRESSIONS: Record<string, Progression> = {
 export function resolveSoundtrackScenario(
   scenario: AudioScenario,
   soundtrack: AudioSoundtrack,
-): keyof typeof PROGRESSIONS {
+): keyof typeof PROGRESSIONS | PatchSoundtrackId {
   if (soundtrack !== "auto") return soundtrack;
   if (scenario === "voteActive") return "vote";
   if (scenario === "missionActive") return "mission";
@@ -161,9 +165,11 @@ class TripcastAudioEngine implements AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private reverb: GainNode | null = null;
+  private patchBus: GainNode | null = null;
   private scheduler: ReturnType<typeof setTimeout> | null = null;
   private scheduledAt = 0;
   private beat = 0;
+  private patchCursor = 0;
   private scenario: AudioScenario = "idle";
   private soundtrack: AudioSoundtrack = "auto";
   private volume = 0.3;
@@ -236,6 +242,30 @@ class TripcastAudioEngine implements AudioEngine {
     if (this.soundtrack === soundtrack) return;
     this.soundtrack = soundtrack;
     this.log.logAudio("engine:soundtrack", { soundtrack });
+    if (this.ctx) {
+      const anchor = this.ctx.currentTime + 0.05;
+      this.scheduledAt = anchor;
+      this.beat = 0;
+      this.patchCursor = anchor;
+      // Patches pre-schedule a whole loop (potentially 20+s) into the audio
+      // graph, so a soundtrack switch must actively silence the previous
+      // patch — fade out the old patchBus and route subsequent patch
+      // playback through a fresh bus.
+      if (this.patchBus && this.master) {
+        const old = this.patchBus;
+        const now = this.ctx.currentTime;
+        old.gain.cancelScheduledValues(now);
+        old.gain.setValueAtTime(old.gain.value, now);
+        old.gain.linearRampToValueAtTime(0, now + 0.08);
+        setTimeout(() => {
+          try { old.disconnect(); } catch { /* already disconnected */ }
+        }, 250);
+        const next = this.ctx.createGain();
+        next.gain.value = 1;
+        next.connect(this.master);
+        this.patchBus = next;
+      }
+    }
   }
 
   sfx(name: SfxName): void {
@@ -318,23 +348,39 @@ class TripcastAudioEngine implements AudioEngine {
     lowpass.connect(this.master);
     this.reverb = reverb;
 
+    this.patchBus = ctx.createGain();
+    this.patchBus.gain.value = 1;
+    this.patchBus.connect(this.master);
+
     this.started = true;
     this.beat = 0;
     this.scheduledAt = ctx.currentTime + 0.1;
+    this.patchCursor = ctx.currentTime + 0.1;
     this.log.logAudio("engine:start", { silenced: this.silenced, soundtrack: this.soundtrack });
     this.scheduleLoop();
   }
 
-  private progression(): Progression {
-    return PROGRESSIONS[resolveSoundtrackScenario(this.scenario, this.soundtrack)];
+  private resolvedSoundtrack(): keyof typeof PROGRESSIONS | PatchSoundtrackId {
+    return resolveSoundtrackScenario(this.scenario, this.soundtrack);
   }
 
   private scheduleLoop(): void {
     if (!this.started || !this.ctx) return;
     const lookahead = 0.4;
+    const resolved = this.resolvedSoundtrack();
 
+    if (isPatchSoundtrack(resolved)) {
+      this.schedulePatchTick(PATCHES[resolved], lookahead);
+    } else {
+      this.scheduleProceduralTick(PROGRESSIONS[resolved], lookahead);
+    }
+
+    this.scheduler = setTimeout(() => this.scheduleLoop(), 100);
+  }
+
+  private scheduleProceduralTick(progression: Progression, lookahead: number): void {
+    if (!this.ctx) return;
     while (this.scheduledAt < this.ctx.currentTime + lookahead) {
-      const progression = this.progression();
       const secPerBeat = 60 / progression.bpm;
       const beatInBar = this.beat % 4;
       const chord = progression.chords[Math.floor(this.beat / 4) % progression.chords.length];
@@ -358,8 +404,16 @@ class TripcastAudioEngine implements AudioEngine {
       this.scheduledAt += secPerBeat;
       this.beat += 1;
     }
+  }
 
-    this.scheduler = setTimeout(() => this.scheduleLoop(), 100);
+  private schedulePatchTick(patch: MusicEditorPatch, lookahead: number): void {
+    if (!this.ctx || !this.patchBus) return;
+    const loopSec = computeLoopSeconds(patch);
+    if (loopSec <= 0) return;
+    while (this.patchCursor < this.ctx.currentTime + lookahead) {
+      scheduleOneLoop(this.ctx, this.patchBus, patch, this.patchCursor);
+      this.patchCursor += loopSec;
+    }
   }
 
   private connectWithReverb(env: GainNode, sendGain: number) {
