@@ -81,48 +81,126 @@ function createPopupContent(Mission: Mission) {
 }
 
 export default function MissionMarkers({ map, token, role, onMissionClick }: Props) {
-  const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
+  const markersRef = useRef<Map<string, { marker: Marker; status: string; source: string; lat: number; lon: number; title: string }>>(new Map());
+  const onMissionClickRef = useRef(onMissionClick);
+  onMissionClickRef.current = onMissionClick;
 
   const pins = useQuery(tripcastApi.missions.listMissionMapPins, { token });
 
   useEffect(() => {
-    if (!map) return;
-
-    // Remove old markers
-    markersRef.current.forEach(({ marker }) => marker.remove());
-    markersRef.current = [];
+    if (!map) {
+      markersRef.current.forEach(({ marker }) => marker.remove());
+      markersRef.current.clear();
+      return;
+    }
 
     if (!pins) return;
 
-    markersRef.current = pins
-      .filter((c) => c.lat !== undefined && c.lon !== undefined)
-      .map((Mission) => {
-        const color = Mission.source === "mystery"
-          ? MYSTERY_STATUS_COLORS[Mission.status] ?? "#09090b"
-          : STATUS_COLORS[Mission.status] ?? "#1e3a5f";
+    const currentMarkers = markersRef.current;
+    const nextIds = new Set<string>();
+
+    pins.forEach((mission) => {
+      if (mission.lat === undefined || mission.lon === undefined) return;
+      const id = mission._id;
+      nextIds.add(id);
+
+      const existing = currentMarkers.get(id);
+      const color = mission.source === "mystery"
+        ? MYSTERY_STATUS_COLORS[mission.status] ?? "#09090b"
+        : STATUS_COLORS[mission.status] ?? "#1e3a5f";
+
+      if (existing) {
+        // Reconciliation: update only if state changed
+        const changed =
+          existing.status !== mission.status ||
+          existing.source !== mission.source ||
+          existing.lat !== mission.lat ||
+          existing.lon !== mission.lon ||
+          existing.title !== mission.title;
+
+        if (changed) {
+          if (typeof (existing.marker as any).getLngLat === "function") {
+            existing.marker.setLngLat([mission.lon, mission.lat]);
+          }
+          // Update popup content
+          const popup = existing.marker.getPopup();
+          if (popup) {
+            popup.setDOMContent(createPopupContent(mission));
+          }
+          // Note: maplibregl.Marker doesn't have a setColor method,
+          // so if the color changes we have to recreate or manipulate the DOM.
+          // Since color change is relatively rare (mission status change),
+          // recreating only this marker is still a win over recreating all.
+          if (existing.status !== mission.status || existing.source !== mission.source) {
+            existing.marker.remove();
+            const newMarker = new maplibregl.Marker({ color })
+              .setLngLat([mission.lon, mission.lat])
+              .setPopup(new maplibregl.Popup({ offset: 20 }).setDOMContent(createPopupContent(mission)))
+              .addTo(map);
+
+            newMarker.getElement().addEventListener("click", () => {
+              onMissionClickRef.current?.(mission._id);
+            });
+
+            currentMarkers.set(id, {
+              marker: newMarker,
+              status: mission.status,
+              source: mission.source,
+              lat: mission.lat,
+              lon: mission.lon,
+              title: mission.title
+            });
+          } else {
+            currentMarkers.set(id, {
+              ...existing,
+              lat: mission.lat,
+              lon: mission.lon,
+              title: mission.title
+            });
+          }
+        }
+      } else {
+        // Add new marker
         const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
-          createPopupContent(Mission),
+          createPopupContent(mission),
         );
 
         const marker = new maplibregl.Marker({ color })
-          .setLngLat([Mission.lon!, Mission.lat!])
+          .setLngLat([mission.lon, mission.lat])
           .setPopup(popup)
           .addTo(map);
 
-        if (onMissionClick) {
-          marker.getElement().addEventListener("click", () => {
-            onMissionClick(Mission._id);
-          });
-        }
+        marker.getElement().addEventListener("click", () => {
+          onMissionClickRef.current?.(mission._id);
+        });
 
-        return { marker, id: Mission._id };
-      });
+        currentMarkers.set(id, {
+          marker,
+          status: mission.status,
+          source: mission.source,
+          lat: mission.lat,
+          lon: mission.lon,
+          title: mission.title
+        });
+      }
+    });
 
+    // Remove markers that are no longer present
+    currentMarkers.forEach((entry, id) => {
+      if (!nextIds.has(id)) {
+        entry.marker.remove();
+        currentMarkers.delete(id);
+      }
+    });
+  }, [map, pins]);
+
+  // Clean up all markers on unmount
+  useEffect(() => {
     return () => {
       markersRef.current.forEach(({ marker }) => marker.remove());
-      markersRef.current = [];
+      markersRef.current.clear();
     };
-  }, [map, pins, onMissionClick]);
+  }, []);
 
   return null;
 }

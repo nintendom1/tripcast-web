@@ -66,7 +66,9 @@ export default function MysteryMissionMarkers({
   onMysteryMissionClick,
   onMysteryMissionReveal,
 }: Props) {
-  const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
+  const markersRef = useRef<Map<string, { marker: Marker; state: string; lat: number; lon: number }>>(new Map());
+  const onMysteryMissionClickRef = useRef(onMysteryMissionClick);
+  onMysteryMissionClickRef.current = onMysteryMissionClick;
   const revealedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const result = useQuery(
@@ -91,40 +93,85 @@ export default function MysteryMissionMarkers({
   }, [onMysteryMissionReveal, pins]);
 
   useEffect(() => {
-    if (!map) return;
+    if (!map) {
+      markersRef.current.forEach(({ marker }) => marker.remove());
+      markersRef.current.clear();
+      return;
+    }
 
-    markersRef.current.forEach(({ marker }) => marker.remove());
-    markersRef.current = [];
+    const currentMarkers = markersRef.current;
+    const nextIds = new Set<string>();
 
-    markersRef.current = pins.map((mission) => {
-      const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
-        createPopupContent(mission),
-      );
-      const marker = new maplibregl.Marker({ color: getMysteryMarkerColor(mission) })
-        .setLngLat([mission.lon, mission.lat])
-        .setPopup(popup)
-        .addTo(map);
-      const element = marker.getElement();
-      decorateMarkerElement(element, mission);
+    pins.forEach((mission) => {
+      const id = mission._id;
+      nextIds.add(id);
 
-      if (onMysteryMissionClick) {
-        element.addEventListener("click", () => onMysteryMissionClick(mission._id));
+      const existing = currentMarkers.get(id);
+
+      if (existing) {
+        if (existing.state !== mission.state || existing.lat !== mission.lat || existing.lon !== mission.lon) {
+          if (typeof (existing.marker as any).getLngLat === "function") {
+            existing.marker.setLngLat([mission.lon, mission.lat]);
+          }
+          // Update visual state (fizzles, etc.)
+          const el = existing.marker.getElement();
+          // Clear current fizzles if state changed from signal to revealed
+          if (existing.state === "signal" && mission.state === "revealed") {
+            el.querySelectorAll(".mystery-pin__fizzle").forEach((f) => f.remove());
+          }
+          decorateMarkerElement(el, mission);
+          // Update popup content
+          const popup = existing.marker.getPopup();
+          if (popup) {
+            popup.setDOMContent(createPopupContent(mission));
+          }
+
+          currentMarkers.set(id, {
+            marker: existing.marker,
+            state: mission.state,
+            lat: mission.lat,
+            lon: mission.lon
+          });
+        }
+      } else {
+        const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
+          createPopupContent(mission),
+        );
+        const marker = new maplibregl.Marker({ color: getMysteryMarkerColor(mission) })
+          .setLngLat([mission.lon, mission.lat])
+          .setPopup(popup)
+          .addTo(map);
+        const element = marker.getElement();
+        decorateMarkerElement(element, mission);
+
+        element.addEventListener("click", () => onMysteryMissionClickRef.current?.(mission._id));
         element.addEventListener("keydown", (event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            onMysteryMissionClick(mission._id);
+            onMysteryMissionClickRef.current?.(mission._id);
           }
         });
-      }
 
-      return { marker, id: mission._id };
+        currentMarkers.set(id, { marker, state: mission.state, lat: mission.lat, lon: mission.lon });
+      }
     });
 
+    // Remove old markers
+    currentMarkers.forEach((entry, id) => {
+      if (!nextIds.has(id)) {
+        entry.marker.remove();
+        currentMarkers.delete(id);
+      }
+    });
+  }, [map, pins]);
+
+  // Clean up all markers on unmount
+  useEffect(() => {
     return () => {
       markersRef.current.forEach(({ marker }) => marker.remove());
-      markersRef.current = [];
+      markersRef.current.clear();
     };
-  }, [map, onMysteryMissionClick, pins]);
+  }, []);
 
   return null;
 }

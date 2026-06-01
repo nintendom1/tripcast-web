@@ -359,36 +359,73 @@ function CheckpointMarkers({
   checkpoints: Checkpoint[];
   onCheckpointClick: (checkpoint: Checkpoint) => void;
 }) {
-  const markersRef = useRef<Marker[]>([]);
+  // Use a Map to track markers by checkpoint ID for reconciliation
+  const markersRef = useRef<Map<string, Marker>>(new Map());
   const onClickRef = useRef(onCheckpointClick);
   onClickRef.current = onCheckpointClick;
 
   useEffect(() => {
-    if (!map) return;
+    if (!map) {
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current.clear();
+      return;
+    }
 
-    markersRef.current.forEach((m) => m.remove());
-    markersRef.current = checkpoints.filter((cp) => cp.lat !== undefined && cp.lon !== undefined).map((checkpoint) => {
-      const marker = new maplibregl.Marker({ color: "#d92332" })
-        .setLngLat([checkpoint.lon!, checkpoint.lat!])
-        .addTo(map);
+    const currentMarkers = markersRef.current;
+    const nextIds = new Set<string>();
 
-      const el = marker.getElement();
-      el.style.cursor = "pointer";
-      el.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onClickRef.current(checkpoint);
-      });
+    checkpoints.forEach((checkpoint) => {
+      if (checkpoint.lat === undefined || checkpoint.lon === undefined) return;
 
-      return marker;
+      const id = checkpoint._id;
+      nextIds.add(id);
+
+      let marker = currentMarkers.get(id);
+      if (marker) {
+        // Update position if it changed (unlikely for checkpoints, but good for consistency)
+        if (typeof (marker as any).getLngLat === "function") {
+          const pos = (marker as any).getLngLat();
+          if (pos.lng !== checkpoint.lon || pos.lat !== checkpoint.lat) {
+            marker.setLngLat([checkpoint.lon, checkpoint.lat]);
+          }
+        }
+      } else {
+        // Create new marker
+        marker = new maplibregl.Marker({ color: "#d92332" })
+          .setLngLat([checkpoint.lon, checkpoint.lat])
+          .addTo(map);
+
+        const el = marker.getElement();
+        el.style.cursor = "pointer";
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          onClickRef.current(checkpoint);
+        });
+
+        currentMarkers.set(id, marker);
+      }
+    });
+
+    // Remove markers that are no longer present
+    currentMarkers.forEach((marker, id) => {
+      if (!nextIds.has(id)) {
+        marker.remove();
+        currentMarkers.delete(id);
+      }
     });
 
     return () => {
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current = [];
+      // Don't clear markers on every checkpoints change, only on unmount or map loss
     };
-  // onCheckpointClick intentionally omitted — kept fresh via onClickRef
-
   }, [map, checkpoints]);
+
+  // Clean up all markers on unmount
+  useEffect(() => {
+    return () => {
+      markersRef.current.forEach((m) => m.remove());
+      markersRef.current.clear();
+    };
+  }, []);
 
   return null;
 }
@@ -1151,6 +1188,28 @@ export default function TripMap({
     [music, mapInstance],
   );
 
+  const handleMissionClick = useCallback((id: string) => {
+    music.sfx("open");
+    setIsMissionsPanelOpen(true);
+    setIsAchievementsOpen(false);
+    setPendingOpenMissionId(id);
+  }, [music]);
+
+  const handleMysteryMissionClick = useCallback((missionId: string) => {
+    log.logInteraction("panel:navigate", { from: "map", to: "Missions", mysteryMissionId: missionId });
+    music.sfx("page");
+    setMissionsDebugSource({ source: "map:mystery-pin", sourceLabel: "Mystery Pin -> Missions" });
+    setIsVotePanelOpen(false);
+    setVoteMapOverlay(null);
+    setVoteOptionNumberById(null);
+    setIsMissionsPanelOpen(true);
+    setIsJournalOpen(false);
+    setIsTravelFundsSheetOpen(false);
+    setIsAchievementsOpen(false);
+    setIsMessagingOpen(false);
+    setPendingOpenMysteryMissionId(missionId);
+  }, [log, music]);
+
   useCloakingZones(
     mapInstance,
     role === "traveler" ? (cloakingPinsData ?? []) : [],
@@ -1358,6 +1417,11 @@ export default function TripMap({
       toastTimeoutRef.current = null;
     }, 3200);
   }, []);
+
+  const handleMysteryMissionReveal = useCallback(() => {
+    music.sfx("success");
+    showToast("Mystery Mission revealed.", "mystery");
+  }, [music, showToast]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
@@ -3260,22 +3324,14 @@ export default function TripMap({
         map={mapInstance}
         token={token}
         debugShowAll={debugShowAllMysteryPins}
-        onMysteryMissionClick={handleNavigateToMysteryMissionDetail}
-        onMysteryMissionReveal={() => {
-          music.sfx("success");
-          showToast("Mystery Mission revealed.", "mystery");
-        }}
+        onMysteryMissionClick={handleMysteryMissionClick}
+        onMysteryMissionReveal={handleMysteryMissionReveal}
       />
       <MissionMarkers
         map={mapInstance}
         token={token}
         role={role}
-        onMissionClick={(id) => {
-          music.sfx("open");
-          setIsMissionsPanelOpen(true);
-          setIsAchievementsOpen(false);
-          setPendingOpenMissionId(id);
-        }}
+        onMissionClick={handleMissionClick}
       />
 
       {/* Placement / coordinate pick banners */}
