@@ -27,6 +27,7 @@ import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import AttributionBlock from "../attributions/AttributionBlock";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
@@ -203,11 +204,24 @@ export default function StoryDetailSheet({
   const [isDeleting, setIsDeleting] = useState(false);
   const [optimisticEvent, setOptimisticEvent] = useState<JournalEvent | null>(null);
 
-  const preferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" && token ? { token } : "skip");
-  const cutoffAt = preferences?.visible ? (preferences as any).followerContentCutoffAt : undefined;
+  const preferences = useQuery(
+    tripcastApi.travelerPreferences.followerGetPreferences,
+    role === "follower" && token ? { token } : "skip",
+  );
+  const followerCutoffAt = preferences?.visible ? preferences.followerContentCutoffAt : undefined;
 
+  // Traveler-side "Preview as Follower" — null when off or not a Traveler.
+  const preview = useFollowerCutoffPreview(role, token);
+
+  // Effective cutoff for THIS view:
+  // - Follower: derive from followerGetPreferences (deep links / push notifications
+  //   can still hand a Follower a pre-cutoff event id even though listJournalEvents
+  //   now filters at the server).
+  // - Traveler: the preview hook supplies the cutoff when preview is on; otherwise
+  //   the Traveler sees everything.
+  const effectiveCutoff = role === "follower" ? followerCutoffAt : (preview.cutoffAt ?? undefined);
   const isHiddenByCutoff =
-    role === "follower" && !!cutoffAt && event && event.occurredAt < cutoffAt;
+    effectiveCutoff !== undefined && event !== null && event !== undefined && event.occurredAt < effectiveCutoff;
 
   const displayEvent = isHiddenByCutoff ? null : optimisticEvent?._id === event?._id ? optimisticEvent : event;
   const currentImageUrl = useQuery(

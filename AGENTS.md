@@ -132,4 +132,4 @@ Write design doc — save to plans/YYYY-MM-DD-<topic>-design.md
 User reviews written spec — ask user to review the spec file before proceeding
 
 ## Developer Preferences
-* Defer Unit Tests until the Developer has manually verified the implementation unless instructed otherwise. 
+* Defer Unit Tests until the Developer has manually verified the implementation unless instructed otherwise. (This preference excludes Storybook stories; do Storybook stories with implementation)

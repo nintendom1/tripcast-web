@@ -30,6 +30,7 @@ import RouteVotePanel from "../routevote/RouteVotePanel";
 import VoteTimeSplash from "../routevote/VoteTimeSplash";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import {
   Dock,
   type DockTab,
@@ -1097,7 +1098,14 @@ export default function TripMap({
     tripcastApi.cloakingPins.travelerListCloakingPins,
     role === "traveler" ? { token } : "skip",
   );
-  const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
+  const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token });
+  const cutoffPreview = useFollowerCutoffPreview(role, token);
+  const checkpoints = useMemo(() => {
+    const all = rawCheckpoints ?? [];
+    return cutoffPreview.cutoffAt
+      ? all.filter((cp) => (cp.happenedAt ?? cp.createdAt) >= (cutoffPreview.cutoffAt as number))
+      : all;
+  }, [rawCheckpoints, cutoffPreview.cutoffAt]);
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
   });
@@ -1116,22 +1124,18 @@ export default function TripMap({
   );
 
   const travelerAllowsFollowerPath = followerPreferences?.visible
-    ? ((followerPreferences as any).allowFollowersTripPath ?? false)
+    ? (followerPreferences.allowFollowersTripPath ?? false)
     : false;
-  const followerContentCutoffAt = followerPreferences?.visible
-    ? (followerPreferences as any).followerContentCutoffAt
-    : undefined;
 
   const liveTrailSamples = useMemo(() => {
     const all =
       role === "traveler"
-        ? travelerLiveTrailStatus?.samples ?? []
-        : followerLiveTrail?.visible
-          ? followerLiveTrail.samples
-          : [];
-    if (role === "traveler" || !followerContentCutoffAt) return all;
-    return all.filter((s) => s.sampledAt >= followerContentCutoffAt);
-  }, [role, travelerLiveTrailStatus, followerLiveTrail, followerContentCutoffAt]);
+        ? (travelerLiveTrailStatus?.samples ?? [])
+        : (followerLiveTrail?.visible ? followerLiveTrail.samples : []);
+    return cutoffPreview.cutoffAt
+      ? all.filter((s) => s.sampledAt >= (cutoffPreview.cutoffAt as number))
+      : all;
+  }, [role, travelerLiveTrailStatus, followerLiveTrail, cutoffPreview.cutoffAt]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
@@ -1184,9 +1188,10 @@ export default function TripMap({
   const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
   const journalEvents = useMemo(() => {
     const all = queriedJournalEvents ?? [];
-    if (role === "traveler" || !followerContentCutoffAt) return all;
-    return all.filter((e) => e.occurredAt >= followerContentCutoffAt);
-  }, [queriedJournalEvents, role, followerContentCutoffAt]);
+    return cutoffPreview.cutoffAt
+      ? all.filter((e) => e.occurredAt >= (cutoffPreview.cutoffAt as number))
+      : all;
+  }, [queriedJournalEvents, cutoffPreview.cutoffAt]);
   const replayPins = useMemo<ReplayPin[]>(() => {
     const checkpointPins: ReplayPin[] = journalEvents
       .filter(isFiniteReplayCoordinate)
@@ -1253,7 +1258,6 @@ export default function TripMap({
     showPath,
     replayRevealUpTo,
     routeLineColor,
-    followerContentCutoffAt,
     liveTrailSamples,
     liveTrailPathVisible,
   );
