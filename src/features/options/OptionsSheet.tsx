@@ -10,6 +10,7 @@ dayjs.extend(utc);
 dayjs.extend(timezone);
 import {
   BookOpen,
+  Bell,
   Bomb,
   Bug,
   ChevronRight,
@@ -73,6 +74,7 @@ import { useFollowerCutoffPreview } from "./followerCutoffPreview";
 import BulkExportSheet from "./BulkExportSheet";
 import MysteryMissionsSheet from "./MysteryMissionsSheet";
 import { TERMS } from "../../copy/terminology";
+import { useTicker, TripTicker } from "../hud";
 import { triggerMapCooldown } from "../map/mapService";
 import { triggerCrash } from "../../debug/crashTrigger";
 import { getMapStyleResolution } from "../map/mapService";
@@ -97,7 +99,12 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker";
+
+const TICKER_PREVIEW_MESSAGE = {
+  id: "preview-demo",
+  text: "Sample fact — this is what your ticker will look like.",
+};
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -1256,6 +1263,11 @@ export default function OptionsSheet({
               title={TERMS.travelFunds}
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "trip-ticker" ? (
+            <SubViewHeader
+              title="Trip Ticker"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
           ) : view === "live-trail" ? (
             <SubViewHeader
               title="Live Trail"
@@ -1298,6 +1310,13 @@ export default function OptionsSheet({
                 />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "trip-ticker" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <TripTickerSettings token={session.token} />
+              </OptionsContentFrame>
+            </SheetBody>
+
           ) : view === "live-trail" ? (
             <SheetBody className="p-0">
               <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
@@ -1326,6 +1345,7 @@ export default function OptionsSheet({
               onReplayFollowerTour={onReplayFollowerTour}
               onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
               onLiveTrail={() => { music.sfx("page"); navigateTo("live-trail"); }}
+              onTripTicker={() => { music.sfx("page"); navigateTo("trip-ticker"); }}
               onCloakingPins={() => { music.sfx("page"); navigateTo("cloaking-pins"); }}
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
@@ -1337,7 +1357,10 @@ export default function OptionsSheet({
             />
           ) : view === "debug-logs" ? (
             <SheetBody className="min-h-0 overflow-hidden p-0">
-              <DebugPanel onBack={() => { music.sfx("page"); navigateTo("options"); }} />
+              <DebugPanel 
+                onBack={() => { music.sfx("page"); navigateTo("options"); }} 
+                token={session?.token}
+              />
             </SheetBody>
           ) : null}
         </SheetContent>
@@ -1432,6 +1455,7 @@ function OptionsHome({
   onReplayFollowerTour,
   onTravelFunds,
   onLiveTrail,
+  onTripTicker,
   onCloakingPins,
   onBulkImport,
   onBulkExport,
@@ -1449,6 +1473,7 @@ function OptionsHome({
   onReplayFollowerTour: () => void;
   onTravelFunds: () => void;
   onLiveTrail: () => void;
+  onTripTicker: () => void;
   onCloakingPins: () => void;
   onDebugLogs: () => void;
   onBulkImport: () => void;
@@ -1516,6 +1541,17 @@ function OptionsHome({
                 onClick={() => {
                   log.logUi("action:live-trail-settings");
                   onLiveTrail();
+                }}
+              />
+            ) : null}
+            {role === "traveler" ? (
+              <OptionsRow
+                icon={Bell}
+                title="Trip Ticker"
+                detail="Persistent scrolling notices and fun facts"
+                onClick={() => {
+                  log.logUi("action:trip-ticker-settings");
+                  onTripTicker();
                 }}
               />
             ) : null}
@@ -2173,6 +2209,310 @@ function CloakingPinsSheet({ token, log }: { token: string; log: DebugLogger }) 
             ))}
           </OptionsGroup>
         )}
+      </OptionsSection>
+    </div>
+  );
+}
+
+function TickerBulkImportSheet({
+  open,
+  onOpenChange,
+  token,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  token: string;
+}) {
+  const [text, setText] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const commitBulkImport = useMutation(tripcastApi.bulkImport.travelerBulkImport);
+  const music = useMusicSafe();
+
+  const handleImport = async () => {
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length === 0) return;
+
+    setIsImporting(true);
+    setErrorMessage(null);
+    try {
+      const entries = lines.map(line => ({
+        kind: "ticker_fact" as const,
+        text: line
+      }));
+      await commitBulkImport({ token, entries });
+      music.sfx("success");
+      onOpenChange(false);
+      setText("");
+    } catch (e) {
+      console.error("Bulk import failed", e);
+      const detail = e instanceof Error && e.message ? e.message : "Check console for details.";
+      setErrorMessage(`Import failed. ${detail}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setErrorMessage(null);
+        onOpenChange(next);
+      }}
+    >
+      <SheetContent side="bottom" className="h-[80dvh]">
+        <SheetTitle>Bulk Import Fun Facts</SheetTitle>
+        <SheetCloseButton />
+        <SheetBody className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-[var(--ink-2)]">
+            Paste a list of fun facts, one per line. They will be added to your trip ticker.
+          </p>
+          <textarea
+            className="flex-1 w-full p-3 text-sm rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] font-mono resize-none focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+            placeholder="Fact 1&#10;Fact 2&#10;Fact 3..."
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            disabled={isImporting}
+          />
+          {errorMessage ? (
+            <p role="alert" className="text-sm font-medium text-rose-600 dark:text-rose-400">
+              {errorMessage}
+            </p>
+          ) : null}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+              disabled={isImporting}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleImport}
+              disabled={isImporting || !text.trim()}
+            >
+              {isImporting ? "Importing..." : `Import ${text.split("\n").filter(l => l.trim()).length} Facts`}
+            </Button>
+          </div>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export function TripTickerSettings({ token }: { token: string }) {
+  const {
+    settings,
+    updateSettings,
+    addPriorityMessage,
+    removePriorityMessage,
+    addFunFact,
+    removeFunFact,
+    clearAll,
+  } = useTicker(token);
+  const [priorityInput, setPriorityInput] = useState("");
+  const [funFactInput, setFunFactInput] = useState("");
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const confirmingClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmingClearTimeoutRef.current !== null) {
+        clearTimeout(confirmingClearTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div className="grid gap-8">
+      <OptionsSection label="Preview">
+        <OptionsGroup>
+          <div className="p-4 bg-[var(--bg-paper-2)]/30 rounded-lg overflow-hidden">
+            <TripTicker
+              message={TICKER_PREVIEW_MESSAGE}
+              isPriority={false}
+              className="border rounded shadow-inner"
+            />
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="General">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Ticker"
+            detail="Show the scrolling banner below the top bar."
+            checked={settings.enabled}
+            onChange={(checked) => updateSettings({ enabled: checked })}
+          />
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Priority Messages">
+        <p className="text-xs text-[var(--ink-3)] mb-2">
+          Priority messages loop continuously and take precedence over fun facts.
+        </p>
+        <OptionsGroup>
+          <div className="p-4 sm:p-5 flex gap-2">
+            <input
+              type="text"
+              value={priorityInput}
+              onChange={(e) => setPriorityInput(e.target.value)}
+              placeholder="Notice text (e.g. Low reception ahead)"
+              className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && priorityInput.trim()) {
+                  addPriorityMessage(priorityInput.trim());
+                  setPriorityInput("");
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                if (priorityInput.trim()) {
+                  addPriorityMessage(priorityInput.trim());
+                  setPriorityInput("");
+                }
+              }}
+            >
+              Add
+            </Button>
+          </div>
+          {settings.priorityMessages.map((msg) => (
+            <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
+              <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
+              <button
+                type="button"
+                onClick={() => removePriorityMessage(msg.id)}
+                className="text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Fun Facts">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Fun Facts"
+            detail="Show random trivia when no priority messages exist."
+            checked={settings.funFactsEnabled}
+            onChange={(checked) => updateSettings({ funFactsEnabled: checked })}
+          />
+          <div className="p-4 sm:p-5 flex flex-col gap-4">
+            <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
+              Minutes between fun facts
+              <select
+                value={settings.funFactIntervalMinutes}
+                onChange={(e) => updateSettings({ funFactIntervalMinutes: Number(e.target.value) })}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              >
+                {[0, 1, 2, 5, 10, 20, 30, 60].map(m => (
+                  <option key={m} value={m}>{m} minutes</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={funFactInput}
+                onChange={(e) => setFunFactInput(e.target.value)}
+                placeholder="Fun fact text..."
+                className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && funFactInput.trim()) {
+                    addFunFact(funFactInput.trim());
+                    setFunFactInput("");
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (funFactInput.trim()) {
+                    addFunFact(funFactInput.trim());
+                    setFunFactInput("");
+                  }
+                }}
+              >
+                Add
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setIsBulkImportOpen(true)}
+            >
+              Bulk Import Fun Facts
+            </Button>
+          </div>
+          <TickerBulkImportSheet
+            open={isBulkImportOpen}
+            onOpenChange={setIsBulkImportOpen}
+            token={token}
+          />
+          {settings.funFacts.map((msg) => (
+            <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
+              <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
+              <button
+                type="button"
+                onClick={() => removeFunFact(msg.id)}
+                className="text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Danger Zone">
+        <OptionsGroup>
+          <div className="p-4 sm:p-5 grid gap-2">
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={() => {
+                if (!confirmingClear) {
+                  setConfirmingClear(true);
+                  if (confirmingClearTimeoutRef.current !== null) {
+                    clearTimeout(confirmingClearTimeoutRef.current);
+                  }
+                  confirmingClearTimeoutRef.current = setTimeout(() => {
+                    setConfirmingClear(false);
+                    confirmingClearTimeoutRef.current = null;
+                  }, 4000);
+                  return;
+                }
+                if (confirmingClearTimeoutRef.current !== null) {
+                  clearTimeout(confirmingClearTimeoutRef.current);
+                  confirmingClearTimeoutRef.current = null;
+                }
+                setConfirmingClear(false);
+                void clearAll();
+              }}
+            >
+              {confirmingClear ? "Tap again to confirm clear" : "Clear all messages"}
+            </Button>
+            {confirmingClear ? (
+              <p className="text-xs text-[var(--ink-3)] text-center">
+                This removes every priority message and fun fact.
+              </p>
+            ) : null}
+          </div>
+        </OptionsGroup>
       </OptionsSection>
     </div>
   );

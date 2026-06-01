@@ -19,7 +19,7 @@ import OptionsSheet, { type OptionsView } from "./features/options/OptionsSheet"
 import EndTripSheet from "./features/endtrip/EndTripSheet";
 import CreditsOverlay from "./features/endtrip/CreditsOverlay";
 import FollowerManagementPage from "./features/followers/FollowerManagementPage";
-import { TopBar } from "./features/hud";
+import { TopBar, TripTicker, useTicker } from "./features/hud";
 import {
   CreateAccountIntroFlow,
   IntroSequence,
@@ -128,6 +128,7 @@ function ConnectedApp() {
   const [preserveDebugContext, setPreserveDebugContext] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
   const music = useMusicSafe();
+  const { currentMessage, isPriority, onFunFactComplete } = useTicker(session?.token);
   const [isIntroReplayOpen, setIsIntroReplayOpen] = useState(false);
   const [isCreateAccountIntroOpen, setIsCreateAccountIntroOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
@@ -461,6 +462,12 @@ function ConnectedApp() {
           setOptionsDefaultView("options");
           setIsOptionsOpen(true);
         }}
+      />
+
+      <TripTicker
+        message={currentMessage}
+        isPriority={isPriority}
+        onComplete={onFunFactComplete}
       />
 
       <OptionsSheet

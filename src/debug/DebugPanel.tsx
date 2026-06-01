@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useTicker } from "../features/hud/useTicker";
 import {
   isEnabled,
   setEnabled,
@@ -248,11 +249,48 @@ function CategoryOverrides({ disabled, onRefresh }: { disabled: boolean; onRefre
   );
 }
 
+function TickerDebug({ token }: { token?: string }) {
+  const { addPriorityMessage } = useTicker(token);
+  const [msg, setMsg] = useState("Debug Ticker Message");
+
+  return (
+    <div className="rounded-xl bg-[var(--bg-card)] px-4 py-3 grid gap-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-[var(--ink-2)]">Ticker Debug</p>
+        {!token && <span className="text-[10px] text-rose-500 font-medium">No token</span>}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={msg}
+          onChange={(e) => setMsg(e.target.value)}
+          placeholder="Debug message..."
+          disabled={!token}
+          className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-1.5 text-xs text-[var(--ink-1)] disabled:opacity-50"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (msg.trim()) {
+              addPriorityMessage(msg.trim());
+              rawLog("info", "DebugPanel", "ticker:debug_push", "ui", { text: msg.trim() });
+            }
+          }}
+          disabled={!token || !msg.trim()}
+          className="rounded-lg bg-[var(--flag)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-on-dark)] shadow-sm disabled:opacity-50"
+        >
+          Push
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Panel
 // ---------------------------------------------------------------------------
 
-export default function DebugPanel({ onBack }: { onBack: () => void }) {
+export default function DebugPanel({ onBack, token }: { onBack: () => void; token?: string }) {
   const [enabled, setEnabledState] = useState(isEnabled);
   const [consoleMirror, setConsoleMirrorState] = useState(getConsoleMirror);
   const [locationRedact, setLocationRedactState] = useState(getLocationRedact);
@@ -542,6 +580,9 @@ export default function DebugPanel({ onBack }: { onBack: () => void }) {
 
       {/* Preset + category overrides */}
       <CategoryOverrides disabled={!enabled} onRefresh={syncDebugState} />
+
+      {/* Ticker debug */}
+      {enabled && <TickerDebug token={token} />}
 
       {/* Floating Debug button settings */}
       <div
