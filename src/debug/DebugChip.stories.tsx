@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react";
 import { DebugChip } from "./DebugChip";
 import { setEnabled, log } from "./debugLogger";
 import { setActiveUiContext, setFloatingDebugButtonMode } from "./activeUiContext";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 /** @tag ai-generated */
 const meta: Meta<typeof DebugChip> = {
@@ -68,6 +68,42 @@ export const Detailed: Story = {
         setFloatingDebugButtonMode("detailed-context");
       }, []);
       return <Story />;
+    },
+  ],
+};
+
+export const ResizingContext: Story = {
+  args: {
+    onOpen: () => alert("Debug panel opened!"),
+  },
+  decorators: [
+    (Story) => {
+      const [expanded, setExpanded] = useState(false);
+
+      useEffect(() => {
+        setFloatingDebugButtonMode("compact-context");
+      }, []);
+
+      useEffect(() => {
+        setActiveUiContext("story", {
+          sheetName: expanded ? "Very Long Storybook Sheet Name" : "Map",
+          label: expanded ? "Preview With A Much Longer Active Label" : "Preview",
+          sourceLabel: expanded ? "Storybook -> Resize Compensation" : "Storybook -> Map",
+        });
+      }, [expanded]);
+
+      return (
+        <>
+          <button
+            type="button"
+            className="fixed bottom-6 left-6 z-[1] rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white shadow"
+            onClick={() => setExpanded((current) => !current)}
+          >
+            Toggle chip text
+          </button>
+          <Story />
+        </>
+      );
     },
   ],
 };
