@@ -419,6 +419,15 @@ export function CreateAccountIntroFlow({
     return () => music.setSuppressed("intro", false);
   }, [music]);
 
+  // First beat of the tour kicks off the Hello soundtrack as an override —
+  // wins over the user's manual pick (if any) and Auto's scenario routing.
+  React.useEffect(() => {
+    music.setOverride("intro", stage === "intro" ? "song9_intro" : null);
+  }, [stage, music]);
+  React.useEffect(() => {
+    return () => music.setOverride("intro", null);
+  }, [music]);
+
   useActiveUiContext(stage !== "intro", {
     sheetName: "CreateAccountIntroFlow",
     label: "Create account intro",

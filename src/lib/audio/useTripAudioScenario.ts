@@ -1,76 +1,40 @@
 import { useEffect, useMemo, useRef } from "react";
-import { useQuery } from "convex/react";
 
-import {
-  tripcastApi,
-  type Role,
-  type TravelFundsConfigForTraveler,
-  type TravelFundsSummaryForFollower,
-} from "../../convex/tripcastApi";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useTheme } from "../../providers/ThemeProvider";
 import type { AudioScenario } from "./engine";
 
-type ScenarioInput = {
+export type ScenarioInput = {
   storyOpen: boolean;
-  overBudget: boolean;
-  voteActive: boolean;
-  missionActive: boolean;
+  missionDetailOpen: boolean;
+  achievementsOpen: boolean;
+  voteSheetOpen: boolean;
 };
 
-type UseTripAudioScenarioArgs = {
-  token: string;
-  role: Role;
-  storyOpen: boolean;
-  voteActive: boolean;
-  missionActive: boolean;
-};
+type UseTripAudioScenarioArgs = ScenarioInput;
 
-export function deriveTripAudioScenario({
-  storyOpen,
-  overBudget,
-  voteActive,
-  missionActive,
-}: ScenarioInput): AudioScenario {
-  if (storyOpen) return "story";
-  if (overBudget) return "overBudget";
-  if (voteActive) return "voteActive";
-  if (missionActive) return "missionActive";
-  return "idle";
+/**
+ * Pure resolution. The map's day/night theme drives the default scenario so
+ * the soundtrack stays visually aligned with the map.
+ */
+export function deriveTripAudioScenario(
+  input: ScenarioInput,
+  resolvedTheme: "meadow" | "constellation",
+): AudioScenario {
+  if (input.storyOpen || input.missionDetailOpen) return "story";
+  if (input.achievementsOpen) return "trophy";
+  if (input.voteSheetOpen) return "vote";
+  return resolvedTheme === "constellation" ? "default-night" : "default-day";
 }
 
-function isOverBudget(
-  funds: TravelFundsConfigForTraveler | TravelFundsSummaryForFollower | undefined,
-) {
-  return funds?.enabled === true && funds.remainingUsd < 0;
-}
-
-export function useTripAudioScenario({
-  token,
-  role,
-  storyOpen,
-  voteActive,
-  missionActive,
-}: UseTripAudioScenarioArgs) {
+export function useTripAudioScenario(args: UseTripAudioScenarioArgs) {
   const music = useMusicSafe();
+  const { resolvedTheme } = useTheme();
   const lastScenarioRef = useRef<AudioScenario | null>(null);
-  const travelerFunds = useQuery(
-    tripcastApi.travelFunds.travelerGetConfig,
-    role === "traveler" ? { token } : "skip",
-  );
-  const followerFunds = useQuery(
-    tripcastApi.travelFunds.followerGetFundsSummary,
-    role === "follower" ? { token } : "skip",
-  );
 
   const scenario = useMemo(
-    () =>
-      deriveTripAudioScenario({
-        storyOpen,
-        overBudget: isOverBudget(role === "traveler" ? travelerFunds : followerFunds),
-        voteActive,
-        missionActive,
-      }),
-    [missionActive, followerFunds, role, storyOpen, travelerFunds, voteActive],
+    () => deriveTripAudioScenario(args, resolvedTheme),
+    [args, resolvedTheme],
   );
 
   useEffect(() => {

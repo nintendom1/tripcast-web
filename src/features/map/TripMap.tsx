@@ -1045,6 +1045,7 @@ export default function TripMap({
   const [selectedCloakingPin, setSelectedCloakingPin] = useState<CloakingPin | null>(null);
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
+  const [isMissionDetailOpen, setIsMissionDetailOpen] = useState(false);
   const [journalDebugSource, setJournalDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [mapCooldownState, setMapCooldownState] = useState<MapCooldownState>(() => readMapCooldownState());
   // Basemap style fetch failure (e.g. a 404 from a misconfigured proxy host).
@@ -1337,11 +1338,10 @@ export default function TripMap({
   }, [isDesktop]);
 
   useTripAudioScenario({
-    token,
-    role,
     storyOpen: selectedStoryEvent !== null || storyPrefill !== null,
-    voteActive: isVotePanelOpen || hasUnseenVote,
-    missionActive: isMissionsPanelOpen || missionBadgeCount > 0,
+    missionDetailOpen: isMissionDetailOpen,
+    achievementsOpen: isAchievementsOpen,
+    voteSheetOpen: isVotePanelOpen,
   });
 
   useEffect(() => {
@@ -3912,6 +3912,7 @@ export default function TripMap({
           onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
           onRequestNavigateToVote={handleNavigateToVote}
           onOpenLinkedStory={handleOpenLinkedStory}
+          onDetailOpenChange={setIsMissionDetailOpen}
           debugSource={missionsDebugSource}
         />
       </FeatureBoundary>

@@ -59,6 +59,7 @@ type Props = {
   debugSource?: { source: string; sourceLabel: string };
   prefilledCoordinate?: { lat: number; lon: number } | null;
   onClearPrefill?: () => void;
+  onDetailOpenChange?: (open: boolean) => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -108,6 +109,7 @@ export default function MissionPanel({
   debugSource,
   prefilledCoordinate,
   onClearPrefill,
+  onDetailOpenChange,
 }: Props) {
   const { missions: missionsPersonality } = useSheetPersonalities();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -247,6 +249,14 @@ export default function MissionPanel({
     onClearPendingMysteryMission?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, pendingOpenMysteryMissionId, pendingDetailMysteryMission, pendingMysteryLinkedMission]);
+
+  // Emit detail-open changes so the parent (TripMap) can route the audio
+  // scenario to "story" while a mission detail sheet is being viewed.
+  useEffect(() => {
+    const detailOpen = open && viewMode === "detail" && selectedMission !== null;
+    onDetailOpenChange?.(detailOpen);
+    return () => onDetailOpenChange?.(false);
+  }, [open, viewMode, selectedMission, onDetailOpenChange]);
 
   // Entering the detail view auto-focuses the map on the mission's coordinates
   // — same UX as opening a story. The explicit "View on map" link in the
