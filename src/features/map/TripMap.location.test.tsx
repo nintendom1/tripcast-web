@@ -392,6 +392,23 @@ afterEach(() => {
 });
 
 describe("TripMap location marker", () => {
+  it("lets map drags pass through empty top HUD space", () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    const statusCard = screen.getByRole("button", { name: /Traveler status/i });
+    const statusHitbox = statusCard.parentElement;
+    const topHud = statusHitbox?.closest(".tripcast-frame");
+
+    expect(topHud).toHaveClass("pointer-events-none");
+    expect(statusHitbox).toHaveClass("pointer-events-auto", "w-fit", "self-start");
+    expect(screen.getByRole("button", { name: /Start sharing live location/i })).toHaveClass(
+      "pointer-events-auto",
+    );
+    expect(screen.getByRole("button", { name: /Replay/i })).toHaveClass("pointer-events-auto");
+  });
+
   it("refreshes an open story detail when journal query data changes", async () => {
     const checkpoint = {
       _id: "checkpoint-1",

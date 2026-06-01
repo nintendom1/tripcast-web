@@ -3859,13 +3859,13 @@ export default function TripMap({
 
       <div
         ref={cardsWrapperRef}
-        className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
+        className="pointer-events-none absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
       >
         {locationStale ? (
           <button
             type="button"
             onClick={openNativeLocationSettings}
-            className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-left text-xs font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]"
+            className="pointer-events-auto rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-left text-xs font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]"
           >
             Live location hasn’t updated recently. Tap to check location access — or reinstall from
             Xcode if the app build has expired.
@@ -3894,6 +3894,7 @@ export default function TripMap({
                 on={isLocationSharing}
                 onToggle={handleToggleLocationSharing}
                 trailEnabled={liveTrailEnabled}
+                className="pointer-events-auto"
               />
             ) : null}
             <FeatureBoundary
@@ -3906,7 +3907,7 @@ export default function TripMap({
                 token={token}
                 role={role}
                 onOpenSheet={role === "traveler" ? () => openFunds({ source: "funds-chip", sourceLabel: "Funds chip" }) : undefined}
-                className="max-w-full"
+                className="pointer-events-auto max-w-full"
               />
             </FeatureBoundary>
           </div>
@@ -3915,7 +3916,7 @@ export default function TripMap({
             onClick={handleStartReplay}
             disabled={!canReplayTrip}
             aria-pressed={replayActive}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
+            className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Play className="h-3.5 w-3.5" aria-hidden="true" />
             {replayActive ? `${replaySpeed}x Replay` : "Replay"}
