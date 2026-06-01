@@ -20,6 +20,15 @@ const setLiveTrailVisibility = vi.fn();
 const recordLiveTrailSample = vi.fn();
 const deleteRecentLiveTrail = vi.fn();
 const fetchMock = vi.fn();
+const nativeLocationMocks = vi.hoisted(() => ({
+  isNativeLocationAvailable: vi.fn(() => false),
+  openNativeLocationSettings: vi.fn(),
+  startNativeLocationWatch: vi.fn(
+    (_onFix: (fix: { lat: number; lon: number; accuracy?: number }) => void, _onError: (error: unknown) => void) =>
+      vi.fn(),
+  ),
+}));
+let mapStyleLoaded = true;
 const mapConstructorOptions: unknown[] = [];
 const mapInstances: Array<{
   handlers: Record<string, (event: any) => void>;
@@ -33,6 +42,9 @@ const mapInstances: Array<{
   keyboard: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   doubleClickZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   touchZoomRotate: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  addSource: ReturnType<typeof vi.fn>;
+  addLayer: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
 }> = [];
 const routeVotePanelProps: Array<{
   fallbackOrigin: { lat: number; lon: number } | null;
@@ -57,6 +69,12 @@ vi.mock("./useCloakingZones", () => ({
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
+vi.mock("../../native/locationWatcher", () => ({
+  isNativeLocationAvailable: nativeLocationMocks.isNativeLocationAvailable,
+  openNativeLocationSettings: nativeLocationMocks.openNativeLocationSettings,
+  startNativeLocationWatch: nativeLocationMocks.startNativeLocationWatch,
+}));
+
 vi.mock("maplibre-gl", () => {
   class MockMap {
     handlers: Record<string, (event: any) => void> = {};
@@ -75,6 +93,8 @@ vi.mock("maplibre-gl", () => {
     }
 
     addControl = vi.fn();
+    addSource = vi.fn();
+    addLayer = vi.fn();
     setStyle = vi.fn(() => this);
     fitBounds = mapFitBounds;
     on = vi.fn((event: string, handler: (event: any) => void) => {
@@ -85,7 +105,7 @@ vi.mock("maplibre-gl", () => {
     removeLayer = vi.fn();
     getSource = vi.fn(() => false);
     removeSource = vi.fn();
-    isStyleLoaded = vi.fn(() => true);
+    isStyleLoaded = vi.fn(() => mapStyleLoaded);
     getZoom = vi.fn(() => 12);
     project = vi.fn(() => ({ x: 120, y: 160 }));
     queryRenderedFeatures = vi.fn(() => []);
@@ -206,7 +226,7 @@ function setupQueries({
     updatedAt: number;
   }>;
   journalEvents?: JournalEvent[];
-  travelerLocation?: { lat: number; lon: number; isSharing: true } | null;
+  travelerLocation?: { lat: number; lon: number; accuracy?: number; isSharing: true } | null;
   allowFollowersTripPath?: boolean;
   liveTrailStatus?: {
     enabled: boolean;
@@ -320,6 +340,7 @@ beforeEach(() => {
   mapConstructorOptions.length = 0;
   mapInstances.length = 0;
   routeVotePanelProps.length = 0;
+  mapStyleLoaded = true;
   mapFitBounds.mockClear();
   updateTravelerLocation.mockResolvedValue(null);
   stopTravelerLocationSharing.mockResolvedValue(null);
@@ -327,6 +348,10 @@ beforeEach(() => {
   setLiveTrailVisibility.mockResolvedValue(null);
   recordLiveTrailSample.mockResolvedValue(null);
   deleteRecentLiveTrail.mockResolvedValue({ deleted: 0 });
+  nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(false);
+  nativeLocationMocks.openNativeLocationSettings.mockClear();
+  nativeLocationMocks.startNativeLocationWatch.mockReset();
+  nativeLocationMocks.startNativeLocationWatch.mockReturnValue(vi.fn());
   fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
 
@@ -712,6 +737,39 @@ describe("TripMap location marker", () => {
     });
   });
 
+  it("waits for the map style before adding the traveler accuracy circle", async () => {
+    mapStyleLoaded = false;
+    setupQueries({
+      travelerLocation: { lat: 47.61, lon: -122.33, accuracy: 12, isSharing: true },
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    const map = mapInstances.at(-1);
+    await waitFor(() => {
+      expect(map?.on).toHaveBeenCalledWith("style.load", expect.any(Function));
+    });
+
+    expect(map?.addSource).not.toHaveBeenCalled();
+    expect(map?.addLayer).not.toHaveBeenCalled();
+
+    mapStyleLoaded = true;
+    act(() => {
+      map?.handlers["style.load"]?.({});
+    });
+
+    expect(map?.addSource).toHaveBeenCalledWith(
+      "accuracy-circle",
+      expect.objectContaining({ type: "geojson" }),
+    );
+    expect(map?.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "accuracy-circle-fill" }),
+    );
+    expect(map?.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "accuracy-circle-stroke" }),
+    );
+  });
+
   it("starts browser location watching immediately for Travelers", async () => {
     geolocationWatchPosition.mockImplementation((onSuccess) => {
       onSuccess({
@@ -748,6 +806,35 @@ describe("TripMap location marker", () => {
       lat: 47.62,
       lon: -122.34,
       accuracy: 9,
+    });
+  });
+
+  it("opens native settings on Live opt-in after a passive foreground GPS denial", async () => {
+    nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+    geolocationWatchPosition.mockImplementation((_onSuccess, onError) => {
+      onError({ code: 1 });
+      return 42;
+    });
+    nativeLocationMocks.startNativeLocationWatch.mockImplementation((_onFix, onError) => {
+      onError({ code: "NOT_AUTHORIZED" });
+      return vi.fn();
+    });
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(geolocationWatchPosition).toHaveBeenCalled();
+      expect(screen.getByText("Location access is off for TripCast. You can enable it in your device settings."))
+        .toBeInTheDocument();
+    });
+    expect(nativeLocationMocks.openNativeLocationSettings).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+    await waitFor(() => {
+      expect(nativeLocationMocks.startNativeLocationWatch).toHaveBeenCalled();
+      expect(nativeLocationMocks.openNativeLocationSettings).toHaveBeenCalledTimes(1);
     });
   });
 

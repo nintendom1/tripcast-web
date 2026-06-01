@@ -409,31 +409,45 @@ function AccuracyCircle({
   useEffect(() => {
     if (!map) return;
 
-    if (!position || !position.accuracy || !isVisible) {
+    const isStyleReady = () => map.isStyleLoaded() === true;
+    const removeAccuracyCircle = () => {
+      if (!isStyleReady()) return;
       if (map.getLayer("accuracy-circle-fill")) map.removeLayer("accuracy-circle-fill");
       if (map.getLayer("accuracy-circle-stroke")) map.removeLayer("accuracy-circle-stroke");
       if (map.getSource("accuracy-circle")) map.removeSource("accuracy-circle");
-      return;
-    }
+    };
 
-    const geojson = circlePolygon(position.lat, position.lon, position.accuracy);
-
-    if (map.getSource && map.getSource("accuracy-circle")) {
-      const source = map.getSource("accuracy-circle") as maplibregl.GeoJSONSource;
-      if (typeof source.setData === "function") {
-        source.setData(geojson);
+    const syncAccuracyCircle = () => {
+      if (!position || !position.accuracy || !isVisible) {
+        removeAccuracyCircle();
+        return;
       }
-      if (typeof map.setPaintProperty === "function") {
-        map.setPaintProperty("accuracy-circle-fill", "fill-color", color);
-        map.setPaintProperty("accuracy-circle-stroke", "line-color", color);
-      }
-    } else if (typeof map.addSource === "function") {
-      map.addSource("accuracy-circle", {
-        type: "geojson",
-        data: geojson,
-      });
 
-      if (typeof map.addLayer === "function") {
+      if (!isStyleReady()) return;
+
+      const geojson = circlePolygon(position.lat, position.lon, position.accuracy);
+      const source = map.getSource("accuracy-circle") as maplibregl.GeoJSONSource | undefined;
+
+      if (source) {
+        if (typeof source.setData === "function") {
+          source.setData(geojson);
+        }
+        if (typeof map.setPaintProperty === "function") {
+          if (map.getLayer("accuracy-circle-fill")) {
+            map.setPaintProperty("accuracy-circle-fill", "fill-color", color);
+          }
+          if (map.getLayer("accuracy-circle-stroke")) {
+            map.setPaintProperty("accuracy-circle-stroke", "line-color", color);
+          }
+        }
+      } else if (typeof map.addSource === "function") {
+        map.addSource("accuracy-circle", {
+          type: "geojson",
+          data: geojson,
+        });
+      }
+
+      if (!map.getLayer("accuracy-circle-fill") && typeof map.addLayer === "function") {
         map.addLayer({
           id: "accuracy-circle-fill",
           type: "fill",
@@ -443,7 +457,9 @@ function AccuracyCircle({
             "fill-opacity": 0.12,
           },
         });
+      }
 
+      if (!map.getLayer("accuracy-circle-stroke") && typeof map.addLayer === "function") {
         map.addLayer({
           id: "accuracy-circle-stroke",
           type: "line",
@@ -455,11 +471,23 @@ function AccuracyCircle({
           },
         });
       }
-    }
+    };
+
+    syncAccuracyCircle();
+    const loadSubscription = map.on("load", syncAccuracyCircle);
+    const styleLoadSubscription = map.on("style.load", syncAccuracyCircle);
 
     return () => {
-      // Intentionally not removing on every position update to avoid flicker,
-      // handled by the if(!position) check above and the final unmount cleanup below.
+      if (typeof loadSubscription.unsubscribe === "function") {
+        loadSubscription.unsubscribe();
+      } else if (typeof (map as { off?: (event: string, listener: () => void) => void }).off === "function") {
+        (map as { off: (event: string, listener: () => void) => void }).off("load", syncAccuracyCircle);
+      }
+      if (typeof styleLoadSubscription.unsubscribe === "function") {
+        styleLoadSubscription.unsubscribe();
+      } else if (typeof (map as { off?: (event: string, listener: () => void) => void }).off === "function") {
+        (map as { off: (event: string, listener: () => void) => void }).off("style.load", syncAccuracyCircle);
+      }
     };
   }, [map, position, isVisible, color]);
 
@@ -467,6 +495,7 @@ function AccuracyCircle({
   useEffect(() => {
     return () => {
       if (map) {
+        if (map.isStyleLoaded() !== true) return;
         if (map.getLayer("accuracy-circle-fill")) map.removeLayer("accuracy-circle-fill");
         if (map.getLayer("accuracy-circle-stroke")) map.removeLayer("accuracy-circle-stroke");
         if (map.getSource("accuracy-circle")) map.removeSource("accuracy-circle");
@@ -1058,6 +1087,7 @@ export default function TripMap({
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
   const locationDeniedPromptedRef = useRef(false);
+  const locationDeniedSettingsOpenedRef = useRef(false);
   const lastLocationFixAtRef = useRef<number | null>(null);
   const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
@@ -2578,11 +2608,19 @@ export default function TripMap({
         typeof error === "object" && error !== null && "code" in error
           ? (error as { code?: unknown }).code
           : undefined;
-      // Native/Web: location was denied. Toast once per session.
-      if ((code === "NOT_AUTHORIZED" || code === 1) && !locationDeniedPromptedRef.current) {
-        locationDeniedPromptedRef.current = true;
-        showToast("Location access is off for TripCast. You can enable it in your device settings.");
-        if (isLocationSharingRef.current && isNativeLocationAvailable()) {
+      // Native/Web: location was denied. Toast once per session, but do not let
+      // passive foreground GPS consume the native settings handoff for Live.
+      if (code === "NOT_AUTHORIZED" || code === 1) {
+        if (!locationDeniedPromptedRef.current) {
+          locationDeniedPromptedRef.current = true;
+          showToast("Location access is off for TripCast. You can enable it in your device settings.");
+        }
+        if (
+          isLocationSharingRef.current &&
+          isNativeLocationAvailable() &&
+          !locationDeniedSettingsOpenedRef.current
+        ) {
+          locationDeniedSettingsOpenedRef.current = true;
           openNativeLocationSettings();
         }
       }
