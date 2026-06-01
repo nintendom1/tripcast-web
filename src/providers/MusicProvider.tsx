@@ -86,7 +86,7 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
   const [scenario, setScenarioState] = React.useState<AudioScenario>("idle");
 
   const activeSoundtrack = React.useMemo(
-    () => resolveSoundtrackScenario(scenario, soundtrack),
+    () => resolveSoundtrackScenario(scenario, soundtrack) as AudioSoundtrack,
     [scenario, soundtrack],
   );
 

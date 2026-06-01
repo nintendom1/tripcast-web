@@ -64,6 +64,10 @@ type Chord = {
 type Progression = {
   bpm: number;
   chords: Chord[];
+  meter?: number;
+  hasDrums?: boolean;
+  bassFlavor?: "synth" | "sub" | "piano";
+  leadFlavor?: "synth" | "bright" | "piano";
 };
 
 const PROGRESSIONS: Record<string, Progression> = {
@@ -141,6 +145,10 @@ const PROGRESSIONS: Record<string, Progression> = {
   },
   song1: {
     bpm: 80,
+    meter: 4,
+    hasDrums: true,
+    bassFlavor: "sub",
+    leadFlavor: "bright",
     chords: [
       { name: "C", bass: 36, notes: [60, 64, 67], arp: [64, 67, 72, 67] },
       { name: "Bb", bass: 46, notes: [70, 74, 77], arp: [74, 77, 82, 77] },
@@ -150,15 +158,21 @@ const PROGRESSIONS: Record<string, Progression> = {
   },
   song2: {
     bpm: 72,
+    meter: 3,
+    bassFlavor: "piano",
+    leadFlavor: "piano",
     chords: [
-      { name: "C#", bass: 37, notes: [61, 65, 68], arp: [65, 68, 73, 68] },
-      { name: "Fm", bass: 41, notes: [65, 68, 72], arp: [68, 72, 77, 72] },
-      { name: "Bbm", bass: 46, notes: [70, 73, 77], arp: [73, 77, 82, 77] },
-      { name: "F#", bass: 42, notes: [66, 70, 73], arp: [70, 73, 78, 73] },
+      { name: "C#", bass: 37, notes: [61, 65, 68], arp: [65, 68, 73] },
+      { name: "Fm", bass: 41, notes: [65, 68, 72], arp: [68, 72, 77] },
+      { name: "Bbm", bass: 46, notes: [70, 73, 77], arp: [73, 77, 82] },
+      { name: "F#", bass: 42, notes: [66, 70, 73], arp: [70, 73, 78] },
     ],
   },
   song3: {
     bpm: 62,
+    meter: 4,
+    bassFlavor: "piano",
+    leadFlavor: "piano",
     chords: [
       { name: "F#", bass: 42, notes: [66, 70, 73], arp: [70, 73, 78, 73] },
       { name: "Ab", bass: 44, notes: [68, 72, 75], arp: [72, 75, 80, 75] },
@@ -369,24 +383,49 @@ class TripcastAudioEngine implements AudioEngine {
 
     while (this.scheduledAt < this.ctx.currentTime + lookahead) {
       const progression = this.progression();
+      const meter = progression.meter ?? 4;
       const secPerBeat = 60 / progression.bpm;
-      const beatInBar = this.beat % 4;
-      const chord = progression.chords[Math.floor(this.beat / 4) % progression.chords.length];
+      const beatInBar = this.beat % meter;
+      const chord = progression.chords[Math.floor(this.beat / meter) % progression.chords.length];
       const at = this.scheduledAt;
 
       if (beatInBar === 0) {
-        chord.notes.forEach((note) => this.pad(note, at, secPerBeat * 4.1, 0.045));
-        this.bass(chord.bass, at, secPerBeat * 0.9, 0.18);
+        chord.notes.forEach((note) => this.pad(note, at, secPerBeat * (meter + 0.1), 0.045));
+        this.bass(chord.bass, at, secPerBeat * 0.9, 0.18, progression.bassFlavor);
       }
-      if (beatInBar === 2) {
-        this.bass(chord.bass + 7, at, secPerBeat * 0.9, 0.12);
+
+      if (meter === 4 && beatInBar === 2) {
+        this.bass(chord.bass + 7, at, secPerBeat * 0.9, 0.12, progression.bassFlavor);
       }
+
+      if (progression.hasDrums) {
+        this.kick(at);
+        this.hihat(at, 0.2);
+        this.hihat(at + secPerBeat * 0.5, 0.1);
+        if (beatInBar === 1 || beatInBar === 3) {
+          this.snare(at);
+        }
+      }
+
       if (Math.random() > 0.16) {
         const swing = beatInBar % 2 === 1 ? 0.04 : 0;
-        this.piano(chord.arp[beatInBar], at + swing * secPerBeat, secPerBeat * 1.4, 0.16);
+        this.piano(
+          chord.arp[beatInBar % chord.arp.length],
+          at + swing * secPerBeat,
+          secPerBeat * 1.4,
+          0.16,
+          progression.leadFlavor,
+        );
       }
-      if (beatInBar === 3 && Math.random() < 0.4) {
-        this.piano(chord.arp[0] + 12, at + secPerBeat * 0.5, secPerBeat * 1.6, 0.08);
+
+      if (beatInBar === meter - 1 && Math.random() < 0.4) {
+        this.piano(
+          chord.arp[0] + 12,
+          at + secPerBeat * 0.5,
+          secPerBeat * 1.6,
+          0.08,
+          progression.leadFlavor,
+        );
       }
 
       this.scheduledAt += secPerBeat;
@@ -407,13 +446,28 @@ class TripcastAudioEngine implements AudioEngine {
     }
   }
 
-  private piano(midi: number, when: number, dur = 1.4, gain = 0.22) {
+  private piano(
+    midi: number,
+    when: number,
+    dur = 1.4,
+    gain = 0.22,
+    flavor: "synth" | "bright" | "piano" = "synth",
+  ) {
     if (!this.ctx) return;
     const freq = midiToFrequency(midi);
     const filter = this.ctx.createBiquadFilter();
     filter.type = "lowpass";
-    filter.frequency.setValueAtTime(2200, when);
-    filter.frequency.exponentialRampToValueAtTime(900, when + dur);
+
+    if (flavor === "bright") {
+      filter.frequency.setValueAtTime(4000, when);
+      filter.frequency.exponentialRampToValueAtTime(1500, when + dur);
+    } else if (flavor === "piano") {
+      filter.frequency.setValueAtTime(1200, when);
+      filter.frequency.exponentialRampToValueAtTime(400, when + dur);
+    } else {
+      filter.frequency.setValueAtTime(2200, when);
+      filter.frequency.exponentialRampToValueAtTime(900, when + dur);
+    }
 
     const env = this.ctx.createGain();
     env.gain.setValueAtTime(0.0001, when);
@@ -421,19 +475,20 @@ class TripcastAudioEngine implements AudioEngine {
     env.gain.exponentialRampToValueAtTime(0.001, when + dur);
 
     const body = this.ctx.createOscillator();
-    body.type = "triangle";
+    body.type = flavor === "piano" ? "sine" : "triangle";
     body.frequency.value = freq;
+
     const sub = this.ctx.createOscillator();
     sub.type = "sine";
     sub.frequency.value = freq / 2;
     const subGain = this.ctx.createGain();
-    subGain.gain.value = 0.3;
+    subGain.gain.value = flavor === "piano" ? 0.1 : 0.3;
 
     body.connect(filter);
     sub.connect(subGain);
     subGain.connect(filter);
     filter.connect(env);
-    this.connectWithReverb(env, 0.4);
+    this.connectWithReverb(env, flavor === "piano" ? 0.2 : 0.4);
 
     body.start(when);
     sub.start(when);
@@ -471,9 +526,77 @@ class TripcastAudioEngine implements AudioEngine {
     this.connectWithReverb(env, 0.3);
   }
 
-  private bass(midi: number, when: number, dur = 0.8, gain = 0.16) {
+  private bass(
+    midi: number,
+    when: number,
+    dur = 0.8,
+    gain = 0.16,
+    flavor: "synth" | "sub" | "piano" = "synth",
+  ) {
     if (!this.ctx) return;
-    this.playTone(midiToFrequency(midi), when, dur, "sine", gain, 400);
+    const freq = midiToFrequency(midi);
+    if (flavor === "sub") {
+      this.playTone(freq, when, dur, "sine", gain * 1.2, 150);
+    } else if (flavor === "piano") {
+      this.playTone(freq, when, dur, "sine", gain * 0.8, 300);
+    } else {
+      this.playTone(freq, when, dur, "sine", gain, 400);
+    }
+  }
+
+  private kick(when: number) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const env = this.ctx.createGain();
+    osc.frequency.setValueAtTime(150, when);
+    osc.frequency.exponentialRampToValueAtTime(0.01, when + 0.1);
+    env.gain.setValueAtTime(0.4, when);
+    env.gain.exponentialRampToValueAtTime(0.01, when + 0.1);
+    osc.connect(env);
+    env.connect(this.master!);
+    osc.start(when);
+    osc.stop(when + 0.1);
+  }
+
+  private snare(when: number) {
+    if (!this.ctx) return;
+    const noise = this.ctx.createBufferSource();
+    const buffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.1, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    noise.buffer = buffer;
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 1000;
+
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(0.2, when);
+    env.gain.exponentialRampToValueAtTime(0.01, when + 0.1);
+
+    noise.connect(filter);
+    filter.connect(env);
+    env.connect(this.master!);
+    noise.start(when);
+    noise.stop(when + 0.1);
+  }
+
+  private hihat(when: number, gain = 0.1) {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    osc.type = "square";
+    osc.frequency.value = 10000;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.value = 8000;
+    const env = this.ctx.createGain();
+    env.gain.setValueAtTime(gain, when);
+    env.gain.exponentialRampToValueAtTime(0.01, when + 0.05);
+    osc.connect(filter);
+    filter.connect(env);
+    env.connect(this.master!);
+    osc.start(when);
+    osc.stop(when + 0.05);
   }
 
   private playTone(
