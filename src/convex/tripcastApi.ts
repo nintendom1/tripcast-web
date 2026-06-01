@@ -752,12 +752,31 @@ export type TravelerPreferences = {
   sleepStartMinutes?: number;
   sleepEndMinutes?: number;
   sleepStaleThresholdMs: number;
+  followerContentCutoffAt?: number;
+  followerContentCutoffEnabled: boolean;
   updatedAt: number | null;
 };
 
 export type TravelerPreferencesForFollower =
   | { visible: false }
-  | { visible: true; travelerTimeZone?: string; allowFollowersTripPath: boolean };
+  | {
+      visible: true;
+      travelerTimeZone?: string;
+      allowFollowersTripPath: boolean;
+      followerContentCutoffAt?: number;
+    };
+
+export type OldestContentRef = {
+  timestamp: number;
+  sourceType: "story" | "mission";
+} | null;
+
+export type ContentBeforeCutoffCounts = {
+  stories: number;
+  missions: number;
+  trailSamples: number;
+  routeVotes: number;
+};
 
 export type Message = {
   _id: string;
@@ -1889,7 +1908,12 @@ export const tripcastApi = {
     travelerUpdatePreferences: (anyApi as any).travelerPreferences.travelerUpdatePreferences as FunctionReference<
       "mutation",
       "public",
-      { token: string; allowFollowersTripPath?: boolean },
+      {
+        token: string;
+        allowFollowersTripPath?: boolean;
+        followerContentCutoffAt?: number | null;
+        followerContentCutoffEnabled?: boolean;
+      },
       null
     >,
     travelerUpdateSleepHours: (anyApi as any).travelerPreferences.travelerUpdateSleepHours as FunctionReference<
@@ -1903,6 +1927,18 @@ export const tripcastApi = {
         sleepStaleThresholdMs?: number;
       },
       null
+    >,
+    travelerGetOldestContent: (anyApi as any).travelerPreferences.travelerGetOldestContent as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      OldestContentRef
+    >,
+    travelerCountContentBeforeCutoff: (anyApi as any).travelerPreferences.travelerCountContentBeforeCutoff as FunctionReference<
+      "query",
+      "public",
+      { token: string; cutoffAt: number },
+      ContentBeforeCutoffCounts
     >,
   },
   onboarding: {

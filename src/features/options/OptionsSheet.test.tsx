@@ -651,3 +651,82 @@ describe("LiveTrailPreviewMap", () => {
     expect(screen.getByText("No breadcrumbs in range")).toBeInTheDocument();
   });
 });
+
+describe("OptionsSheet Follower content cutoff", () => {
+  it("places the cutoff row directly above the Danger Zone for Travelers", () => {
+    setupMocks();
+    renderOptions();
+
+    expect(screen.getByRole("heading", { name: /privacy/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /follower content cutoff/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /danger zone/i })).toBeInTheDocument();
+  });
+
+  it("toggling the enable switch persists followerContentCutoffEnabled", async () => {
+    const { updatePreferencesFn } = setupMocks();
+    renderOptions({ defaultView: "follower-cutoff" });
+
+    // The first switch row in the sub-view is the enable toggle.
+    const toggle = await screen.findByRole("checkbox", { name: /cutoff disabled/i });
+    await userEvent.click(toggle);
+
+    expect(updatePreferencesFn).toHaveBeenCalledWith(
+      expect.objectContaining({ followerContentCutoffEnabled: true }),
+    );
+  });
+
+  it("saves a chosen cutoff date+time via Save cutoff", async () => {
+    const { updatePreferencesFn } = setupMocks({ travelerTimeZone: "UTC" });
+    // Seed: cutoff toggle is already enabled so the pickers are interactive.
+    vi.mocked(convexReact.useQuery).mockImplementation((...args: any[]) => {
+      const [ref] = args;
+      if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
+        return {
+          travelerTimeZone: "UTC",
+          allowFollowersTripPath: false,
+          followerContentCutoffEnabled: true,
+        };
+      }
+      if (ref === tripcastApi.travelerPreferences.travelerGetOldestContent) return null;
+      return undefined;
+    });
+    renderOptions({ defaultView: "follower-cutoff" });
+
+    await userEvent.type(await screen.findByLabelText(/^Date$/i), "2026-06-09");
+    await userEvent.type(screen.getByLabelText(/^Time$/i), "09:00");
+    await userEvent.click(screen.getByRole("button", { name: /save cutoff/i }));
+
+    expect(updatePreferencesFn).toHaveBeenCalledWith(
+      expect.objectContaining({ followerContentCutoffAt: expect.any(Number) }),
+    );
+  });
+
+  it("'Use now as cutoff' populates the pickers", async () => {
+    setupMocks({ travelerTimeZone: "UTC" });
+    vi.mocked(convexReact.useQuery).mockImplementation((...args: any[]) => {
+      const [ref] = args;
+      if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
+        return {
+          travelerTimeZone: "UTC",
+          allowFollowersTripPath: false,
+          followerContentCutoffEnabled: true,
+        };
+      }
+      if (ref === tripcastApi.travelerPreferences.travelerGetOldestContent) return null;
+      return undefined;
+    });
+    renderOptions({ defaultView: "follower-cutoff" });
+
+    const dateInput = (await screen.findByLabelText(/^Date$/i)) as HTMLInputElement;
+    const timeInput = screen.getByLabelText(/^Time$/i) as HTMLInputElement;
+    expect(dateInput.value).toBe("");
+    expect(timeInput.value).toBe("");
+
+    await userEvent.click(screen.getByRole("button", { name: /use now as cutoff/i }));
+
+    expect(dateInput.value).not.toBe("");
+    expect(timeInput.value).not.toBe("");
+  });
+});

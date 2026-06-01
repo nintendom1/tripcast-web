@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Plus, RadioTower, Trophy } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
@@ -29,6 +29,7 @@ import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 
 type Props = {
   open: boolean;
@@ -125,6 +126,7 @@ export default function MissionPanel({
     sourceLabel: debugSource?.sourceLabel ?? "Unknown",
     file: "src/features/missions/MissionPanel.tsx",
   }, { boundsSelector: "[data-role='missions-sheet']" });
+
   const deleteMission = useMutation(tripcastApi.missions.travelerDeleteMission);
 
   async function handleConfirmDelete() {
@@ -193,8 +195,8 @@ export default function MissionPanel({
     if (!open || !pendingOpenDetailMissionId) return;
     if (pendingDetailMission === undefined) return; // still loading
     if (pendingDetailMission === null) {
-      // Mission was deleted while the user was writing the story — fall back
-      // to the list view and clear the pending id so we don't loop.
+      // Mission was deleted (or hidden by cutoff) while the user was writing — fall
+      // back to the list view and clear the pending id so we don't loop.
       onClearPendingDetail?.();
       setViewMode("list");
       setSelectedMission(null);
@@ -489,7 +491,14 @@ function TravelerListView({
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
-  const allMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const rawMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const preview = useFollowerCutoffPreview("traveler", token);
+  const allMissions = useMemo(
+    () => preview.cutoffAt && rawMissions
+      ? rawMissions.filter((m) => m.createdAt >= (preview.cutoffAt as number))
+      : rawMissions,
+    [rawMissions, preview.cutoffAt],
+  );
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   function clearHighlightTimers() {
@@ -755,6 +764,7 @@ function FollowerListView({
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const myMissions = useQuery(tripcastApi.missions.followerListMyMissions, { token });
+
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   const mine = myMissions?.mine ?? [];

@@ -2,6 +2,12 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 import {
   BookOpen,
   Bomb,
@@ -17,6 +23,7 @@ import {
   Play,
   RadioTower,
   Route,
+  Shield,
   ShieldAlert,
   Trash2,
   Trophy,
@@ -62,6 +69,7 @@ import CreateInviteControl from "../followers/CreateInviteControl";
 import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import BulkImportSheet from "./BulkImportSheet";
+import { useFollowerCutoffPreview } from "./followerCutoffPreview";
 import BulkExportSheet from "./BulkExportSheet";
 import MysteryMissionsSheet from "./MysteryMissionsSheet";
 import { TERMS } from "../../copy/terminology";
@@ -89,7 +97,7 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff";
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -182,6 +190,272 @@ function combineDateTime(date: string, time: string) {
 }
 
 type LiveTrailPreviewSample = LiveTrailDeletePreview["samples"][number];
+
+export function FollowerCutoffSection({ token, log }: { token: string; log: DebugLogger }) {
+  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
+  const oldestContent = useQuery(tripcastApi.travelerPreferences.travelerGetOldestContent, { token });
+  const updatePreferences = useMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
+  const preview = useFollowerCutoffPreview("traveler", token);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const cutoffAt = preferences?.followerContentCutoffAt;
+  const enabled = preferences?.followerContentCutoffEnabled ?? false;
+  const timeZone = preferences?.travelerTimeZone ?? detectBrowserTimeZone() ?? "UTC";
+
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+
+  // Sync pickers from server. Run when the saved value or timezone changes so
+  // mutations from other clients reflect immediately.
+  useEffect(() => {
+    if (cutoffAt) {
+      setDate(formatDateInputValue(cutoffAt, timeZone));
+      setTime(formatTimeInputValue(cutoffAt, timeZone));
+    } else {
+      setDate("");
+      setTime("");
+    }
+  }, [cutoffAt, timeZone]);
+
+  const previewCutoffMs = useMemo(() => {
+    if (!date || !time) return null;
+    const dt = dayjs.tz(`${date}T${time}`, timeZone);
+    const ms = dt.valueOf();
+    return Number.isFinite(ms) ? ms : null;
+  }, [date, time, timeZone]);
+
+  const countsSkip = !enabled || previewCutoffMs === null;
+  const counts = useQuery(
+    tripcastApi.travelerPreferences.travelerCountContentBeforeCutoff,
+    countsSkip ? "skip" : { token, cutoffAt: previewCutoffMs as number },
+  );
+
+  useEffect(() => {
+    log.logInteraction("follower-cutoff:open");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleToggle(nextEnabled: boolean) {
+    setError(null);
+    setSaving(true);
+    log.logInteraction("follower-cutoff:toggle", { enabled: nextEnabled });
+    try {
+      await updatePreferences({ token, followerContentCutoffEnabled: nextEnabled });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSave() {
+    setError(null);
+    setSaving(true);
+    log.logInteraction("follower-cutoff:save", { date, time, timeZone });
+    try {
+      let nextCutoffAt: number | null = null;
+      if (date && time) {
+        const dt = dayjs.tz(`${date}T${time}`, timeZone);
+        nextCutoffAt = dt.valueOf();
+      }
+      await updatePreferences({ token, followerContentCutoffAt: nextCutoffAt });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleUseOldest() {
+    if (!oldestContent) return;
+    setDate(formatDateInputValue(oldestContent.timestamp, timeZone));
+    setTime(formatTimeInputValue(oldestContent.timestamp, timeZone));
+    log.logInteraction("follower-cutoff:use-oldest", {
+      sourceType: oldestContent.sourceType,
+      timestamp: oldestContent.timestamp,
+    });
+  }
+
+  function handleUseNow() {
+    const now = Date.now();
+    setDate(formatDateInputValue(now, timeZone));
+    setTime(formatTimeInputValue(now, timeZone));
+    log.logInteraction("follower-cutoff:use-now", { timestamp: now });
+  }
+
+  const savedFormatted = cutoffAt ? dayjs.tz(cutoffAt, timeZone).format("MMM D, YYYY h:mm A z") : null;
+  const previewFormatted = previewCutoffMs ? dayjs.tz(previewCutoffMs, timeZone).format("MMM D, YYYY h:mm A z") : null;
+  const oldestFormatted = oldestContent
+    ? dayjs.tz(oldestContent.timestamp, timeZone).format("MMM D, YYYY h:mm A z")
+    : null;
+  const pickerEditedSinceSave = previewCutoffMs !== null && previewCutoffMs !== cutoffAt;
+
+  return (
+    <div className="grid gap-6">
+      <OptionsSection label="About">
+        <OptionsGroup>
+          <div className="grid gap-3 p-4 sm:p-5">
+            <div className="flex items-start gap-4">
+              <OptionsIcon icon={Shield} />
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-semibold text-[var(--ink-1)]">Follower content cutoff</p>
+                <p className="text-sm text-[var(--ink-3)]">
+                  Hide trip content from before a chosen date/time from Followers. Hidden
+                  content is not deleted &mdash; you can change or remove the cutoff at any time
+                  and Followers will see it again instantly. Achievement points already
+                  earned are never removed.
+                </p>
+              </div>
+            </div>
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Enable">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            icon={enabled ? EyeOff : Eye}
+            title={enabled ? "Cutoff enabled" : "Cutoff disabled"}
+            detail={
+              enabled
+                ? "Followers see only content at or after the cutoff."
+                : "All trip content is visible to Followers."
+            }
+            checked={enabled}
+            onChange={(checked) => { void handleToggle(checked); }}
+          />
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Cutoff date and time">
+        <OptionsGroup>
+          <div className="grid gap-4 p-4 sm:p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <label
+                  htmlFor="cutoff-date"
+                  className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-3)]"
+                >
+                  Date
+                </label>
+                <input
+                  id="cutoff-date"
+                  type="date"
+                  value={date}
+                  disabled={!enabled || saving}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)] disabled:opacity-60"
+                />
+              </div>
+              <div className="grid gap-2">
+                <label
+                  htmlFor="cutoff-time"
+                  className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-3)]"
+                >
+                  Time
+                </label>
+                <input
+                  id="cutoff-time"
+                  type="time"
+                  value={time}
+                  disabled={!enabled || saving}
+                  onChange={(e) => setTime(e.target.value)}
+                  className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)] disabled:opacity-60"
+                />
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!enabled || saving || !date || !time || !pickerEditedSinceSave}
+              onClick={() => { void handleSave(); }}
+              className="w-full sm:w-fit"
+            >
+              {saving ? "Saving..." : "Save cutoff"}
+            </Button>
+
+            {error ? (
+              <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p>
+            ) : null}
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Status">
+        <OptionsGroup>
+          <div className="grid gap-2 p-4 text-sm text-[var(--ink-3)] sm:p-5">
+            <p>
+              <span className="font-semibold text-[var(--ink-1)]">Current cutoff: </span>
+              {enabled && savedFormatted
+                ? savedFormatted
+                : !enabled && savedFormatted
+                  ? `Disabled (saved: ${savedFormatted})`
+                  : "None"}
+            </p>
+            {enabled && previewCutoffMs !== null ? (
+              <p>
+                <span className="font-semibold text-[var(--ink-1)]">Hiding from Followers: </span>
+                {counts === undefined
+                  ? "Counting..."
+                  : `${counts.stories} Stories · ${counts.missions} Missions · ${counts.routeVotes} Route Votes · ${counts.trailSamples} Trail samples`}
+                {pickerEditedSinceSave ? ` (preview at ${previewFormatted})` : null}
+              </p>
+            ) : null}
+            <p>
+              <span className="font-semibold text-[var(--ink-1)]">Oldest item: </span>
+              {oldestContent === undefined
+                ? "Loading..."
+                : oldestContent === null
+                  ? "No trip content yet."
+                  : `${oldestFormatted} (${oldestContent.sourceType === "story" ? "Story" : "Mission"})`}
+            </p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {oldestContent ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!enabled || saving}
+                  onClick={handleUseOldest}
+                  className="text-xs"
+                >
+                  Use oldest as cutoff
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={!enabled || saving}
+                onClick={handleUseNow}
+                className="text-xs"
+              >
+                Use now as cutoff
+              </Button>
+            </div>
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      {preview.available ? (
+        <OptionsSection label="Your view">
+          <OptionsGroup>
+            <OptionsSwitchRow
+              icon={Eye}
+              title="Show all"
+              detail="By default your own view is filtered to match what Followers see. Turn this on to bypass the cutoff and reach pre-cutoff content for admin, export, or debug. Per-tab only — closing the tab or starting a new session restores the filtered view."
+              checked={preview.showAll}
+              onChange={(next) => {
+                log.logInteraction("follower-cutoff:show-all-toggle", { showAll: next });
+                preview.setShowAll(next);
+              }}
+            />
+          </OptionsGroup>
+        </OptionsSection>
+      ) : null}
+    </div>
+  );
+}
 
 function TravelerTimezoneSection({ token }: { token: string }) {
   const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, {
@@ -992,6 +1266,11 @@ export default function OptionsSheet({
               title="Cloaking Zones"
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "follower-cutoff" ? (
+            <SubViewHeader
+              title="Follower content cutoff"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
           ) : view === "emergency-reset" ? (
             <EmergencyResetContent
               token={session.token}
@@ -1031,6 +1310,12 @@ export default function OptionsSheet({
                 <CloakingPinsSheet token={session.token} log={log} />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "follower-cutoff" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <FollowerCutoffSection token={session.token} log={log} />
+              </OptionsContentFrame>
+            </SheetBody>
           ) : view === "options" ? (
             <OptionsHome
               role={role}
@@ -1045,6 +1330,7 @@ export default function OptionsSheet({
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
+              onFollowerCutoff={() => { music.sfx("page"); navigateTo("follower-cutoff"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
               onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
               onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
@@ -1150,6 +1436,7 @@ function OptionsHome({
   onBulkImport,
   onBulkExport,
   onEmergencyReset,
+  onFollowerCutoff,
   onDebugLogs,
   onEndTrip,
   onViewCredits,
@@ -1167,6 +1454,7 @@ function OptionsHome({
   onBulkImport: () => void;
   onBulkExport: () => void;
   onEmergencyReset: () => void;
+  onFollowerCutoff: () => void;
   onEndTrip?: () => void;
   onViewCredits?: () => void;
 }) {
@@ -1397,11 +1685,27 @@ function OptionsHome({
       )}
 
       {role === "traveler" ? (
-        <OptionsSection label={TERMS.dangerZone}>
-          <OptionsGroup>
-            <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
-          </OptionsGroup>
-        </OptionsSection>
+        <>
+          <OptionsSection label="Privacy">
+            <OptionsGroup>
+              <OptionsRow
+                icon={Shield}
+                title="Follower content cutoff"
+                detail="Hide older trip content from Followers"
+                onClick={() => {
+                  log.logUi("action:follower-cutoff");
+                  onFollowerCutoff();
+                }}
+              />
+            </OptionsGroup>
+          </OptionsSection>
+
+          <OptionsSection label={TERMS.dangerZone}>
+            <OptionsGroup>
+              <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
+            </OptionsGroup>
+          </OptionsSection>
+        </>
       ) : null}
 
       {role === "follower" ? developerSection : null}
