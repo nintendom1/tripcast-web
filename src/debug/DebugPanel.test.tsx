@@ -221,4 +221,13 @@ describe("DebugPanel", () => {
     expect(revokeObjectUrl).toHaveBeenCalledWith("blob:debug-json");
     expect(screen.getByRole("status")).toHaveTextContent(/downloaded json/i);
   });
+
+  it("renders Ticker Debug section when logging is enabled", () => {
+    setEnabled(true);
+    render(<DebugPanel onBack={vi.fn()} token="mock-token" />);
+
+    expect(screen.getByText(/ticker debug/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/debug message/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /push/i })).toBeInTheDocument();
+  });
 });

@@ -93,4 +93,5 @@ describe("CreditsOverlay", () => {
     await user.click(screen.getByRole("button", { name: "Close to map archive" }));
     expect(onClose).toHaveBeenCalled();
   });
+
 });

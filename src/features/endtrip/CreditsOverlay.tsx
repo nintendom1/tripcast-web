@@ -5,6 +5,7 @@ import { Archive, X } from "lucide-react";
 
 import { tripcastApi, type Role } from "../../convex/tripcastApi";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 
 type Props = {
   token: string;
@@ -33,7 +34,9 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
   const credits = useQuery(tripcastApi.endTrip.getTripCredits, { token });
   const queriedEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
   const queriedMissions = useQuery(
-    role === "traveler" ? tripcastApi.missions.travelerListMissions : tripcastApi.missions.followerListMissions,
+    role === "traveler"
+      ? tripcastApi.missions.travelerListMissions
+      : tripcastApi.missions.followerListMissions,
     { token },
   );
   const log = useDebugLogger("CreditsOverlay", "src/features/endtrip/CreditsOverlay.tsx");
@@ -62,10 +65,14 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
     });
   }, [credits, log]);
 
+  const preview = useFollowerCutoffPreview(role, token);
   const leaderboard = credits?.leaderboard ?? [];
   const stats = useMemo(() => {
-    const events = queriedEvents ?? [];
-    const missions = queriedMissions ?? [];
+    const allEvents = queriedEvents ?? [];
+    const allMissions = queriedMissions ?? [];
+    const cutoff = preview.cutoffAt;
+    const events = cutoff ? allEvents.filter((e) => e.occurredAt >= cutoff) : allEvents;
+    const missions = cutoff ? allMissions.filter((m) => m.createdAt >= cutoff) : allMissions;
     const storyCount = events.filter((event) => event.type === "story").length;
     const routeSteps = events.filter((event) => event.lat !== undefined && event.lon !== undefined).length;
     const completedMissions = missions.filter((mission) => mission.status === "completed").length;
@@ -76,7 +83,7 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
         ? Math.max(1, Math.ceil((last.occurredAt - first.occurredAt) / 86_400_000))
         : 0;
     return { storyCount, routeSteps, completedMissions, durationDays };
-  }, [queriedEvents, queriedMissions]);
+  }, [queriedEvents, queriedMissions, preview.cutoffAt]);
   const topByBadges = [...leaderboard]
     .filter((e) => e.badges > 0)
     .sort((a, b) => b.badges - a.badges)

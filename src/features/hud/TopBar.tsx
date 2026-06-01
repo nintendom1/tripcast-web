@@ -35,7 +35,7 @@ export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
         className,
       )}
     >
-      <div className="tripcast-frame flex items-center justify-between px-4 py-2">
+      <div className="tripcast-frame flex items-center justify-between px-4 pt-2 pb-0">
       <div className="flex items-center gap-2 font-[var(--font-display)] text-base font-extrabold tracking-tight text-[var(--ink-1)]">
         <span
           className="flex h-6 w-6 items-center justify-center rounded-md text-white"

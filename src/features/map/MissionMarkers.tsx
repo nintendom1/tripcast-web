@@ -3,6 +3,7 @@ import maplibregl, { Marker } from "maplibre-gl";
 import { useQuery } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, Role } from "../../convex/tripcastApi";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 
 // Visual style by lifecycle state
 const STATUS_COLORS: Record<string, string> = {
@@ -86,6 +87,7 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
   onMissionClickRef.current = onMissionClick;
 
   const pins = useQuery(tripcastApi.missions.listMissionMapPins, { token });
+  const preview = useFollowerCutoffPreview(role, token);
 
   useEffect(() => {
     if (!map) {
@@ -101,6 +103,9 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
 
     pins.forEach((mission) => {
       if (mission.lat === undefined || mission.lon === undefined) return;
+      // Follower content cutoff
+      if (preview.cutoffAt !== null && mission.createdAt < preview.cutoffAt) return;
+
       const id = mission._id;
       nextIds.add(id);
 
@@ -192,7 +197,7 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
         currentMarkers.delete(id);
       }
     });
-  }, [map, pins]);
+  }, [map, pins, preview.cutoffAt]);
 
   // Clean up all markers on unmount
   useEffect(() => {

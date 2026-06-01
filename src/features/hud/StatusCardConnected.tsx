@@ -22,6 +22,7 @@ import {
   getStateEmoji,
 } from "@/features/travelstate/travelerStateUtils";
 import { computeAutoState } from "@/features/travelstate/autoStateCalc";
+import { cn } from "@/lib/utils";
 
 import { StatusCard, type StatusCardMeter } from "./StatusCard";
 
@@ -424,7 +425,7 @@ export function StatusCardConnected({
   ].filter(Boolean).join(" · ") || null;
 
   return (
-    <div className={className}>
+    <div className={cn("pointer-events-auto w-fit max-w-full self-start", className)}>
       <StatusCard
         activityLabel={activityLabel}
         activityEmoji={activityEmoji}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, CheckSquare, Plus } from "lucide-react";
@@ -38,6 +38,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
@@ -808,9 +809,18 @@ export default function RouteVotePanel({
     tripcastApi.routeVotes.listVisibleRouteVotes,
     open && !isTraveler ? { token } : "skip",
   );
-  const travelerVotes = useQuery(
+  const travelerVotesRaw = useQuery(
     tripcastApi.routeVotes.travelerListRouteVotes,
     open && isTraveler ? { token } : "skip",
+  );
+  // Traveler-only "Preview as Follower": when on, hide pre-cutoff votes so the
+  // Traveler sees the same list a Follower would. Followers are server-filtered.
+  const preview = useFollowerCutoffPreview(role, token);
+  const travelerVotes = useMemo(
+    () => preview.cutoffAt && travelerVotesRaw
+      ? travelerVotesRaw.filter((v) => v.createdAt >= (preview.cutoffAt as number))
+      : travelerVotesRaw,
+    [travelerVotesRaw, preview.cutoffAt],
   );
   const votes = (isTraveler ? travelerVotes : followerVotes) as PanelVote[] | undefined;
   const [selectedVoteId, setSelectedVoteId] = useState<string | null>(null);
