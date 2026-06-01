@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
   Camera,
@@ -38,6 +38,7 @@ import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
 import { useSheetPersonalities, type SheetPersonality } from "../redesign/sheetPersonality";
 import { uploadStoryImage, validateStoryImageFile } from "./storyImageUpload";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 
 type FilterTab = "story" | "all" | "entries";
 
@@ -157,7 +158,7 @@ type JournalSheetProps = {
 };
 
 export default function JournalSheet({
-  events,
+  events: rawEvents,
   token,
   open,
   role,
@@ -169,6 +170,16 @@ export default function JournalSheet({
   isPickingCoordinate,
   debugSource,
 }: JournalSheetProps) {
+  // Traveler-only preview: when ON, hide pre-cutoff events so the Traveler sees
+  // what the Follower sees. For Followers, server filtering already applied and
+  // preview.cutoffAt is null.
+  const preview = useFollowerCutoffPreview(role, token);
+  const events = useMemo(
+    () => preview.cutoffAt
+      ? rawEvents.filter((e) => e.occurredAt >= (preview.cutoffAt as number))
+      : rawEvents,
+    [rawEvents, preview.cutoffAt],
+  );
   const [activeTab, setActiveTab] = useState<FilterTab>("story");
   const [viewMode, setViewMode] = useState<"list" | "create">("list");
   const [storyTitle, setStoryTitle] = useState("");
@@ -188,6 +199,7 @@ export default function JournalSheet({
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
   const calibration = useCenteringCalibration();
   const sheetPersonalities = useSheetPersonalities();
+
   useActiveUiContext(open, {
     sheetName: "JournalSheet",
     label: TERMS.journal,

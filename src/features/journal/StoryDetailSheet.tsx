@@ -27,6 +27,7 @@ import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import AttributionBlock from "../attributions/AttributionBlock";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
@@ -203,7 +204,26 @@ export default function StoryDetailSheet({
   const [isDeleting, setIsDeleting] = useState(false);
   const [optimisticEvent, setOptimisticEvent] = useState<JournalEvent | null>(null);
 
-  const displayEvent = optimisticEvent?._id === event?._id ? optimisticEvent : event;
+  const preferences = useQuery(
+    tripcastApi.travelerPreferences.followerGetPreferences,
+    role === "follower" && token ? { token } : "skip",
+  );
+  const followerCutoffAt = preferences?.visible ? preferences.followerContentCutoffAt : undefined;
+
+  // Traveler-side "Preview as Follower" — null when off or not a Traveler.
+  const preview = useFollowerCutoffPreview(role, token);
+
+  // Effective cutoff for THIS view:
+  // - Follower: derive from followerGetPreferences (deep links / push notifications
+  //   can still hand a Follower a pre-cutoff event id even though listJournalEvents
+  //   now filters at the server).
+  // - Traveler: the preview hook supplies the cutoff when preview is on; otherwise
+  //   the Traveler sees everything.
+  const effectiveCutoff = role === "follower" ? followerCutoffAt : (preview.cutoffAt ?? undefined);
+  const isHiddenByCutoff =
+    effectiveCutoff !== undefined && event !== null && event !== undefined && event.occurredAt < effectiveCutoff;
+
+  const displayEvent = isHiddenByCutoff ? null : optimisticEvent?._id === event?._id ? optimisticEvent : event;
   const currentImageUrl = useQuery(
     tripcastApi.checkpoints.getStoryImageUrl,
     displayEvent?.imageId && token ? { token, imageId: displayEvent.imageId } : "skip",
@@ -468,7 +488,20 @@ export default function StoryDetailSheet({
         className={cn("z-[11] max-h-[62dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]", isPickingCoordinate && "invisible pointer-events-none")}
         data-role="story-detail"
       >
-        {displayEvent && (
+        {isHiddenByCutoff ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+            <div className="grid h-12 w-12 place-items-center rounded-full bg-[var(--meter-track)] text-[var(--ink-3)]">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <div className="grid gap-1">
+              <h2 className="font-[var(--font-display)] text-lg font-bold text-[var(--ink-1)]">Content hidden</h2>
+              <p className="text-sm text-[var(--ink-3)]">This entry is no longer available.</p>
+            </div>
+            <Button variant="outline" onClick={onClose} className="mt-2">
+              Close
+            </Button>
+          </div>
+        ) : displayEvent && (
           <>
             <SheetGradientHeader color={journalPersonality.color} bg={journalPersonality.bg}>
               <div className="flex min-w-0 flex-col gap-1.5">

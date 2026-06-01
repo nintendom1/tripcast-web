@@ -1,5 +1,5 @@
 import { act } from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DebugChip } from "./DebugChip";
 import { clearLogs, log, setEnabled, setPreset } from "./debugLogger";
@@ -92,5 +92,48 @@ describe("DebugChip", () => {
     expect(button).toHaveTextContent("Debug (0)");
     expect(button).toHaveTextContent("Active: MissionPanel");
     expect(button).not.toHaveTextContent("Source:");
+  });
+
+  it("opens on click without bubbling the click to parent UI", () => {
+    setEnabled(true);
+    setPreset("normal");
+    setFloatingDebugButtonMode("log-count");
+    const onOpen = vi.fn();
+    const onParentClick = vi.fn();
+
+    render(
+      <div onClick={onParentClick}>
+        <DebugChip onOpen={onOpen} />
+      </div>,
+    );
+
+    const button = screen.getByRole("button", { name: /open debug panel/i });
+
+    expect(button).toHaveAttribute("data-debug-chip");
+
+    fireEvent.pointerDown(button, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(button, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.click(button);
+
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onParentClick).not.toHaveBeenCalled();
+  });
+
+  it("suppresses open after pointer movement crosses the drag threshold", () => {
+    setEnabled(true);
+    setPreset("normal");
+    setFloatingDebugButtonMode("log-count");
+    const onOpen = vi.fn();
+
+    render(<DebugChip onOpen={onOpen} />);
+
+    const button = screen.getByRole("button", { name: /open debug panel/i });
+
+    fireEvent.pointerDown(button, { pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(button, { pointerId: 1, clientX: 18, clientY: 10 });
+    fireEvent.pointerUp(button, { pointerId: 1, clientX: 18, clientY: 10 });
+    fireEvent.click(button);
+
+    expect(onOpen).not.toHaveBeenCalled();
   });
 });

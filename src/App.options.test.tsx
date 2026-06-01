@@ -89,11 +89,15 @@ describe("App: Options sheet — Traveler", () => {
     expect(screen.getByText(/danger zone/i)).toBeInTheDocument();
   });
 
-  it("shows Followers section in Options for traveler", async () => {
+  it("shows the Follower content cutoff entry in Options for traveler", async () => {
     setupSessionMocks("traveler");
     render(<App convexReady={true} />);
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
-    expect(screen.getByRole("heading", { name: /followers/i })).toBeInTheDocument();
+    // Renders as a navigation row right above the Danger Zone (see OptionsHome).
+    expect(
+      screen.getByRole("button", { name: /follower content cutoff/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /privacy/i })).toBeInTheDocument();
   });
 
   it("shows Bulk Import and Bulk Export in the traveler Data / Dev section", async () => {
