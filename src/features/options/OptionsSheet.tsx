@@ -101,6 +101,11 @@ type OptionsSheetProps = {
 
 export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker";
 
+const TICKER_PREVIEW_MESSAGE = {
+  id: "preview-demo",
+  text: "Sample fact — this is what your ticker will look like.",
+};
+
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
   { value: "auto_publish", label: "Auto-publish", desc: "Follower proposals appear immediately." },
@@ -1308,9 +1313,10 @@ export default function OptionsSheet({
           ) : view === "trip-ticker" ? (
             <SheetBody className="p-0">
               <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <TripTickerSettings />
+                <TripTickerSettings token={session.token} />
               </OptionsContentFrame>
             </SheetBody>
+
           ) : view === "live-trail" ? (
             <SheetBody className="p-0">
               <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
@@ -1351,7 +1357,10 @@ export default function OptionsSheet({
             />
           ) : view === "debug-logs" ? (
             <SheetBody className="min-h-0 overflow-hidden p-0">
-              <DebugPanel onBack={() => { music.sfx("page"); navigateTo("options"); }} />
+              <DebugPanel 
+                onBack={() => { music.sfx("page"); navigateTo("options"); }} 
+                token={session?.token}
+              />
             </SheetBody>
           ) : null}
         </SheetContent>
@@ -2205,7 +2214,99 @@ function CloakingPinsSheet({ token, log }: { token: string; log: DebugLogger }) 
   );
 }
 
-export function TripTickerSettings() {
+function TickerBulkImportSheet({
+  open,
+  onOpenChange,
+  token,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  token: string;
+}) {
+  const [text, setText] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const commitBulkImport = useMutation(tripcastApi.bulkImport.travelerBulkImport);
+  const music = useMusicSafe();
+
+  const handleImport = async () => {
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length === 0) return;
+
+    setIsImporting(true);
+    setErrorMessage(null);
+    try {
+      const entries = lines.map(line => ({
+        kind: "ticker_fact" as const,
+        text: line
+      }));
+      await commitBulkImport({ token, entries });
+      music.sfx("success");
+      onOpenChange(false);
+      setText("");
+    } catch (e) {
+      console.error("Bulk import failed", e);
+      const detail = e instanceof Error && e.message ? e.message : "Check console for details.";
+      setErrorMessage(`Import failed. ${detail}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setErrorMessage(null);
+        onOpenChange(next);
+      }}
+    >
+      <SheetContent side="bottom" className="h-[80dvh]">
+        <SheetTitle>Bulk Import Fun Facts</SheetTitle>
+        <SheetCloseButton />
+        <SheetBody className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-[var(--ink-2)]">
+            Paste a list of fun facts, one per line. They will be added to your trip ticker.
+          </p>
+          <textarea
+            className="flex-1 w-full p-3 text-sm rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] font-mono resize-none focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+            placeholder="Fact 1&#10;Fact 2&#10;Fact 3..."
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            disabled={isImporting}
+          />
+          {errorMessage ? (
+            <p role="alert" className="text-sm font-medium text-rose-600 dark:text-rose-400">
+              {errorMessage}
+            </p>
+          ) : null}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+              disabled={isImporting}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleImport}
+              disabled={isImporting || !text.trim()}
+            >
+              {isImporting ? "Importing..." : `Import ${text.split("\n").filter(l => l.trim()).length} Facts`}
+            </Button>
+          </div>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export function TripTickerSettings({ token }: { token: string }) {
   const {
     settings,
     updateSettings,
@@ -2214,11 +2315,20 @@ export function TripTickerSettings() {
     addFunFact,
     removeFunFact,
     clearAll,
-    currentMessage,
-    isPriority
-  } = useTicker();
+  } = useTicker(token);
   const [priorityInput, setPriorityInput] = useState("");
   const [funFactInput, setFunFactInput] = useState("");
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const confirmingClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmingClearTimeoutRef.current !== null) {
+        clearTimeout(confirmingClearTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className="grid gap-8">
@@ -2226,15 +2336,10 @@ export function TripTickerSettings() {
         <OptionsGroup>
           <div className="p-4 bg-[var(--bg-paper-2)]/30 rounded-lg overflow-hidden">
             <TripTicker
-              message={currentMessage}
-              isPriority={isPriority}
+              message={TICKER_PREVIEW_MESSAGE}
+              isPriority={false}
               className="border rounded shadow-inner"
             />
-            {!currentMessage && (
-              <p className="text-center text-xs text-[var(--ink-3)] mt-2">
-                Ticker is currently hidden.
-              </p>
-            )}
           </div>
         </OptionsGroup>
       </OptionsSection>
@@ -2312,7 +2417,7 @@ export function TripTickerSettings() {
                 onChange={(e) => updateSettings({ funFactIntervalMinutes: Number(e.target.value) })}
                 className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
               >
-                {[1, 2, 5, 10, 20, 30, 60].map(m => (
+                {[0, 1, 2, 5, 10, 20, 30, 60].map(m => (
                   <option key={m} value={m}>{m} minutes</option>
                 ))}
               </select>
@@ -2344,7 +2449,20 @@ export function TripTickerSettings() {
                 Add
               </Button>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setIsBulkImportOpen(true)}
+            >
+              Bulk Import Fun Facts
+            </Button>
           </div>
+          <TickerBulkImportSheet
+            open={isBulkImportOpen}
+            onOpenChange={setIsBulkImportOpen}
+            token={token}
+          />
           {settings.funFacts.map((msg) => (
             <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
               <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
@@ -2362,18 +2480,37 @@ export function TripTickerSettings() {
 
       <OptionsSection label="Danger Zone">
         <OptionsGroup>
-          <div className="p-4 sm:p-5">
+          <div className="p-4 sm:p-5 grid gap-2">
             <Button
               variant="destructive"
               className="w-full"
               onClick={() => {
-                if (confirm("Clear all ticker messages?")) {
-                  clearAll();
+                if (!confirmingClear) {
+                  setConfirmingClear(true);
+                  if (confirmingClearTimeoutRef.current !== null) {
+                    clearTimeout(confirmingClearTimeoutRef.current);
+                  }
+                  confirmingClearTimeoutRef.current = setTimeout(() => {
+                    setConfirmingClear(false);
+                    confirmingClearTimeoutRef.current = null;
+                  }, 4000);
+                  return;
                 }
+                if (confirmingClearTimeoutRef.current !== null) {
+                  clearTimeout(confirmingClearTimeoutRef.current);
+                  confirmingClearTimeoutRef.current = null;
+                }
+                setConfirmingClear(false);
+                void clearAll();
               }}
             >
-              Clear all messages
+              {confirmingClear ? "Tap again to confirm clear" : "Clear all messages"}
             </Button>
+            {confirmingClear ? (
+              <p className="text-xs text-[var(--ink-3)] text-center">
+                This removes every priority message and fun fact.
+              </p>
+            ) : null}
           </div>
         </OptionsGroup>
       </OptionsSection>

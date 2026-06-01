@@ -21,6 +21,9 @@ export default meta;
 type Story = StoryObj<typeof TripTickerSettings>;
 
 export const Default: Story = {
+  args: {
+    token: "mock-token"
+  },
   play: async () => {
     // Fill localStorage with some data for the story
     const mockSettings = {

@@ -128,7 +128,7 @@ function ConnectedApp() {
   const [preserveDebugContext, setPreserveDebugContext] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
   const music = useMusicSafe();
-  const { currentMessage, isPriority, onFunFactComplete } = useTicker();
+  const { currentMessage, isPriority, onFunFactComplete } = useTicker(session?.token);
   const [isIntroReplayOpen, setIsIntroReplayOpen] = useState(false);
   const [isCreateAccountIntroOpen, setIsCreateAccountIntroOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
