@@ -273,6 +273,7 @@ textarea {
 }
 
 .traveler-location-marker--pulsing .traveler-location-ring {
+  background: var(--gps-pulse);
   animation: traveler-location-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
@@ -453,6 +454,7 @@ textarea {
   --meadow-royal: #7a9cdc;
   --meadow-forest: #6dba4a;
   --meadow-ruby: #f06f7e;
+  --gps-pulse: #7a9cdc;
   --meadow-radius: 14px;
   --meadow-radius-lg: 26px;
   --meadow-font-display: "Fredoka", "M PLUS Rounded 1c", system-ui, sans-serif;
@@ -537,6 +539,7 @@ textarea {
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+  --gps-pulse: #ffb84a;
 }
 
 @layer base {

@@ -696,7 +696,7 @@ describe("TripMap location marker", () => {
     });
   });
 
-  it("starts browser location watching only after live location sharing is enabled", async () => {
+  it("starts browser location watching immediately for Travelers", async () => {
     geolocationWatchPosition.mockImplementation((onSuccess) => {
       onSuccess({
         coords: {
@@ -711,8 +711,16 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    expect(geolocationWatchPosition).not.toHaveBeenCalled();
-    expect(getTravelerMarker()).toBeUndefined();
+    await waitFor(() => {
+      expect(geolocationWatchPosition).toHaveBeenCalled();
+    });
+
+    // The marker might be added asynchronously via state update after geolocation fix
+    await waitFor(() => {
+      expect(getTravelerMarker()).toBeDefined();
+    });
+    // Dot is present but NOT pulsing yet because Live is off by default
+    expect(getTravelerMarker()).not.toHaveClass("traveler-location-marker--pulsing");
 
     fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
 
@@ -1042,7 +1050,7 @@ describe("TripMap location marker", () => {
     expect(deleteRecentLiveTrail).not.toHaveBeenCalled();
   });
 
-  it("does not emit Live Trail breadcrumbs while Live GPS is off", () => {
+  it("does not emit Live Trail breadcrumbs while Live GPS is off", async () => {
     setupQueries({
       liveTrailStatus: {
         enabled: true,
@@ -1054,7 +1062,11 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    expect(geolocationWatchPosition).not.toHaveBeenCalled();
+    // Geolocation IS called now for always-on GPS
+    await waitFor(() => {
+      expect(geolocationWatchPosition).toHaveBeenCalled();
+    });
+    // But no breadcrumbs should be recorded
     expect(recordLiveTrailSample).not.toHaveBeenCalled();
   });
 
@@ -1168,33 +1180,39 @@ describe("TripMap location marker", () => {
     });
 
     nowMs += 30_000;
-    onGeolocationSuccess({
-      coords: {
-        latitude: 47.6201,
-        longitude: -122.3401,
-        accuracy: 8,
-      },
-    } as GeolocationPosition);
+    act(() => {
+      onGeolocationSuccess({
+        coords: {
+          latitude: 47.6201,
+          longitude: -122.3401,
+          accuracy: 8,
+        },
+      } as GeolocationPosition);
+    });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
 
     nowMs += 30_000;
-    onGeolocationSuccess({
-      coords: {
-        latitude: 47.6201,
-        longitude: -122.3401,
-        accuracy: 8,
-      },
-    } as GeolocationPosition);
+    act(() => {
+      onGeolocationSuccess({
+        coords: {
+          latitude: 47.6201,
+          longitude: -122.3401,
+          accuracy: 8,
+        },
+      } as GeolocationPosition);
+    });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
 
     nowMs += 1_000;
-    onGeolocationSuccess({
-      coords: {
-        latitude: 47.623,
-        longitude: -122.34,
-        accuracy: 8,
-      },
-    } as GeolocationPosition);
+    act(() => {
+      onGeolocationSuccess({
+        coords: {
+          latitude: 47.623,
+          longitude: -122.34,
+          accuracy: 8,
+        },
+      } as GeolocationPosition);
+    });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(3);
     dateNow.mockRestore();
   });
