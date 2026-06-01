@@ -1,4 +1,4 @@
-import type { Meta, StoryObj } from "@storybook/react";
+import type { Meta, StoryObj } from "@storybook/react-vite";
 import { DebugChip } from "./DebugChip";
 import { setEnabled, log } from "./debugLogger";
 import { setActiveUiContext, setFloatingDebugButtonMode } from "./activeUiContext";

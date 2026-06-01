@@ -1,6 +1,7 @@
 import * as React from "react";
 import {
   createAudioEngine,
+  resolveSoundtrackScenario,
   type AudioEngine,
   type AudioScenario,
   type AudioSoundtrack,
@@ -57,6 +58,7 @@ export interface MusicContextValue {
   setVolume: (volume: number) => void;
   soundtrack: AudioSoundtrack;
   setSoundtrack: (soundtrack: AudioSoundtrack) => void;
+  activeSoundtrack: AudioSoundtrack;
   setScenario: (scenario: AudioScenario) => void;
   setSuppressed: (reason: string, active: boolean) => void;
   sfx: (name: SfxName) => void;
@@ -80,6 +82,12 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
   const [volume, setVolumeState] = React.useState<number>(() => readNumber(VOLUME_KEY, 0.3));
   const [soundtrack, setSoundtrackState] = React.useState<AudioSoundtrack>(() =>
     readSoundtrack("auto"),
+  );
+  const [scenario, setScenarioState] = React.useState<AudioScenario>("idle");
+
+  const activeSoundtrack = React.useMemo(
+    () => resolveSoundtrackScenario(scenario, soundtrack),
+    [scenario, soundtrack],
   );
 
   React.useEffect(() => {
@@ -115,8 +123,9 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
   }, []);
 
   const setScenario = React.useCallback(
-    (scenario: AudioScenario) => {
-      engine.setScenario(scenario);
+    (next: AudioScenario) => {
+      setScenarioState(next);
+      engine.setScenario(next);
     },
     [engine],
   );
@@ -143,11 +152,23 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
       setVolume,
       soundtrack,
       setSoundtrack,
+      activeSoundtrack,
       setScenario,
       setSuppressed,
       sfx,
     }),
-    [mute, setMute, volume, setVolume, soundtrack, setSoundtrack, setScenario, setSuppressed, sfx],
+    [
+      mute,
+      setMute,
+      volume,
+      setVolume,
+      soundtrack,
+      setSoundtrack,
+      activeSoundtrack,
+      setScenario,
+      setSuppressed,
+      sfx,
+    ],
   );
 
   return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>;
@@ -175,6 +196,7 @@ export function useMusicSafe(): MusicContextValue {
     setVolume() {},
     soundtrack: "auto",
     setSoundtrack() {},
+    activeSoundtrack: "idle",
     setScenario() {},
     setSuppressed() {},
     sfx() {},

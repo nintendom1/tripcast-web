@@ -17,7 +17,10 @@ export type AudioSoundtrack =
   | "cafe"
   | "story"
   | "vote"
-  | "mission";
+  | "mission"
+  | "song1"
+  | "song2"
+  | "song3";
 
 export type SfxName =
   | "pin"
@@ -134,6 +137,37 @@ const PROGRESSIONS: Record<string, Progression> = {
       { name: "Fm", bass: 29, notes: [53, 56, 60], arp: [56, 60, 65, 60] },
       { name: "Csus2", bass: 24, notes: [48, 50, 55], arp: [50, 55, 60, 55] },
       { name: "G", bass: 31, notes: [55, 59, 62], arp: [59, 62, 67, 62] },
+    ],
+  },
+  song1: {
+    bpm: 80,
+    chords: [
+      { name: "C", bass: 36, notes: [60, 64, 67], arp: [64, 67, 72, 67] },
+      { name: "Bb", bass: 46, notes: [70, 74, 77], arp: [74, 77, 82, 77] },
+      { name: "F", bass: 41, notes: [65, 69, 72], arp: [69, 72, 77, 72] },
+      { name: "C", bass: 36, notes: [60, 64, 67], arp: [64, 67, 72, 67] },
+    ],
+  },
+  song2: {
+    bpm: 72,
+    chords: [
+      { name: "C#", bass: 37, notes: [61, 65, 68], arp: [65, 68, 73, 68] },
+      { name: "Fm", bass: 41, notes: [65, 68, 72], arp: [68, 72, 77, 72] },
+      { name: "Bbm", bass: 46, notes: [70, 73, 77], arp: [73, 77, 82, 77] },
+      { name: "F#", bass: 42, notes: [66, 70, 73], arp: [70, 73, 78, 73] },
+    ],
+  },
+  song3: {
+    bpm: 62,
+    chords: [
+      { name: "F#", bass: 42, notes: [66, 70, 73], arp: [70, 73, 78, 73] },
+      { name: "Ab", bass: 44, notes: [68, 72, 75], arp: [72, 75, 80, 75] },
+      { name: "Fm", bass: 41, notes: [65, 68, 72], arp: [68, 72, 77, 72] },
+      { name: "Bbm", bass: 46, notes: [70, 73, 77], arp: [73, 77, 82, 77] },
+      { name: "Ebm", bass: 39, notes: [63, 66, 70], arp: [66, 70, 75, 70] },
+      { name: "Ab", bass: 44, notes: [68, 72, 75], arp: [72, 75, 80, 75] },
+      { name: "C#", bass: 37, notes: [61, 65, 68], arp: [65, 68, 73, 68] },
+      { name: "F#", bass: 42, notes: [66, 70, 73], arp: [70, 73, 78, 73] },
     ],
   },
 };

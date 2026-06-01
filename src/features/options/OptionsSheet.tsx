@@ -121,6 +121,9 @@ const SOUNDTRACK_OPTIONS = [
   { value: "story", label: "Story" },
   { value: "vote", label: "Vote" },
   { value: "mission", label: "Mission" },
+  { value: "song1", label: "Song 1" },
+  { value: "song2", label: "Song 2" },
+  { value: "song3", label: "Song 3" },
 ] as const;
 
 const optionsContentFrameClass = "mx-auto w-full max-w-[1024px] px-4 sm:px-8 lg:px-10";
@@ -1774,9 +1777,15 @@ function SoundSection() {
               {music.mute ? <VolumeX className="h-5 w-5" aria-hidden /> : <Volume2 className="h-5 w-5" aria-hidden />}
             </button>
             <div className="min-w-0 flex-1">
-              <p className="text-lg font-semibold text-[var(--ink-1)]">{music.mute ? "Muted" : "Playing"}</p>
+              <p className="text-lg font-semibold text-[var(--ink-1)]">
+                {music.mute ? "Muted" : music.soundtrack === "auto" ? "Auto Soundtrack" : "Playing"}
+              </p>
               <p className="text-sm text-[var(--ink-3)]">
-                {music.mute ? "Audio disabled" : `${SOUNDTRACK_OPTIONS.find((option) => option.value === music.soundtrack)?.label ?? "Auto"} soundtrack`}
+                {music.mute
+                  ? "Audio disabled"
+                  : music.soundtrack === "auto"
+                    ? `Currently: ${SOUNDTRACK_OPTIONS.find((opt) => opt.value === music.activeSoundtrack)?.label ?? music.activeSoundtrack}`
+                    : `${SOUNDTRACK_OPTIONS.find((option) => option.value === music.soundtrack)?.label ?? "Custom"} soundtrack`}
               </p>
             </div>
           </div>
@@ -1800,7 +1809,7 @@ function SoundSection() {
 
           <div>
             <p className="mb-3 text-xs font-semibold uppercase text-[var(--ink-3)]">Soundtrack</p>
-            <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
             {SOUNDTRACK_OPTIONS.map((option) => (
               <button
                 key={option.value}
