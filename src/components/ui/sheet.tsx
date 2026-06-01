@@ -3,7 +3,38 @@ import { Dialog } from "@base-ui/react/dialog";
 import { ChevronLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const Sheet = Dialog.Root;
+const DEBUG_CHIP_SELECTOR = "[data-debug-chip]";
+
+type SheetProps = React.ComponentPropsWithoutRef<typeof Dialog.Root>;
+
+function isDebugChipEvent(event: Event) {
+  const target = event.target;
+  const relatedTarget = event instanceof FocusEvent ? event.relatedTarget : null;
+
+  return (
+    (target instanceof Element && target.closest(DEBUG_CHIP_SELECTOR) !== null) ||
+    (relatedTarget instanceof Element && relatedTarget.closest(DEBUG_CHIP_SELECTOR) !== null)
+  );
+}
+
+const Sheet = ({ onOpenChange, ...props }: SheetProps) => (
+  <Dialog.Root
+    onOpenChange={(open, eventDetails) => {
+      if (
+        !open &&
+        (eventDetails.reason === "outside-press" || eventDetails.reason === "focus-out") &&
+        isDebugChipEvent(eventDetails.event)
+      ) {
+        eventDetails.cancel();
+        return;
+      }
+
+      onOpenChange?.(open, eventDetails);
+    }}
+    {...props}
+  />
+);
+
 const SheetTrigger = Dialog.Trigger;
 const SheetClose = Dialog.Close;
 const SheetPortal = Dialog.Portal;
