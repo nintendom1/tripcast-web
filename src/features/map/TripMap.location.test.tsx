@@ -9,6 +9,7 @@ import TripMap from "./TripMap";
 import { useTripPath } from "./useTripPath";
 
 const mapEaseTo = vi.fn();
+const mapFitBounds = vi.fn();
 const markerElements: HTMLElement[] = [];
 const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
@@ -24,6 +25,7 @@ const mapInstances: Array<{
   handlers: Record<string, (event: any) => void>;
   remove: ReturnType<typeof vi.fn>;
   setStyle: ReturnType<typeof vi.fn>;
+  fitBounds: ReturnType<typeof vi.fn>;
   dragPan: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   scrollZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   boxZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
@@ -74,6 +76,7 @@ vi.mock("maplibre-gl", () => {
 
     addControl = vi.fn();
     setStyle = vi.fn(() => this);
+    fitBounds = mapFitBounds;
     on = vi.fn((event: string, handler: (event: any) => void) => {
       this.handlers[event] = handler;
       return this;
@@ -150,9 +153,21 @@ vi.mock("../routevote/RouteVoteButton", () => ({
 }));
 
 vi.mock("../routevote/RouteVotePanel", () => ({
-  default: (props: { fallbackOrigin: { lat: number; lon: number } | null }) => {
+  default: (props: {
+    fallbackOrigin: { lat: number; lon: number } | null;
+    onRequestFitMap: (bounds: [[number, number], [number, number]] | null) => void;
+  }) => {
     routeVotePanelProps.push({ fallbackOrigin: props.fallbackOrigin });
-    return <div data-testid="route-vote-panel" />;
+    return (
+      <div data-role="route-votes-sheet" data-testid="route-vote-panel">
+        <button
+          type="button"
+          onClick={() => props.onRequestFitMap([[-122.36, 47.6], [-122.3, 47.64]])}
+        >
+          Fit vote map
+        </button>
+      </div>
+    );
   },
 }));
 
@@ -305,6 +320,7 @@ beforeEach(() => {
   mapConstructorOptions.length = 0;
   mapInstances.length = 0;
   routeVotePanelProps.length = 0;
+  mapFitBounds.mockClear();
   updateTravelerLocation.mockResolvedValue(null);
   stopTravelerLocationSharing.mockResolvedValue(null);
   setLiveTrailEnabled.mockResolvedValue(null);
@@ -693,6 +709,66 @@ describe("TripMap location marker", () => {
 
     await waitFor(() => {
       expect(getTravelerMarker()).toHaveClass("traveler-location-marker--pulsing");
+    });
+  });
+
+  it("keeps follow mode active through programmatic zoom and stops it on user zoom", async () => {
+    setupQueries({
+      travelerLocation: { lat: 47.61, lon: -122.33, isSharing: true },
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+    expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+
+    fireEvent.click(centerButton);
+
+    await waitFor(() => {
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+      expect(mapEaseTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ center: [-122.33, 47.61] }),
+      );
+    });
+
+    act(() => {
+      mapInstances.at(-1)?.handlers.zoomstart?.({});
+    });
+
+    expect(centerButton).toHaveClass("text-[var(--flag)]");
+
+    act(() => {
+      mapInstances.at(-1)?.handlers.zoomstart?.({ originalEvent: new WheelEvent("wheel") });
+    });
+
+    await waitFor(() => {
+      expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+    });
+  });
+
+  it("lets sheet camera fit turn off GPS follow", async () => {
+    setupQueries({
+      travelerLocation: { lat: 47.61, lon: -122.33, isSharing: true },
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+    fireEvent.click(centerButton);
+
+    await waitFor(() => {
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Votes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Fit vote map" }));
+
+    await waitFor(() => {
+      expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+      expect(mapFitBounds).toHaveBeenLastCalledWith(
+        [[-122.36, 47.6], [-122.3, 47.64]],
+        expect.objectContaining({ maxZoom: 14 }),
+      );
     });
   });
 
