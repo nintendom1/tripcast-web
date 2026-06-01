@@ -35,13 +35,65 @@ function formatWhen(ts: number): string {
   return new Date(ts).toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
+function getLevelProgress(totalPoints: number) {
+  const safeTotal = Math.max(0, totalPoints);
+  const level = Math.floor(safeTotal / 100) + 1;
+  const progress = safeTotal % 100;
+  return {
+    level,
+    progress,
+    nextLevel: level + 1,
+  };
+}
+
+function PointsHero({ totalPoints }: { totalPoints: number }) {
+  const { level, progress, nextLevel } = getLevelProgress(totalPoints);
+  return (
+    <section className="relative px-5 pt-4">
+      <div
+        aria-hidden="true"
+        className="awards-top-glow pointer-events-none absolute inset-x-6 -top-8 h-28 rounded-b-[40px]"
+      />
+      <div className="awards-hero-card relative grid gap-4 rounded-3xl p-4 text-center">
+        <div className="grid gap-1">
+          <p className="font-[var(--font-display)] text-4xl font-extrabold leading-none text-[var(--flag)]">
+            {totalPoints.toLocaleString()} {totalPoints === 1 ? "Point" : "Points"}
+          </p>
+          <p className="text-sm font-semibold text-[var(--ink-2)]">
+            Boost your score with daily logins, badges, mission ideas, and votes.
+          </p>
+        </div>
+
+        <div className="grid gap-2 text-left">
+          <div
+            className="awards-progress-track relative h-8 overflow-hidden rounded-full"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+            aria-label={`Level ${level}, ${progress}% to Level ${nextLevel}`}
+          >
+            <div
+              className="awards-progress-fill h-full rounded-full"
+              style={{ width: `${progress}%` }}
+            />
+            <span className="absolute inset-0 flex items-center px-4 font-[var(--font-mono)] text-[11px] font-extrabold text-[var(--ink-1)]">
+              Level {level} • {progress}% to Level {nextLevel}
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function HistoryRow({ event }: { event: AchievementEvent }) {
   const { awards: awardsPersonality } = useSheetPersonalities();
   const isNew = event.seenAt === undefined;
   return (
-    <li className="flex items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-[var(--shadow-card)]">
+    <li className="awards-card-raised flex items-center gap-3 rounded-2xl p-4">
       <div
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[var(--ink-on-brand)]"
+        className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
         style={{ background: awardsPersonality.color }}
       >
         <Award className="h-4 w-4" aria-hidden />
@@ -59,12 +111,14 @@ function HistoryRow({ event }: { event: AchievementEvent }) {
         <p className="truncate text-xs text-[var(--ink-3)]">{event.message}</p>
       </div>
       {/* Points are shown only in the point log, never on Badge chips/detail. */}
-      <span className="shrink-0 font-[var(--font-mono)] text-xs font-semibold text-[var(--ink-2)]">
-        +{event.points}
-      </span>
-      <span className="shrink-0 font-[var(--font-mono)] text-[10px] text-[var(--ink-3)]">
-        {formatWhen(event.createdAt)}
-      </span>
+      <div className="grid shrink-0 justify-items-end gap-0.5">
+        <span className="font-[var(--font-mono)] text-sm font-extrabold text-[var(--flag)]">
+          +{event.points}
+        </span>
+        <span className="font-[var(--font-mono)] text-[10px] font-semibold text-[var(--ink-3)]">
+          {formatWhen(event.createdAt)}
+        </span>
+      </div>
     </li>
   );
 }
@@ -92,7 +146,8 @@ function BadgeDetail({
           "flex items-center gap-3 rounded-2xl border p-4",
           earned
             ? BADGE_COLOR[entry.badgeType]
-            : "border-dashed border-[var(--meter-track)] bg-[var(--bg-card)] text-[var(--ink-3)]",
+            : "awards-soft-panel border-dashed border-[var(--meter-track)] text-[var(--ink-3)]",
+          earned && "awards-badge-card",
         )}
       >
         <span className="text-3xl leading-none" aria-hidden>
@@ -213,7 +268,7 @@ export default function AchievementsSheet({
 
   // Compute the list of badges to display. If the user has a board (earned badges), use it.
   // Otherwise, fallback to the full catalog shown as unearned (locked).
-  const displayBadges = board?.badges ?? catalog?.map(def => ({
+  const displayBadges = board?.badges ?? catalog?.map((def) => ({
     ...def,
     earned: false,
     count: 0,
@@ -250,32 +305,38 @@ export default function AchievementsSheet({
         mapAdjacent
         data-role="achievements-sheet"
         className={cn(
-          "z-[10] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]",
+          "awards-sheet-surface z-[10] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)]",
         )}
       >
-          <div aria-hidden="true" className="absolute left-0 right-0 top-0 h-1 rounded-t-xl" style={{ background: awardsPersonality.color }} />
         <div
-          className="flex items-start justify-between gap-3 border-b border-[var(--line-soft)] px-5 pb-3 pt-3"
-            style={{ background: `linear-gradient(180deg, ${awardsPersonality.bg} 0%, var(--bg-paper) 100%)` }}
+          aria-hidden="true"
+          className="absolute left-0 right-0 top-0 h-1 rounded-t-xl"
+          style={{ background: awardsPersonality.color }}
+        />
+        <div
+          className="flex items-start justify-between gap-3 px-5 pb-2 pt-3"
+          style={{
+            background: `linear-gradient(180deg, ${awardsPersonality.bg} 0%, var(--bg-paper) 100%)`,
+          }}
         >
           <div className="grid gap-1">
             <div className="flex items-center gap-2">
               <span
                 aria-hidden="true"
                 className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--ink-on-brand)] shadow-sm"
-                  style={{ background: awardsPersonality.color }}
+                style={{ background: awardsPersonality.color }}
               >
                 <Medal className="h-4 w-4" />
               </span>
-              <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
+              <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold text-[var(--ink-1)]">
                 Trophy Case
               </SheetTitle>
             </div>
-              <p className="font-[var(--font-mono)] text-xs font-bold" style={{ color: awardsPersonality.color }}>
-              +{totalPoints} {totalPoints === 1 ? "point" : "points"}
-            </p>
             {isDev ? (
-                <p className="text-xs font-semibold" style={{ color: awardsPersonality.color }}>
+              <p
+                className="text-xs font-semibold"
+                style={{ color: awardsPersonality.color }}
+              >
                 Testing Follower achievements as Traveler
               </p>
             ) : null}
@@ -283,18 +344,20 @@ export default function AchievementsSheet({
           <SheetCloseButton />
         </div>
 
+        <PointsHero totalPoints={totalPoints} />
+
         {/* Tabs */}
-        <div className="mt-3 flex gap-1 px-5">
+        <div className="mt-4 flex gap-1 px-5">
           {(["badges", "history"] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => changeTab(t)}
               className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold capitalize transition-colors",
+                "rounded-full px-3 py-1.5 text-xs font-bold capitalize transition-colors",
                 tab === t
-                  ? "bg-[var(--ink-1)] text-[var(--ink-on-dark)]"
-                  : "bg-[var(--bg-card)] text-[var(--ink-3)]",
+                  ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
+                  : "bg-[var(--bg-card)] text-[var(--ink-3)] shadow-sm",
               )}
             >
               {t}
@@ -302,7 +365,7 @@ export default function AchievementsSheet({
           ))}
         </div>
 
-        <SheetBody className="grid gap-4 px-5">
+        <SheetBody className="grid gap-5 px-5">
           {tab === "badges" ? (
             detailBadge ? (
               <BadgeDetail
@@ -312,24 +375,24 @@ export default function AchievementsSheet({
             ) : (
               <>
                 <section className="grid gap-2">
-                  <h3 className="font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">
+                  <h3 className="font-[var(--font-display)] text-xl font-bold text-[var(--ink-1)]">
                     Badges
                   </h3>
                   {isBoardLoading || isCatalogLoading ? (
-                    <p className="rounded-xl bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-3)]">
+                    <p className="awards-soft-panel rounded-2xl p-4 text-sm text-[var(--ink-3)]">
                       Loading badges…
                     </p>
                   ) : displayBadges && displayBadges.length > 0 ? (
                     <BadgeBoard badges={displayBadges} onSelect={openDetail} />
                   ) : (
-                    <p className="rounded-xl bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-3)]">
+                    <p className="awards-soft-panel rounded-2xl p-4 text-sm text-[var(--ink-3)]">
                       No badges available.
                     </p>
                   )}
                 </section>
 
                 <section className="grid gap-2">
-                  <h3 className="font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">
+                  <h3 className="font-[var(--font-display)] text-xl font-bold text-[var(--ink-1)]">
                     Recent
                   </h3>
                   {recent.length > 0 ? (
@@ -339,7 +402,7 @@ export default function AchievementsSheet({
                       ))}
                     </ul>
                   ) : (
-                    <p className="rounded-xl bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-3)]">
+                    <p className="awards-soft-panel rounded-2xl p-4 text-sm text-[var(--ink-3)]">
                       No achievements yet. Check in daily and create Missions to
                       earn points.
                     </p>
@@ -347,7 +410,7 @@ export default function AchievementsSheet({
                   <button
                     type="button"
                     onClick={() => changeTab("history")}
-                    className="w-fit text-xs font-semibold text-[var(--flag)] underline"
+                    className="awards-soft-action w-fit rounded-full px-3 py-1.5 text-xs font-bold text-[var(--flag)]"
                   >
                     View full history
                   </button>
@@ -356,7 +419,7 @@ export default function AchievementsSheet({
             )
           ) : (
             <section className="grid gap-2">
-              <h3 className="font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--ink-3)]">
+              <h3 className="font-[var(--font-display)] text-xl font-bold text-[var(--ink-1)]">
                 Point history
               </h3>
               {history && history.length > 0 ? (
@@ -366,7 +429,7 @@ export default function AchievementsSheet({
                   ))}
                 </ul>
               ) : (
-                <p className="rounded-xl bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-3)]">
+                <p className="awards-soft-panel rounded-2xl p-4 text-sm text-[var(--ink-3)]">
                   {history !== undefined ? "No achievements yet." : "Loading history…"}
                 </p>
               )}

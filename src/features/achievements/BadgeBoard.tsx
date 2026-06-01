@@ -1,3 +1,5 @@
+import { Lock } from "lucide-react";
+
 import type { BadgeBoardEntry, BadgeType } from "../../convex/tripcastApi";
 import { cn } from "@/lib/utils";
 
@@ -29,23 +31,41 @@ function BadgeChip({ entry, onSelect }: BadgeChipProps) {
       onClick={() => onSelect(entry)}
       aria-label={earned ? `${entry.name} badge, earned` : "Locked badge"}
       className={cn(
-        "flex h-16 w-full items-center gap-3 rounded-xl border px-3 text-left shadow-sm transition-transform active:scale-[0.98]",
+        "group flex min-h-20 w-full items-center gap-3 rounded-2xl border p-3 text-left transition-transform active:scale-[0.98]",
         earned
-          ? cn(BADGE_COLOR[entry.badgeType], "shadow-[inset_0_-2px_0_rgba(0,0,0,0.08)]")
-          : "border-dashed border-[var(--meter-track)] bg-[var(--bg-card)] text-[var(--ink-3)] opacity-60",
+          ? cn(
+              BADGE_COLOR[entry.badgeType],
+              "awards-badge-card",
+            )
+          : "awards-badge-locked border-dashed border-[var(--meter-track)] text-[var(--ink-3)] opacity-70",
       )}
     >
-      <span className={cn("text-2xl leading-none", !earned && "grayscale")} aria-hidden>
+      <span
+        className={cn(
+          "grid h-12 w-12 shrink-0 place-items-center rounded-xl text-2xl leading-none",
+          earned
+            ? "awards-badge-icon"
+            : "bg-[var(--bg-card)] grayscale",
+        )}
+        aria-hidden
+      >
         {earned ? entry.emoji : "🏆"}
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm font-semibold">
-        {earned ? entry.name : "???"}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-bold text-[var(--ink-1)]">
+          {earned ? entry.name : "???"}
+        </span>
+        <span className="mt-0.5 block text-[11px] font-semibold text-[var(--ink-3)]">
+          {earned ? "Unlocked" : "Locked"}
+        </span>
       </span>
       {earned && entry.count > 1 ? (
-        <span className="shrink-0 rounded-full bg-black/10 px-1.5 font-[var(--font-mono)] text-[10px] font-bold">
+        <span className="shrink-0 rounded-full bg-black/10 px-2 font-[var(--font-mono)] text-[10px] font-bold text-[var(--ink-1)]">
           ×{entry.count}
         </span>
-      ) : null}
+      ) : (
+        !earned && <Lock className="h-3.5 w-3.5 shrink-0 opacity-50" aria-hidden />
+      )}
     </button>
   );
 }
@@ -62,7 +82,7 @@ type BadgeBoardProps = {
  */
 export default function BadgeBoard({ badges, onSelect }: BadgeBoardProps) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
       {badges.map((entry) => (
         <BadgeChip key={entry.badgeType} entry={entry} onSelect={onSelect} />
       ))}
