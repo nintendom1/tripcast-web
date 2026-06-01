@@ -84,9 +84,42 @@ describe("AchievementsSheet", () => {
     render(
       <AchievementsSheet open summary={makeSummary()} token="t" onOpenChange={vi.fn()} />,
     );
-    expect(screen.getByText(/3 points/)).toBeInTheDocument();
+    expect(screen.getByText("3 Points")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Boost your score with daily logins, badges, mission ideas, and votes.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("+1 Daily Visit")).toBeInTheDocument();
     expect(screen.getByText("+1 Mission Created")).toBeInTheDocument();
+  });
+
+  it("shows level progress in 100-point bands without duplicating the header score", () => {
+    const { rerender } = render(
+      <AchievementsSheet
+        open
+        summary={makeSummary({ total: 125 })}
+        token="t"
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("125 Points")).toBeInTheDocument();
+    expect(screen.getByText("Level 2 • 25% to Level 3")).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "Level 2, 25% to Level 3" }),
+    ).toHaveAttribute("aria-valuenow", "25");
+    expect(screen.queryByText("+125 points")).not.toBeInTheDocument();
+
+    rerender(
+      <AchievementsSheet
+        open
+        summary={makeSummary({ total: 100 })}
+        token="t"
+        onOpenChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Level 2 • 0% to Level 3")).toBeInTheDocument();
   });
 
   it("shows the developer-testing label only when isDev", () => {
