@@ -73,6 +73,7 @@ import {
   readOccluderPadding,
   type FocusGeometry,
 } from "./focusCoordinate";
+import { circlePolygon } from "./circlePolygon";
 import { useTripPath } from "./useTripPath";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
@@ -390,6 +391,117 @@ function CheckpointMarkers({
   // onCheckpointClick intentionally omitted — kept fresh via onClickRef
 
   }, [map, checkpoints]);
+
+  return null;
+}
+
+function AccuracyCircle({
+  map,
+  position,
+  isVisible,
+  color,
+}: {
+  map: maplibregl.Map | null;
+  position: { lat: number; lon: number; accuracy?: number } | null;
+  isVisible: boolean;
+  color: string;
+}) {
+  useEffect(() => {
+    if (!map) return;
+
+    const isStyleReady = () => map.isStyleLoaded() === true;
+    const removeAccuracyCircle = () => {
+      if (!isStyleReady()) return;
+      if (map.getLayer("accuracy-circle-fill")) map.removeLayer("accuracy-circle-fill");
+      if (map.getLayer("accuracy-circle-stroke")) map.removeLayer("accuracy-circle-stroke");
+      if (map.getSource("accuracy-circle")) map.removeSource("accuracy-circle");
+    };
+
+    const syncAccuracyCircle = () => {
+      if (!position || !position.accuracy || !isVisible) {
+        removeAccuracyCircle();
+        return;
+      }
+
+      if (!isStyleReady()) return;
+
+      const geojson = circlePolygon(position.lat, position.lon, position.accuracy);
+      const source = map.getSource("accuracy-circle") as maplibregl.GeoJSONSource | undefined;
+
+      if (source) {
+        if (typeof source.setData === "function") {
+          source.setData(geojson);
+        }
+        if (typeof map.setPaintProperty === "function") {
+          if (map.getLayer("accuracy-circle-fill")) {
+            map.setPaintProperty("accuracy-circle-fill", "fill-color", color);
+          }
+          if (map.getLayer("accuracy-circle-stroke")) {
+            map.setPaintProperty("accuracy-circle-stroke", "line-color", color);
+          }
+        }
+      } else if (typeof map.addSource === "function") {
+        map.addSource("accuracy-circle", {
+          type: "geojson",
+          data: geojson,
+        });
+      }
+
+      if (!map.getLayer("accuracy-circle-fill") && typeof map.addLayer === "function") {
+        map.addLayer({
+          id: "accuracy-circle-fill",
+          type: "fill",
+          source: "accuracy-circle",
+          paint: {
+            "fill-color": color,
+            "fill-opacity": 0.12,
+          },
+        });
+      }
+
+      if (!map.getLayer("accuracy-circle-stroke") && typeof map.addLayer === "function") {
+        map.addLayer({
+          id: "accuracy-circle-stroke",
+          type: "line",
+          source: "accuracy-circle",
+          paint: {
+            "line-color": color,
+            "line-width": 1,
+            "line-opacity": 0.25,
+          },
+        });
+      }
+    };
+
+    syncAccuracyCircle();
+    const loadSubscription = map.on("load", syncAccuracyCircle);
+    const styleLoadSubscription = map.on("style.load", syncAccuracyCircle);
+
+    return () => {
+      if (typeof loadSubscription.unsubscribe === "function") {
+        loadSubscription.unsubscribe();
+      } else if (typeof (map as { off?: (event: string, listener: () => void) => void }).off === "function") {
+        (map as { off: (event: string, listener: () => void) => void }).off("load", syncAccuracyCircle);
+      }
+      if (typeof styleLoadSubscription.unsubscribe === "function") {
+        styleLoadSubscription.unsubscribe();
+      } else if (typeof (map as { off?: (event: string, listener: () => void) => void }).off === "function") {
+        (map as { off: (event: string, listener: () => void) => void }).off("style.load", syncAccuracyCircle);
+      }
+    };
+  }, [map, position, isVisible, color]);
+
+  // Final cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (map) {
+        if (map.isStyleLoaded() !== true) return;
+        if (map.getLayer("accuracy-circle-fill")) map.removeLayer("accuracy-circle-fill");
+        if (map.getLayer("accuracy-circle-stroke")) map.removeLayer("accuracy-circle-stroke");
+        if (map.getSource("accuracy-circle")) map.removeSource("accuracy-circle");
+      }
+    };
+  }, [map]);
 
   return null;
 }
@@ -975,6 +1087,7 @@ export default function TripMap({
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
   const locationDeniedPromptedRef = useRef(false);
+  const locationDeniedSettingsOpenedRef = useRef(false);
   const lastLocationFixAtRef = useRef<number | null>(null);
   const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
@@ -1026,7 +1139,7 @@ export default function TripMap({
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(false);
-  const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
+  const [livePosition, setLivePosition] = useState<{ lat: number; lon: number; accuracy?: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"default" | "mystery">("default");
@@ -1083,6 +1196,7 @@ export default function TripMap({
   const canWrite = role === "traveler";
   const { resolvedMapBase, resolvedTheme } = useTheme();
   const routeLineColor = resolvedTheme === "constellation" ? "#ffd86a" : "#444444";
+  const gpsPulseColor = resolvedTheme === "constellation" ? "#ffb84a" : "#7a9cdc";
   const sheetPersonalities = useSheetPersonalities();
   const FUNDS_PERSONALITY = sheetPersonalities.funds;
   const mapStyleResolution = useMemo(() => getMapStyleResolution(resolvedMapBase), [resolvedMapBase]);
@@ -2406,11 +2520,12 @@ export default function TripMap({
     }
   }, [centerMapOnCoordinate, isFollowing, livePosition, storedTravelerLocation, role]);
 
-  // Track location only after an explicit Traveler opt-in. On a native
-  // (Capacitor) build use the background-capable watcher so location keeps
-  // emitting while the phone is locked; on web fall back to the browser API.
+  // Track location for Travelers. On a native (Capacitor) build, use the
+  // background-capable watcher when "Live" is ON; otherwise fall back to
+  // the foreground-only browser API to show the local GPS dot without
+  // draining battery for background tracking.
   useEffect(() => {
-    if (role !== "traveler" || !isLocationSharing) {
+    if (role !== "traveler") {
       setLocationStale(false);
       return;
     }
@@ -2425,7 +2540,7 @@ export default function TripMap({
         liveTrailPermissionLoggedRef.current = true;
         log.logInteraction("live-trail:permission:result", { result: "granted" });
       }
-      const nextPosition = { lat, lon };
+      const nextPosition = { lat, lon, accuracy };
       livePositionRef.current = nextPosition;
       setLivePosition(nextPosition);
 
@@ -2482,9 +2597,9 @@ export default function TripMap({
 
       if (isLocationSharingRef.current) {
         publishTravelerLocation(nextPosition, accuracy);
-      }
-      if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
-        publishLiveTrailSample(nextPosition, accuracy);
+        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+          publishLiveTrailSample(nextPosition, accuracy);
+        }
       }
     };
 
@@ -2493,13 +2608,21 @@ export default function TripMap({
         typeof error === "object" && error !== null && "code" in error
           ? (error as { code?: unknown }).code
           : undefined;
-      // Native: location was denied. Guide the user to re-enable it once,
-      // rather than leaving them hunting through Settings (no crash here —
-      // a missing Info.plist usage string crashes natively before this fires).
-      if (code === "NOT_AUTHORIZED" && !locationDeniedPromptedRef.current) {
-        locationDeniedPromptedRef.current = true;
-        showToast("Location access is off for TripCast. Opening Settings to enable it.");
-        openNativeLocationSettings();
+      // Native/Web: location was denied. Toast once per session, but do not let
+      // passive foreground GPS consume the native settings handoff for Live.
+      if (code === "NOT_AUTHORIZED" || code === 1) {
+        if (!locationDeniedPromptedRef.current) {
+          locationDeniedPromptedRef.current = true;
+          showToast("Location access is off for TripCast. You can enable it in your device settings.");
+        }
+        if (
+          isLocationSharingRef.current &&
+          isNativeLocationAvailable() &&
+          !locationDeniedSettingsOpenedRef.current
+        ) {
+          locationDeniedSettingsOpenedRef.current = true;
+          openNativeLocationSettings();
+        }
       }
       if (!liveTrailEnabledRef.current) return;
       log.logInteraction("live-trail:permission:result", { result: "denied", code });
@@ -2507,7 +2630,7 @@ export default function TripMap({
 
     let cleanup: () => void = () => {};
 
-    if (isNativeLocationAvailable()) {
+    if (isLocationSharing && isNativeLocationAvailable()) {
       log.logInteraction("live-trail:native-watch:start", {});
       const stop = startNativeLocationWatch(
         (fix) => handleFix(fix.lat, fix.lon, fix.accuracy),
@@ -2709,7 +2832,7 @@ export default function TripMap({
       isLocationSharingRef.current = true;
       setIsLocationSharing(true);
       if (livePosition) {
-        publishTravelerLocation(livePosition);
+        publishTravelerLocation(livePosition, livePosition.accuracy);
       }
     }
   }
@@ -3305,6 +3428,20 @@ export default function TripMap({
             fallbackEvent: event,
           });
         }}
+      />
+      <AccuracyCircle
+        map={mapInstance}
+        position={
+          role === "traveler"
+            ? livePosition
+            : (storedTravelerLocation ?? null)
+        }
+        isVisible={role === "traveler" || (storedTravelerLocation?.isSharing ?? false)}
+        color={
+          role === "traveler"
+            ? (isLocationSharing ? gpsPulseColor : "#102a43")
+            : gpsPulseColor
+        }
       />
       <TravelerLocationMarker
         map={mapInstance}
