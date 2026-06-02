@@ -197,9 +197,8 @@ export function EmergencyResetContent({
                 <div className="grid gap-2 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
                   <p className="font-medium text-[var(--ink-1)]">Before sharing new passcodes:</p>
                   <p className="text-[var(--ink-2)]">
-                    Update <code>TRIPCAST_TRAVELER_CODE</code> and{" "}
-                    <code>TRIPCAST_SUPPORT_CODE</code> in the Convex deployment
-                    environment.
+                    Update <code>TRIPCAST_TRAVELER_CODE</code> and unset{" "}
+                    <code>TRIPCAST_SUPPORT_CODE</code> in the Convex deployment environment.
                   </p>
                   <p className="text-[var(--ink-2)]">
                     Changing passcodes only affects future sign-ins. To invalidate old

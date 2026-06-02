@@ -40,7 +40,7 @@ describe("AuthScreen", () => {
   });
 
   it("signs in with trimmed traveler code", async () => {
-    const signIn = vi.fn().mockResolvedValue({ token: "traveler-token", role: "traveler" });
+    const signIn = vi.fn().mockResolvedValue({ ok: true, token: "traveler-token", role: "traveler" });
     vi.mocked(convexReact.useMutation).mockReturnValue(signIn as any);
     renderScreen();
 
@@ -56,6 +56,18 @@ describe("AuthScreen", () => {
       token: "traveler-token",
       role: "traveler",
     });
+  });
+
+  it("shows invalid-code errors returned by the backend", async () => {
+    const signIn = vi.fn().mockResolvedValue({ ok: false, error: "invalid_code" });
+    vi.mocked(convexReact.useMutation).mockReturnValue(signIn as any);
+    renderScreen();
+
+    await userEvent.type(screen.getByLabelText(/traveler code/i), "wrong-code");
+    await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/incorrect code/i);
+    expect(mockOnSignIn).not.toHaveBeenCalled();
   });
 
   it("shows rate-limit errors", async () => {
