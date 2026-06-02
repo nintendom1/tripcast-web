@@ -10,6 +10,7 @@ type Props = {
   token: string;
   debugShowAll?: boolean;
   onMysteryMissionClick?: (missionId: string) => void;
+  onMysterySignalAppeared?: (mission: MysteryMissionFeedItem) => void;
   onMysteryMissionReveal?: (mission: MysteryMissionFeedItem) => void;
 };
 
@@ -64,31 +65,41 @@ export default function MysteryMissionMarkers({
   token,
   debugShowAll = false,
   onMysteryMissionClick,
+  onMysterySignalAppeared,
   onMysteryMissionReveal,
 }: Props) {
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
+  const signalIdsRef = useRef<Set<string>>(new Set());
   const revealedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const result = useQuery(
     tripcastApi.mysteryMissions.listMysteryMissionMapPins,
-    debugShowAll ? { token, includeDebugAll: true } : "skip",
+    debugShowAll ? { token, includeDebugAll: true } : { token },
   );
-  const pins = useMemo(() => (debugShowAll ? result?.rows ?? [] : []), [debugShowAll, result?.rows]);
+  const pins = useMemo(() => result?.rows ?? [], [result?.rows]);
 
   useEffect(() => {
+    if (result === undefined) return;
+
+    const signals = new Set(pins.filter((pin) => pin.state === "signal").map((pin) => pin._id));
     const revealed = new Set(pins.filter((pin) => pin.state === "revealed").map((pin) => pin._id));
     if (!initializedRef.current) {
       initializedRef.current = true;
+      signalIdsRef.current = signals;
       revealedIdsRef.current = revealed;
       return;
     }
     for (const pin of pins) {
+      if (pin.state === "signal" && !signalIdsRef.current.has(pin._id)) {
+        onMysterySignalAppeared?.(pin);
+      }
       if (pin.state === "revealed" && !revealedIdsRef.current.has(pin._id)) {
         onMysteryMissionReveal?.(pin);
       }
     }
+    signalIdsRef.current = signals;
     revealedIdsRef.current = revealed;
-  }, [onMysteryMissionReveal, pins]);
+  }, [onMysteryMissionReveal, onMysterySignalAppeared, pins, result]);
 
   useEffect(() => {
     if (!map) return;

@@ -3197,6 +3197,17 @@ export default function TripMap({
     setPendingOpenMysteryMissionId(mysteryMissionId);
   }
 
+  function handleMysterySignalAppeared(mission: { lat: number; lon: number }) {
+    focusCoordinate(
+      { lat: mission.lat, lon: mission.lon },
+      {
+        trigger: "mystery:signal-appeared",
+        sheetSelector: null,
+        minZoom: 14,
+      },
+    );
+  }
+
   function handleOpenLinkedStory(event: JournalEvent) {
     log.logInteraction("panel:navigate", { from: "Missions", to: "story", eventId: event._id });
     music.sfx("page");
@@ -3536,6 +3547,7 @@ export default function TripMap({
         token={token}
         debugShowAll={debugShowAllMysteryPins}
         onMysteryMissionClick={handleNavigateToMysteryMissionDetail}
+        onMysterySignalAppeared={handleMysterySignalAppeared}
         onMysteryMissionReveal={() => {
           music.sfx("success");
           showToast("Mystery Mission revealed.", "mystery");

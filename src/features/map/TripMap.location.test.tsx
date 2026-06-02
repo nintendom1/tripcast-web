@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
-import { tripcastApi, type JournalEvent } from "../../convex/tripcastApi";
+import { tripcastApi, type JournalEvent, type MysteryMissionFeedItem } from "../../convex/tripcastApi";
 import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
 import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
@@ -203,6 +203,8 @@ function setupQueries({
   checkpoints = [],
   journalEvents = [],
   travelerLocation = null,
+  mysteryPins = [],
+  mysteryPinsLoading = false,
   allowFollowersTripPath = false,
   liveTrailStatus = {
     enabled: false,
@@ -227,6 +229,8 @@ function setupQueries({
   }>;
   journalEvents?: JournalEvent[];
   travelerLocation?: { lat: number; lon: number; accuracy?: number; isSharing: true } | null;
+  mysteryPins?: MysteryMissionFeedItem[];
+  mysteryPinsLoading?: boolean;
   allowFollowersTripPath?: boolean;
   liveTrailStatus?: {
     enabled: boolean;
@@ -272,6 +276,10 @@ function setupQueries({
       return { travelerTimeZone: "UTC" };
     }
     if (query === tripcastApi.journalEvents.listJournalEvents) return journalEvents;
+    if (query === tripcastApi.mysteryMissions.listMysteryMissionMapPins) {
+      if (mysteryPinsLoading) return undefined;
+      return { rows: mysteryPins };
+    }
     if (query === tripcastApi.routeVotes.travelerListRouteVotes) return [];
     if (query === tripcastApi.travelFunds.travelerGetConfig) {
       return {
@@ -315,6 +323,21 @@ function makeJournalEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
     checkpointId: "checkpoint-1",
     lat: 47.61,
     lon: -122.33,
+    ...overrides,
+  };
+}
+
+function makeMysteryMission(overrides: Partial<MysteryMissionFeedItem> = {}): MysteryMissionFeedItem {
+  return {
+    kind: "mystery_mission",
+    _id: "mystery-1",
+    mysteryMissionId: "mystery-1",
+    state: "signal",
+    lat: 47.65,
+    lon: -122.35,
+    mysteryText: "Follow the signal",
+    spawnRadiusMiles: 0.5,
+    priority: 1,
     ...overrides,
   };
 }
@@ -912,6 +935,103 @@ describe("TripMap location marker", () => {
         [[-122.36, 47.6], [-122.3, 47.64]],
         expect.objectContaining({ maxZoom: 14 }),
       );
+    });
+  });
+
+  describe("Mystery Mission signal reveal", () => {
+    it("does not center on signals from the first loaded mystery snapshot", async () => {
+      const travelerLocation = { lat: 47.61, lon: -122.33, isSharing: true } as const;
+      setupQueries({
+        travelerLocation,
+        mysteryPinsLoading: true,
+      });
+
+      const { rerender } = render(<TripMap token="test-token" role="follower" />);
+
+      const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+      fireEvent.click(centerButton);
+
+      await waitFor(() => {
+        expect(centerButton).toHaveClass("text-[var(--flag)]");
+        expect(mapEaseTo).toHaveBeenLastCalledWith(
+          expect.objectContaining({ center: [-122.33, 47.61] }),
+        );
+      });
+
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [
+          makeMysteryMission({
+            _id: "mystery-signal-1",
+            mysteryMissionId: "mystery-signal-1",
+            lat: 47.655,
+            lon: -122.362,
+          }),
+        ],
+      });
+      rerender(<TripMap token="test-token" role="follower" />);
+
+      await waitFor(() => {
+        expect(markerElements.some((element) => element.classList.contains("mystery-pin--signal"))).toBe(true);
+      });
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+      expect(mapEaseTo).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          center: [-122.362, 47.655],
+        }),
+      );
+      expect(mapEaseTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ center: [-122.33, 47.61] }),
+      );
+    });
+
+    it("centers on a newly appeared signal and stops follow mode", async () => {
+      const travelerLocation = { lat: 47.61, lon: -122.33, isSharing: true } as const;
+      const hiddenMystery = makeMysteryMission({
+        _id: "mystery-signal-1",
+        mysteryMissionId: "mystery-signal-1",
+        state: "dismissed",
+        lat: 47.655,
+        lon: -122.362,
+      });
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [hiddenMystery],
+      });
+
+      const { rerender } = render(<TripMap token="test-token" role="follower" />);
+
+      await waitFor(() => {
+        expect(markerElements.some((element) => element.classList.contains("mystery-pin"))).toBe(true);
+      });
+
+      const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+      fireEvent.click(centerButton);
+
+      await waitFor(() => {
+        expect(centerButton).toHaveClass("text-[var(--flag)]");
+      });
+
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [
+          {
+            ...hiddenMystery,
+            state: "signal",
+          },
+        ],
+      });
+      rerender(<TripMap token="test-token" role="follower" />);
+
+      await waitFor(() => {
+        expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+        expect(mapEaseTo).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            center: [-122.362, 47.655],
+            zoom: 14,
+          }),
+        );
+      });
     });
   });
 
