@@ -5,6 +5,7 @@ import { Archive, X } from "lucide-react";
 
 import { tripcastApi, type Role } from "../../convex/tripcastApi";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { useMusicSafe } from "../../providers/MusicProvider";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 
 type Props = {
@@ -46,6 +47,12 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
     log.logUi("finale:open");
     return () => log.logUi("finale:close");
   }, [log]);
+
+  const music = useMusicSafe();
+  useEffect(() => {
+    music.setOverride("credits", "song10_credits");
+    return () => music.setOverride("credits", null);
+  }, [music]);
 
   useEffect(() => {
     if (!credits || !ref.current) return;

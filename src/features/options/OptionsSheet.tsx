@@ -119,15 +119,15 @@ const RATE_LIMIT_OPTIONS: { value: MissionRateLimitPreset; label: string }[] = [
   { value: "per_day", label: "1 per day" },
 ];
 
-const SOUNDTRACK_OPTIONS = [
+export const SOUNDTRACK_OPTIONS = [
   { value: "auto", label: "Auto" },
-  { value: "idle", label: "Calm" },
-  { value: "happy", label: "Happy" },
-  { value: "morning", label: "Morning" },
-  { value: "cafe", label: "Cafe" },
-  { value: "story", label: "Story" },
-  { value: "vote", label: "Vote" },
-  { value: "mission", label: "Mission" },
+  { value: "song4_day", label: "Day" },
+  { value: "song4_night", label: "Night" },
+  { value: "song7_story", label: "Story" },
+  { value: "song8_trophy", label: "Trophy" },
+  { value: "song6_vote", label: "Vote" },
+  { value: "song9_intro", label: "Hello" },
+  { value: "song10_credits", label: "Finale" },
 ] as const;
 
 const optionsContentFrameClass = "mx-auto w-full max-w-[1024px] px-4 sm:px-8 lg:px-10";
@@ -1784,7 +1784,7 @@ function SubViewHeader({
   );
 }
 
-function SoundSection() {
+export function SoundSection() {
   const music = useMusicSafe();
   const volumePercent = Math.round(music.volume * 100);
 
@@ -1812,7 +1812,13 @@ function SoundSection() {
             <div className="min-w-0 flex-1">
               <p className="text-lg font-semibold text-[var(--ink-1)]">{music.mute ? "Muted" : "Playing"}</p>
               <p className="text-sm text-[var(--ink-3)]">
-                {music.mute ? "Audio disabled" : `${SOUNDTRACK_OPTIONS.find((option) => option.value === music.soundtrack)?.label ?? "Auto"} soundtrack`}
+                {music.mute
+                  ? "Audio disabled"
+                  : `Now Playing: ${
+                      music.nowPlaying
+                        ? SOUNDTRACK_OPTIONS.find((option) => option.value === music.nowPlaying)?.label ?? "—"
+                        : "—"
+                    }`}
               </p>
             </div>
           </div>
@@ -1837,24 +1843,30 @@ function SoundSection() {
           <div>
             <p className="mb-3 text-xs font-semibold uppercase text-[var(--ink-3)]">Soundtrack</p>
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {SOUNDTRACK_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  music.sfx("tap");
-                  music.setSoundtrack(option.value);
-                }}
-                className={cn(
-                  "min-h-11 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors",
-                  music.soundtrack === option.value
-                    ? "border-[var(--ink-1)] bg-[var(--ink-1)] text-[var(--bg-paper)]"
-                    : "border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
+            {SOUNDTRACK_OPTIONS.map((option) => {
+              const isSelected = music.soundtrack === option.value;
+              const isAutoRouting =
+                music.soundtrack === "auto" && music.nowPlaying === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    music.sfx("tap");
+                    music.setSoundtrack(option.value);
+                  }}
+                  className={cn(
+                    "min-h-11 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors",
+                    isSelected
+                      ? "border-[var(--ink-1)] bg-[var(--ink-1)] text-[var(--bg-paper)]"
+                      : "border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+                    isAutoRouting && "ring-2 ring-[var(--flag)]/40",
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
             </div>
           </div>
         </div>

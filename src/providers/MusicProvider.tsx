@@ -6,6 +6,7 @@ import {
   type AudioSoundtrack,
   type SfxName,
 } from "@/lib/audio/engine";
+import { isPatchSoundtrack, type PatchSoundtrackId } from "@/lib/audio/patches";
 
 const MUTE_KEY = "tripcast.audio.muted";
 const VOLUME_KEY = "tripcast.audio.volume";
@@ -32,13 +33,16 @@ function readNumber(key: string, fallback: number): number {
   }
 }
 
-function readSoundtrack(fallback: AudioSoundtrack): AudioSoundtrack {
+function readSoundtrack(): AudioSoundtrack {
   try {
     const raw = window.localStorage.getItem(SOUNDTRACK_KEY);
-    if (raw === null) return fallback;
-    return raw as AudioSoundtrack;
+    if (raw === "auto" || (raw && isPatchSoundtrack(raw))) {
+      return raw as AudioSoundtrack;
+    }
+    // Stale phase-1 / pre-phase-1 values (e.g. "happy", "song1") fall through to auto.
+    return "auto";
   } catch {
-    return fallback;
+    return "auto";
   }
 }
 
@@ -58,11 +62,13 @@ export interface MusicContextValue {
   soundtrack: AudioSoundtrack;
   setSoundtrack: (soundtrack: AudioSoundtrack) => void;
   setScenario: (scenario: AudioScenario) => void;
+  setOverride: (name: string, songId: PatchSoundtrackId | null) => void;
   setSuppressed: (reason: string, active: boolean) => void;
+  nowPlaying: PatchSoundtrackId | null;
   sfx: (name: SfxName) => void;
 }
 
-const MusicContext = React.createContext<MusicContextValue | null>(null);
+export const MusicContext = React.createContext<MusicContextValue | null>(null);
 
 export interface MusicProviderProps {
   children: React.ReactNode;
@@ -78,12 +84,18 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
 
   const [mute, setMuteState] = React.useState<boolean>(() => readBool(MUTE_KEY, false));
   const [volume, setVolumeState] = React.useState<number>(() => readNumber(VOLUME_KEY, 0.3));
-  const [soundtrack, setSoundtrackState] = React.useState<AudioSoundtrack>(() =>
-    readSoundtrack("auto"),
+  const [soundtrack, setSoundtrackState] = React.useState<AudioSoundtrack>(() => readSoundtrack());
+  const [nowPlaying, setNowPlaying] = React.useState<PatchSoundtrackId | null>(() =>
+    engine.getResolution(),
   );
 
   React.useEffect(() => {
     engine.armOnGesture();
+    const unsub = engine.onResolutionChange((resolved) => {
+      setNowPlaying(resolved);
+    });
+    setNowPlaying(engine.getResolution());
+    return unsub;
   }, [engine]);
 
   React.useEffect(() => {
@@ -121,6 +133,13 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
     [engine],
   );
 
+  const setOverride = React.useCallback(
+    (name: string, songId: PatchSoundtrackId | null) => {
+      engine.setOverride(name, songId);
+    },
+    [engine],
+  );
+
   const setSuppressed = React.useCallback(
     (reason: string, active: boolean) => {
       engine.setSuppressed(reason, active);
@@ -144,10 +163,24 @@ export function MusicProvider({ children, engine: providedEngine }: MusicProvide
       soundtrack,
       setSoundtrack,
       setScenario,
+      setOverride,
       setSuppressed,
+      nowPlaying,
       sfx,
     }),
-    [mute, setMute, volume, setVolume, soundtrack, setSoundtrack, setScenario, setSuppressed, sfx],
+    [
+      mute,
+      setMute,
+      volume,
+      setVolume,
+      soundtrack,
+      setSoundtrack,
+      setScenario,
+      setOverride,
+      setSuppressed,
+      nowPlaying,
+      sfx,
+    ],
   );
 
   return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>;
@@ -176,7 +209,9 @@ export function useMusicSafe(): MusicContextValue {
     soundtrack: "auto",
     setSoundtrack() {},
     setScenario() {},
+    setOverride() {},
     setSuppressed() {},
+    nowPlaying: null,
     sfx() {},
   };
 }
