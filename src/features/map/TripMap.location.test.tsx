@@ -1033,6 +1033,47 @@ describe("TripMap location marker", () => {
         );
       });
     });
+
+    it("does not center on debug-only dormant pins", async () => {
+      const travelerLocation = { lat: 47.61, lon: -122.33, isSharing: true } as const;
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [],
+      });
+
+      const { rerender } = render(<TripMap token="test-token" role="traveler" />);
+
+      const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+      fireEvent.click(centerButton);
+
+      await waitFor(() => {
+        expect(centerButton).toHaveClass("text-[var(--flag)]");
+      });
+
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [
+          makeMysteryMission({
+            _id: "mystery-debug-1",
+            mysteryMissionId: "mystery-debug-1",
+            lat: 47.655,
+            lon: -122.362,
+            debugOnly: true,
+          }),
+        ],
+      });
+      rerender(<TripMap token="test-token" role="traveler" />);
+
+      await waitFor(() => {
+        expect(markerElements.some((element) => element.classList.contains("mystery-pin--debug-only"))).toBe(true);
+      });
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+      expect(mapEaseTo).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          center: [-122.362, 47.655],
+        }),
+      );
+    });
   });
 
 

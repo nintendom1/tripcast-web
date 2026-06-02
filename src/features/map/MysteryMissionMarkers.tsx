@@ -22,6 +22,7 @@ function decorateMarkerElement(element: HTMLElement, mission: MysteryMissionFeed
   element.classList.add("mystery-pin");
   element.classList.toggle("mystery-pin--signal", mission.state === "signal");
   element.classList.toggle("mystery-pin--revealed", mission.state === "revealed");
+  element.classList.toggle("mystery-pin--debug-only", mission.debugOnly === true);
   element.setAttribute("role", "button");
   element.setAttribute("tabindex", "0");
   element.setAttribute(
@@ -81,7 +82,9 @@ export default function MysteryMissionMarkers({
   useEffect(() => {
     if (result === undefined) return;
 
-    const signals = new Set(pins.filter((pin) => pin.state === "signal").map((pin) => pin._id));
+    const signals = new Set(
+      pins.filter((pin) => pin.state === "signal" && pin.debugOnly !== true).map((pin) => pin._id),
+    );
     const revealed = new Set(pins.filter((pin) => pin.state === "revealed").map((pin) => pin._id));
     if (!initializedRef.current) {
       initializedRef.current = true;
@@ -90,7 +93,7 @@ export default function MysteryMissionMarkers({
       return;
     }
     for (const pin of pins) {
-      if (pin.state === "signal" && !signalIdsRef.current.has(pin._id)) {
+      if (pin.state === "signal" && pin.debugOnly !== true && !signalIdsRef.current.has(pin._id)) {
         onMysterySignalAppeared?.(pin);
       }
       if (pin.state === "revealed" && !revealedIdsRef.current.has(pin._id)) {
