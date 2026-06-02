@@ -155,6 +155,7 @@ function setupMocks({
   setLiveTrailEnabledFn = vi.fn().mockResolvedValue(null),
   setLiveTrailVisibilityFn = vi.fn().mockResolvedValue(null),
   deleteLiveTrailRangeFn = vi.fn().mockResolvedValue({ deleted: 0 }),
+  setMysterySettingsFn = vi.fn().mockResolvedValue(null),
 }: {
   travelerTimeZone?: string | null;
   allowFollowersTripPath?: boolean;
@@ -187,6 +188,7 @@ function setupMocks({
   setLiveTrailEnabledFn?: ReturnType<typeof vi.fn>;
   setLiveTrailVisibilityFn?: ReturnType<typeof vi.fn>;
   deleteLiveTrailRangeFn?: ReturnType<typeof vi.fn>;
+  setMysterySettingsFn?: ReturnType<typeof vi.fn>;
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
     if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
@@ -207,6 +209,19 @@ function setupMocks({
     if (ref === tripcastApi.liveTrail.travelerPreviewLiveTrailDeleteRange) {
       return liveTrailPreview;
     }
+    if (ref === tripcastApi.mysteryMissions.travelerGetMysteryMissionSettings) {
+      return { enabled: true, revealIntervalHours: 4, updatedAt: null };
+    }
+    if (ref === tripcastApi.mysteryMissions.travelerListMysteryMissions) {
+      return {
+        settings: { enabled: true, revealIntervalHours: 4 },
+        counts: { total: 0, signal: 0, dormant: 0, completed: 0, dismissed: 0 },
+        rows: [],
+      };
+    }
+    if (ref === tripcastApi.mysteryMissions.travelerExportMysteryMissions) {
+      return { version: 1, exportedAt: 0, missions: [] };
+    }
     return undefined;
   });
 
@@ -226,6 +241,9 @@ function setupMocks({
     if (ref === tripcastApi.liveTrail.travelerDeleteLiveTrailRange) {
       return deleteLiveTrailRangeFn as any;
     }
+    if (ref === tripcastApi.mysteryMissions.travelerSetMysteryMissionsEnabled) {
+      return setMysterySettingsFn as any;
+    }
     return vi.fn().mockResolvedValue(null) as any;
   });
 
@@ -235,6 +253,7 @@ function setupMocks({
     setLiveTrailEnabledFn,
     setLiveTrailVisibilityFn,
     deleteLiveTrailRangeFn,
+    setMysterySettingsFn,
   };
 }
 
@@ -274,25 +293,28 @@ beforeEach(() => {
 });
 
 describe("OptionsSheet traveler timezone", () => {
-  it("shows the traveler timezone in Options with device timezone explanation", () => {
+  it("shows the traveler timezone in Options with the saved value and detected device", () => {
     setupMocks({ travelerTimeZone: "America/Los_Angeles" });
 
     renderOptions();
 
     expect(screen.getByText("Traveler Timezone")).toBeInTheDocument();
     expect(screen.getByText("Traveler timezone")).toBeInTheDocument();
-    expect(screen.getByText("Based on this device's timezone settings.")).toBeInTheDocument();
-    expect(screen.getByText("Saved: America/Los_Angeles")).toBeInTheDocument();
+    expect(screen.getByText(/Drives bedtime\/wake estimates/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Saved: America\/Los_Angeles/)).toBeInTheDocument();
     expect(screen.getByText(`This device: ${detectedTimeZone}`)).toBeInTheDocument();
+    // Picker is always visible (manual override + debugging band-aid).
+    expect(screen.getByLabelText("Change timezone")).toBeInTheDocument();
   });
 
-  it("shows the update button only on mismatch and names the target timezone", async () => {
+  it("applies the device timezone with source=device when chosen", async () => {
     const { setTimeZoneFn } = setupMocks({ travelerTimeZone: fallbackDifferentTimeZone });
 
     renderOptions();
 
-    const button = screen.getByRole("button", { name: `Set timezone to ${detectedTimeZone}` });
-    await userEvent.click(button);
+    const select = screen.getByLabelText("Change timezone") as HTMLSelectElement;
+    await userEvent.selectOptions(select, "__device__");
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     await waitFor(() => {
       expect(setTimeZoneFn).toHaveBeenCalledWith({
@@ -303,12 +325,96 @@ describe("OptionsSheet traveler timezone", () => {
     });
   });
 
-  it("does not show the update button when the saved timezone matches this device", () => {
-    setupMocks({ travelerTimeZone: detectedTimeZone });
+  it("applies a curated IANA timezone with source=manual", async () => {
+    const { setTimeZoneFn } = setupMocks({ travelerTimeZone: detectedTimeZone });
 
     renderOptions();
 
-    expect(screen.queryByRole("button", { name: /set timezone to/i })).not.toBeInTheDocument();
+    const select = screen.getByLabelText("Change timezone") as HTMLSelectElement;
+    await userEvent.selectOptions(select, "Asia/Tokyo");
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(setTimeZoneFn).toHaveBeenCalledWith({
+        token: "test-token",
+        timeZone: "Asia/Tokyo",
+        source: "manual",
+      });
+    });
+  });
+
+  it("applies a custom IANA timezone via the Other option with source=manual", async () => {
+    const { setTimeZoneFn } = setupMocks({ travelerTimeZone: detectedTimeZone });
+
+    renderOptions();
+
+    const select = screen.getByLabelText("Change timezone") as HTMLSelectElement;
+    await userEvent.selectOptions(select, "__other__");
+    const input = screen.getByPlaceholderText(/e\.g\. America\/Argentina\/Buenos_Aires/i);
+    await userEvent.type(input, "America/Argentina/Buenos_Aires");
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() => {
+      expect(setTimeZoneFn).toHaveBeenCalledWith({
+        token: "test-token",
+        timeZone: "America/Argentina/Buenos_Aires",
+        source: "manual",
+      });
+    });
+  });
+
+  it("rejects an invalid IANA string from the Other input", async () => {
+    const { setTimeZoneFn } = setupMocks({ travelerTimeZone: detectedTimeZone });
+
+    renderOptions();
+
+    const select = screen.getByLabelText("Change timezone") as HTMLSelectElement;
+    await userEvent.selectOptions(select, "__other__");
+    const input = screen.getByPlaceholderText(/e\.g\. America\/Argentina\/Buenos_Aires/i);
+    await userEvent.type(input, "Not/A_Real_Zone");
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/isn't a recognized IANA timezone/i);
+    expect(setTimeZoneFn).not.toHaveBeenCalled();
+  });
+
+  it("saves the theme day/night window via travelerUpdatePreferences", async () => {
+    const { updatePreferencesFn } = setupMocks({ travelerTimeZone: detectedTimeZone });
+
+    renderOptions();
+
+    const dayInput = screen.getByLabelText("Day starts at") as HTMLInputElement;
+    const nightInput = screen.getByLabelText("Night starts at") as HTMLInputElement;
+    await userEvent.clear(dayInput);
+    await userEvent.type(dayInput, "08:30");
+    await userEvent.clear(nightInput);
+    await userEvent.type(nightInput, "19:45");
+    await userEvent.click(screen.getByRole("button", { name: "Save day/night times" }));
+
+    await waitFor(() => {
+      expect(updatePreferencesFn).toHaveBeenCalledWith({
+        token: "test-token",
+        themeDayStartMinutes: 8 * 60 + 30,
+        themeNightStartMinutes: 19 * 60 + 45,
+      });
+    });
+  });
+
+  it("rejects a zero-length theme window before calling the mutation", async () => {
+    const { updatePreferencesFn } = setupMocks({ travelerTimeZone: detectedTimeZone });
+
+    renderOptions();
+
+    const dayInput = screen.getByLabelText("Day starts at") as HTMLInputElement;
+    const nightInput = screen.getByLabelText("Night starts at") as HTMLInputElement;
+    await userEvent.clear(dayInput);
+    await userEvent.type(dayInput, "10:00");
+    await userEvent.clear(nightInput);
+    await userEvent.type(nightInput, "10:00");
+    await userEvent.click(screen.getByRole("button", { name: "Save day/night times" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/must be different/i);
+    expect(updatePreferencesFn).not.toHaveBeenCalled();
   });
 });
 
@@ -456,6 +562,41 @@ describe("OptionsSheet Live Trail settings", () => {
     renderOptions({ session: followerSession, role: "follower" });
 
     expect(screen.queryByRole("button", { name: /Live Trail/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("OptionsSheet Mystery Mission settings", () => {
+  it("saves the Traveler reveal interval hours", async () => {
+    const { setMysterySettingsFn } = setupMocks();
+    renderOptions();
+
+    await userEvent.click(screen.getByRole("button", { name: /Mystery Missions/i }));
+    const input = await screen.findByLabelText(/Reveal interval hours/i);
+    await userEvent.clear(input);
+    await userEvent.type(input, "6");
+    await userEvent.click(screen.getByRole("button", { name: /Save interval/i }));
+
+    await waitFor(() => {
+      expect(setMysterySettingsFn).toHaveBeenCalledWith({
+        token: "test-token",
+        enabled: true,
+        revealIntervalHours: 6,
+      });
+    });
+  });
+
+  it("rejects reveal intervals outside the allowed range before saving", async () => {
+    const { setMysterySettingsFn } = setupMocks();
+    renderOptions();
+
+    await userEvent.click(screen.getByRole("button", { name: /Mystery Missions/i }));
+    const input = await screen.findByLabelText(/Reveal interval hours/i);
+    await userEvent.clear(input);
+    await userEvent.type(input, "169");
+    await userEvent.click(screen.getByRole("button", { name: /Save interval/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/0 to 168 hours/i);
+    expect(setMysterySettingsFn).not.toHaveBeenCalled();
   });
 });
 

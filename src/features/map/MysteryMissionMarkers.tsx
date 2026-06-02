@@ -10,8 +10,8 @@ type Props = {
   token: string;
   debugShowAll?: boolean;
   onMysteryMissionClick?: (missionId: string) => void;
-  onMysteryMissionReveal?: (mission: MysteryMissionFeedItem) => void;
   onMysterySignalAppeared?: (mission: MysteryMissionFeedItem) => void;
+  onMysteryMissionReveal?: (mission: MysteryMissionFeedItem) => void;
 };
 
 function getMysteryMarkerColor(mission: MysteryMissionFeedItem) {
@@ -22,6 +22,7 @@ function decorateMarkerElement(element: HTMLElement, mission: MysteryMissionFeed
   element.classList.add("mystery-pin");
   element.classList.toggle("mystery-pin--signal", mission.state === "signal");
   element.classList.toggle("mystery-pin--revealed", mission.state === "revealed");
+  element.classList.toggle("mystery-pin--debug-only", mission.debugOnly === true);
   element.setAttribute("role", "button");
   element.setAttribute("tabindex", "0");
   element.setAttribute(
@@ -65,42 +66,43 @@ export default function MysteryMissionMarkers({
   token,
   debugShowAll = false,
   onMysteryMissionClick,
-  onMysteryMissionReveal,
   onMysterySignalAppeared,
+  onMysteryMissionReveal,
 }: Props) {
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
-  const revealedIdsRef = useRef<Set<string>>(new Set());
   const signalIdsRef = useRef<Set<string>>(new Set());
+  const revealedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const result = useQuery(
     tripcastApi.mysteryMissions.listMysteryMissionMapPins,
-    debugShowAll ? { token, includeDebugAll: true } : "skip",
+    debugShowAll ? { token, includeDebugAll: true } : { token },
   );
-  const pins = useMemo(() => (debugShowAll ? result?.rows ?? [] : []), [debugShowAll, result?.rows]);
+  const pins = useMemo(() => result?.rows ?? [], [result?.rows]);
 
   useEffect(() => {
-    const revealed = new Set(pins.filter((pin) => pin.state === "revealed").map((pin) => pin._id));
-    const signals = new Set(pins.filter((pin) => pin.state === "signal").map((pin) => pin._id));
+    if (result === undefined) return;
 
+    const signals = new Set(
+      pins.filter((pin) => pin.state === "signal" && pin.debugOnly !== true).map((pin) => pin._id),
+    );
+    const revealed = new Set(pins.filter((pin) => pin.state === "revealed").map((pin) => pin._id));
     if (!initializedRef.current) {
       initializedRef.current = true;
-      revealedIdsRef.current = revealed;
       signalIdsRef.current = signals;
+      revealedIdsRef.current = revealed;
       return;
     }
-
     for (const pin of pins) {
+      if (pin.state === "signal" && pin.debugOnly !== true && !signalIdsRef.current.has(pin._id)) {
+        onMysterySignalAppeared?.(pin);
+      }
       if (pin.state === "revealed" && !revealedIdsRef.current.has(pin._id)) {
         onMysteryMissionReveal?.(pin);
       }
-      if (pin.state === "signal" && !signalIdsRef.current.has(pin._id)) {
-        onMysterySignalAppeared?.(pin);
-      }
     }
-
-    revealedIdsRef.current = revealed;
     signalIdsRef.current = signals;
-  }, [onMysteryMissionReveal, onMysterySignalAppeared, pins]);
+    revealedIdsRef.current = revealed;
+  }, [onMysteryMissionReveal, onMysterySignalAppeared, pins, result]);
 
   useEffect(() => {
     if (!map) return;

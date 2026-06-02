@@ -10,6 +10,28 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap"
     />
+    <script>
+      // Pre-React paint: pick a night/day background before the bundle loads
+      // so the page doesn't flash white on cold start. Mirrors the fallback
+      // window used by ThemeProvider's resolveAutoTheme (night = 21:00–06:00,
+      // viewer device tz). React's applyThemeVariables overwrites this on
+      // mount with the full token set.
+      (function () {
+        try {
+          var stored = localStorage.getItem("tripcast.theme_mode");
+          var isNight;
+          if (stored === "meadow") isNight = false;
+          else if (stored === "constellation") isNight = true;
+          else {
+            var h = new Date().getHours();
+            isNight = h >= 21 || h < 6;
+          }
+          var bg = isNight ? "#1c1f3a" : "#fdf6e3";
+          document.documentElement.style.backgroundColor = bg;
+          document.documentElement.style.colorScheme = isNight ? "dark" : "light";
+        } catch (e) { /* localStorage / Date can fail in odd embed envs */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

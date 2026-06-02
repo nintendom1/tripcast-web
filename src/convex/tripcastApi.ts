@@ -359,6 +359,8 @@ export type MysteryMissionFeedItem = {
   timeSensitive?: boolean;
   completedAt?: number;
   dismissedAt?: number;
+  signalRevealedAt?: number;
+  debugOnly?: boolean;
   linkedCheckpointId?: string;
   linkedMissionId?: string;
   distanceMiles?: number;
@@ -421,12 +423,13 @@ export type MysteryMissionExportRow = {
   timeSensitive?: boolean;
   completedAt?: number;
   dismissedAt?: number;
+  signalRevealedAt?: number;
   linkedCheckpointId?: string;
   linkedMissionId?: string;
 };
 
 export type MysteryMissionManagementList = {
-  settings: { enabled: boolean };
+  settings: { enabled: boolean; revealIntervalHours: number };
   counts: {
     total: number;
     signal: number;
@@ -754,6 +757,16 @@ export type TravelerPreferences = {
   sleepStaleThresholdMs: number;
   followerContentCutoffAt?: number;
   followerContentCutoffEnabled: boolean;
+  themeDayStartMinutes?: number;
+  themeNightStartMinutes?: number;
+  movementDetectionEnabled?: boolean;
+  movementWalkingLabel?: string;
+  movementWalkingEmoji?: string;
+  movementWalkingThresholdMps?: number;
+  movementMovingLabel?: string;
+  movementMovingEmoji?: string;
+  movementMovingThresholdMps?: number;
+  movementOverridesSleep?: boolean;
   updatedAt: number | null;
 };
 
@@ -764,6 +777,8 @@ export type TravelerPreferencesForFollower =
       travelerTimeZone?: string;
       allowFollowersTripPath: boolean;
       followerContentCutoffAt?: number;
+      themeDayStartMinutes?: number;
+      themeNightStartMinutes?: number;
     };
 
 export type OldestContentRef = {
@@ -882,14 +897,22 @@ export type TransactionCategory =
 
 export type TransactionVisibility = "public" | "summary_only" | "private";
 
+export type TravelFundsBudgetMode = "trip" | "daily";
+
+export type TravelFundsCarryoverMode = "none" | "overspend_only";
+
 export type TravelFundsConfigForTraveler =
   | { enabled: false }
   | {
       enabled: true;
       startingBudgetUsd: number;
+      budgetMode: TravelFundsBudgetMode;
+      carryoverMode: TravelFundsCarryoverMode;
+      fundsStartAt?: number;
       budgetLabel?: string;
       remainingUsd: number;
       spentUsd: number;
+      carryoverDebtUsd: number;
     };
 
 export type TravelFundsSummaryForFollower =
@@ -897,9 +920,13 @@ export type TravelFundsSummaryForFollower =
   | {
       enabled: true;
       startingBudgetUsd: number;
+      budgetMode: TravelFundsBudgetMode;
+      carryoverMode: TravelFundsCarryoverMode;
+      fundsStartAt?: number;
       budgetLabel?: string;
       remainingUsd: number;
       spentUsd: number;
+      carryoverDebtUsd: number;
     };
 
 export type Transaction = {
@@ -991,6 +1018,9 @@ export type UpdateTravelFundsConfigArgs = {
   token: string;
   featureEnabled?: boolean;
   startingBudgetUsd?: number;
+  budgetMode?: TravelFundsBudgetMode;
+  carryoverMode?: TravelFundsCarryoverMode;
+  fundsStartAt?: number;
   budgetLabel?: string;
 };
 
@@ -1307,8 +1337,8 @@ export const tripcastApi = {
     signIn: (anyApi as any).auth.signIn as FunctionReference<
       "mutation",
       "public",
-      { role: Role; code: string; clientId: string },
-      { token: string; role: Role }
+      { role: "traveler"; code: string; clientId: string },
+      { ok: true; token: string; role: "traveler" } | { ok: false; error: "invalid_code" }
     >,
     currentSession: (anyApi as any).auth.currentSession as FunctionReference<
       "query",
@@ -1729,12 +1759,12 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      { enabled: boolean; updatedAt: number | null }
+      { enabled: boolean; revealIntervalHours: number; updatedAt: number | null }
     >,
     travelerSetMysteryMissionsEnabled: (anyApi as any).mysteryMissions.travelerSetMysteryMissionsEnabled as FunctionReference<
       "mutation",
       "public",
-      { token: string; enabled: boolean },
+      { token: string; enabled: boolean; revealIntervalHours?: number },
       null
     >,
     previewMysteryMissionImport: (anyApi as any).mysteryMissions.previewMysteryMissionImport as FunctionReference<
@@ -1842,6 +1872,7 @@ export const tripcastApi = {
     travelerListRecentActivities: (anyApi as any).currentActivity.travelerListRecentActivities as FunctionReference<"query", "public", { token: string }, CurrentActivity[]>,
     travelerGetStalenessSettings: (anyApi as any).currentActivity.travelerGetStalenessSettings as FunctionReference<"query", "public", { token: string }, CurrentActivityStalenessSettings>,
     travelerUpdateStalenessSettings: (anyApi as any).currentActivity.travelerUpdateStalenessSettings as FunctionReference<"mutation", "public", { token: string; enabled: boolean; fallbackTitle: string; fallbackEmoji?: string; resetAfterMs: number }, null>,
+    travelerApplyMovementDetection: (anyApi as any).currentActivity.travelerApplyMovementDetection as FunctionReference<"mutation", "public", { token: string; classification: "walking" | "moving" | "stopped"; speedMps?: number; sampledAt: number }, null>,
   },
   travelerState: {
     travelerGetState: (anyApi as any).travelerState.travelerGetState as FunctionReference<
@@ -1956,6 +1987,8 @@ export const tripcastApi = {
         allowFollowersTripPath?: boolean;
         followerContentCutoffAt?: number | null;
         followerContentCutoffEnabled?: boolean;
+        themeDayStartMinutes?: number | null;
+        themeNightStartMinutes?: number | null;
       },
       null
     >,
@@ -1968,6 +2001,22 @@ export const tripcastApi = {
         sleepStartMinutes?: number;
         sleepEndMinutes?: number;
         sleepStaleThresholdMs?: number;
+      },
+      null
+    >,
+    travelerUpdateMovementDetection: (anyApi as any).travelerPreferences.travelerUpdateMovementDetection as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        movementDetectionEnabled?: boolean;
+        movementWalkingLabel?: string;
+        movementWalkingEmoji?: string;
+        movementWalkingThresholdMps?: number;
+        movementMovingLabel?: string;
+        movementMovingEmoji?: string;
+        movementMovingThresholdMps?: number;
+        movementOverridesSleep?: boolean;
       },
       null
     >,
@@ -2266,7 +2315,7 @@ export const tripcastApi = {
     travelerGetConfig: (anyApi as any).travelFunds.travelerGetConfig as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; currentLocalDayStart?: number },
       TravelFundsConfigForTraveler
     >,
     travelerUpdateConfig: (anyApi as any).travelFunds.travelerUpdateConfig as FunctionReference<
@@ -2302,7 +2351,7 @@ export const tripcastApi = {
     followerGetFundsSummary: (anyApi as any).travelFunds.followerGetFundsSummary as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; currentLocalDayStart?: number },
       TravelFundsSummaryForFollower
     >,
     followerListVisibleTransactions: (anyApi as any).travelFunds.followerListVisibleTransactions as FunctionReference<

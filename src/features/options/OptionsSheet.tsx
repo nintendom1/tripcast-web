@@ -78,6 +78,7 @@ import { useTicker, TripTicker } from "../hud";
 import { triggerMapCooldown } from "../map/mapService";
 import { triggerCrash } from "../../debug/crashTrigger";
 import { getMapStyleResolution } from "../map/mapService";
+import { computeAutoState } from "../travelstate/autoStateCalc";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -464,33 +465,256 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
   );
 }
 
+const CURATED_TIMEZONES: ReadonlyArray<string> = [
+  "Pacific/Honolulu",
+  "America/Anchorage",
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "America/Sao_Paulo",
+  "Atlantic/Reykjavik",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Athens",
+  "Europe/Moscow",
+  "Africa/Cairo",
+  "Africa/Johannesburg",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Bangkok",
+  "Asia/Singapore",
+  "Asia/Hong_Kong",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "Pacific/Auckland",
+  "UTC",
+];
+
+const SELECT_DEVICE = "__device__";
+const SELECT_OTHER = "__other__";
+
+function isValidIanaTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Project default theme window when the Traveler hasn't set one. Mirrors the
+// FALLBACK_* constants in ThemeProvider; kept in sync by hand.
+const DEFAULT_THEME_DAY_START_MINUTES = 6 * 60; // 06:00
+const DEFAULT_THEME_NIGHT_START_MINUTES = 21 * 60; // 21:00
+
+function minutesToTimeInput(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function timeInputToMinutes(value: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isInteger(h) || !Number.isInteger(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
 function TravelerTimezoneSection({ token }: { token: string }) {
-  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, {
-    token,
-  });
+  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
+  const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
   const setTimeZone = useMutation(tripcastApi.travelerPreferences.travelerSetTimeZone);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const detectedTimeZone = detectBrowserTimeZone();
-  const savedTimeZone = preferences?.travelerTimeZone ?? null;
-  const timeZoneMismatch = Boolean(
-    savedTimeZone && detectedTimeZone && savedTimeZone !== detectedTimeZone,
+  const rebaseTimeZone = useMutation(
+    tripcastApi.travelerAutoState.travelerRebaseAutoStateTimeZone,
+  );
+  const updatePreferences = useMutation(
+    tripcastApi.travelerPreferences.travelerUpdatePreferences,
   );
 
-  async function handleSetTimeZone() {
-    if (!detectedTimeZone || saving) return;
-    setSaving(true);
+  const [selection, setSelection] = useState<string>("");
+  const [customTz, setCustomTz] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const detectedTimeZone = detectBrowserTimeZone();
+  const savedTimeZone = preferences?.travelerTimeZone ?? null;
+  const savedSource = preferences?.travelerTimeZoneSource ?? null;
+  const autoEnabled = Boolean(autoState?.autoStateEnabled);
+
+  const savedDayStart = preferences?.themeDayStartMinutes;
+  const savedNightStart = preferences?.themeNightStartMinutes;
+  const effectiveDayStart =
+    typeof savedDayStart === "number" ? savedDayStart : DEFAULT_THEME_DAY_START_MINUTES;
+  const effectiveNightStart =
+    typeof savedNightStart === "number" ? savedNightStart : DEFAULT_THEME_NIGHT_START_MINUTES;
+
+  const [dayInput, setDayInput] = useState<string>(() => minutesToTimeInput(effectiveDayStart));
+  const [nightInput, setNightInput] = useState<string>(() =>
+    minutesToTimeInput(effectiveNightStart),
+  );
+  const [savingWindow, setSavingWindow] = useState(false);
+  const [windowError, setWindowError] = useState<string | null>(null);
+  const [windowSuccess, setWindowSuccess] = useState<string | null>(null);
+
+  // Keep inputs in sync with the live query (e.g. another device updated prefs).
+  useEffect(() => {
+    setDayInput(minutesToTimeInput(effectiveDayStart));
+  }, [effectiveDayStart]);
+  useEffect(() => {
+    setNightInput(minutesToTimeInput(effectiveNightStart));
+  }, [effectiveNightStart]);
+
+  const isThemeWindowExplicit =
+    typeof savedDayStart === "number" && typeof savedNightStart === "number";
+
+  async function applyTimeZone(newTimeZone: string, source: "device" | "manual") {
+    if (saving) return;
     setError(null);
+    setSuccess(null);
+    setSaving(true);
     try {
-      await setTimeZone({
-        token,
-        timeZone: detectedTimeZone,
-        source: "device",
-      });
+      await setTimeZone({ token, timeZone: newTimeZone, source });
+
+      // When autoState is on, the stored autoTimeZone also drives bedtime/wake
+      // estimation. Rebase it so the picker is a single control for both.
+      if (
+        autoState?.autoStateEnabled &&
+        autoState.autoEnabledAt != null &&
+        autoState.autoBaseEnergyScore != null &&
+        autoState.autoBaseStomachScore != null &&
+        autoState.autoTimeZone !== newTimeZone
+      ) {
+        const estimate = computeAutoState({
+          autoTimeZone: autoState.autoTimeZone,
+          autoBedtimeMinutes: autoState.autoBedtimeMinutes,
+          autoWakeTimeMinutes: autoState.autoWakeTimeMinutes,
+          autoEnergyMin: autoState.autoEnergyMin,
+          autoEnergyMax: autoState.autoEnergyMax,
+          autoStomachMin: autoState.autoStomachMin,
+          autoStomachMax: autoState.autoStomachMax,
+          autoEnergySleepDeltaPerTick: autoState.autoEnergySleepDeltaPerTick,
+          autoEnergyAwakeDeltaPerTick: autoState.autoEnergyAwakeDeltaPerTick,
+          autoStomachAwakeDeltaPerTick: autoState.autoStomachAwakeDeltaPerTick,
+          autoStomachNightAboveHungryEveryTicks:
+            autoState.autoStomachNightAboveHungryEveryTicks,
+          autoStomachNightAtOrBelowHungryEveryTicks:
+            autoState.autoStomachNightAtOrBelowHungryEveryTicks,
+          baseEnergy: autoState.autoBaseEnergyScore,
+          baseStomach: autoState.autoBaseStomachScore,
+          autoEnabledAt: autoState.autoEnabledAt,
+          targetTime: Date.now(),
+        });
+        await rebaseTimeZone({
+          token,
+          newTimeZone,
+          rebasedEstimatedEnergy: estimate.estimatedEnergy,
+          rebasedEstimatedStomach: estimate.estimatedStomach,
+        });
+      }
+
+      setSuccess(`Timezone set to ${newTimeZone}${source === "device" ? " (device)" : ""}.`);
+      setSelection("");
+      setCustomTz("");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleApplyChoice() {
+    if (saving) return;
+    if (selection === SELECT_DEVICE) {
+      if (!detectedTimeZone) {
+        setError("Could not detect this device's timezone.");
+        return;
+      }
+      await applyTimeZone(detectedTimeZone, "device");
+      return;
+    }
+    if (selection === SELECT_OTHER) {
+      const trimmed = customTz.trim();
+      if (!trimmed) {
+        setError("Type an IANA timezone name (e.g. America/Los_Angeles).");
+        return;
+      }
+      if (!isValidIanaTimeZone(trimmed)) {
+        setError(`"${trimmed}" isn't a recognized IANA timezone name.`);
+        return;
+      }
+      await applyTimeZone(trimmed, "manual");
+      return;
+    }
+    if (selection) {
+      await applyTimeZone(selection, "manual");
+    }
+  }
+
+  const applyDisabled =
+    saving ||
+    !selection ||
+    (selection === SELECT_DEVICE && !detectedTimeZone) ||
+    (selection === SELECT_OTHER && customTz.trim().length === 0);
+
+  async function handleSaveThemeWindow() {
+    if (savingWindow) return;
+    setWindowError(null);
+    setWindowSuccess(null);
+
+    const day = timeInputToMinutes(dayInput);
+    const night = timeInputToMinutes(nightInput);
+    if (day == null) {
+      setWindowError("Day start must be a valid time (HH:MM).");
+      return;
+    }
+    if (night == null) {
+      setWindowError("Night start must be a valid time (HH:MM).");
+      return;
+    }
+    if (day === night) {
+      setWindowError("Day and Night start times must be different.");
+      return;
+    }
+
+    setSavingWindow(true);
+    try {
+      await updatePreferences({
+        token,
+        themeDayStartMinutes: day,
+        themeNightStartMinutes: night,
+      });
+      setWindowSuccess(
+        `Day starts ${minutesToTimeInput(day)}, night starts ${minutesToTimeInput(night)}.`,
+      );
+    } catch (e) {
+      setWindowError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingWindow(false);
+    }
+  }
+
+  async function handleResetThemeWindow() {
+    if (savingWindow) return;
+    setWindowError(null);
+    setWindowSuccess(null);
+    setSavingWindow(true);
+    try {
+      await updatePreferences({
+        token,
+        themeDayStartMinutes: null,
+        themeNightStartMinutes: null,
+      });
+      setWindowSuccess("Reverted to default day/night times.");
+    } catch (e) {
+      setWindowError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSavingWindow(false);
     }
   }
 
@@ -503,28 +727,162 @@ function TravelerTimezoneSection({ token }: { token: string }) {
             <div className="min-w-0 flex-1">
               <p className="text-base font-semibold text-[var(--ink-1)]">Traveler timezone</p>
               <p className="text-sm text-[var(--ink-3)]">
-                Based on this device's timezone settings.
+                Drives bedtime/wake estimates, the status clock, and (in auto mode)
+                Follower day/night theme + audio.
               </p>
               <div className="mt-2 grid gap-1 text-sm text-[var(--ink-3)]">
-                <span>Saved: {savedTimeZone ?? "Not set yet"}</span>
+                <span>
+                  Saved: {savedTimeZone ?? "Not set yet"}
+                  {savedSource ? ` (${savedSource})` : ""}
+                </span>
                 {detectedTimeZone ? <span>This device: {detectedTimeZone}</span> : null}
               </div>
             </div>
           </div>
 
-          {timeZoneMismatch && detectedTimeZone ? (
+          <div className="grid gap-2">
+            <label
+              htmlFor="traveler-tz-select"
+              className="text-sm font-medium text-[var(--ink-2)]"
+            >
+              Change timezone
+            </label>
+            <select
+              id="traveler-tz-select"
+              value={selection}
+              onChange={(e) => {
+                setSelection(e.target.value);
+                setError(null);
+                setSuccess(null);
+              }}
+              disabled={saving}
+              className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-2 text-sm text-[var(--ink-1)]"
+            >
+              <option value="">Choose…</option>
+              <option value={SELECT_DEVICE}>
+                {detectedTimeZone
+                  ? `Use this device's timezone (${detectedTimeZone})`
+                  : "Use this device's timezone"}
+              </option>
+              <optgroup label="Common timezones">
+                {CURATED_TIMEZONES.map((tz) => (
+                  <option key={tz} value={tz}>
+                    {tz}
+                  </option>
+                ))}
+              </optgroup>
+              <option value={SELECT_OTHER}>Other (type IANA name)…</option>
+            </select>
+
+            {selection === SELECT_OTHER ? (
+              <input
+                type="text"
+                value={customTz}
+                onChange={(e) => {
+                  setCustomTz(e.target.value);
+                  setError(null);
+                  setSuccess(null);
+                }}
+                placeholder="e.g. America/Argentina/Buenos_Aires"
+                disabled={saving}
+                spellCheck={false}
+                autoCapitalize="none"
+                autoCorrect="off"
+                className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-2 text-sm text-[var(--ink-1)]"
+              />
+            ) : null}
+
             <Button
               type="button"
               variant="outline"
-              disabled={saving}
-              onClick={handleSetTimeZone}
+              disabled={applyDisabled}
+              onClick={handleApplyChoice}
               className="w-full sm:w-fit"
             >
-              {saving ? "Saving..." : `Set timezone to ${detectedTimeZone}`}
+              {saving ? "Saving…" : autoEnabled ? "Apply (rebases Auto State)" : "Apply"}
             </Button>
-          ) : null}
+            {autoEnabled ? (
+              <p className="text-xs text-[var(--ink-3)]">
+                Auto State is on — changing the timezone will rebase your energy and stomach
+                estimates so they stay continuous.
+              </p>
+            ) : null}
+          </div>
 
           {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
+          {success ? <p className="text-xs text-[var(--green-2)]" role="status">{success}</p> : null}
+
+          <div className="grid gap-2 border-t border-[var(--line-soft)] pt-4">
+            <div>
+              <p className="text-base font-semibold text-[var(--ink-1)]">Day &amp; Night times</p>
+              <p className="text-sm text-[var(--ink-3)]">
+                When the theme + audio switch between Meadow (day) and Constellation (night),
+                in your timezone. Independent from Auto State bedtime/wake (which model when
+                you actually sleep).
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="grid gap-1 text-sm">
+                <span className="text-[var(--ink-2)]">Day starts at</span>
+                <input
+                  type="time"
+                  value={dayInput}
+                  onChange={(e) => {
+                    setDayInput(e.target.value);
+                    setWindowError(null);
+                    setWindowSuccess(null);
+                  }}
+                  disabled={savingWindow}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-2 text-sm text-[var(--ink-1)]"
+                />
+              </label>
+              <label className="grid gap-1 text-sm">
+                <span className="text-[var(--ink-2)]">Night starts at</span>
+                <input
+                  type="time"
+                  value={nightInput}
+                  onChange={(e) => {
+                    setNightInput(e.target.value);
+                    setWindowError(null);
+                    setWindowSuccess(null);
+                  }}
+                  disabled={savingWindow}
+                  className="rounded-lg border border-[var(--border)] bg-[var(--bg-card)] p-2 text-sm text-[var(--ink-1)]"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={savingWindow}
+                onClick={handleSaveThemeWindow}
+              >
+                {savingWindow ? "Saving…" : "Save day/night times"}
+              </Button>
+              {isThemeWindowExplicit ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={savingWindow}
+                  onClick={handleResetThemeWindow}
+                >
+                  Use defaults ({minutesToTimeInput(DEFAULT_THEME_DAY_START_MINUTES)} /{" "}
+                  {minutesToTimeInput(DEFAULT_THEME_NIGHT_START_MINUTES)})
+                </Button>
+              ) : (
+                <span className="self-center text-xs text-[var(--ink-3)]">
+                  Currently using defaults.
+                </span>
+              )}
+            </div>
+            {windowError ? (
+              <p className="text-xs text-[var(--ink-danger)]" role="alert">{windowError}</p>
+            ) : null}
+            {windowSuccess ? (
+              <p className="text-xs text-[var(--green-2)]" role="status">{windowSuccess}</p>
+            ) : null}
+          </div>
         </div>
       </OptionsGroup>
     </OptionsSection>

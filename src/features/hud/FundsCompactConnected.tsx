@@ -5,6 +5,11 @@ import { tripcastApi, type Role } from "@/convex/tripcastApi";
 
 import { FundsCompact } from "./FundsCompact";
 
+function getLocalDayStart(timestamp = Date.now()) {
+  const date = new Date(timestamp);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
 export interface FundsCompactConnectedProps {
   token: string;
   role: Role;
@@ -24,11 +29,12 @@ export function FundsCompactConnected({
   className,
 }: FundsCompactConnectedProps) {
   const traveler = role === "traveler";
+  const currentLocalDayStart = getLocalDayStart();
   const config = useQuery(
     traveler
       ? tripcastApi.travelFunds.travelerGetConfig
       : tripcastApi.travelFunds.followerGetFundsSummary,
-    { token },
+    { token, currentLocalDayStart },
   );
 
   if (config === undefined) return null;
@@ -38,6 +44,7 @@ export function FundsCompactConnected({
     <FundsCompact
       remainingUsd={config.remainingUsd}
       startingBudgetUsd={config.startingBudgetUsd}
+      budgetMode={config.budgetMode ?? "trip"}
       budgetLabel={config.budgetLabel}
       onClick={traveler && onOpenSheet ? onOpenSheet : undefined}
       className={className}

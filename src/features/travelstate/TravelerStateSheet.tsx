@@ -11,7 +11,16 @@ import { Heart, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
+import { Capacitor } from "@capacitor/core";
 import { tripcastApi } from "../../convex/tripcastApi";
+import {
+  ftPerMinToMps,
+  mphToMps,
+  mpsToFtPerMin,
+  mpsToMph,
+  DEFAULT_WALKING_FT_PER_MIN,
+  DEFAULT_MOVING_MPH,
+} from "../../lib/movementUnits";
 import type {
   AutoState,
   CurrentActivity,
@@ -330,6 +339,9 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const updateStalenessSettings = useMutation(tripcastApi.currentActivity.travelerUpdateStalenessSettings);
   const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
   const updateSleepHours = useMutation(tripcastApi.travelerPreferences.travelerUpdateSleepHours);
+  const updateMovementDetection = useMutation(
+    tripcastApi.travelerPreferences.travelerUpdateMovementDetection,
+  );
 
   const { state: statePersonality } = useSheetPersonalities();
   const log = useDebugLogger("TravelerStateSheet", "src/features/travelstate/TravelerStateSheet.tsx");
@@ -371,6 +383,15 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [sleepStart, setSleepStart] = useState("22:00");
   const [sleepEnd, setSleepEnd] = useState("07:00");
   const [sleepThresholdMs, setSleepThresholdMs] = useState(3_600_000);
+
+  const [movementEnabled, setMovementEnabled] = useState(false);
+  const [walkingLabel, setWalkingLabel] = useState("Walking");
+  const [walkingEmoji, setWalkingEmoji] = useState("🚶");
+  const [walkingFtPerMin, setWalkingFtPerMin] = useState<number>(DEFAULT_WALKING_FT_PER_MIN);
+  const [movingLabel, setMovingLabel] = useState("Moving");
+  const [movingEmoji, setMovingEmoji] = useState("🚄");
+  const [movingMph, setMovingMph] = useState<number>(DEFAULT_MOVING_MPH);
+  const [movementOverridesSleep, setMovementOverridesSleep] = useState(true);
 
   // Visibility form
   const [showTravelerState, setShowTravelerState] = useState(DEFAULT_VISIBILITY.showTravelerState);
@@ -497,6 +518,17 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     if (prefs.sleepEndMinutes !== undefined)
       setSleepEnd(utcMinutesToLocalTimeString(prefs.sleepEndMinutes));
     setSleepThresholdMs(prefs.sleepStaleThresholdMs ?? 3_600_000);
+    setMovementEnabled(prefs.movementDetectionEnabled ?? false);
+    if (prefs.movementWalkingLabel !== undefined) setWalkingLabel(prefs.movementWalkingLabel);
+    if (prefs.movementWalkingEmoji !== undefined) setWalkingEmoji(prefs.movementWalkingEmoji);
+    if (prefs.movementWalkingThresholdMps !== undefined)
+      setWalkingFtPerMin(Math.round(mpsToFtPerMin(prefs.movementWalkingThresholdMps)));
+    if (prefs.movementMovingLabel !== undefined) setMovingLabel(prefs.movementMovingLabel);
+    if (prefs.movementMovingEmoji !== undefined) setMovingEmoji(prefs.movementMovingEmoji);
+    if (prefs.movementMovingThresholdMps !== undefined)
+      setMovingMph(Math.round(mpsToMph(prefs.movementMovingThresholdMps) * 10) / 10);
+    if (prefs.movementOverridesSleep !== undefined)
+      setMovementOverridesSleep(prefs.movementOverridesSleep);
   }, [prefs]);
 
   useEffect(() => {
@@ -1135,6 +1167,128 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                 </div>
               </div>
             </div>
+
+            <StateSegment
+              title="Movement detection"
+              hint="Auto-sets your activity from GPS speed."
+            >
+              <ToggleRow
+                label="Detect movement from GPS"
+                checked={movementEnabled}
+                onChange={(v) => {
+                  setMovementEnabled(v);
+                  updateMovementDetection({ token, movementDetectionEnabled: v }).catch(() => {});
+                }}
+              />
+              {movementEnabled && (
+                <div className="grid gap-3 pt-2">
+                  {!Capacitor.isNativePlatform() && (
+                    <p className="rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] px-3 py-2 text-xs text-[var(--ink-2)]">
+                      Requires the iOS app — settings are saved but detection only runs on the native build.
+                    </p>
+                  )}
+
+                  {/* Walking band */}
+                  <div className="grid gap-1.5">
+                    <label className={stateLabelClass}>Walking</label>
+                    <div className="flex flex-wrap gap-2 sm:grid sm:grid-cols-[72px_1fr_120px]">
+                      <input
+                        type="text"
+                        value={walkingEmoji}
+                        onChange={(e) => setWalkingEmoji(e.target.value.slice(0, 10))}
+                        onBlur={() =>
+                          updateMovementDetection({ token, movementWalkingEmoji: walkingEmoji.trim() || "🚶" }).catch(() => {})
+                        }
+                        maxLength={10}
+                        placeholder="🚶"
+                        aria-label="Walking emoji"
+                        className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                      />
+                      <input
+                        type="text"
+                        value={walkingLabel}
+                        onChange={(e) => setWalkingLabel(e.target.value.slice(0, 80))}
+                        onBlur={() =>
+                          updateMovementDetection({ token, movementWalkingLabel: walkingLabel.trim() || "Walking" }).catch(() => {})
+                        }
+                        aria-label="Walking label"
+                        className={cn("h-9 px-3 text-sm", stateInputClass)}
+                      />
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={1}
+                          step={10}
+                          value={walkingFtPerMin}
+                          onChange={(e) => setWalkingFtPerMin(Number(e.target.value) || 0)}
+                          onBlur={() => {
+                            const v = walkingFtPerMin > 0 ? walkingFtPerMin : DEFAULT_WALKING_FT_PER_MIN;
+                            updateMovementDetection({ token, movementWalkingThresholdMps: ftPerMinToMps(v) }).catch(() => {});
+                          }}
+                          aria-label="Walking threshold (ft/min)"
+                          className={cn("h-9 w-20 px-2 text-sm", stateInputClass)}
+                        />
+                        <span className={stateHintClass}>ft/min</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Moving band */}
+                  <div className="grid gap-1.5">
+                    <label className={stateLabelClass}>Moving</label>
+                    <div className="flex flex-wrap gap-2 sm:grid sm:grid-cols-[72px_1fr_120px]">
+                      <input
+                        type="text"
+                        value={movingEmoji}
+                        onChange={(e) => setMovingEmoji(e.target.value.slice(0, 10))}
+                        onBlur={() =>
+                          updateMovementDetection({ token, movementMovingEmoji: movingEmoji.trim() || "🚄" }).catch(() => {})
+                        }
+                        maxLength={10}
+                        placeholder="🚄"
+                        aria-label="Moving emoji"
+                        className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
+                      />
+                      <input
+                        type="text"
+                        value={movingLabel}
+                        onChange={(e) => setMovingLabel(e.target.value.slice(0, 80))}
+                        onBlur={() =>
+                          updateMovementDetection({ token, movementMovingLabel: movingLabel.trim() || "Moving" }).catch(() => {})
+                        }
+                        aria-label="Moving label"
+                        className={cn("h-9 px-3 text-sm", stateInputClass)}
+                      />
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0.1}
+                          step={1}
+                          value={movingMph}
+                          onChange={(e) => setMovingMph(Number(e.target.value) || 0)}
+                          onBlur={() => {
+                            const v = movingMph > 0 ? movingMph : DEFAULT_MOVING_MPH;
+                            updateMovementDetection({ token, movementMovingThresholdMps: mphToMps(v) }).catch(() => {});
+                          }}
+                          aria-label="Moving threshold (mph)"
+                          className={cn("h-9 w-20 px-2 text-sm", stateInputClass)}
+                        />
+                        <span className={stateHintClass}>mph</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <ToggleRow
+                    label="Movement overrides Sleeping"
+                    checked={movementOverridesSleep}
+                    onChange={(v) => {
+                      setMovementOverridesSleep(v);
+                      updateMovementDetection({ token, movementOverridesSleep: v }).catch(() => {});
+                    }}
+                  />
+                </div>
+              )}
+            </StateSegment>
           </div>
         )}
 

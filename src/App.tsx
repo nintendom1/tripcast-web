@@ -36,7 +36,7 @@ import { useInteractionLogger } from "./debug/useInteractionLogger";
 import DebugErrorBoundary from "./debug/DebugErrorBoundary";
 import { CrashOnDemand, disarmCrash } from "./debug/crashTrigger";
 import { log as debugLog } from "./debug/debugLogger";
-import { ThemeProvider } from "./providers/ThemeProvider";
+import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -128,7 +128,6 @@ function ConnectedApp() {
   const [preserveDebugContext, setPreserveDebugContext] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
   const music = useMusicSafe();
-  const { currentMessage, isPriority, onFunFactComplete } = useTicker(session?.token);
   const [isIntroReplayOpen, setIsIntroReplayOpen] = useState(false);
   const [isCreateAccountIntroOpen, setIsCreateAccountIntroOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
@@ -181,10 +180,13 @@ function ConnectedApp() {
 
   const activeSessionCheck =
     session?.sessionType === "follower" ? followerSessionCheck : legacySessionCheck;
+  const verifiedSessionToken =
+    session !== null && activeSessionCheck ? session.token : undefined;
+  const { currentMessage, isPriority, onFunFactComplete } = useTicker(verifiedSessionToken);
 
   const credits = useQuery(
     tripcastApi.endTrip.getTripCredits,
-    session !== null && activeSessionCheck ? { token: session.token } : "skip",
+    verifiedSessionToken ? { token: verifiedSessionToken } : "skip",
   );
 
   const signOutMutation = useMutation(tripcastApi.auth.signOut);
@@ -437,23 +439,27 @@ function ConnectedApp() {
 
   if (view === "follower-management" && role === "traveler") {
     return (
-      <FeatureBoundary
-        resetKeys={[view, session.token]}
-        onClose={() => setView("map")}
-        title="Follower management hit a problem."
-        message="Try again, or go back to the map."
-        fallbackClassName="m-4 grid gap-3 rounded-md border bg-background p-4 text-sm shadow-sm"
-      >
-        <FollowerManagementPage
-          token={session.token}
-          onBack={() => setView("map")}
-        />
-      </FeatureBoundary>
+      <>
+        <TravelerThemeBridge token={session.token} role={role} />
+        <FeatureBoundary
+          resetKeys={[view, session.token]}
+          onClose={() => setView("map")}
+          title="Follower management hit a problem."
+          message="Try again, or go back to the map."
+          fallbackClassName="m-4 grid gap-3 rounded-md border bg-background p-4 text-sm shadow-sm"
+        >
+          <FollowerManagementPage
+            token={session.token}
+            onBack={() => setView("map")}
+          />
+        </FeatureBoundary>
+      </>
     );
   }
 
   return (
     <div className="relative flex flex-col h-dvh">
+      <TravelerThemeBridge token={session.token} role={role} />
       <TopBar
         role={role}
         onOpenOptions={() => {

@@ -1,9 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
-import { tripcastApi, type JournalEvent } from "../../convex/tripcastApi";
+import { tripcastApi, type JournalEvent, type MysteryMissionFeedItem } from "../../convex/tripcastApi";
 import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
 import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
@@ -165,24 +164,6 @@ vi.mock("./MissionMarkers", () => ({
   default: () => null,
 }));
 
-vi.mock("./MysteryMissionMarkers", () => ({
-  default: (props: any) => {
-    const pins = convexReact.useQuery(tripcastApi.mysteryMissions.listMysteryMissionMapPins, { token: "test-token" }) ?? [];
-    const signalIdsRef = useRef(new Set());
-
-    // biome-ignore lint/correctness/useExhaustiveDependencies: test mock
-    useEffect(() => {
-      for (const pin of pins) {
-        if (pin.state === "signal" && !signalIdsRef.current.has(pin._id)) {
-          props.onMysterySignalAppeared?.(pin);
-        }
-      }
-      signalIdsRef.current = new Set(pins.filter((p: any) => p.state === "signal").map((p: any) => p._id));
-    }, [pins, props.onMysterySignalAppeared]);
-    return null;
-  },
-}));
-
 vi.mock("../routevote/RouteVoteButton", () => ({
   default: ({ onClick }: { onClick: () => void }) => (
     <button type="button" onClick={onClick}>
@@ -221,8 +202,9 @@ vi.mock("../travelfunds/TravelFundsSheet", () => ({
 function setupQueries({
   checkpoints = [],
   journalEvents = [],
-  mysteryMissions = [],
   travelerLocation = null,
+  mysteryPins = [],
+  mysteryPinsLoading = false,
   allowFollowersTripPath = false,
   liveTrailStatus = {
     enabled: false,
@@ -246,8 +228,9 @@ function setupQueries({
     updatedAt: number;
   }>;
   journalEvents?: JournalEvent[];
-  mysteryMissions?: any[];
   travelerLocation?: { lat: number; lon: number; accuracy?: number; isSharing: true } | null;
+  mysteryPins?: MysteryMissionFeedItem[];
+  mysteryPinsLoading?: boolean;
   allowFollowersTripPath?: boolean;
   liveTrailStatus?: {
     enabled: boolean;
@@ -293,7 +276,10 @@ function setupQueries({
       return { travelerTimeZone: "UTC" };
     }
     if (query === tripcastApi.journalEvents.listJournalEvents) return journalEvents;
-    if (query === tripcastApi.mysteryMissions.listMysteryMissionMapPins) return mysteryMissions;
+    if (query === tripcastApi.mysteryMissions.listMysteryMissionMapPins) {
+      if (mysteryPinsLoading) return undefined;
+      return { rows: mysteryPins };
+    }
     if (query === tripcastApi.routeVotes.travelerListRouteVotes) return [];
     if (query === tripcastApi.travelFunds.travelerGetConfig) {
       return {
@@ -337,6 +323,21 @@ function makeJournalEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
     checkpointId: "checkpoint-1",
     lat: 47.61,
     lon: -122.33,
+    ...overrides,
+  };
+}
+
+function makeMysteryMission(overrides: Partial<MysteryMissionFeedItem> = {}): MysteryMissionFeedItem {
+  return {
+    kind: "mystery_mission",
+    _id: "mystery-1",
+    mysteryMissionId: "mystery-1",
+    state: "signal",
+    lat: 47.65,
+    lon: -122.35,
+    mysteryText: "Follow the signal",
+    spawnRadiusMiles: 0.5,
+    priority: 1,
     ...overrides,
   };
 }
@@ -933,6 +934,146 @@ describe("TripMap location marker", () => {
       expect(mapFitBounds).toHaveBeenLastCalledWith(
         [[-122.36, 47.6], [-122.3, 47.64]],
         expect.objectContaining({ maxZoom: 14 }),
+      );
+    });
+  });
+
+  describe("Mystery Mission signal reveal", () => {
+    it("does not center on signals from the first loaded mystery snapshot", async () => {
+      const travelerLocation = { lat: 47.61, lon: -122.33, isSharing: true } as const;
+      setupQueries({
+        travelerLocation,
+        mysteryPinsLoading: true,
+      });
+
+      const { rerender } = render(<TripMap token="test-token" role="follower" />);
+
+      const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+      fireEvent.click(centerButton);
+
+      await waitFor(() => {
+        expect(centerButton).toHaveClass("text-[var(--flag)]");
+        expect(mapEaseTo).toHaveBeenLastCalledWith(
+          expect.objectContaining({ center: [-122.33, 47.61] }),
+        );
+      });
+
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [
+          makeMysteryMission({
+            _id: "mystery-signal-1",
+            mysteryMissionId: "mystery-signal-1",
+            lat: 47.655,
+            lon: -122.362,
+          }),
+        ],
+      });
+      rerender(<TripMap token="test-token" role="follower" />);
+
+      await waitFor(() => {
+        expect(markerElements.some((element) => element.classList.contains("mystery-pin--signal"))).toBe(true);
+      });
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+      expect(mapEaseTo).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          center: [-122.362, 47.655],
+        }),
+      );
+      expect(mapEaseTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ center: [-122.33, 47.61] }),
+      );
+    });
+
+    it("centers on a newly appeared signal and stops follow mode", async () => {
+      const travelerLocation = { lat: 47.61, lon: -122.33, isSharing: true } as const;
+      const hiddenMystery = makeMysteryMission({
+        _id: "mystery-signal-1",
+        mysteryMissionId: "mystery-signal-1",
+        state: "dismissed",
+        lat: 47.655,
+        lon: -122.362,
+      });
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [hiddenMystery],
+      });
+
+      const { rerender } = render(<TripMap token="test-token" role="follower" />);
+
+      await waitFor(() => {
+        expect(markerElements.some((element) => element.classList.contains("mystery-pin"))).toBe(true);
+      });
+
+      const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+      fireEvent.click(centerButton);
+
+      await waitFor(() => {
+        expect(centerButton).toHaveClass("text-[var(--flag)]");
+      });
+
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [
+          {
+            ...hiddenMystery,
+            state: "signal",
+          },
+        ],
+      });
+      rerender(<TripMap token="test-token" role="follower" />);
+
+      await waitFor(() => {
+        expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+        expect(mapEaseTo).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            center: [-122.362, 47.655],
+            zoom: 14,
+          }),
+        );
+      });
+
+      expect(screen.getByText("Mystery Signal detected.")).toBeInTheDocument();
+    });
+
+    it("does not center on debug-only dormant pins", async () => {
+      const travelerLocation = { lat: 47.61, lon: -122.33, isSharing: true } as const;
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [],
+      });
+
+      const { rerender } = render(<TripMap token="test-token" role="traveler" />);
+
+      const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+      fireEvent.click(centerButton);
+
+      await waitFor(() => {
+        expect(centerButton).toHaveClass("text-[var(--flag)]");
+      });
+
+      setupQueries({
+        travelerLocation,
+        mysteryPins: [
+          makeMysteryMission({
+            _id: "mystery-debug-1",
+            mysteryMissionId: "mystery-debug-1",
+            lat: 47.655,
+            lon: -122.362,
+            debugOnly: true,
+          }),
+        ],
+      });
+      rerender(<TripMap token="test-token" role="traveler" />);
+
+      await waitFor(() => {
+        expect(markerElements.some((element) => element.classList.contains("mystery-pin--debug-only"))).toBe(true);
+      });
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+      expect(mapEaseTo).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          center: [-122.362, 47.655],
+        }),
       );
     });
   });
@@ -1612,67 +1753,5 @@ describe("TripMap location marker", () => {
         false,
       );
     });
-  });
-});
-
-describe("TripMap mystery mission reveal", () => {
-  it("centers the map and disables follow mode when a mystery mission signal appears", async () => {
-    setEnabled(true);
-    const travelerLoc = { lat: 47.61, lon: -122.33, isSharing: true as const };
-    setupQueries({
-      mysteryMissions: [],
-      travelerLocation: travelerLoc,
-    });
-
-    const { rerender } = render(<TripMap token="test-token" role="follower" />);
-
-    const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
-    fireEvent.click(centerButton);
-
-    await waitFor(() => {
-      expect(centerButton).toHaveClass("text-[var(--flag)]");
-    });
-
-    // Clear calls from initial follow
-    mapEaseTo.mockClear();
-
-    // Simulate signal appearing. Keep traveler location object stable to avoid triggering follow-mode effect again
-    setupQueries({
-      mysteryMissions: [
-        {
-          _id: "mystery-1",
-          state: "signal",
-          lat: 47.65,
-          lon: -122.35,
-          type: "mystery",
-        },
-      ],
-      travelerLocation: travelerLoc,
-    });
-
-    rerender(<TripMap token="test-token" role="follower" />);
-
-    await waitFor(() => {
-      expect(mapEaseTo).toHaveBeenCalledWith(
-        expect.objectContaining({
-          center: [-122.35, 47.65],
-          zoom: 14,
-        }),
-      );
-    });
-
-    // Follow mode should be disabled
-    await waitFor(() => {
-      expect(centerButton).not.toHaveClass("text-[var(--flag)]");
-    });
-
-    expect(screen.getByText("Mystery Signal detected.")).toBeInTheDocument();
-
-    // Verify via logs as well
-    const logs = getLogs();
-    const focusLog = logs.find((l) => l.action === "map:camera:focus" && l.details.trigger === "mystery-signal:automatic-reveal");
-    expect(focusLog).toBeDefined();
-    expect(focusLog?.details.lat).toBe(47.65);
-    expect(focusLog?.details.lon).toBe(-122.35);
   });
 });

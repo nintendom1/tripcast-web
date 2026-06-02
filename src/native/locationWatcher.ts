@@ -19,7 +19,7 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
 // filter would only burn battery.
 const DISTANCE_FILTER_METERS = 50;
 
-export type NativeLocationFix = { lat: number; lon: number; accuracy?: number };
+export type NativeLocationFix = { lat: number; lon: number; accuracy?: number; speed?: number };
 
 export function isNativeLocationAvailable(): boolean {
   return Capacitor.isNativePlatform();
@@ -56,10 +56,15 @@ export function startNativeLocationWatch(
         return;
       }
       if (!location) return;
+      // Plugin exposes speed as m/s when the OS reports it; pass through so
+      // movement detection (MovementDetect.ts) can classify Walking/Moving
+      // without re-deriving from successive fixes when possible.
+      const speedRaw = (location as { speed?: number | null }).speed;
       onFix({
         lat: location.latitude,
         lon: location.longitude,
         accuracy: location.accuracy,
+        speed: typeof speedRaw === "number" && speedRaw >= 0 ? speedRaw : undefined,
       });
     },
   )
