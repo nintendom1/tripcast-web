@@ -6,6 +6,13 @@
  */
 
 import { debugLoggerFor } from "@/debug/useDebugLogger";
+import {
+  INSTRUMENTS,
+  KITS,
+  PATCHES,
+  type MusicEditorInstrumentId,
+  type MusicEditorKitId,
+} from "./patches";
 
 export type AudioScenario = "idle" | "voteActive" | "missionActive" | "overBudget" | "story";
 
@@ -212,6 +219,8 @@ class TripcastAudioEngine implements AudioEngine {
   private scheduler: ReturnType<typeof setTimeout> | null = null;
   private scheduledAt = 0;
   private beat = 0;
+  /** Tracks the exact beat in the current loop for patch playback. */
+  private patchBeat = 0;
   private scenario: AudioScenario = "idle";
   private soundtrack: AudioSoundtrack = "auto";
   private volume = 0.3;
@@ -381,55 +390,114 @@ class TripcastAudioEngine implements AudioEngine {
     if (!this.started || !this.ctx) return;
     const lookahead = 0.4;
 
+    const resolvedOST = resolveSoundtrackScenario(this.scenario, this.soundtrack);
+    const patch = PATCHES[resolvedOST];
+
     while (this.scheduledAt < this.ctx.currentTime + lookahead) {
-      const progression = this.progression();
-      const meter = progression.meter ?? 4;
-      const secPerBeat = 60 / progression.bpm;
-      const beatInBar = this.beat % meter;
-      const chord = progression.chords[Math.floor(this.beat / meter) % progression.chords.length];
-      const at = this.scheduledAt;
+      if (patch) {
+        const bpm = patch.bpm || 120;
+        const beatsPerBar = patch.meter ?? 4;
+        const totalBeats = patch.bars * beatsPerBar;
+        const secPerBeat = 60 / bpm;
+        const at = this.scheduledAt;
 
-      if (beatInBar === 0) {
-        chord.notes.forEach((note) => this.pad(note, at, secPerBeat * (meter + 0.1), 0.045));
-        this.bass(chord.bass, at, secPerBeat * 0.9, 0.18, progression.bassFlavor);
-      }
+        // Current loop beat being scheduled
+        const currentBeat = this.patchBeat % totalBeats;
 
-      if (meter === 4 && beatInBar === 2) {
-        this.bass(chord.bass + 7, at, secPerBeat * 0.9, 0.12, progression.bassFlavor);
-      }
+        // Find events that start exactly at this beat
+        Object.values(patch.tracks).forEach((track) => {
+          if (!track.enabled) return;
+          track.events.forEach((event) => {
+            const eventStartBeat = (event.bar - 1) * beatsPerBar + (event.beat - 1);
+            // Use a small epsilon for floating point beat timings
+            if (Math.abs(eventStartBeat - currentBeat) < 0.01) {
+              const startTime = at;
+              const duration = event.durationBeats * secPerBeat;
+              const volume = event.velocity * track.volume * 0.5;
 
-      if (progression.hasDrums) {
-        this.kick(at);
-        this.hihat(at, 0.2);
-        this.hihat(at + secPerBeat * 0.5, 0.1);
-        if (beatInBar === 1 || beatInBar === 3) {
-          this.snare(at);
+              if (event.drum) {
+                this.playPatchNoise(
+                  startTime,
+                  duration,
+                  volume,
+                  event.drum,
+                  track.instrument as MusicEditorKitId,
+                );
+              } else if (event.midis) {
+                event.midis.forEach((midi) => {
+                  this.playPatchOsc(
+                    midiToFrequency(midi),
+                    startTime,
+                    duration,
+                    volume,
+                    track.instrument as MusicEditorInstrumentId,
+                  );
+                });
+              } else if (event.midi) {
+                this.playPatchOsc(
+                  midiToFrequency(event.midi),
+                  startTime,
+                  duration,
+                  volume,
+                  track.instrument as MusicEditorInstrumentId,
+                );
+              }
+            }
+          });
+        });
+
+        this.scheduledAt += secPerBeat;
+        this.patchBeat += 1;
+      } else {
+        const progression = this.progression();
+        const meter = progression.meter ?? 4;
+        const secPerBeat = 60 / progression.bpm;
+        const beatInBar = this.beat % meter;
+        const chord = progression.chords[Math.floor(this.beat / meter) % progression.chords.length];
+        const at = this.scheduledAt;
+
+        if (beatInBar === 0) {
+          chord.notes.forEach((note) => this.pad(note, at, secPerBeat * (meter + 0.1), 0.045));
+          this.bass(chord.bass, at, secPerBeat * 0.9, 0.18, progression.bassFlavor);
         }
-      }
 
-      if (Math.random() > 0.16) {
-        const swing = beatInBar % 2 === 1 ? 0.04 : 0;
-        this.piano(
-          chord.arp[beatInBar % chord.arp.length],
-          at + swing * secPerBeat,
-          secPerBeat * 1.4,
-          0.16,
-          progression.leadFlavor,
-        );
-      }
+        if (meter === 4 && beatInBar === 2) {
+          this.bass(chord.bass + 7, at, secPerBeat * 0.9, 0.12, progression.bassFlavor);
+        }
 
-      if (beatInBar === meter - 1 && Math.random() < 0.4) {
-        this.piano(
-          chord.arp[0] + 12,
-          at + secPerBeat * 0.5,
-          secPerBeat * 1.6,
-          0.08,
-          progression.leadFlavor,
-        );
-      }
+        if (progression.hasDrums) {
+          this.kick(at);
+          this.hihat(at, 0.2);
+          this.hihat(at + secPerBeat * 0.5, 0.1);
+          if (beatInBar === 1 || beatInBar === 3) {
+            this.snare(at);
+          }
+        }
 
-      this.scheduledAt += secPerBeat;
-      this.beat += 1;
+        if (Math.random() > 0.16) {
+          const swing = beatInBar % 2 === 1 ? 0.04 : 0;
+          this.piano(
+            chord.arp[beatInBar % chord.arp.length],
+            at + swing * secPerBeat,
+            secPerBeat * 1.4,
+            0.16,
+            progression.leadFlavor,
+          );
+        }
+
+        if (beatInBar === meter - 1 && Math.random() < 0.4) {
+          this.piano(
+            chord.arp[0] + 12,
+            at + secPerBeat * 0.5,
+            secPerBeat * 1.6,
+            0.08,
+            progression.leadFlavor,
+          );
+        }
+
+        this.scheduledAt += secPerBeat;
+        this.beat += 1;
+      }
     }
 
     this.scheduler = setTimeout(() => this.scheduleLoop(), 100);
@@ -597,6 +665,90 @@ class TripcastAudioEngine implements AudioEngine {
     env.connect(this.master!);
     osc.start(when);
     osc.stop(when + 0.05);
+  }
+
+  private playPatchOsc(
+    freq: number,
+    startTime: number,
+    duration: number,
+    volume = 0.5,
+    instrumentId: MusicEditorInstrumentId = "sine-wave",
+  ) {
+    if (!this.ctx || !this.master) return;
+    const inst = INSTRUMENTS[instrumentId] || INSTRUMENTS["sine-wave"];
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(inst.filter, startTime);
+
+    gain.gain.setValueAtTime(0.0001, startTime);
+    gain.gain.linearRampToValueAtTime(volume, startTime + inst.attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+    const partials = inst.partials || [{ type: inst.type, detune: 0, gain: 1 }];
+    partials.forEach((partial) => {
+      const osc = this.ctx!.createOscillator();
+      osc.type = partial.type;
+      osc.frequency.setValueAtTime(freq, startTime);
+      osc.detune.setValueAtTime(partial.detune || 0, startTime);
+
+      if (partial.gain !== undefined && partial.gain !== 1) {
+        const partialGain = this.ctx!.createGain();
+        partialGain.gain.value = partial.gain;
+        osc.connect(partialGain);
+        partialGain.connect(filter);
+      } else {
+        osc.connect(filter);
+      }
+
+      osc.start(startTime);
+      osc.stop(startTime + duration + 0.1);
+    });
+
+    filter.connect(gain);
+    gain.connect(this.master);
+  }
+
+  private playPatchNoise(
+    startTime: number,
+    duration: number,
+    volume = 0.5,
+    drumType: "kick" | "snare" | "hihat" = "kick",
+    kitId: MusicEditorKitId = "electronic-808",
+  ) {
+    if (!this.ctx || !this.master) return;
+    const kit = KITS[kitId] || KITS["electronic-808"];
+    const bufferSize = this.ctx.sampleRate * Math.min(duration, 2); // Cap buffer size
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i += 1) data[i] = Math.random() * 2 - 1;
+
+    const source = this.ctx.createBufferSource();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+    source.buffer = buffer;
+
+    if (drumType === "kick") {
+      filter.type = kit.kickType;
+      filter.frequency.setValueAtTime(kit.kick, startTime);
+      filter.Q.setValueAtTime(10, startTime);
+    } else if (drumType === "snare") {
+      filter.type = kit.snareType;
+      filter.frequency.setValueAtTime(kit.snare, startTime);
+    } else {
+      filter.type = "highpass";
+      filter.frequency.setValueAtTime(kit.hihat, startTime);
+    }
+
+    gain.gain.setValueAtTime(volume, startTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    source.start(startTime);
+    source.stop(startTime + duration);
   }
 
   private playTone(
