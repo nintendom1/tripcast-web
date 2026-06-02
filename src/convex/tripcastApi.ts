@@ -894,14 +894,22 @@ export type TransactionCategory =
 
 export type TransactionVisibility = "public" | "summary_only" | "private";
 
+export type TravelFundsBudgetMode = "trip" | "daily";
+
+export type TravelFundsCarryoverMode = "none" | "overspend_only";
+
 export type TravelFundsConfigForTraveler =
   | { enabled: false }
   | {
       enabled: true;
       startingBudgetUsd: number;
+      budgetMode: TravelFundsBudgetMode;
+      carryoverMode: TravelFundsCarryoverMode;
+      fundsStartAt?: number;
       budgetLabel?: string;
       remainingUsd: number;
       spentUsd: number;
+      carryoverDebtUsd: number;
     };
 
 export type TravelFundsSummaryForFollower =
@@ -909,9 +917,13 @@ export type TravelFundsSummaryForFollower =
   | {
       enabled: true;
       startingBudgetUsd: number;
+      budgetMode: TravelFundsBudgetMode;
+      carryoverMode: TravelFundsCarryoverMode;
+      fundsStartAt?: number;
       budgetLabel?: string;
       remainingUsd: number;
       spentUsd: number;
+      carryoverDebtUsd: number;
     };
 
 export type Transaction = {
@@ -1003,6 +1015,9 @@ export type UpdateTravelFundsConfigArgs = {
   token: string;
   featureEnabled?: boolean;
   startingBudgetUsd?: number;
+  budgetMode?: TravelFundsBudgetMode;
+  carryoverMode?: TravelFundsCarryoverMode;
+  fundsStartAt?: number;
   budgetLabel?: string;
 };
 
@@ -2297,7 +2312,7 @@ export const tripcastApi = {
     travelerGetConfig: (anyApi as any).travelFunds.travelerGetConfig as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; currentLocalDayStart?: number },
       TravelFundsConfigForTraveler
     >,
     travelerUpdateConfig: (anyApi as any).travelFunds.travelerUpdateConfig as FunctionReference<
@@ -2333,7 +2348,7 @@ export const tripcastApi = {
     followerGetFundsSummary: (anyApi as any).travelFunds.followerGetFundsSummary as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; currentLocalDayStart?: number },
       TravelFundsSummaryForFollower
     >,
     followerListVisibleTransactions: (anyApi as any).travelFunds.followerListVisibleTransactions as FunctionReference<

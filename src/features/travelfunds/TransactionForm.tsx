@@ -64,6 +64,21 @@ function defaultCategory(): TransactionCategory {
   return "other";
 }
 
+function formatDateTimeInput(timestamp: number) {
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function parseDateTimeInput(value: string) {
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 export default function TransactionForm({
   token,
   mode,
@@ -101,6 +116,9 @@ export default function TransactionForm({
   );
   const [visibility, setVisibility] = useState<TransactionVisibility>(
     initial?.visibility ?? "public",
+  );
+  const [occurredAtInput, setOccurredAtInput] = useState<string>(() =>
+    formatDateTimeInput(initial?.occurredAt ?? Date.now()),
   );
   const [linkToActivity, setLinkToActivity] = useState<boolean>(
     mode === "add"
@@ -183,6 +201,15 @@ export default function TransactionForm({
       setError("Public transactions must count toward the meter.");
       return;
     }
+    const occurredAt = parseDateTimeInput(occurredAtInput);
+    if (occurredAt === null) {
+      setError("Happened at must be a valid date and time.");
+      return;
+    }
+    if (occurredAt > Date.now()) {
+      setError("Happened at cannot be in the future.");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const values: TransactionFormValues = {
@@ -199,6 +226,7 @@ export default function TransactionForm({
         ...(mode === "add" && prefillCheckpointId
           ? { linkedCheckpointId: prefillCheckpointId }
           : {}),
+        occurredAt,
       };
       log.logFunds("transaction:submit", {
         mode,
@@ -358,6 +386,18 @@ export default function TransactionForm({
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label className={labelClass} htmlFor="tx-occurred-at">Happened at</label>
+        <Input
+          id="tx-occurred-at"
+          type="datetime-local"
+          value={occurredAtInput}
+          onChange={(e) => setOccurredAtInput(e.target.value)}
+          max={formatDateTimeInput(Date.now())}
+          step={60}
+        />
       </div>
 
       <div className="flex flex-col gap-1">

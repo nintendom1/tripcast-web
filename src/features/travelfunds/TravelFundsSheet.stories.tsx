@@ -19,9 +19,24 @@ type Story = StoryObj<typeof meta>;
 const mockConfig = {
   enabled: true,
   startingBudgetUsd: 2000,
+  budgetMode: "trip",
+  carryoverMode: "none",
   remainingUsd: 1250.5,
   spentUsd: 749.5,
+  carryoverDebtUsd: 0,
   budgetLabel: "Summer Eurotrip",
+};
+
+const mockDailyConfig = {
+  enabled: true,
+  startingBudgetUsd: 125,
+  budgetMode: "daily",
+  carryoverMode: "overspend_only",
+  fundsStartAt: new Date().setHours(0, 0, 0, 0) - 86400000 * 3,
+  remainingUsd: 72.25,
+  spentUsd: 27.75,
+  carryoverDebtUsd: 25,
+  budgetLabel: "Japan daily fund",
 };
 
 const mockTransactions = [
@@ -92,6 +107,22 @@ export const OverBudget: Story = {
             spentUsd: 2150.25,
           },
         },
+        { query: tripcastApi.travelFunds.travelerListTransactions, result: mockTransactions },
+      ],
+    },
+  },
+};
+
+/** @tag ai-generated */
+export const DailyCarryover: Story = {
+  args: {
+    token: "mock-token",
+    onClose: () => {},
+  },
+  parameters: {
+    convexMocks: {
+      queries: [
+        { query: tripcastApi.travelFunds.travelerGetConfig, result: mockDailyConfig },
         { query: tripcastApi.travelFunds.travelerListTransactions, result: mockTransactions },
       ],
     },
