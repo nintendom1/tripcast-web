@@ -10,7 +10,7 @@ vi.mock("convex/react", () => ({
 }));
 
 // The sheet calls useQuery twice: travelerExportTripData (args include
-// includeMysteryMissions) and travelerExportTickerFacts (args has only token).
+// includeMysteryMissions) and travelerExportTickerMessages (args has only token).
 // Discriminate by args shape so test ordering is robust to re-renders.
 function mockQueries(tripData: unknown, tickerData: unknown) {
   (useQuery as any).mockImplementation((_ref: unknown, args: any) => {
@@ -64,6 +64,7 @@ describe("BulkExportSheet", () => {
   const tickerData = {
     entries: [
       { kind: "ticker_fact", ref: "ticker_fact:abc", text: "Did you know?" },
+      { kind: "ticker_tip", ref: "ticker_tip:def", text: "Pack a battery." },
     ],
   };
 
@@ -129,20 +130,20 @@ describe("BulkExportSheet", () => {
     createElement.mockRestore();
   });
 
-  it("renders the ticker card with fact count and an enabled download", async () => {
+  it("renders the ticker card with item count and an enabled download", async () => {
     mockQueries(mockData, tickerData);
     render(<BulkExportSheet open={true} token={token} onOpenChange={() => {}} />);
 
-    expect(screen.getByText(/1 fun fact ready for export/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 ticker items ready for export/i)).toBeInTheDocument();
     const downloadButtons = screen.getAllByRole("button", { name: /Download .json/i });
     expect(downloadButtons[1]).not.toBeDisabled();
   });
 
-  it("disables ticker actions when no fun facts exist", () => {
+  it("disables ticker actions when no ticker items exist", () => {
     mockQueries(mockData, { entries: [] });
     render(<BulkExportSheet open={true} token={token} onOpenChange={() => {}} />);
 
-    expect(screen.getByText(/0 fun facts ready for export/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 ticker items ready for export/i)).toBeInTheDocument();
     const copyButtons = screen.getAllByRole("button", { name: /Copy JSON/i });
     const downloadButtons = screen.getAllByRole("button", { name: /Download .json/i });
     expect(copyButtons[1]).toBeDisabled();

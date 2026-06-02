@@ -13,6 +13,34 @@ export interface TripTickerProps {
 
 const PX_PER_SECOND = 70;
 
+function tickerLabel(message: TickerMessage, isPriority: boolean) {
+  if (isPriority) return "NOTICE";
+  if (message.kind === "tip") return "TIP";
+  return "TRIVIA";
+}
+
+function tickerTone(message: TickerMessage, isPriority: boolean) {
+  if (isPriority) {
+    return {
+      strip: "bg-amber-50/80 dark:bg-amber-950/40",
+      label: "bg-amber-500 text-white",
+      text: "text-amber-800 dark:text-amber-300",
+    };
+  }
+  if (message.kind === "tip") {
+    return {
+      strip: "bg-emerald-50/80 dark:bg-emerald-950/35",
+      label: "bg-emerald-600 text-white",
+      text: "text-emerald-900 dark:text-emerald-200",
+    };
+  }
+  return {
+    strip: "bg-[var(--bg-paper-2)]/50",
+    label: "bg-[var(--ink-3)] text-[var(--bg-paper)]",
+    text: "text-[var(--ink-2)]",
+  };
+}
+
 export function TripTicker({
   message,
   isPriority = false,
@@ -95,14 +123,15 @@ export function TripTicker({
     );
   }
 
+  const tone = tickerTone(message, isPriority);
+  const label = tickerLabel(message, isPriority);
+
   return (
     <div
       ref={containerRef}
       className={cn(
         "relative flex h-[22px] items-center overflow-hidden bg-[var(--bg-paper)] z-[1]",
-        isPriority
-          ? "bg-amber-50/80 dark:bg-amber-950/40"
-          : "bg-[var(--bg-paper-2)]/50",
+        tone.strip,
         className,
       )}
       onMouseEnter={() => setIsPaused(true)}
@@ -115,13 +144,11 @@ export function TripTicker({
       <div
         className={cn(
           "absolute left-0 top-0 bottom-0 z-[2] flex items-center px-2 shadow-[4px_0_8px_rgba(0,0,0,0.05)]",
-          isPriority
-            ? "bg-amber-500 text-white"
-            : "bg-[var(--ink-3)] text-[var(--bg-paper)]",
+          tone.label,
         )}
       >
         <span className="font-[var(--font-mono)] text-[10px] font-black uppercase tracking-tighter leading-none">
-          {isPriority ? "NOTICE" : "TRIVIA"}
+          {label}
         </span>
       </div>
 
@@ -130,7 +157,7 @@ export function TripTicker({
           <div
             className={cn(
               "px-4 text-[14px] font-bold tracking-wide leading-[18px]",
-              isPriority ? "text-amber-800 dark:text-amber-300" : "text-[var(--ink-2)]",
+              tone.text,
             )}
           >
             {message.text}
@@ -142,7 +169,7 @@ export function TripTicker({
             style={{ x }}
             className={cn(
               "whitespace-nowrap pr-8 text-[14px] font-bold tracking-wide leading-[18px]",
-              isPriority ? "text-amber-800 dark:text-amber-300" : "text-[var(--ink-2)]",
+              tone.text,
             )}
           >
             {message.text}

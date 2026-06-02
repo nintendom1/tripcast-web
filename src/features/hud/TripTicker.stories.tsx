@@ -32,7 +32,14 @@ export const PriorityMessage: Story = {
 
 export const FunFact: Story = {
   args: {
-    message: { id: "2", text: "🇯🇵 This is Joshua’s third trip to Japan." },
+    message: { id: "2", text: "🇯🇵 This is Joshua’s third trip to Japan.", kind: "fact" },
+    isPriority: false,
+  },
+};
+
+export const Tip: Story = {
+  args: {
+    message: { id: "tip-1", text: "Pack a small battery before the next long transfer.", kind: "tip" },
     isPriority: false,
   },
 };
@@ -41,7 +48,8 @@ export const LongMessage: Story = {
   args: {
     message: {
       id: "3",
-      text: "🚀 Did you know that the TripCast prototype was originally designed to work entirely offline using local-only caches and opportunistic sync? 📱"
+      text: "🚀 Did you know that the TripCast prototype was originally designed to work entirely offline using local-only caches and opportunistic sync? 📱",
+      kind: "fact",
     },
     isPriority: false,
   },
@@ -59,7 +67,7 @@ export const ConstellationTheme: Story = {
 
 export const MobileViewport: Story = {
   args: {
-    message: { id: "5", text: "📱 Mobile view ticker message" },
+    message: { id: "5", text: "📱 Mobile view ticker message", kind: "tip" },
     isPriority: false,
   },
   parameters: {
