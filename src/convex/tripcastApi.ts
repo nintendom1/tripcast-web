@@ -754,6 +754,8 @@ export type TravelerPreferences = {
   sleepStaleThresholdMs: number;
   followerContentCutoffAt?: number;
   followerContentCutoffEnabled: boolean;
+  themeDayStartMinutes?: number;
+  themeNightStartMinutes?: number;
   updatedAt: number | null;
 };
 
@@ -764,6 +766,8 @@ export type TravelerPreferencesForFollower =
       travelerTimeZone?: string;
       allowFollowersTripPath: boolean;
       followerContentCutoffAt?: number;
+      themeDayStartMinutes?: number;
+      themeNightStartMinutes?: number;
     };
 
 export type OldestContentRef = {
@@ -1956,6 +1960,8 @@ export const tripcastApi = {
         allowFollowersTripPath?: boolean;
         followerContentCutoffAt?: number | null;
         followerContentCutoffEnabled?: boolean;
+        themeDayStartMinutes?: number | null;
+        themeNightStartMinutes?: number | null;
       },
       null
     >,
