@@ -148,7 +148,10 @@ type StoryDetailSheetProps = {
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
   /** Enter map coordinate-pick mode; receives a callback invoked with the picked coord. */
-  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  onRequestCoordinatePick?: (
+    callback: (coord: { lat: number; lon: number }) => void,
+    options?: { initialCoord?: { lat: number; lon: number } | null },
+  ) => void;
   /** True while a map coordinate pick is in progress — hides the sheet so the map is tappable. */
   isPickingCoordinate?: boolean;
   navigation?: {
