@@ -128,7 +128,6 @@ function ConnectedApp() {
   const [preserveDebugContext, setPreserveDebugContext] = useState(false);
   const [view, setView] = useState<"map" | "follower-management">("map");
   const music = useMusicSafe();
-  const { currentMessage, isPriority, onFunFactComplete } = useTicker(session?.token);
   const [isIntroReplayOpen, setIsIntroReplayOpen] = useState(false);
   const [isCreateAccountIntroOpen, setIsCreateAccountIntroOpen] = useState(false);
   const [locationResetNonce, setLocationResetNonce] = useState(0);
@@ -181,10 +180,13 @@ function ConnectedApp() {
 
   const activeSessionCheck =
     session?.sessionType === "follower" ? followerSessionCheck : legacySessionCheck;
+  const verifiedSessionToken =
+    session !== null && activeSessionCheck ? session.token : undefined;
+  const { currentMessage, isPriority, onFunFactComplete } = useTicker(verifiedSessionToken);
 
   const credits = useQuery(
     tripcastApi.endTrip.getTripCredits,
-    session !== null && activeSessionCheck ? { token: session.token } : "skip",
+    verifiedSessionToken ? { token: verifiedSessionToken } : "skip",
   );
 
   const signOutMutation = useMutation(tripcastApi.auth.signOut);

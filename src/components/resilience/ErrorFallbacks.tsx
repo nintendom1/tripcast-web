@@ -1,7 +1,9 @@
 import * as React from "react";
+import { LogOut } from "lucide-react";
 import type { FallbackProps } from "react-error-boundary";
 
 import { Button } from "../ui/button";
+import { clearStoredSession } from "../../lib/auth";
 import { useMusicSafe } from "@/providers/MusicProvider";
 
 type FullScreenErrorFallbackProps = FallbackProps & {
@@ -15,6 +17,11 @@ export function FullScreenErrorFallback({
   message = "Try again, or reload the app if the problem keeps happening.",
 }: FullScreenErrorFallbackProps) {
   const music = useMusicSafe();
+
+  function handleLogOut() {
+    clearStoredSession();
+    window.location.reload();
+  }
 
   // Soft "bubble pop" earcon, then duck the soundtrack while this full-screen
   // fallback is shown. The pop is dispatched BEFORE suppression so its attack
@@ -33,7 +40,11 @@ export function FullScreenErrorFallback({
           <h1 className="text-lg font-semibold text-[var(--ink-1)]">{title}</h1>
           <p className="text-sm text-[var(--ink-3)]">{message}</p>
         </div>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button type="button" variant="outline" onClick={handleLogOut}>
+            <LogOut className="h-4 w-4" aria-hidden="true" />
+            Log out
+          </Button>
           <Button type="button" variant="outline" onClick={resetErrorBoundary}>
             Retry
           </Button>
