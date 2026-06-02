@@ -117,11 +117,18 @@ describe("resolveAutoTheme", () => {
     expect(result.timeZone).toBe("Asia/Tokyo");
   });
 
-  it("uses the cached tz with fallback window when snapshot is still loading (step 2)", () => {
-    const result = resolveAutoTheme(undefined, "Asia/Tokyo", REFERENCE_NOW);
+  it("prefers the device tz over the cached tz when snapshot is still loading (step 2)", () => {
+    // Device says Tokyo (00:00 → night), cache says UTC (15:00 → day). Device wins.
+    const result = resolveAutoTheme(undefined, "UTC", REFERENCE_NOW, "Asia/Tokyo");
+    expect(result.source).toBe("device-loading");
+    expect(result.timeZone).toBe("Asia/Tokyo");
+    expect(result.theme).toBe("constellation");
+  });
+
+  it("falls back to cached tz when device tz is unavailable during loading (step 2)", () => {
+    const result = resolveAutoTheme(undefined, "Asia/Tokyo", REFERENCE_NOW, null);
     expect(result.source).toBe("cached-traveler");
     expect(result.timeZone).toBe("Asia/Tokyo");
-    // Tokyo 00:00 with fallback [21:00, 06:00) → night.
     expect(result.theme).toBe("constellation");
   });
 
