@@ -44,6 +44,10 @@ export default function AuthScreen({ onSignIn, onBack }: AuthScreenProps) {
         code: code.trim(),
         clientId: getClientId(),
       });
+      if (!result.ok) {
+        setError("Incorrect code. Please try again.");
+        return;
+      }
       onSignIn({ token: result.token, role: result.role });
     } catch (err) {
       setError(friendlyError(err));

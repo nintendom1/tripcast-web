@@ -1307,8 +1307,8 @@ export const tripcastApi = {
     signIn: (anyApi as any).auth.signIn as FunctionReference<
       "mutation",
       "public",
-      { role: Role; code: string; clientId: string },
-      { token: string; role: Role }
+      { role: "traveler"; code: string; clientId: string },
+      { ok: true; token: string; role: "traveler" } | { ok: false; error: "invalid_code" }
     >,
     currentSession: (anyApi as any).auth.currentSession as FunctionReference<
       "query",
