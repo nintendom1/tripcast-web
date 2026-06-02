@@ -79,8 +79,8 @@ describe("resolveAutoTheme", () => {
   });
 
   it("ignores autoState bedtime/wake and uses system defaults when theme window is unset (step 1)", () => {
-    // 14:45 UTC is 07:45 AM PDT (UTC-7). 
-    // Default day start is 06:00 AM. 
+    // 14:45 UTC is 07:45 AM PDT (UTC-7).
+    // Default day start is 06:00 AM.
     // Even if auto wake is 09:00 AM, it should be MEADOW at 07:45 AM.
     const TIME_745_LA = Date.UTC(2026, 5, 1, 14, 45, 0);
 

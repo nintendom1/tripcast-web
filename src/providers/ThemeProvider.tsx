@@ -235,13 +235,11 @@ type ResolvedAutoTheme = {
   phase: "night" | "wake" | "daytime" | null;
 };
 
-// Pick the day/night window: explicit theme window wins; otherwise autoState
-// bedtime/wake when both are provided; otherwise the hardcoded fallback.
+// Pick the day/night window: explicit theme window wins; otherwise use the
+// hardcoded project fallback. Auto State bedtime/wake models sleep, not theme.
 function pickThemeWindow(
   themeDay: number | null,
   themeNight: number | null,
-  autoBedtime: number | null,
-  autoWake: number | null,
 ): { nightStart: number; dayStart: number; windowSource: "theme" | "fallback" } {
   if (themeDay != null && themeNight != null && themeDay !== themeNight) {
     return { nightStart: themeNight, dayStart: themeDay, windowSource: "theme" };
@@ -266,8 +264,6 @@ export function resolveAutoTheme(
       const { nightStart, dayStart, windowSource } = pickThemeWindow(
         snapshot.themeDayStartMinutes,
         snapshot.themeNightStartMinutes,
-        snapshot.autoBedtimeMinutes,
-        snapshot.autoWakeTimeMinutes,
       );
       // getPhaseAtMinute returns "night" / "wake" / "daytime"; the wake band is
       // the first 60 min after dayStart and reads as daytime for theme.
@@ -298,8 +294,6 @@ export function resolveAutoTheme(
       const { nightStart, dayStart, windowSource } = pickThemeWindow(
         snapshot.themeDayStartMinutes,
         snapshot.themeNightStartMinutes,
-        null,
-        null,
       );
       const phase = getPhaseAtMinute(minute, nightStart, dayStart);
       return {
