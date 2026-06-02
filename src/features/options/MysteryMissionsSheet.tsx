@@ -36,6 +36,9 @@ const SAMPLE_JSON = `{
   ]
 }`;
 
+const MIN_REVEAL_INTERVAL_HOURS = 0;
+const MAX_REVEAL_INTERVAL_HOURS = 168;
+
 const SCHEMA_REFERENCE = `TripCast Mystery Mission Pack JSON
 
 Required root shape:
@@ -107,6 +110,9 @@ export default function MysteryMissionsSheet({
       return false;
     }
   });
+  const [revealIntervalInput, setRevealIntervalInput] = useState("4");
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsWorking, setSettingsWorking] = useState(false);
   const [editingMissionId, setEditingMissionId] = useState<string | null>(null);
   const [deleteMissionId, setDeleteMissionId] = useState<string | null>(null);
   const log = useDebugLogger("MysteryMissionsSheet", "src/features/options/MysteryMissionsSheet.tsx");
@@ -152,6 +158,7 @@ export default function MysteryMissionsSheet({
   const deleteMission = useMutation(tripcastApi.mysteryMissions.travelerDeleteMysteryMission);
 
   const enabled = settings?.enabled ?? false;
+  const revealIntervalHours = settings?.revealIntervalHours ?? 4;
   const counts = management?.counts;
   const managementRows = management?.rows ?? [];
   const exportText = useMemo(
@@ -180,6 +187,35 @@ export default function MysteryMissionsSheet({
       // Ignore storage failures; the sheet state still reflects the click.
     }
     log.logUi("action:debug-show-all-pins", { enabled });
+  }
+
+  useEffect(() => {
+    if (settings?.revealIntervalHours !== undefined) {
+      setRevealIntervalInput(String(settings.revealIntervalHours));
+    }
+  }, [settings?.revealIntervalHours]);
+
+  async function saveSettings(nextEnabled = enabled) {
+    const parsed = Number(revealIntervalInput);
+    if (
+      !Number.isInteger(parsed) ||
+      parsed < MIN_REVEAL_INTERVAL_HOURS ||
+      parsed > MAX_REVEAL_INTERVAL_HOURS
+    ) {
+      setSettingsError("Reveal interval must be an integer from 0 to 168 hours.");
+      return;
+    }
+    setSettingsWorking(true);
+    setSettingsError(null);
+    try {
+      await setEnabled({ token, enabled: nextEnabled, revealIntervalHours: parsed });
+      log.logUi("action:save-settings", { enabled: nextEnabled, revealIntervalHours: parsed });
+      music.sfx("success");
+    } catch (error) {
+      setSettingsError(errorText(error));
+    } finally {
+      setSettingsWorking(false);
+    }
   }
 
   function openEdit(row: MysteryMissionExportRow) {
@@ -276,12 +312,37 @@ export default function MysteryMissionsSheet({
                 checked={enabled}
                 onChange={(event) => {
                   log.logUi("action:toggle-enabled", { enabled: event.target.checked });
-                  void setEnabled({ token, enabled: event.target.checked });
+                  void saveSettings(event.target.checked);
                 }}
                 className="h-5 w-5"
                 style={{ accentColor: "var(--ink-1)" }}
               />
             </label>
+
+            <div className="grid gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3">
+              <label className="grid gap-1 text-sm font-semibold">
+                Reveal interval hours
+                <input
+                  type="number"
+                  min={MIN_REVEAL_INTERVAL_HOURS}
+                  max={MAX_REVEAL_INTERVAL_HOURS}
+                  step={1}
+                  value={revealIntervalInput}
+                  onChange={(event) => setRevealIntervalInput(event.target.value)}
+                  onBlur={() => {
+                    if (revealIntervalInput.trim() === "") {
+                      setRevealIntervalInput(String(revealIntervalHours));
+                    }
+                  }}
+                  className="h-10 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 text-sm font-semibold text-[var(--ink-1)] outline-none focus:border-[var(--ink-1)] focus:ring-1 focus:ring-[var(--ink-1)]"
+                />
+              </label>
+              <p className="text-xs text-[var(--ink-3)]">Use 0 to show all eligible nearby signals.</p>
+              {settingsError ? <p role="alert" className="text-sm text-[var(--ink-danger)]">{settingsError}</p> : null}
+              <Button type="button" size="sm" disabled={settingsWorking} onClick={() => saveSettings()}>
+                {settingsWorking ? "Saving..." : "Save interval"}
+              </Button>
+            </div>
 
             {counts ? (
               <div className="grid grid-cols-5 gap-2">

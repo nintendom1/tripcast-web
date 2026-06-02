@@ -359,6 +359,8 @@ export type MysteryMissionFeedItem = {
   timeSensitive?: boolean;
   completedAt?: number;
   dismissedAt?: number;
+  signalRevealedAt?: number;
+  debugOnly?: boolean;
   linkedCheckpointId?: string;
   linkedMissionId?: string;
   distanceMiles?: number;
@@ -421,12 +423,13 @@ export type MysteryMissionExportRow = {
   timeSensitive?: boolean;
   completedAt?: number;
   dismissedAt?: number;
+  signalRevealedAt?: number;
   linkedCheckpointId?: string;
   linkedMissionId?: string;
 };
 
 export type MysteryMissionManagementList = {
-  settings: { enabled: boolean };
+  settings: { enabled: boolean; revealIntervalHours: number };
   counts: {
     total: number;
     signal: number;
@@ -1756,12 +1759,12 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string },
-      { enabled: boolean; updatedAt: number | null }
+      { enabled: boolean; revealIntervalHours: number; updatedAt: number | null }
     >,
     travelerSetMysteryMissionsEnabled: (anyApi as any).mysteryMissions.travelerSetMysteryMissionsEnabled as FunctionReference<
       "mutation",
       "public",
-      { token: string; enabled: boolean },
+      { token: string; enabled: boolean; revealIntervalHours?: number },
       null
     >,
     previewMysteryMissionImport: (anyApi as any).mysteryMissions.previewMysteryMissionImport as FunctionReference<

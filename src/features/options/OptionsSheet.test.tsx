@@ -155,6 +155,7 @@ function setupMocks({
   setLiveTrailEnabledFn = vi.fn().mockResolvedValue(null),
   setLiveTrailVisibilityFn = vi.fn().mockResolvedValue(null),
   deleteLiveTrailRangeFn = vi.fn().mockResolvedValue({ deleted: 0 }),
+  setMysterySettingsFn = vi.fn().mockResolvedValue(null),
 }: {
   travelerTimeZone?: string | null;
   allowFollowersTripPath?: boolean;
@@ -187,6 +188,7 @@ function setupMocks({
   setLiveTrailEnabledFn?: ReturnType<typeof vi.fn>;
   setLiveTrailVisibilityFn?: ReturnType<typeof vi.fn>;
   deleteLiveTrailRangeFn?: ReturnType<typeof vi.fn>;
+  setMysterySettingsFn?: ReturnType<typeof vi.fn>;
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
     if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
@@ -207,6 +209,19 @@ function setupMocks({
     if (ref === tripcastApi.liveTrail.travelerPreviewLiveTrailDeleteRange) {
       return liveTrailPreview;
     }
+    if (ref === tripcastApi.mysteryMissions.travelerGetMysteryMissionSettings) {
+      return { enabled: true, revealIntervalHours: 4, updatedAt: null };
+    }
+    if (ref === tripcastApi.mysteryMissions.travelerListMysteryMissions) {
+      return {
+        settings: { enabled: true, revealIntervalHours: 4 },
+        counts: { total: 0, signal: 0, dormant: 0, completed: 0, dismissed: 0 },
+        rows: [],
+      };
+    }
+    if (ref === tripcastApi.mysteryMissions.travelerExportMysteryMissions) {
+      return { version: 1, exportedAt: 0, missions: [] };
+    }
     return undefined;
   });
 
@@ -226,6 +241,9 @@ function setupMocks({
     if (ref === tripcastApi.liveTrail.travelerDeleteLiveTrailRange) {
       return deleteLiveTrailRangeFn as any;
     }
+    if (ref === tripcastApi.mysteryMissions.travelerSetMysteryMissionsEnabled) {
+      return setMysterySettingsFn as any;
+    }
     return vi.fn().mockResolvedValue(null) as any;
   });
 
@@ -235,6 +253,7 @@ function setupMocks({
     setLiveTrailEnabledFn,
     setLiveTrailVisibilityFn,
     deleteLiveTrailRangeFn,
+    setMysterySettingsFn,
   };
 }
 
@@ -543,6 +562,41 @@ describe("OptionsSheet Live Trail settings", () => {
     renderOptions({ session: followerSession, role: "follower" });
 
     expect(screen.queryByRole("button", { name: /Live Trail/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("OptionsSheet Mystery Mission settings", () => {
+  it("saves the Traveler reveal interval hours", async () => {
+    const { setMysterySettingsFn } = setupMocks();
+    renderOptions();
+
+    await userEvent.click(screen.getByRole("button", { name: /Mystery Missions/i }));
+    const input = await screen.findByLabelText(/Reveal interval hours/i);
+    await userEvent.clear(input);
+    await userEvent.type(input, "6");
+    await userEvent.click(screen.getByRole("button", { name: /Save interval/i }));
+
+    await waitFor(() => {
+      expect(setMysterySettingsFn).toHaveBeenCalledWith({
+        token: "test-token",
+        enabled: true,
+        revealIntervalHours: 6,
+      });
+    });
+  });
+
+  it("rejects reveal intervals outside the allowed range before saving", async () => {
+    const { setMysterySettingsFn } = setupMocks();
+    renderOptions();
+
+    await userEvent.click(screen.getByRole("button", { name: /Mystery Missions/i }));
+    const input = await screen.findByLabelText(/Reveal interval hours/i);
+    await userEvent.clear(input);
+    await userEvent.type(input, "169");
+    await userEvent.click(screen.getByRole("button", { name: /Save interval/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/0 to 168 hours/i);
+    expect(setMysterySettingsFn).not.toHaveBeenCalled();
   });
 });
 
