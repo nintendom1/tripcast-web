@@ -1059,23 +1059,29 @@ export type CloakingPin = {
 export type TickerMessage = {
   id: string;
   text: string;
+  kind?: "alert" | "fact" | "tip";
 };
 
 export type TickerSettings = {
   enabled: boolean;
   priorityMessages: TickerMessage[];
   funFacts: TickerMessage[];
+  tips: TickerMessage[];
   funFactsEnabled: boolean;
+  tipsEnabled: boolean;
   funFactIntervalMinutes: number;
+  funFactWeight: number;
+  tipWeight: number;
   showPriorityToFollowers: boolean;
   showFunFactsToFollowers: boolean;
+  showTipsToFollowers: boolean;
 };
 
 // ---------------------------------------------------------------------------
 // Bulk Import types
 // ---------------------------------------------------------------------------
 
-export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote" | "mystery_mission" | "ticker_fact";
+export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote" | "mystery_mission" | "ticker_fact" | "ticker_tip";
 export type BulkImportTimestamp = number | string;
 
 export type BulkImportRouteVoteOption = {
@@ -1197,6 +1203,13 @@ export type BulkImportEntry =
       text?: string;
       fact?: string;
       title?: string;
+    }
+  | {
+      kind: "ticker_tip" | "tip";
+      ref?: string;
+      text?: string;
+      tip?: string;
+      title?: string;
     };
 
 export type BulkImportPayload =
@@ -1213,6 +1226,7 @@ export type BulkImportCounts = {
   routeVotes: number;
   mysteryMissions: number;
   tickerFacts: number;
+  tickerTips: number;
 };
 
 export type BulkImportPreviewError = {
@@ -1252,6 +1266,16 @@ export type TickerFactExportEntry = {
 
 export type TickerFactExport = {
   entries: TickerFactExportEntry[];
+};
+
+export type TickerExportEntry = {
+  kind: "ticker_fact" | "ticker_tip";
+  ref: string;
+  text: string;
+};
+
+export type TickerExport = {
+  entries: TickerExportEntry[];
 };
 
 // ---------------------------------------------------------------------------
@@ -1331,6 +1355,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       TickerFactExport
+    >,
+    travelerExportTickerMessages: (anyApi as any).bulkImport.travelerExportTickerMessages as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TickerExport
     >,
   },
   auth: {
@@ -2413,16 +2443,20 @@ export const tripcastApi = {
         token: string;
         enabled?: boolean;
         funFactsEnabled?: boolean;
+        tipsEnabled?: boolean;
         funFactIntervalMinutes?: number;
+        funFactWeight?: number;
+        tipWeight?: number;
         showPriorityToFollowers?: boolean;
         showFunFactsToFollowers?: boolean;
+        showTipsToFollowers?: boolean;
       },
       null
     >,
     addTickerMessage: (anyApi as any).ticker.addTickerMessage as FunctionReference<
       "mutation",
       "public",
-      { token: string; type: "priority" | "fact"; text: string },
+      { token: string; type: "priority" | "fact" | "tip"; text: string },
       string
     >,
     removeTickerMessage: (anyApi as any).ticker.removeTickerMessage as FunctionReference<

@@ -10,6 +10,41 @@ import { log as debugLog } from "../../debug/debugLogger";
 
 const LAST_FUN_FACT_STORAGE_KEY = "tripcast.ticker_last_fun_fact_at";
 
+function normalizeSettings(settings: Partial<TickerSettings> | null | undefined, lastFunFactAt: number): TickerSettings {
+  return {
+    ...DEFAULT_TICKER_SETTINGS,
+    ...settings,
+    tips: settings?.tips ?? DEFAULT_TICKER_SETTINGS.tips,
+    tipsEnabled: settings?.tipsEnabled ?? DEFAULT_TICKER_SETTINGS.tipsEnabled,
+    funFactWeight: settings?.funFactWeight ?? DEFAULT_TICKER_SETTINGS.funFactWeight,
+    tipWeight: settings?.tipWeight ?? DEFAULT_TICKER_SETTINGS.tipWeight,
+    showPriorityToFollowers: settings?.showPriorityToFollowers ?? DEFAULT_TICKER_SETTINGS.showPriorityToFollowers,
+    showFunFactsToFollowers: settings?.showFunFactsToFollowers ?? DEFAULT_TICKER_SETTINGS.showFunFactsToFollowers,
+    showTipsToFollowers: settings?.showTipsToFollowers ?? DEFAULT_TICKER_SETTINGS.showTipsToFollowers,
+    lastFunFactAt,
+  };
+}
+
+function chooseNonAlertMessage(settings: TickerSettings): TickerMessage | null {
+  const pools: Array<{ weight: number; messages: TickerMessage[]; kind: "fact" | "tip" }> = [];
+  if (settings.funFactsEnabled && settings.funFactWeight > 0 && settings.funFacts.length > 0) {
+    pools.push({ weight: settings.funFactWeight, messages: settings.funFacts, kind: "fact" });
+  }
+  if (settings.tipsEnabled && settings.tipWeight > 0 && settings.tips.length > 0) {
+    pools.push({ weight: settings.tipWeight, messages: settings.tips, kind: "tip" });
+  }
+  const totalWeight = pools.reduce((sum, pool) => sum + pool.weight, 0);
+  if (totalWeight <= 0) return null;
+
+  let cursor = Math.random() * totalWeight;
+  const selectedPool = pools.find((pool) => {
+    cursor -= pool.weight;
+    return cursor < 0;
+  }) ?? pools[pools.length - 1];
+  const selectedMessage = selectedPool.messages[Math.floor(Math.random() * selectedPool.messages.length)];
+  return { ...selectedMessage, kind: selectedPool.kind };
+}
+
 export function useTicker(token?: string) {
   const remoteSettings = useQuery(tripcastApi.ticker.getTickerSettings, token ? { token } : "skip");
   const updateRemoteSettings = useMutation(tripcastApi.ticker.updateTickerSettings);
@@ -37,11 +72,7 @@ export function useTicker(token?: string) {
   }, []);
 
   const settings: TickerSettings = useMemo(() => {
-    if (!remoteSettings) return DEFAULT_TICKER_SETTINGS;
-    return {
-      ...remoteSettings,
-      lastFunFactAt // Local to this session
-    };
+    return normalizeSettings(remoteSettings, lastFunFactAt);
   }, [remoteSettings, lastFunFactAt]);
 
   const [currentMessage, setCurrentMessage] = useState<TickerMessage | null>(null);
@@ -86,12 +117,31 @@ export function useTicker(token?: string) {
     }
   }, [token, addRemoteMessage]);
 
+  const addTip = useCallback(async (text: string) => {
+    if (!token) return;
+    try {
+      await addRemoteMessage({ token, type: "tip", text });
+      debugLog("info", "useTicker", "ticker:tip_added", "ui");
+    } catch (e) {
+      console.error("Failed to add tip", e);
+    }
+  }, [token, addRemoteMessage]);
+
   const removeFunFact = useCallback(async (id: string) => {
     if (!token) return;
     try {
       await removeRemoteMessage({ token, messageId: id });
     } catch (e) {
       console.error("Failed to remove fun fact", e);
+    }
+  }, [token, removeRemoteMessage]);
+
+  const removeTip = useCallback(async (id: string) => {
+    if (!token) return;
+    try {
+      await removeRemoteMessage({ token, messageId: id });
+    } catch (e) {
+      console.error("Failed to remove tip", e);
     }
   }, [token, removeRemoteMessage]);
 
@@ -111,39 +161,37 @@ export function useTicker(token?: string) {
     if (!settings.enabled || settings.priorityMessages.length === 0) return;
     setIsPriority(true);
     setCurrentMessage(prev => {
-      if (prev && settings.priorityMessages.find(m => m.id === prev.id)) return prev;
-      return settings.priorityMessages[0];
+      if (prev && settings.priorityMessages.find(m => m.id === prev.id)) return { ...prev, kind: "alert" };
+      return { ...settings.priorityMessages[0], kind: "alert" };
     });
     const id = setInterval(() => {
       setCurrentMessage(prev => {
         const i = prev ? settings.priorityMessages.findIndex(m => m.id === prev.id) : -1;
-        return settings.priorityMessages[(i + 1) % settings.priorityMessages.length];
+        return { ...settings.priorityMessages[(i + 1) % settings.priorityMessages.length], kind: "alert" };
       });
     }, 30000);
     return () => clearInterval(id);
   }, [settings.enabled, settings.priorityMessages]);
 
-  // Fun-fact scheduling: a single setTimeout fires `intervalMinutes` after the
-  // last fact ended. The effect re-runs when `lastFunFactAt` updates (via
-  // onFunFactComplete), and short-circuits while a fact is already playing so
-  // the timer doesn't overwrite it mid-scroll.
+  // Non-alert scheduling: fun facts and tips share one timer and use weights
+  // to decide which section owns the next open ticker slot.
   useEffect(() => {
     if (!settings.enabled) { setCurrentMessage(null); return; }
     if (settings.priorityMessages.length > 0) return; // priority effect owns the message
-    if (!settings.funFactsEnabled || settings.funFacts.length === 0) {
+    if (isPriority) {
+      setIsPriority(false);
       setCurrentMessage(null);
       return;
     }
     setIsPriority(false);
-    if (currentMessage) return; // don't interrupt a playing fact
+    if (currentMessage) return; // don't interrupt a playing non-alert item
     const intervalMs = settings.funFactIntervalMinutes * 60 * 1000;
     const waitMs = Math.max(0, intervalMs - (Date.now() - lastFunFactAt));
     const id = setTimeout(() => {
-      const nextIdx = Math.floor(Math.random() * settings.funFacts.length);
-      setCurrentMessage(settings.funFacts[nextIdx]);
+      setCurrentMessage(chooseNonAlertMessage(settings));
     }, waitMs);
     return () => clearTimeout(id);
-  }, [settings, lastFunFactAt, currentMessage]);
+  }, [settings, lastFunFactAt, currentMessage, isPriority]);
 
   const onFunFactComplete = useCallback(() => {
     if (!isPriority && currentMessage) {
@@ -166,6 +214,8 @@ export function useTicker(token?: string) {
     removePriorityMessage,
     addFunFact,
     removeFunFact,
+    addTip,
+    removeTip,
     clearAll,
     onFunFactComplete
   };

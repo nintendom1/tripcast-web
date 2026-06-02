@@ -105,6 +105,7 @@ export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live
 const TICKER_PREVIEW_MESSAGE = {
   id: "preview-demo",
   text: "Sample fact — this is what your ticker will look like.",
+  kind: "fact" as const,
 };
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
@@ -1906,7 +1907,7 @@ function OptionsHome({
               <OptionsRow
                 icon={Bell}
                 title="Trip Ticker"
-                detail="Persistent scrolling notices and fun facts"
+                detail="Persistent scrolling notices, fun facts, and tips"
                 onClick={() => {
                   log.logUi("action:trip-ticker-settings");
                   onTripTicker();
@@ -2588,16 +2589,21 @@ function TickerBulkImportSheet({
   open,
   onOpenChange,
   token,
+  kind,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   token: string;
+  kind: "fact" | "tip";
 }) {
   const [text, setText] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const commitBulkImport = useMutation(tripcastApi.bulkImport.travelerBulkImport);
   const music = useMusicSafe();
+  const labels = kind === "tip"
+    ? { title: "Bulk Import Tips", noun: "tips", singular: "Tip", entryKind: "ticker_tip" as const, placeholder: "Tip 1\nTip 2\nTip 3..." }
+    : { title: "Bulk Import Fun Facts", noun: "fun facts", singular: "Fact", entryKind: "ticker_fact" as const, placeholder: "Fact 1\nFact 2\nFact 3..." };
 
   const handleImport = async () => {
     const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
@@ -2607,7 +2613,7 @@ function TickerBulkImportSheet({
     setErrorMessage(null);
     try {
       const entries = lines.map(line => ({
-        kind: "ticker_fact" as const,
+        kind: labels.entryKind,
         text: line
       }));
       await commitBulkImport({ token, entries });
@@ -2632,15 +2638,15 @@ function TickerBulkImportSheet({
       }}
     >
       <SheetContent side="bottom" className="h-[80dvh]">
-        <SheetTitle>Bulk Import Fun Facts</SheetTitle>
+        <SheetTitle>{labels.title}</SheetTitle>
         <SheetCloseButton />
         <SheetBody className="flex flex-col gap-4 p-4">
           <p className="text-sm text-[var(--ink-2)]">
-            Paste a list of fun facts, one per line. They will be added to your trip ticker.
+            Paste a list of {labels.noun}, one per line. They will be added to your trip ticker.
           </p>
           <textarea
             className="flex-1 w-full p-3 text-sm rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] font-mono resize-none focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
-            placeholder="Fact 1&#10;Fact 2&#10;Fact 3..."
+            placeholder={labels.placeholder}
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -2667,12 +2673,48 @@ function TickerBulkImportSheet({
               onClick={handleImport}
               disabled={isImporting || !text.trim()}
             >
-              {isImporting ? "Importing..." : `Import ${text.split("\n").filter(l => l.trim()).length} Facts`}
+              {isImporting ? "Importing..." : `Import ${text.split("\n").filter(l => l.trim()).length} ${labels.singular}s`}
             </Button>
           </div>
         </SheetBody>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function TickerWeightRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const inputId = `ticker-weight-${label.toLowerCase().replaceAll(" ", "-")}`;
+  const displayValue = Number.isFinite(value) ? value : 1;
+  return (
+    <div className="grid gap-3 p-4 sm:p-5">
+      <div className="flex items-center justify-between gap-4">
+        <label className="text-sm font-semibold text-[var(--ink-1)]" htmlFor={inputId}>
+          {label}
+        </label>
+        <span className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-paper-2)] px-2 py-1 font-[var(--font-mono)] text-xs font-bold text-[var(--ink-2)]">
+          {displayValue === 0 ? "Off" : displayValue}
+        </span>
+      </div>
+      <input
+        id={inputId}
+        type="range"
+        min={0}
+        max={5}
+        step={1}
+        value={displayValue}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-[var(--brand)]"
+      />
+      <p className="text-xs text-[var(--ink-3)]">0 = Off</p>
+    </div>
   );
 }
 
@@ -2684,11 +2726,14 @@ export function TripTickerSettings({ token }: { token: string }) {
     removePriorityMessage,
     addFunFact,
     removeFunFact,
+    addTip,
+    removeTip,
     clearAll,
   } = useTicker(token);
   const [priorityInput, setPriorityInput] = useState("");
   const [funFactInput, setFunFactInput] = useState("");
-  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [tipInput, setTipInput] = useState("");
+  const [bulkImportKind, setBulkImportKind] = useState<"fact" | "tip" | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const confirmingClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -2725,9 +2770,9 @@ export function TripTickerSettings({ token }: { token: string }) {
         </OptionsGroup>
       </OptionsSection>
 
-      <OptionsSection label="Priority Messages">
+      <OptionsSection label="Alerts">
         <p className="text-xs text-[var(--ink-3)] mb-2">
-          Priority messages loop continuously and take precedence over fun facts.
+          Alerts loop continuously and take precedence over fun facts and tips.
         </p>
         <OptionsGroup>
           <div className="p-4 sm:p-5 flex gap-2">
@@ -2735,7 +2780,7 @@ export function TripTickerSettings({ token }: { token: string }) {
               type="text"
               value={priorityInput}
               onChange={(e) => setPriorityInput(e.target.value)}
-              placeholder="Notice text (e.g. Low reception ahead)"
+              placeholder="Alert text (e.g. Low reception ahead)"
               className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && priorityInput.trim()) {
@@ -2771,17 +2816,11 @@ export function TripTickerSettings({ token }: { token: string }) {
         </OptionsGroup>
       </OptionsSection>
 
-      <OptionsSection label="Fun Facts">
+      <OptionsSection label="Ticker Timing">
         <OptionsGroup>
-          <OptionsSwitchRow
-            title="Enable Fun Facts"
-            detail="Show random trivia when no priority messages exist."
-            checked={settings.funFactsEnabled}
-            onChange={(checked) => updateSettings({ funFactsEnabled: checked })}
-          />
-          <div className="p-4 sm:p-5 flex flex-col gap-4">
+          <div className="p-4 sm:p-5">
             <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
-              Minutes between fun facts
+              Minutes between ticker items
               <select
                 value={settings.funFactIntervalMinutes}
                 onChange={(e) => updateSettings({ funFactIntervalMinutes: Number(e.target.value) })}
@@ -2792,7 +2831,40 @@ export function TripTickerSettings({ token }: { token: string }) {
                 ))}
               </select>
             </label>
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
 
+      <OptionsSection label="Ticker Mix">
+        <OptionsGroup>
+          <TickerWeightRow
+            label="Fun Facts rate"
+            value={settings.funFactWeight}
+            onChange={(value) => updateSettings({ funFactWeight: value })}
+          />
+          <TickerWeightRow
+            label="Tips rate"
+            value={settings.tipWeight}
+            onChange={(value) => updateSettings({ tipWeight: value })}
+          />
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Fun Facts">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Fun Facts"
+            detail="Show random trivia when no alerts exist."
+            checked={settings.funFactsEnabled}
+            onChange={(checked) => updateSettings({ funFactsEnabled: checked })}
+          />
+          <OptionsSwitchRow
+            title="Show Fun Facts to Followers"
+            detail="Allow Followers to see fun facts in the ticker."
+            checked={settings.showFunFactsToFollowers}
+            onChange={(checked) => updateSettings({ showFunFactsToFollowers: checked })}
+          />
+          <div className="p-4 sm:p-5 flex flex-col gap-4">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -2823,16 +2895,11 @@ export function TripTickerSettings({ token }: { token: string }) {
               variant="outline"
               size="sm"
               className="w-full"
-              onClick={() => setIsBulkImportOpen(true)}
+              onClick={() => setBulkImportKind("fact")}
             >
               Bulk Import Fun Facts
             </Button>
           </div>
-          <TickerBulkImportSheet
-            open={isBulkImportOpen}
-            onOpenChange={setIsBulkImportOpen}
-            token={token}
-          />
           {settings.funFacts.map((msg) => (
             <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
               <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
@@ -2847,6 +2914,80 @@ export function TripTickerSettings({ token }: { token: string }) {
           ))}
         </OptionsGroup>
       </OptionsSection>
+
+      <OptionsSection label="Tips">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Tips"
+            detail="Show trip tips when no alerts exist."
+            checked={settings.tipsEnabled}
+            onChange={(checked) => updateSettings({ tipsEnabled: checked })}
+          />
+          <OptionsSwitchRow
+            title="Show Tips to Followers"
+            detail="Allow Followers to see tips in the ticker."
+            checked={settings.showTipsToFollowers}
+            onChange={(checked) => updateSettings({ showTipsToFollowers: checked })}
+          />
+          <div className="p-4 sm:p-5 flex flex-col gap-4">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={tipInput}
+                onChange={(e) => setTipInput(e.target.value)}
+                placeholder="Tip text..."
+                className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && tipInput.trim()) {
+                    addTip(tipInput.trim());
+                    setTipInput("");
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (tipInput.trim()) {
+                    addTip(tipInput.trim());
+                    setTipInput("");
+                  }
+                }}
+              >
+                Add
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setBulkImportKind("tip")}
+            >
+              Bulk Import Tips
+            </Button>
+          </div>
+          {settings.tips.map((msg) => (
+            <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
+              <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
+              <button
+                type="button"
+                onClick={() => removeTip(msg.id)}
+                className="text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </OptionsGroup>
+      </OptionsSection>
+
+      <TickerBulkImportSheet
+        open={bulkImportKind !== null}
+        onOpenChange={(open) => {
+          if (!open) setBulkImportKind(null);
+        }}
+        token={token}
+        kind={bulkImportKind ?? "fact"}
+      />
 
       <OptionsSection label="Danger Zone">
         <OptionsGroup>
@@ -2878,7 +3019,7 @@ export function TripTickerSettings({ token }: { token: string }) {
             </Button>
             {confirmingClear ? (
               <p className="text-xs text-[var(--ink-3)] text-center">
-                This removes every priority message and fun fact.
+                This removes every alert, fun fact, and tip.
               </p>
             ) : null}
           </div>
