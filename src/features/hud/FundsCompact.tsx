@@ -5,6 +5,7 @@ import { TERMS } from "../../copy/terminology";
 export interface FundsCompactProps {
   remainingUsd: number;
   startingBudgetUsd: number;
+  budgetMode?: "trip" | "daily";
   budgetLabel?: string;
   onClick?: () => void;
   className?: string;
@@ -21,6 +22,7 @@ export interface FundsCompactProps {
 export function FundsCompact({
   remainingUsd,
   startingBudgetUsd,
+  budgetMode = "trip",
   budgetLabel,
   onClick,
   className,
@@ -45,7 +47,9 @@ export function FundsCompact({
 
   const captionText = over
     ? "OVER BUDGET"
-    : `OF $${Math.round(startingBudgetUsd)}`;
+    : budgetMode === "daily"
+      ? `OF $${Math.round(startingBudgetUsd)} TODAY`
+      : `OF $${Math.round(startingBudgetUsd)}`;
 
   const content = (
     <>

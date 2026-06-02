@@ -24,6 +24,8 @@ type TravelFundsSheetProps = {
 };
 
 type View = "summary" | "add" | "edit" | "settings";
+type BudgetMode = "trip" | "daily";
+type CarryoverMode = "none" | "overspend_only";
 
 const VIEW_TITLES: Record<View, string> = {
   summary: TERMS.travelFunds,
@@ -34,16 +36,43 @@ const VIEW_TITLES: Record<View, string> = {
 
 const MAX_STARTING_BUDGET_USD = 10_000_000;
 
+function getLocalDayStart(timestamp = Date.now()) {
+  const date = new Date(timestamp);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+function formatDateInput(timestamp: number) {
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateInput(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const timestamp = new Date(year, month - 1, day).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 function friendlyTravelFundsError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (message.includes("startingBudgetUsd must be between 0 and 10000000")) {
     return "Starting budget must be between $0 and $10,000,000.";
   }
+  if (message.includes("fundsStartAt must be a non-negative timestamp")) {
+    return "Start date is required for daily funds.";
+  }
   return message || "Unable to save Travel Funds settings.";
 }
 
 export default function TravelFundsSheet({ token, onClose, debugSource }: TravelFundsSheetProps) {
-  const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
+  const currentLocalDayStart = getLocalDayStart();
+  const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, {
+    token,
+    currentLocalDayStart,
+  });
   const transactions = useQuery(tripcastApi.travelFunds.travelerListTransactions, { token });
   const updateConfig = useMutation(tripcastApi.travelFunds.travelerUpdateConfig);
   const addTransaction = useMutation(tripcastApi.travelFunds.travelerAddTransaction);
@@ -56,6 +85,11 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
   const [isSwipeDeleting, setIsSwipeDeleting] = useState(false);
 
   const [budgetInput, setBudgetInput] = useState<string>("");
+  const [budgetMode, setBudgetMode] = useState<BudgetMode>("daily");
+  const [startDateInput, setStartDateInput] = useState<string>(() =>
+    formatDateInput(currentLocalDayStart),
+  );
+  const [carryoverMode, setCarryoverMode] = useState<CarryoverMode>("none");
   const [labelInput, setLabelInput] = useState<string>("");
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -75,9 +109,15 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
     music.sfx("page");
     if (config?.enabled) {
       setBudgetInput(String(config.startingBudgetUsd));
+      setBudgetMode(config.budgetMode ?? "trip");
+      setStartDateInput(formatDateInput(config.fundsStartAt ?? currentLocalDayStart));
+      setCarryoverMode(config.carryoverMode ?? "none");
       setLabelInput(config.budgetLabel ?? "");
     } else {
       setBudgetInput("");
+      setBudgetMode("daily");
+      setStartDateInput(formatDateInput(currentLocalDayStart));
+      setCarryoverMode("none");
       setLabelInput("");
     }
     setSettingsError(null);
@@ -109,10 +149,19 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
         setSavingSettings(false);
         return;
       }
+      const fundsStartAt = budgetMode === "daily" ? parseDateInput(startDateInput) : undefined;
+      if (budgetMode === "daily" && fundsStartAt === null) {
+        setSettingsError("Start date is required for daily funds.");
+        setSavingSettings(false);
+        return;
+      }
       await updateConfig({
         token,
         featureEnabled: true,
         startingBudgetUsd: budget,
+        budgetMode,
+        carryoverMode: budgetMode === "daily" ? carryoverMode : "none",
+        ...(fundsStartAt !== undefined && fundsStartAt !== null && { fundsStartAt }),
         budgetLabel: labelInput.trim() === "" ? "" : labelInput.trim(),
       });
       music.sfx("success");
@@ -225,12 +274,18 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       )}
 
       {view === "settings" && (
-        <SettingsBody
-          enabled={config?.enabled ?? false}
-          budgetInput={budgetInput}
-          labelInput={labelInput}
-          onBudgetChange={setBudgetInput}
-          onLabelChange={setLabelInput}
+          <SettingsBody
+            enabled={config?.enabled ?? false}
+            budgetInput={budgetInput}
+            budgetMode={budgetMode}
+            startDateInput={startDateInput}
+            carryoverMode={carryoverMode}
+            labelInput={labelInput}
+            onBudgetChange={setBudgetInput}
+            onBudgetModeChange={setBudgetMode}
+            onStartDateChange={setStartDateInput}
+            onCarryoverModeChange={setCarryoverMode}
+            onLabelChange={setLabelInput}
           onToggleFeature={handleToggleFeature}
           onCancel={goBackToSummary}
           onSave={handleSaveSettings}
@@ -250,6 +305,8 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
             startingBudgetUsd={config.startingBudgetUsd}
             remainingUsd={config.remainingUsd}
             spentUsd={config.spentUsd}
+            budgetMode={config.budgetMode ?? "trip"}
+            carryoverDebtUsd={config.carryoverDebtUsd ?? 0}
             budgetLabel={config.budgetLabel}
             transactions={transactions ?? []}
             onAdd={() => {
@@ -291,6 +348,8 @@ function SummaryView({
   startingBudgetUsd,
   remainingUsd,
   spentUsd,
+  budgetMode,
+  carryoverDebtUsd,
   budgetLabel,
   transactions,
   onAdd,
@@ -301,6 +360,8 @@ function SummaryView({
   startingBudgetUsd: number;
   remainingUsd: number;
   spentUsd: number;
+  budgetMode: BudgetMode;
+  carryoverDebtUsd: number;
   budgetLabel?: string;
   transactions: Transaction[];
   onAdd: () => void;
@@ -330,8 +391,11 @@ function SummaryView({
   const captionText = over
     ? "OVER BUDGET"
     : noBudget
-      ? "NO BUDGET SET"
-      : `OF ${formatUsd(startingBudgetUsd)} BUDGET`;
+      ? budgetMode === "daily" ? "NO DAILY BUDGET SET" : "NO BUDGET SET"
+      : budgetMode === "daily"
+        ? `OF ${formatUsd(startingBudgetUsd)} TODAY`
+        : `OF ${formatUsd(startingBudgetUsd)} BUDGET`;
+  const spentLabel = budgetMode === "daily" ? "Today" : "Spent";
 
   return (
     <>
@@ -364,7 +428,7 @@ function SummaryView({
           </div>
           <div className="text-right">
             <span className="block font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--ink-3)]">
-              Spent
+              {spentLabel}
             </span>
             <span className="font-[var(--font-display)] text-base font-bold text-[var(--ink-1)]">
               {formatUsd(spentUsd)}
@@ -381,6 +445,11 @@ function SummaryView({
 
         {budgetLabel ? (
           <p className="truncate text-[11px] italic text-[var(--ink-3)]">{budgetLabel}</p>
+        ) : null}
+        {budgetMode === "daily" && carryoverDebtUsd > 0 ? (
+          <p className="text-[11px] text-[var(--ink-3)]">
+            Prior overspending reduces today by {formatUsd(carryoverDebtUsd)}.
+          </p>
         ) : null}
       </div>
 
@@ -437,8 +506,14 @@ function DisabledState({ onEnable, onClose }: { onEnable: () => void; onClose: (
 function SettingsBody({
   enabled,
   budgetInput,
+  budgetMode,
+  startDateInput,
+  carryoverMode,
   labelInput,
   onBudgetChange,
+  onBudgetModeChange,
+  onStartDateChange,
+  onCarryoverModeChange,
   onLabelChange,
   onToggleFeature,
   onCancel,
@@ -449,8 +524,14 @@ function SettingsBody({
 }: {
   enabled: boolean;
   budgetInput: string;
+  budgetMode: BudgetMode;
+  startDateInput: string;
+  carryoverMode: CarryoverMode;
   labelInput: string;
   onBudgetChange: (value: string) => void;
+  onBudgetModeChange: (value: BudgetMode) => void;
+  onStartDateChange: (value: string) => void;
+  onCarryoverModeChange: (value: CarryoverMode) => void;
   onLabelChange: (value: string) => void;
   onToggleFeature: () => void;
   onCancel: () => void;
@@ -477,8 +558,29 @@ function SettingsBody({
       </label>
 
       <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-[var(--ink-3)]">Budget period</span>
+        <div className="grid grid-cols-2 gap-1 rounded-full bg-[var(--meter-track)] p-1">
+          {(["trip", "daily"] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => onBudgetModeChange(mode)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-semibold transition-colors",
+                budgetMode === mode
+                  ? "bg-[var(--bg-card)] text-[var(--ink-1)] shadow-sm"
+                  : "text-[var(--ink-3)] hover:text-[var(--ink-1)]",
+              )}
+            >
+              {mode === "trip" ? "Trip" : "Daily"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-[var(--ink-3)]" htmlFor="tf-budget">
-          Starting budget (USD)
+          {budgetMode === "daily" ? "Daily budget (USD)" : "Starting budget (USD)"}
         </label>
         <Input
           id="tf-budget"
@@ -488,6 +590,41 @@ function SettingsBody({
           placeholder="e.g. 1500"
         />
       </div>
+
+      {budgetMode === "daily" ? (
+        <>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-[var(--ink-3)]" htmlFor="tf-start-date">
+              Start date
+            </label>
+            <Input
+              id="tf-start-date"
+              type="date"
+              value={startDateInput}
+              onChange={(e) => onStartDateChange(e.target.value)}
+            />
+          </div>
+
+          <label className="flex cursor-pointer items-start gap-2">
+            <input
+              type="checkbox"
+              checked={carryoverMode === "overspend_only"}
+              onChange={(e) =>
+                onCarryoverModeChange(e.target.checked ? "overspend_only" : "none")
+              }
+              className="mt-0.5"
+            />
+            <span className="flex flex-col">
+              <span className="text-sm font-semibold text-[var(--ink-1)]">
+                Carry overspending forward
+              </span>
+              <span className="text-[11px] text-[var(--ink-3)]">
+                Overspent days reduce later daily funds until the balance recovers.
+              </span>
+            </span>
+          </label>
+        </>
+      ) : null}
 
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-[var(--ink-3)]" htmlFor="tf-label">
