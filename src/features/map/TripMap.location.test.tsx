@@ -683,17 +683,30 @@ describe("TripMap location marker", () => {
     expect(screen.getByTestId("journal-sheet")).toBeInTheDocument();
   });
 
-  it("offsets map HUD controls away from MapLibre controls", () => {
+  it("anchors map HUD controls away from MapLibre's stack", () => {
     setupQueries();
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    // Mute sits below MapLibre's top-right zoom/compass stack so a status card can't bury it.
-    expect(screen.getByRole("button", { name: /mute soundtrack/i })).toHaveClass("top-[148px]");
     expect(screen.getByRole("button", { name: "Center map on traveler" })).toHaveClass("bottom-[118px]");
     expect(screen.getByRole("navigation", { name: "Map sections" }).parentElement).toHaveClass(
       "bottom-[calc(env(safe-area-inset-bottom)+0.75rem)]",
     );
+  });
+
+  it("nests the mute pin in the cardsWrapper row alongside the Replay pill", () => {
+    // Regression guard. The mute pin used to be an absolute overlay anchored to the viewport's
+    // top-right corner, which collided with whatever sat there at narrow widths. The fix nests it
+    // as a sibling of the Replay pill so the cardsWrapper's layout positions both at every width.
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    const muteBtn = screen.getByRole("button", { name: /mute soundtrack/i });
+    const replayBtn = screen.getByRole("button", { name: "Replay" });
+    expect(muteBtn.parentElement).toBe(replayBtn.parentElement);
+    expect(muteBtn.closest(".tripcast-frame")).not.toBeNull();
+    expect(muteBtn.closest(".tripcast-frame")).toBe(replayBtn.closest(".tripcast-frame"));
   });
 
   it("uses the same top HUD row structure for Followers", () => {
@@ -702,7 +715,7 @@ describe("TripMap location marker", () => {
     render(<TripMap token="test-token" role="follower" />);
 
     expect(screen.getByRole("group", { name: "Traveler status" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Replay" }).parentElement).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
+    expect(screen.getByRole("button", { name: "Replay" }).closest(".grid")).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
   });
 
   it("closes Traveler State when a Dock sheet opens", async () => {
