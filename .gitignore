@@ -15,5 +15,6 @@ DerivedData/
 *storybook.log
 storybook-static
 
-music-rework/
+.claude/worktrees/
 
+music-rework/
