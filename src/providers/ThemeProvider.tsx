@@ -235,19 +235,14 @@ type ResolvedAutoTheme = {
   phase: "night" | "wake" | "daytime" | null;
 };
 
-// Pick the day/night window: explicit theme window wins; otherwise autoState
-// bedtime/wake when both are provided; otherwise the hardcoded fallback.
+// Pick the day/night window: explicit theme window wins; otherwise use the
+// hardcoded project fallback. Auto State bedtime/wake models sleep, not theme.
 function pickThemeWindow(
   themeDay: number | null,
   themeNight: number | null,
-  autoBedtime: number | null,
-  autoWake: number | null,
-): { nightStart: number; dayStart: number; windowSource: "theme" | "autostate" | "fallback" } {
+): { nightStart: number; dayStart: number; windowSource: "theme" | "fallback" } {
   if (themeDay != null && themeNight != null && themeDay !== themeNight) {
     return { nightStart: themeNight, dayStart: themeDay, windowSource: "theme" };
-  }
-  if (autoBedtime != null && autoWake != null && autoBedtime !== autoWake) {
-    return { nightStart: autoBedtime, dayStart: autoWake, windowSource: "autostate" };
   }
   return {
     nightStart: FALLBACK_NIGHT_START_MINUTES,
@@ -269,8 +264,6 @@ export function resolveAutoTheme(
       const { nightStart, dayStart, windowSource } = pickThemeWindow(
         snapshot.themeDayStartMinutes,
         snapshot.themeNightStartMinutes,
-        snapshot.autoBedtimeMinutes,
-        snapshot.autoWakeTimeMinutes,
       );
       // getPhaseAtMinute returns "night" / "wake" / "daytime"; the wake band is
       // the first 60 min after dayStart and reads as daytime for theme.
@@ -301,8 +294,6 @@ export function resolveAutoTheme(
       const { nightStart, dayStart, windowSource } = pickThemeWindow(
         snapshot.themeDayStartMinutes,
         snapshot.themeNightStartMinutes,
-        null,
-        null,
       );
       const phase = getPhaseAtMinute(minute, nightStart, dayStart);
       return {
@@ -375,9 +366,10 @@ export function resolveAutoTheme(
   }
 
   // Step 3: viewer device clock — same fallback window as everywhere else.
-  const hour = new Date(now).getHours();
-  const fallbackNightHour = Math.floor(FALLBACK_NIGHT_START_MINUTES / 60);
-  const fallbackDayHour = Math.floor(FALLBACK_DAY_START_MINUTES / 60);
+  const date = new Date(now);
+  const minute = date.getHours() * 60 + date.getMinutes();
+  const isNight = minute >= FALLBACK_NIGHT_START_MINUTES || minute < FALLBACK_DAY_START_MINUTES;
+
   const reason =
     snapshot === undefined
       ? cachedTimeZone
@@ -389,7 +381,7 @@ export function resolveAutoTheme(
           ? "prefs-tz-resolution-failed"
           : "snapshot-disabled-no-prefs-tz";
   return {
-    theme: hour >= fallbackNightHour || hour < fallbackDayHour ? "constellation" : "meadow",
+    theme: isNight ? "constellation" : "meadow",
     source: "device-clock",
     reason,
     timeZone: null,

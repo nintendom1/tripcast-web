@@ -54,35 +54,11 @@ describe("resolveAutoTheme", () => {
   // 2026-06-01 15:00:00 UTC = 00:00 the next day in Asia/Tokyo (UTC+9 in summer).
   const REFERENCE_NOW = Date.UTC(2026, 5, 1, 15, 0, 0); // June=5
 
-  it("uses the traveler theme window over autoState bedtime/wake when set (step 1)", () => {
+  it("uses the manual theme window over system defaults (step 1)", () => {
     // In Tokyo, REFERENCE_NOW is midnight.
-    // autoState window (23:00 bed, 09:00 wake) would call this NIGHT.
-    // Theme window (06:00 day, 22:00 night) wraps midnight as well — also night.
-    // To disambiguate, use a theme window that excludes midnight: day=22:00, night=23:30.
-    // 00:00 sits AFTER night=23:30 (wrapping past midnight) — still night → constellation.
-    // Flip to: day=02:00, night=23:30 → 00:00 is in [23:30, 02:00) → night.
-    // Then prove autoState's narrower window is ignored by using day=06:00, night=09:00
-    // (which would put 00:00 in daytime per autoState).
-    const result = resolveAutoTheme(
-      {
-        autoStateEnabled: true,
-        autoTimeZone: "Asia/Tokyo",
-        autoBedtimeMinutes: 6 * 60, // would call 00:00 = daytime
-        autoWakeTimeMinutes: 9 * 60,
-        preferencesTimeZone: "Asia/Tokyo",
-        themeDayStartMinutes: 2 * 60, // 02:00
-        themeNightStartMinutes: 23 * 60 + 30, // 23:30
-      },
-      null,
-      REFERENCE_NOW,
-    );
-    expect(result.theme).toBe("constellation");
-    expect(result.source).toBe("live-traveler");
-    expect(result.reason).toMatch(/window=theme/);
-    expect(result.timeZone).toBe("Asia/Tokyo");
-  });
-
-  it("falls back to autoState bedtime/wake when theme window is unset (step 1)", () => {
+    // System default window (21:00 night, 06:00 day) would call this NIGHT.
+    // To prove override: use a manual window that calls 00:00 DAYTIME (Meadow).
+    // We set day=23:00, night=02:00 -> 00:00 is Day.
     const result = resolveAutoTheme(
       {
         autoStateEnabled: true,
@@ -90,15 +66,40 @@ describe("resolveAutoTheme", () => {
         autoBedtimeMinutes: 22 * 60,
         autoWakeTimeMinutes: 7 * 60,
         preferencesTimeZone: "Asia/Tokyo",
+        themeDayStartMinutes: 23 * 60, // 11 PM
+        themeNightStartMinutes: 2 * 60, // 2 AM
+      },
+      null,
+      REFERENCE_NOW,
+    );
+    expect(result.theme).toBe("meadow");
+    expect(result.source).toBe("live-traveler");
+    expect(result.reason).toBe("snapshot-enabled:window=theme");
+    expect(result.timeZone).toBe("Asia/Tokyo");
+  });
+
+  it("ignores autoState bedtime/wake and uses system defaults when theme window is unset (step 1)", () => {
+    // 14:45 UTC is 07:45 AM PDT (UTC-7).
+    // Default day start is 06:00 AM.
+    // Even if auto wake is 09:00 AM, it should be MEADOW at 07:45 AM.
+    const TIME_745_LA = Date.UTC(2026, 5, 1, 14, 45, 0);
+
+    const result = resolveAutoTheme(
+      {
+        autoStateEnabled: true,
+        autoTimeZone: "America/Los_Angeles",
+        autoBedtimeMinutes: 23 * 60, // 11 PM
+        autoWakeTimeMinutes: 9 * 60,  // 9 AM
+        preferencesTimeZone: "America/Los_Angeles",
         themeDayStartMinutes: null,
         themeNightStartMinutes: null,
       },
       null,
-      REFERENCE_NOW, // 00:00 in Tokyo — inside [22:00, 07:00) night window.
+      TIME_745_LA,
     );
-    expect(result.theme).toBe("constellation");
+    expect(result.theme).toBe("meadow");
     expect(result.source).toBe("live-traveler");
-    expect(result.reason).toMatch(/window=autostate/);
+    expect(result.reason).toBe("snapshot-enabled:window=fallback");
   });
 
   it("uses the prefs tz + theme window when autoState is disabled (step 1.5)", () => {
