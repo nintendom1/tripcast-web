@@ -3764,10 +3764,6 @@ export default function TripMap({
         </div>
       )}
 
-      {/* Music mute indicator — below MapLibre's top-right zoom/compass controls so a
-          status card on narrow screens can't bury it. */}
-      <MusicMuteIndicator className="absolute right-3 top-[148px] z-[2]" />
-
       {/* Debug chip — only visible when debug logging is enabled */}
       {onOpenDebugPanel ? (
         <DebugChip onOpen={onOpenDebugPanel} />
@@ -3993,16 +3989,19 @@ export default function TripMap({
               />
             </FeatureBoundary>
           </div>
-          <button
-            type="button"
-            onClick={handleStartReplay}
-            disabled={!canReplayTrip}
-            aria-pressed={replayActive}
-            className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            <Play className="h-3.5 w-3.5" aria-hidden="true" />
-            {replayActive ? `${replaySpeed}x Replay` : "Replay"}
-          </button>
+          <div className="flex flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={handleStartReplay}
+              disabled={!canReplayTrip}
+              aria-pressed={replayActive}
+              className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              <Play className="h-3.5 w-3.5" aria-hidden="true" />
+              {replayActive ? `${replaySpeed}x Replay` : "Replay"}
+            </button>
+            <MusicMuteIndicator className="pointer-events-auto" />
+          </div>
         </div>
       </div>
 
