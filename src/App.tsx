@@ -36,7 +36,7 @@ import { useInteractionLogger } from "./debug/useInteractionLogger";
 import DebugErrorBoundary from "./debug/DebugErrorBoundary";
 import { CrashOnDemand, disarmCrash } from "./debug/crashTrigger";
 import { log as debugLog } from "./debug/debugLogger";
-import { ThemeProvider } from "./providers/ThemeProvider";
+import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -439,23 +439,27 @@ function ConnectedApp() {
 
   if (view === "follower-management" && role === "traveler") {
     return (
-      <FeatureBoundary
-        resetKeys={[view, session.token]}
-        onClose={() => setView("map")}
-        title="Follower management hit a problem."
-        message="Try again, or go back to the map."
-        fallbackClassName="m-4 grid gap-3 rounded-md border bg-background p-4 text-sm shadow-sm"
-      >
-        <FollowerManagementPage
-          token={session.token}
-          onBack={() => setView("map")}
-        />
-      </FeatureBoundary>
+      <>
+        <TravelerThemeBridge token={session.token} role={role} />
+        <FeatureBoundary
+          resetKeys={[view, session.token]}
+          onClose={() => setView("map")}
+          title="Follower management hit a problem."
+          message="Try again, or go back to the map."
+          fallbackClassName="m-4 grid gap-3 rounded-md border bg-background p-4 text-sm shadow-sm"
+        >
+          <FollowerManagementPage
+            token={session.token}
+            onBack={() => setView("map")}
+          />
+        </FeatureBoundary>
+      </>
     );
   }
 
   return (
     <div className="relative flex flex-col h-dvh">
+      <TravelerThemeBridge token={session.token} role={role} />
       <TopBar
         role={role}
         onOpenOptions={() => {

@@ -133,3 +133,4 @@ User reviews written spec — ask user to review the spec file before proceeding
 
 ## Developer Preferences
 * Defer Unit Tests until the Developer has manually verified the implementation unless instructed otherwise. (This preference excludes Storybook stories; do Storybook stories with implementation)
+* If work started on a branch not on main, stop and tell the user the current branch is different. It's usually cleaner if work branched from main cleanly.
