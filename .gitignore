@@ -17,3 +17,7 @@ storybook-static
 
 music-rework/
 
+# Local-only Playwright session for agent-driven smoke tests
+.playwright-session.json
+scripts/picker-smoke-screenshots/
+

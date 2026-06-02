@@ -64,6 +64,7 @@ type CreateRouteVoteFormProps = {
   onRequestCoordinatePick: (
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
+    options?: { initialCoord?: { lat: number; lon: number } | null },
   ) => void;
   referenceLocation: { lat: number; lon: number } | null;
 };
@@ -320,6 +321,7 @@ export default function CreateRouteVoteForm({
     handleSubmit,
     control,
     setValue,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     defaultValues: {
@@ -367,11 +369,23 @@ export default function CreateRouteVoteForm({
 
   function handlePickOnMap(index: number) {
     log.logInteraction("coordinate:pick-requested", { optionIndex: index });
-    onRequestCoordinatePick(index, ({ lat, lon }) => {
-      log.logInteraction("coordinate:picked", { optionIndex: index, lat, lon });
-      setValue(`options.${index}.lat`, lat.toFixed(6), { shouldValidate: true });
-      setValue(`options.${index}.lon`, lon.toFixed(6), { shouldValidate: true });
-    });
+    const existingLatStr = getValues(`options.${index}.lat`);
+    const existingLonStr = getValues(`options.${index}.lon`);
+    const existingLat = existingLatStr ? Number(existingLatStr) : NaN;
+    const existingLon = existingLonStr ? Number(existingLonStr) : NaN;
+    const initialCoord =
+      Number.isFinite(existingLat) && Number.isFinite(existingLon)
+        ? { lat: existingLat, lon: existingLon }
+        : null;
+    onRequestCoordinatePick(
+      index,
+      ({ lat, lon }) => {
+        log.logInteraction("coordinate:picked", { optionIndex: index, lat, lon });
+        setValue(`options.${index}.lat`, lat.toFixed(6), { shouldValidate: true });
+        setValue(`options.${index}.lon`, lon.toFixed(6), { shouldValidate: true });
+      },
+      initialCoord ? { initialCoord } : undefined,
+    );
   }
 
   function handleClosePreset(hours: number) {

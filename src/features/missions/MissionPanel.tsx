@@ -39,7 +39,13 @@ type Props = {
   userId?: string;
   onClose: () => void;
   onStartMission?: () => void;
-  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  onRequestCoordinatePick?: (
+    callback: (coord: { lat: number; lon: number }) => void,
+    options?: { initialCoord?: { lat: number; lon: number } | null },
+  ) => void;
+  /** Called after the form successfully saves so TripMap can drop the
+   * post-pick preview pin (the real mission marker takes over). */
+  onCoordinatePickSaved?: () => void;
   isPickingCoordinate?: boolean;
   pendingOpenMissionId?: string | null;
   pendingOpenMysteryMissionId?: string | null;
@@ -94,6 +100,7 @@ export default function MissionPanel({
   onClose,
   onStartMission,
   onRequestCoordinatePick,
+  onCoordinatePickSaved,
   isPickingCoordinate,
   pendingOpenMissionId,
   pendingOpenMysteryMissionId,
@@ -409,14 +416,20 @@ export default function MissionPanel({
                   token={token}
                   onRequestCoordinatePick={onRequestCoordinatePick}
                   prefilledCoordinate={prefilledCoordinate}
-                  onSuccess={() => goToList("success")}
+                  onSuccess={() => {
+                    onCoordinatePickSaved?.();
+                    goToList("success");
+                  }}
                 />
               ) : (
                 <MissionProposalForm
                   token={token}
                   onRequestCoordinatePick={onRequestCoordinatePick}
                   prefilledCoordinate={prefilledCoordinate}
-                  onSuccess={() => goToList("success")}
+                  onSuccess={() => {
+                    onCoordinatePickSaved?.();
+                    goToList("success");
+                  }}
                 />
               )}
             </SheetBody>
@@ -433,6 +446,7 @@ export default function MissionPanel({
                   goToList(null);
                 }}
                 onRequestCoordinatePick={onRequestCoordinatePick}
+                onCoordinatePickSaved={onCoordinatePickSaved}
                 onCompleteAsStory={
                   onCompleteAsStory
                     ? (Mission) => {
@@ -616,7 +630,10 @@ function TravelerCreateForm({
 }: {
   token: string;
   onSuccess: () => void;
-  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  onRequestCoordinatePick?: (
+    callback: (coord: { lat: number; lon: number }) => void,
+    options?: { initialCoord?: { lat: number; lon: number } | null },
+  ) => void;
   prefilledCoordinate?: { lat: number; lon: number } | null;
 }) {
   const [title, setTitle] = useState("");
@@ -639,10 +656,13 @@ function TravelerCreateForm({
   const create = useMutation(tripcastApi.missions.travelerCreateMission);
 
   function handlePickOnMap() {
-    onRequestCoordinatePick?.((coord) => {
-      setLat(coord.lat);
-      setLon(coord.lon);
-    });
+    onRequestCoordinatePick?.(
+      (coord) => {
+        setLat(coord.lat);
+        setLon(coord.lon);
+      },
+      lat !== undefined && lon !== undefined ? { initialCoord: { lat, lon } } : undefined,
+    );
   }
 
   async function handleSubmit(e: React.FormEvent) {

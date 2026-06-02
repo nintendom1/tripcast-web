@@ -41,9 +41,42 @@ The `IntroSequence` manages its own visual dark/light state independently of the
 - Canonical pattern (`src/features/map/useTripPath.ts`): add on `style.load`/`load` ungated; keep `styledata`/`idle` as `isStyleLoaded()`-gated backstops; guard each add with `!map.getSource(id)` to stay idempotent and quiet during pan/zoom.
 - GL paint properties **can't use CSS variables** — read `useTheme()` and pass hex values. DOM markers (`maplibregl.Marker`, `pinStyles.ts`) survive `setStyle` and *can* use CSS vars, so they theme by a different mechanism than GL layers.
 
+## Map Camera (MapLibre GL)
+
+- **Padding is sticky across calls.** Whenever `focusCoordinate` / `applyActiveFocus` (`src/features/map/focusCoordinate.ts`) runs, it sets camera padding so the target lands in the visible band above a sheet. That padding state **persists**. A subsequent plain `easeTo({center: X})` will put X at the *band* center, not the geometric center. Pass an explicit `padding: {top:0, right:0, bottom:0, left:0}` whenever you want geometric semantics (e.g. the crosshair-at-center invariant of the picker).
+- **Animated `easeTo` races with container resize.** If the same React commit toggles a class that changes the map container size — collapsing the TopBar wrapper to `h-0`, switching `mapAdjacent` sheet sizes — use `jumpTo` for that move. `easeTo` animations started before the resize finish at unpredictable centers.
+- **`requestAnimationFrame` defers across the commit.** When you must run a camera op *after* a state change has flushed (e.g. recenter after the originating sheet returns from `invisible`), schedule it with a single `requestAnimationFrame`. Synchronous calls measure the pre-commit DOM.
+
+### DOM markers (`maplibregl.Marker`)
+
+- **SVG `fill="var(--flag)"` attribute is unreliable.** Some browsers don't resolve `var()` in SVG presentation attributes. Use inline `style="fill: var(--flag)"` instead. Same for `stroke`.
+- **Don't make the marker wrapper `<div>` size-0.** `width:0;height:0` collapses the inner SVG. Use `pointer-events:none;line-height:0` if you need to control spacing without affecting visibility.
+
 ## Coordinate Pick
 
-When a form lets users tap the map for coordinates, keep the form mounted and hide it while picking. If the form is inside a `Sheet`, apply `invisible pointer-events-none` directly to `SheetContent`, not to an ancestor.
+The crosshair picker (`src/features/map/TripMap.tsx`) lets a form capture a coordinate by moving the map under a fixed reticle. Keep these rules in mind when adding new picker entry points or touching the existing flow.
+
+### Hide more than the originating sheet
+- Apply `invisible pointer-events-none` directly to the originating `SheetContent` (not to an ancestor). Keep the form mounted so state survives the pick.
+- The TopBar and TripTicker also occlude the helper banner. Route a single `onPickerActiveChange(active)` callback from `TripMap` up to `App`, and wrap the chrome in `invisible h-0 overflow-hidden` while picking.
+- Hide the StatusCard / HUD anchor (e.g. `cardsWrapperRef` in `TripMap`) the same way.
+
+### Pre-fill the entry coord on "Change"/edit flows
+- Thread an optional `initialCoord` through the picker request signature.
+- On picker entry, `jumpTo` the initial coord (see "Map Camera" — use `jumpTo`, not `easeTo`, because the chrome collapse resizes the container in the same commit). Otherwise the crosshair starts wherever the user was panning, not on the original pin.
+
+### Live-track the map center efficiently
+- The `move` event fires at frame rate during a drag. rAF-coalesce the `setPickCenter` call (one update per animation frame) — otherwise the whole `TripMap` subtree re-renders on every frame and the map drags choppily.
+
+### Dock taps cancel pick mode
+- The Dock navigates away; lingering picker state confuses the user. Cancel the picker in `handleDockSelect` / `handleDockAdd` / `handleFanPick` before doing anything else.
+
+### Preview pin lifecycle
+- After Confirm, render a temporary DOM marker at the picked coord so the user sees where their selection landed while filling out the rest of the form. The real mission/story marker doesn't exist yet.
+- Clear the preview on three triggers: re-entry to pick mode (Change), successful form Save (`onCoordinatePickSaved` callback), and originating sheet close. Without the Save hook the preview lingers behind the real marker until the user closes the sheet.
+
+### Tap-to-recenter must reset padding
+- `map.on("click", ...)` during pick mode does `easeTo({center: event.lngLat})` to pan the clicked point under the crosshair. Pass an explicit `padding: {top:0, right:0, bottom:0, left:0}` — see "Map Camera".
 
 ## Travel Funds
 

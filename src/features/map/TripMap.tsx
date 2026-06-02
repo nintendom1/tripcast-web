@@ -23,6 +23,11 @@ import AddCheckpointSheet, {
   type SelectedCoordinate,
 } from "./AddCheckpointSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
+import {
+  MapPickerConfirmPanel,
+  MapPickerCrosshair,
+  MapPickerHelperBanner,
+} from "./MapPicker";
 import MissionMarkers from "./MissionMarkers";
 import MysteryMissionMarkers from "./MysteryMissionMarkers";
 import MissionPanel from "../missions/MissionPanel";
@@ -165,7 +170,29 @@ const CARD_ERROR_CLASS =
 type CoordinatePickMode = {
   label: string;
   callback: (coord: { lat: number; lon: number }) => void;
+  /** Sheet selector that owns the originating form, used to re-center the
+   * map above it after confirm so the picked point isn't hidden by the sheet. */
+  sheetSelector: string | null;
+  /** Existing coordinate the form holds (e.g. when editing an existing pin via
+   * "Change"). The picker eases the map to this point on entry so the user
+   * starts looking at the original location instead of wherever they were panning. */
+  initialCoord?: { lat: number; lon: number } | null;
 };
+
+export type CoordinatePickOptions = {
+  initialCoord?: { lat: number; lon: number } | null;
+};
+
+export type CoordinatePickRequest = (
+  callback: (coord: { lat: number; lon: number }) => void,
+  options?: CoordinatePickOptions,
+) => void;
+
+export type RouteVoteCoordinatePickRequest = (
+  optionIndex: number,
+  callback: (coord: { lat: number; lon: number }) => void,
+  options?: CoordinatePickOptions,
+) => void;
 
 type DebugOpenSource = {
   source: string;
@@ -503,6 +530,46 @@ function AccuracyCircle({
     };
   }, [map]);
 
+  return null;
+}
+
+function PreviewPinMarker({
+  map,
+  coord,
+}: {
+  map: maplibregl.Map | null;
+  coord: { lat: number; lon: number } | null;
+}) {
+  const markerRef = useRef<maplibregl.Marker | null>(null);
+  useEffect(() => {
+    if (!map) return;
+    if (!coord || !Number.isFinite(coord.lat) || !Number.isFinite(coord.lon)) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+    if (markerRef.current) {
+      markerRef.current.setLngLat([coord.lon, coord.lat]);
+    } else {
+      const el = document.createElement("div");
+      el.className = "preview-pin-marker";
+      el.setAttribute("aria-label", "Selected location");
+      el.style.cssText = "pointer-events:none;line-height:0";
+      el.innerHTML = `
+        <svg width="36" height="48" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.55))">
+          <path d="M15 0 C23.284 0 30 6.716 30 15 C30 23.5 15 40 15 40 C15 40 0 23.5 0 15 C0 6.716 6.716 0 15 0 Z" style="fill:#10b981;stroke:white;stroke-width:2"/>
+          <circle cx="15" cy="15" r="5" style="fill:white"/>
+        </svg>
+      `;
+      markerRef.current = new maplibregl.Marker({ element: el, anchor: "bottom" })
+        .setLngLat([coord.lon, coord.lat])
+        .addTo(map);
+    }
+    return () => {
+      markerRef.current?.remove();
+      markerRef.current = null;
+    };
+  }, [map, coord]);
   return null;
 }
 
@@ -1065,6 +1132,9 @@ type TripMapProps = {
   finaleReplayActive?: boolean;
   onOpenDebugPanel?: () => void;
   onMapLoaded?: () => void;
+  /** Fires when the crosshair location picker enters or exits. Used by App to
+   * hide the TopBar / TripTicker so they don't overlap the helper banner. */
+  onPickerActiveChange?: (active: boolean) => void;
 };
 
 export default function TripMap({
@@ -1075,6 +1145,7 @@ export default function TripMap({
   finaleReplayActive = false,
   onOpenDebugPanel,
   onMapLoaded,
+  onPickerActiveChange,
 }: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -1141,6 +1212,14 @@ export default function TripMap({
   const [isLocationSharing, setIsLocationSharing] = useState(false);
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number; accuracy?: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
+  // Live center of the map while the crosshair picker is active. Updated on
+  // map "move" events so the helper banner reflects the candidate coordinate.
+  const [pickCenter, setPickCenter] = useState<{ lat: number; lon: number } | null>(null);
+  // Preview pin shown after a coordinate is confirmed but before the form
+  // saves it (so the user can see where their selection landed while filling
+  // out the rest of the form). Cleared when the picker re-opens (Change) or
+  // the originating sheet closes.
+  const [previewCoord, setPreviewCoord] = useState<{ lat: number; lon: number } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"default" | "mystery">("default");
   const [debugShowAllMysteryPins, setDebugShowAllMysteryPins] = useState(() => {
@@ -2087,6 +2166,7 @@ export default function TripMap({
             : null;
 
   function handleDockSelect(tab: DockTab) {
+    if (coordinatePickModeRef.current) cancelCoordinatePick();
     setFanOpen(false);
     setIsTravelerStateOpen(false);
     if (tab === "journal") openJournal({ source: "dock:journal", sourceLabel: "Dock -> Journal" });
@@ -2098,11 +2178,13 @@ export default function TripMap({
   }
 
   function handleDockAdd() {
+    if (coordinatePickModeRef.current) cancelCoordinatePick();
     music.sfx("tap");
     setFanOpen((prev) => !prev);
   }
 
   function handleFanPick(action: FanAction) {
+    if (coordinatePickModeRef.current) cancelCoordinatePick();
     music.sfx("tap");
     setFanOpen(false);
     switch (action) {
@@ -2133,22 +2215,159 @@ export default function TripMap({
     }
   }, [isPlacementMode, stopFollowing]);
 
+  // Clear the preview pin whenever every form-bearing sheet is closed — the
+  // user is done with the flow that owned the picked coord.
+  useEffect(() => {
+    if (
+      !isMissionsPanelOpen &&
+      !isJournalOpen &&
+      !isVotePanelOpen &&
+      !isMissionDetailOpen
+    ) {
+      setPreviewCoord(null);
+    }
+  }, [isMissionsPanelOpen, isJournalOpen, isVotePanelOpen, isMissionDetailOpen]);
+
+  // Called by form panels after a successful save so the preview pin retires
+  // once the real mission/story marker takes over.
+  const clearPreviewPin = useCallback(() => setPreviewCoord(null), []);
+
   const cancelCoordinatePick = useCallback(() => {
     log.logInteraction("coordinate:pick-mode:cancel");
     coordinatePickModeRef.current = null;
     setCoordinatePickMode(null);
+    setPickCenter(null);
   }, [log]);
 
-  // ESC cancels coordinate pick mode
+  function confirmCoordinatePick() {
+    const pick = coordinatePickModeRef.current;
+    const map = mapRef.current;
+    if (!pick || !map) return;
+    const center = map.getCenter();
+    const coord = { lat: center.lat, lon: center.lng };
+    log.logInteraction("coordinate:pick-mode:confirm", {
+      lat: coord.lat,
+      lon: coord.lon,
+      label: pick.label,
+    });
+    log.logInteraction("coordinate:picked", {
+      lat: coord.lat,
+      lon: coord.lon,
+      source: "coordinate-pick",
+    });
+    musicRef.current.sfx("pin");
+    const sheetSelector = pick.sheetSelector;
+    coordinatePickModeRef.current = null;
+    setCoordinatePickMode(null);
+    setPickCenter(null);
+    setPreviewCoord(coord);
+    pick.callback(coord);
+    // Recenter the camera so the picked point lands above the returning sheet.
+    // We bypass the focusCoordinate / applyActiveFocus pipeline here because it
+    // measures DOM occluders (cardsWrapperRef, sheetSelector) — and the gotchas
+    // in docs/agents/implementation-gotchas.md note that map vs. style/DOM
+    // measurement races are fragile when overlays toggle visibility in the same
+    // React commit. A direct easeTo with a measured offset is independent of
+    // when the sheet's `invisible` class flushes. We schedule on rAF so the
+    // sheet has dropped `invisible` before measuring its height.
+    if (sheetSelector) {
+      requestAnimationFrame(() => {
+        const m = mapRef.current;
+        if (!m) return;
+        const sheetEl = document.querySelector(sheetSelector) as HTMLElement | null;
+        const sheetH = sheetEl?.getBoundingClientRect().height ?? 0;
+        const topEl = cardsWrapperRef.current;
+        const topH = topEl ? topEl.getBoundingClientRect().height : 0;
+        // Positive offset.y moves the target DOWN on screen, negative moves it
+        // UP. We want the coord to land at the center of the visible band
+        // between the status card (top, topH) and the returning sheet (bottom,
+        // sheetH). Band center sits at (topH - sheetH)/2 relative to the
+        // container center — negative when the sheet is taller than the card.
+        const offsetY = (topH - sheetH) / 2;
+        log.logMap("coordinate-pick:recenter", {
+          lat: coord.lat,
+          lon: coord.lon,
+          sheetH: Math.round(sheetH),
+          topH: Math.round(topH),
+          offsetY: Math.round(offsetY),
+        });
+        stopFollowing();
+        m.easeTo({
+          center: [coord.lon, coord.lat],
+          offset: [0, offsetY],
+          duration: 600,
+        });
+      });
+    }
+  }
+
+  // ESC cancels coordinate pick mode; live-track map center while picking.
+  // The move listener is rAF-coalesced so React renders at most once per frame
+  // regardless of how aggressively MapLibre fires `move` during a drag.
   useEffect(() => {
-    if (!coordinatePickMode) return;
+    onPickerActiveChange?.(Boolean(coordinatePickMode));
+    if (!coordinatePickMode) {
+      setPickCenter(null);
+      return;
+    }
+    // Clear the preview pin from a previous confirm — re-entering pick mode
+    // means the user is about to choose a new spot.
+    setPreviewCoord(null);
     stopFollowing();
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") cancelCoordinatePick();
     }
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [coordinatePickMode, cancelCoordinatePick, stopFollowing]);
+
+    const map = mapRef.current;
+    if (!map) {
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }
+    // Reset MapLibre's camera padding when entering pick mode — any leftover
+    // padding from a prior focusCoordinate call (e.g. the mission-detail focus
+    // that put the pin in the band above the sheet) would otherwise place the
+    // map center off-axis from the crosshair. With the originating sheet now
+    // hidden, the picker should treat the full container as the visible map.
+    // jumpTo (not easeTo) sidesteps a race: when picker enters, the top
+    // wrapper collapses → map container resizes → MapLibre re-projects, and an
+    // animated easeTo overlaps that resize unpredictably. jumpTo commits the
+    // new center+padding atomically.
+    const zeroPadding = { top: 0, right: 0, bottom: 0, left: 0 };
+    const initialCoord = coordinatePickMode.initialCoord;
+    if (
+      initialCoord &&
+      Number.isFinite(initialCoord.lat) &&
+      Number.isFinite(initialCoord.lon)
+    ) {
+      map.jumpTo({
+        center: [initialCoord.lon, initialCoord.lat],
+        padding: zeroPadding,
+      });
+      setPickCenter({ lat: initialCoord.lat, lon: initialCoord.lon });
+    } else {
+      const initial = map.getCenter();
+      map.jumpTo({
+        center: [initial.lng, initial.lat],
+        padding: zeroPadding,
+      });
+      setPickCenter({ lat: initial.lat, lon: initial.lng });
+    }
+    let rafId: number | null = null;
+    const handleMove = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const c = map.getCenter();
+        setPickCenter({ lat: c.lat, lon: c.lng });
+      });
+    };
+    map.on("move", handleMove);
+    return () => {
+      map.off("move", handleMove);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [coordinatePickMode, cancelCoordinatePick, stopFollowing, onPickerActiveChange]);
 
   // Map init
   useEffect(() => {
@@ -2304,14 +2523,19 @@ export default function TripMap({
         });
       }
 
-      // Coordinate pick mode takes priority
+      // Picker in progress — tapping anywhere recenters the map on that point
+      // (the crosshair stays fixed at the center). The user confirms via the
+      // bottom "Use this location" button, which reads map.getCenter().
+      // Explicit zero padding is required: MapLibre retains the camera padding
+      // from prior focusCoordinate calls, which would otherwise place the
+      // clicked lngLat at the band center instead of the geometric center
+      // (where the crosshair sits).
       if (coordinatePickModeRef.current) {
-        const pick = coordinatePickModeRef.current;
-        coordinatePickModeRef.current = null;
-        setCoordinatePickMode(null);
-        log.logInteraction("coordinate:picked", { lat: event.lngLat.lat, lon: event.lngLat.lng, source: "coordinate-pick" });
-        musicRef.current.sfx("pin");
-        pick.callback({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+        map.easeTo({
+          center: event.lngLat,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          duration: 300,
+        });
         return;
       }
 
@@ -2788,6 +3012,7 @@ export default function TripMap({
     setVoteOptionNumberById(null);
     setCoordinatePickMode(null);
     coordinatePickModeRef.current = null;
+    setPickCenter(null);
     setIsJournalOpen(false);
     setIsAchievementsOpen(false);
     setSelectedStoryDetail(null);
@@ -3001,12 +3226,19 @@ export default function TripMap({
   function handleRequestCoordinatePick(
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
+    options?: CoordinatePickOptions,
   ) {
-    log.logInteraction("coordinate:pick-mode:enter", { source: "route-vote", optionIndex });
+    log.logInteraction("coordinate:pick-mode:enter", {
+      source: "route-vote",
+      optionIndex,
+      hasInitial: Boolean(options?.initialCoord),
+    });
     music.sfx("page");
     const label = `Option ${optionIndex + 1} location`;
-    coordinatePickModeRef.current = { label, callback };
-    setCoordinatePickMode({ label, callback });
+    const sheetSelector = "[data-role='route-votes-sheet']";
+    const mode = { label, callback, sheetSelector, initialCoord: options?.initialCoord ?? null };
+    coordinatePickModeRef.current = mode;
+    setCoordinatePickMode(mode);
   }
 
   function disconnectSheetObserver() {
@@ -3263,22 +3495,34 @@ export default function TripMap({
 
   function handleRequestMissionCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
+    options?: CoordinatePickOptions,
   ) {
-    log.logInteraction("coordinate:pick-mode:enter", { source: "Mission" });
+    log.logInteraction("coordinate:pick-mode:enter", {
+      source: "Mission",
+      hasInitial: Boolean(options?.initialCoord),
+    });
     music.sfx("page");
-    const label = "the mission location";
-    coordinatePickModeRef.current = { label, callback };
-    setCoordinatePickMode({ label, callback });
+    const label = "Mission location";
+    const sheetSelector = "[data-role='missions-sheet']";
+    const mode = { label, callback, sheetSelector, initialCoord: options?.initialCoord ?? null };
+    coordinatePickModeRef.current = mode;
+    setCoordinatePickMode(mode);
   }
 
   function handleRequestStoryCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
+    options?: CoordinatePickOptions,
   ) {
-    log.logInteraction("coordinate:pick-mode:enter", { source: "Story" });
+    log.logInteraction("coordinate:pick-mode:enter", {
+      source: "Story",
+      hasInitial: Boolean(options?.initialCoord),
+    });
     music.sfx("page");
-    const label = "the story location";
-    coordinatePickModeRef.current = { label, callback };
-    setCoordinatePickMode({ label, callback });
+    const label = "Story location";
+    const sheetSelector = "[data-role='journal-sheet']";
+    const mode = { label, callback, sheetSelector, initialCoord: options?.initialCoord ?? null };
+    coordinatePickModeRef.current = mode;
+    setCoordinatePickMode(mode);
   }
 
   function handleVoteOverlayChange(
@@ -3493,6 +3737,7 @@ export default function TripMap({
       <div ref={mapContainerRef} className={mapClassName} />
 
       {/* Side-effect marker components */}
+      <PreviewPinMarker map={mapInstance} coord={previewCoord} />
       <CheckpointMarkers
         map={mapInstance}
         checkpoints={checkpoints}
@@ -3589,23 +3834,34 @@ export default function TripMap({
 
         {coordinatePickMode && (
           <motion.div
-            key="coordinate-pick-banner"
+            key="coordinate-pick-helper"
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -20, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
-            className="absolute left-1/2 top-4 z-[5] flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-3 rounded-md bg-[var(--bg-card)] px-3 py-2.5 text-[var(--ink-1)] shadow-lg"
+            className="absolute left-1/2 top-4 z-[6] flex max-w-[calc(100%-24px)] -translate-x-1/2"
           >
-            <span className="text-sm">
-              Tap the map to set {coordinatePickMode.label}.
-            </span>
-            <button
-              type="button"
-              className="rounded bg-[var(--meter-track)] px-2.5 py-1 text-sm font-medium text-[var(--ink-1)]"
-              onClick={cancelCoordinatePick}
-            >
-              Cancel
-            </button>
+            <MapPickerHelperBanner
+              label={coordinatePickMode.label}
+              lat={pickCenter?.lat ?? null}
+              lon={pickCenter?.lon ?? null}
+            />
+          </motion.div>
+        )}
+        {coordinatePickMode && <MapPickerCrosshair key="coordinate-pick-crosshair" />}
+        {coordinatePickMode && (
+          <motion.div
+            key="coordinate-pick-confirm"
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 16, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" as const }}
+            className="absolute bottom-[88px] left-1/2 z-[21] -translate-x-1/2"
+          >
+            <MapPickerConfirmPanel
+              onCancel={cancelCoordinatePick}
+              onConfirm={confirmCoordinatePick}
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -3880,6 +4136,7 @@ export default function TripMap({
             setVoteOptionNumberById(null);
           }}
           onRequestCoordinatePick={handleRequestCoordinatePick}
+          onCoordinatePickSaved={clearPreviewPin}
           referenceLocation={livePosition}
           onVoteOverlayChange={handleVoteOverlayChange}
           onRequestFitMap={handleRequestFitMap}
@@ -3937,7 +4194,10 @@ export default function TripMap({
 
       <div
         ref={cardsWrapperRef}
-        className="pointer-events-none absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
+        className={cn(
+          "pointer-events-none absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame",
+          coordinatePickMode && "invisible",
+        )}
       >
         {locationStale ? (
           <button
@@ -4114,6 +4374,7 @@ export default function TripMap({
             setIsMissionsPanelOpen(false);
           }}
           onRequestCoordinatePick={handleRequestMissionCoordinatePick}
+          onCoordinatePickSaved={clearPreviewPin}
           isPickingCoordinate={isPickingCoordinate}
           pendingOpenMissionId={pendingOpenMissionId}
           pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
@@ -4169,6 +4430,7 @@ export default function TripMap({
               onLocationFocus={handleHistoryLocationFocus}
               onMarkAllRead={markAllRead}
               onRequestCoordinatePick={handleRequestStoryCoordinatePick}
+              onCoordinatePickSaved={clearPreviewPin}
               isPickingCoordinate={isPickingCoordinate}
               debugSource={journalDebugSource}
             />
