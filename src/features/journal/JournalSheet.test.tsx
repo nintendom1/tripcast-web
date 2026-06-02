@@ -360,4 +360,5 @@ describe("JournalSheet", () => {
       expect(onStorySelect).toHaveBeenCalledWith(travelerEvent);
     });
   });
+
 });

@@ -132,6 +132,16 @@ export function IntroSequence({
   const log = useDebugLogger("IntroSequence", "src/features/onboarding/IntroSequence.tsx");
   const { mode, resolvedTheme, setMode } = useTheme();
   const [themeChoice, setThemeChoice] = React.useState<ThemeMode>(mode);
+  const music = useMusicSafe();
+
+  // While the tour is on screen — whether mounted as part of the
+  // account-create flow or as an Options "replay" — Hello (song9_intro)
+  // takes over as an override. CreateAccountIntroFlow may also push the
+  // same override; the engine no-ops duplicate pushes, so it's safe.
+  React.useEffect(() => {
+    music.setOverride("intro", "song9_intro");
+    return () => music.setOverride("intro", null);
+  }, [music]);
   const safeBeat = Math.min(Math.max(beat, 0), LAST_BEAT_INDEX);
   const current = BEATS[safeBeat];
   const isThemeBeat = safeBeat === LAST_BEAT_INDEX;
@@ -411,6 +421,20 @@ export function CreateAccountIntroFlow({
   // beat appears (stage flips to "intro" → IntroSequence renders beat 0).
   // Declarative on `stage`, plus an unmount safety-release, so the "intro"
   // reason can never strand (same lock-safety contract as "auth"/"error").
+  // First beat of the tour kicks off the Hello soundtrack as an override —
+  // wins over the user's manual pick (if any) and Auto's scenario routing.
+  // IMPORTANT: this effect must run BEFORE the suppression release below so
+  // the swap to song9_intro happens while the engine is still silenced. That
+  // way the engine takes the instant-cut path in swapPatchBus and the new
+  // patch starts cleanly the moment suppression lifts, instead of riding
+  // out a 500 ms fade of the previous Day/Night patch.
+  React.useEffect(() => {
+    music.setOverride("intro", stage === "intro" ? "song9_intro" : null);
+  }, [stage, music]);
+  React.useEffect(() => {
+    return () => music.setOverride("intro", null);
+  }, [music]);
+
   React.useEffect(() => {
     music.setSuppressed("intro", stage !== "intro");
     log.logAudio("account-intro:music-gate", { stage, suppressed: stage !== "intro" });

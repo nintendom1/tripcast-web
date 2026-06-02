@@ -371,3 +371,68 @@ describe("StoryDetailSheet — inline edit mode", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });
+
+describe("StoryDetailSheet — Follower content cutoff", () => {
+  const cutoffAt = new Date("2024-06-09").getTime();
+  const oldEvent = makeStoryEvent({ _id: "old", title: "Old Story", occurredAt: new Date("2024-06-01").getTime() });
+  const newEvent = makeStoryEvent({ _id: "new", title: "New Story", occurredAt: new Date("2024-06-10").getTime() });
+
+  beforeEach(() => {
+    vi.mocked(useQuery).mockImplementation((...args: any[]) => {
+      const [ref] = args;
+      if (ref === tripcastApi.travelerPreferences.followerGetPreferences) {
+        return { visible: true, followerContentCutoffAt: cutoffAt };
+      }
+      return undefined;
+    });
+  });
+
+  it("shows the 'Content hidden' placeholder for Followers viewing old content", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={oldEvent}
+          token="t"
+          role="follower"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    expect(screen.getByText("Content hidden")).toBeInTheDocument();
+    expect(screen.getByText("This entry is no longer available.")).toBeInTheDocument();
+    expect(screen.queryByText("Old Story")).not.toBeInTheDocument();
+  });
+
+  it("shows content normally for Travelers viewing old content even with a cutoff", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={oldEvent}
+          token="t"
+          role="traveler"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    expect(screen.getByText("Old Story")).toBeInTheDocument();
+    expect(screen.queryByText("Content hidden")).not.toBeInTheDocument();
+  });
+
+  it("shows content normally for Followers viewing content after the cutoff", () => {
+    render(
+      <ReadingSpeedProvider>
+        <StoryDetailSheet
+          event={newEvent}
+          token="t"
+          role="follower"
+          onClose={vi.fn()}
+          onLocationFocus={vi.fn()}
+        />
+      </ReadingSpeedProvider>,
+    );
+    expect(screen.getByText("New Story")).toBeInTheDocument();
+    expect(screen.queryByText("Content hidden")).not.toBeInTheDocument();
+  });
+});

@@ -5,6 +5,7 @@ import { Vote } from "lucide-react";
 
 import { tripcastApi, type VisibleRouteVote } from "../../convex/tripcastApi";
 import { formatTimeRemaining } from "../../lib/routeVoteUtils";
+import { useMusicSafe } from "../../providers/MusicProvider";
 
 const VOTE_TIME_WINDOW_MS = 24 * 60 * 60 * 1000;
 const SPLASH_DURATION_MS = 5000;
@@ -66,6 +67,12 @@ export default function VoteTimeSplash({
     }, SPLASH_DURATION_MS);
     return () => window.clearTimeout(id);
   }, [targetVote]);
+
+  const music = useMusicSafe();
+  useEffect(() => {
+    music.setOverride("vote-splash", targetVote ? "song6_vote" : null);
+    return () => music.setOverride("vote-splash", null);
+  }, [targetVote, music]);
 
   function dismissAndOpen() {
     if (!targetVote) return;

@@ -8,3 +8,5 @@ export { MusicMuteIndicator, type MusicMuteIndicatorProps } from "./MusicMuteInd
 export { StatusCard, type StatusCardMeter, type StatusCardProps, type Tier } from "./StatusCard";
 export { StatusCardConnected, type StatusCardConnectedProps } from "./StatusCardConnected";
 export { TopBar, type TopBarProps } from "./TopBar";
+export { TripTicker, type TripTickerProps } from "./TripTicker";
+export { useTicker } from "./useTicker";

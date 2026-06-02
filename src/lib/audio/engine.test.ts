@@ -1,82 +1,145 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createAudioEngine,
-  resolveSoundtrackScenario,
-  type AudioScenario,
-} from "./engine";
-import { deriveTripAudioScenario } from "./useTripAudioScenario";
+import { resolveSoundtrack, createAudioEngine, type AudioScenario } from "./engine";
+import type { PatchSoundtrackId } from "./patches";
+
+describe("resolveSoundtrack", () => {
+  function call(args: {
+    scenario?: AudioScenario;
+    soundtrack?: "auto" | PatchSoundtrackId;
+    overrides?: Array<[string, PatchSoundtrackId]>;
+  }) {
+    return resolveSoundtrack({
+      scenario: args.scenario ?? "default-day",
+      soundtrack: args.soundtrack ?? "auto",
+      overrides: new Map(args.overrides ?? []),
+    });
+  }
+
+  it("returns the auto-scenario song when no overrides and soundtrack=auto", () => {
+    expect(call({ scenario: "default-day" })).toBe("song4_day");
+    expect(call({ scenario: "default-night" })).toBe("song4_night");
+    expect(call({ scenario: "story" })).toBe("song7_story");
+    expect(call({ scenario: "trophy" })).toBe("song8_trophy");
+    expect(call({ scenario: "vote" })).toBe("song6_vote");
+  });
+
+  it("returns the user's manual pick when soundtrack is not auto", () => {
+    expect(call({ scenario: "story", soundtrack: "song4_day" })).toBe("song4_day");
+    expect(call({ scenario: "trophy", soundtrack: "song4_night" })).toBe("song4_night");
+  });
+
+  it("override beats manual mode (intro / vote splash / credits force the song)", () => {
+    expect(
+      call({
+        scenario: "default-day",
+        soundtrack: "song4_day",
+        overrides: [["intro", "song9_intro"]],
+      }),
+    ).toBe("song9_intro");
+  });
+
+  it("override beats auto-scenario routing", () => {
+    expect(
+      call({
+        scenario: "story",
+        soundtrack: "auto",
+        overrides: [["credits", "song10_credits"]],
+      }),
+    ).toBe("song10_credits");
+  });
+
+  it("most-recently-inserted override wins (LIFO)", () => {
+    expect(
+      call({
+        overrides: [
+          ["intro", "song9_intro"],
+          ["credits", "song10_credits"],
+        ],
+      }),
+    ).toBe("song10_credits");
+    expect(
+      call({
+        overrides: [
+          ["credits", "song10_credits"],
+          ["intro", "song9_intro"],
+        ],
+      }),
+    ).toBe("song9_intro");
+  });
+});
 
 class FakeAudioParam {
   value = 0;
-
-  setTargetAtTime(value: number) {
-    this.value = value;
-  }
-
-  setValueAtTime(value: number) {
-    this.value = value;
-  }
-
-  linearRampToValueAtTime(value: number) {
-    this.value = value;
-  }
-
-  exponentialRampToValueAtTime(value: number) {
-    this.value = value;
-  }
+  setTargetAtTime = vi.fn((value: number) => { this.value = value; });
+  setValueAtTime = vi.fn((value: number) => { this.value = value; });
+  linearRampToValueAtTime = vi.fn((value: number) => { this.value = value; });
+  exponentialRampToValueAtTime = vi.fn((value: number) => { this.value = value; });
+  cancelScheduledValues = vi.fn();
 }
 
 class FakeNode {
   connect = vi.fn();
+  disconnect = vi.fn();
 }
 
 class FakeGain extends FakeNode {
   gain = new FakeAudioParam();
 }
 
-class FakeDelay extends FakeNode {
-  delayTime = new FakeAudioParam();
-}
-
 class FakeFilter extends FakeNode {
   type = "lowpass";
   frequency = new FakeAudioParam();
+  Q = new FakeAudioParam();
 }
 
 class FakeOscillator extends FakeNode {
-  type = "sine";
+  type: OscillatorType = "sine";
   frequency = new FakeAudioParam();
   detune = new FakeAudioParam();
   start = vi.fn();
   stop = vi.fn();
 }
 
+class FakeBufferSource extends FakeNode {
+  buffer: unknown = null;
+  start = vi.fn();
+  stop = vi.fn();
+}
+
+class FakeDelay extends FakeNode {
+  delayTime = new FakeAudioParam();
+}
+
 class FakeAudioContext {
+  sampleRate = 44100;
   currentTime = 0;
   destination = new FakeNode();
-  oscillators: FakeOscillator[] = [];
   gains: FakeGain[] = [];
+  oscillators: FakeOscillator[] = [];
+  bufferSources: FakeBufferSource[] = [];
 
   createGain() {
-    const gain = new FakeGain();
-    this.gains.push(gain);
-    return gain;
+    const g = new FakeGain();
+    this.gains.push(g);
+    return g;
   }
-
-  createDelay() {
-    return new FakeDelay();
-  }
-
-  createBiquadFilter() {
-    return new FakeFilter();
-  }
-
+  createBiquadFilter() { return new FakeFilter(); }
   createOscillator() {
-    const oscillator = new FakeOscillator();
-    this.oscillators.push(oscillator);
-    return oscillator;
+    const o = new FakeOscillator();
+    this.oscillators.push(o);
+    return o;
   }
+  createBuffer(_c: number, length: number) {
+    const channel = new Float32Array(length);
+    return { getChannelData: () => channel };
+  }
+  createBufferSource() {
+    const s = new FakeBufferSource();
+    this.bufferSources.push(s);
+    return s;
+  }
+  createDelay() { return new FakeDelay(); }
 }
 
 let contexts: FakeAudioContext[];
@@ -88,7 +151,14 @@ class FakeAudioContextCtor extends FakeAudioContext {
   }
 }
 
-describe("audio engine", () => {
+function arm() {
+  const engine = createAudioEngine();
+  engine.armOnGesture();
+  window.dispatchEvent(new Event("pointerdown"));
+  return engine;
+}
+
+describe("AudioEngine override behavior", () => {
   beforeEach(() => {
     contexts = [];
     vi.useFakeTimers();
@@ -101,115 +171,54 @@ describe("audio engine", () => {
     vi.unstubAllGlobals();
   });
 
-  it.each([
-    ["idle", "auto", "idle"],
-    ["voteActive", "auto", "vote"],
-    ["missionActive", "auto", "mission"],
-    ["overBudget", "auto", "overBudget"],
-    ["story", "auto", "story"],
-    ["voteActive", "cafe", "cafe"],
-  ] as const)("resolves %s with %s soundtrack to %s", (scenario, soundtrack, expected) => {
-    expect(resolveSoundtrackScenario(scenario, soundtrack)).toBe(expected);
+  it("setOverride pushes resolution immediately for new entries", () => {
+    const engine = arm();
+    expect(engine.getResolution()).toBe("song4_day");
+    engine.setOverride("intro", "song9_intro");
+    expect(engine.getResolution()).toBe("song9_intro");
   });
 
-  it("arms on a user gesture before scheduling synth nodes", () => {
-    const engine = createAudioEngine();
-    engine.armOnGesture();
-
-    window.dispatchEvent(new Event("pointerdown"));
-
-    const context = contexts[0];
-    expect(context).toBeDefined();
-    expect(context?.oscillators.length).toBeGreaterThan(0);
+  it("setOverride(null) defers the resolution recompute (~250 ms)", () => {
+    const engine = arm();
+    engine.setOverride("intro", "song9_intro");
+    expect(engine.getResolution()).toBe("song9_intro");
+    engine.setOverride("intro", null);
+    // Still on song9_intro until the deferred timer fires.
+    expect(engine.getResolution()).toBe("song9_intro");
+    vi.advanceTimersByTime(260);
+    expect(engine.getResolution()).toBe("song4_day");
   });
 
-  it("does not play sfx while muted", () => {
-    const engine = createAudioEngine();
-    engine.armOnGesture();
-    window.dispatchEvent(new Event("pointerdown"));
+  it("a scenario change inside the defer window supersedes the pending recompute", () => {
+    const engine = arm();
+    engine.setOverride("vote-splash", "song6_vote");
+    engine.setOverride("vote-splash", null);
+    // Within 250 ms, the racing scenario change lands.
+    engine.setScenario("vote");
+    // Resolution is now driven by the scenario; deferred clear shouldn't
+    // reintroduce a swap.
+    expect(engine.getResolution()).toBe("song6_vote");
+    vi.advanceTimersByTime(260);
+    expect(engine.getResolution()).toBe("song6_vote");
+  });
 
-    const context = contexts[0];
-    const before = context?.oscillators.length ?? 0;
+  it("notifies resolution listeners on change", () => {
+    const engine = arm();
+    const cb = vi.fn();
+    engine.onResolutionChange(cb);
+    engine.setOverride("intro", "song9_intro");
+    expect(cb).toHaveBeenCalledWith("song9_intro");
+  });
+
+  it("flushes the patchBus on the silenced -> unsilenced transition", () => {
+    const engine = arm();
+    const ctx = contexts[0]!;
+    const gainsBefore = ctx.gains.length;
     engine.setMute(true);
-    engine.sfx("open");
-
-    expect(context?.oscillators.length).toBe(before);
-  });
-
-  it("starts silent while a suppression reason is active, then resumes when released", () => {
-    const engine = createAudioEngine();
-    engine.setSuppressed("auth", true);
-    engine.armOnGesture();
-    window.dispatchEvent(new Event("pointerdown"));
-
-    const master = contexts[0]?.gains[0]; // first gain created in start() is the master
-    expect(master?.gain.value).toBe(0);
-
-    engine.setSuppressed("auth", false);
-    expect(master?.gain.value).toBeGreaterThan(0);
-  });
-
-  it("stays silent until EVERY suppression reason is released (no clobber)", () => {
-    const engine = createAudioEngine();
-    engine.setSuppressed("auth", true);
-    engine.setSuppressed("error", true);
-    engine.armOnGesture();
-    window.dispatchEvent(new Event("pointerdown"));
-
-    const master = contexts[0]?.gains[0];
-    engine.setSuppressed("auth", false);
-    expect(master?.gain.value).toBe(0); // "error" still holds it silent
-
-    engine.setSuppressed("error", false);
-    expect(master?.gain.value).toBeGreaterThan(0);
-  });
-
-  it("plays sfx while suppressed so the error pop stays audible", () => {
-    const engine = createAudioEngine();
-    engine.armOnGesture();
-    window.dispatchEvent(new Event("pointerdown"));
-
-    const context = contexts[0];
-    engine.setSuppressed("error", true);
-    const before = context?.oscillators.length ?? 0;
-    engine.sfx("bubble");
-
-    expect(context?.oscillators.length ?? 0).toBeGreaterThan(before);
-  });
-
-  it("does not play sfx while hard-muted even if not suppressed", () => {
-    const engine = createAudioEngine();
-    engine.armOnGesture();
-    window.dispatchEvent(new Event("pointerdown"));
-
-    const context = contexts[0];
-    engine.setMute(true);
-    const before = context?.oscillators.length ?? 0;
-    engine.sfx("bubble");
-
-    expect(context?.oscillators.length).toBe(before);
-  });
-});
-
-describe("deriveTripAudioScenario", () => {
-  it("applies scenario priority", () => {
-    const input = {
-      storyOpen: false,
-      overBudget: false,
-      voteActive: false,
-      missionActive: false,
-    };
-
-    expect(deriveTripAudioScenario(input)).toBe<AudioScenario>("idle");
-    expect(deriveTripAudioScenario({ ...input, missionActive: true })).toBe("missionActive");
-    expect(
-      deriveTripAudioScenario({ ...input, missionActive: true, voteActive: true }),
-    ).toBe("voteActive");
-    expect(
-      deriveTripAudioScenario({ ...input, overBudget: true, voteActive: true }),
-    ).toBe("overBudget");
-    expect(
-      deriveTripAudioScenario({ ...input, storyOpen: true, overBudget: true }),
-    ).toBe("story");
+    // No new gain created on mute alone.
+    expect(ctx.gains.length).toBe(gainsBefore);
+    engine.setMute(false);
+    // Unmute should have created a new patchBus gain.
+    expect(ctx.gains.length).toBeGreaterThan(gainsBefore);
   });
 });

@@ -14,6 +14,7 @@ import {
   type Checkpoint,
   type CloakingPin,
   type JournalEvent,
+  type MysteryMissionFeedItem,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
   type Transaction,
@@ -30,6 +31,7 @@ import RouteVotePanel from "../routevote/RouteVotePanel";
 import VoteTimeSplash from "../routevote/VoteTimeSplash";
 import TravelerStateSheet from "../travelstate/TravelerStateSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import {
   Dock,
   type DockTab,
@@ -72,6 +74,7 @@ import {
   readOccluderPadding,
   type FocusGeometry,
 } from "./focusCoordinate";
+import { circlePolygon } from "./circlePolygon";
 import { useTripPath } from "./useTripPath";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
@@ -389,6 +392,117 @@ function CheckpointMarkers({
   // onCheckpointClick intentionally omitted — kept fresh via onClickRef
 
   }, [map, checkpoints]);
+
+  return null;
+}
+
+function AccuracyCircle({
+  map,
+  position,
+  isVisible,
+  color,
+}: {
+  map: maplibregl.Map | null;
+  position: { lat: number; lon: number; accuracy?: number } | null;
+  isVisible: boolean;
+  color: string;
+}) {
+  useEffect(() => {
+    if (!map) return;
+
+    const isStyleReady = () => map.isStyleLoaded() === true;
+    const removeAccuracyCircle = () => {
+      if (!isStyleReady()) return;
+      if (map.getLayer("accuracy-circle-fill")) map.removeLayer("accuracy-circle-fill");
+      if (map.getLayer("accuracy-circle-stroke")) map.removeLayer("accuracy-circle-stroke");
+      if (map.getSource("accuracy-circle")) map.removeSource("accuracy-circle");
+    };
+
+    const syncAccuracyCircle = () => {
+      if (!position || !position.accuracy || !isVisible) {
+        removeAccuracyCircle();
+        return;
+      }
+
+      if (!isStyleReady()) return;
+
+      const geojson = circlePolygon(position.lat, position.lon, position.accuracy);
+      const source = map.getSource("accuracy-circle") as maplibregl.GeoJSONSource | undefined;
+
+      if (source) {
+        if (typeof source.setData === "function") {
+          source.setData(geojson);
+        }
+        if (typeof map.setPaintProperty === "function") {
+          if (map.getLayer("accuracy-circle-fill")) {
+            map.setPaintProperty("accuracy-circle-fill", "fill-color", color);
+          }
+          if (map.getLayer("accuracy-circle-stroke")) {
+            map.setPaintProperty("accuracy-circle-stroke", "line-color", color);
+          }
+        }
+      } else if (typeof map.addSource === "function") {
+        map.addSource("accuracy-circle", {
+          type: "geojson",
+          data: geojson,
+        });
+      }
+
+      if (!map.getLayer("accuracy-circle-fill") && typeof map.addLayer === "function") {
+        map.addLayer({
+          id: "accuracy-circle-fill",
+          type: "fill",
+          source: "accuracy-circle",
+          paint: {
+            "fill-color": color,
+            "fill-opacity": 0.12,
+          },
+        });
+      }
+
+      if (!map.getLayer("accuracy-circle-stroke") && typeof map.addLayer === "function") {
+        map.addLayer({
+          id: "accuracy-circle-stroke",
+          type: "line",
+          source: "accuracy-circle",
+          paint: {
+            "line-color": color,
+            "line-width": 1,
+            "line-opacity": 0.25,
+          },
+        });
+      }
+    };
+
+    syncAccuracyCircle();
+    const loadSubscription = map.on("load", syncAccuracyCircle);
+    const styleLoadSubscription = map.on("style.load", syncAccuracyCircle);
+
+    return () => {
+      if (typeof loadSubscription.unsubscribe === "function") {
+        loadSubscription.unsubscribe();
+      } else if (typeof (map as { off?: (event: string, listener: () => void) => void }).off === "function") {
+        (map as { off: (event: string, listener: () => void) => void }).off("load", syncAccuracyCircle);
+      }
+      if (typeof styleLoadSubscription.unsubscribe === "function") {
+        styleLoadSubscription.unsubscribe();
+      } else if (typeof (map as { off?: (event: string, listener: () => void) => void }).off === "function") {
+        (map as { off: (event: string, listener: () => void) => void }).off("style.load", syncAccuracyCircle);
+      }
+    };
+  }, [map, position, isVisible, color]);
+
+  // Final cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (map) {
+        if (map.isStyleLoaded() !== true) return;
+        if (map.getLayer("accuracy-circle-fill")) map.removeLayer("accuracy-circle-fill");
+        if (map.getLayer("accuracy-circle-stroke")) map.removeLayer("accuracy-circle-stroke");
+        if (map.getSource("accuracy-circle")) map.removeSource("accuracy-circle");
+      }
+    };
+  }, [map]);
 
   return null;
 }
@@ -974,6 +1088,7 @@ export default function TripMap({
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
   const locationDeniedPromptedRef = useRef(false);
+  const locationDeniedSettingsOpenedRef = useRef(false);
   const lastLocationFixAtRef = useRef<number | null>(null);
   const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
@@ -1017,6 +1132,7 @@ export default function TripMap({
   calibrationRef.current = calibration;
 
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [isVotePanelOpen, setIsVotePanelOpen] = useState(false);
@@ -1024,7 +1140,7 @@ export default function TripMap({
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(false);
-  const [livePosition, setLivePosition] = useState<{ lat: number; lon: number } | null>(null);
+  const [livePosition, setLivePosition] = useState<{ lat: number; lon: number; accuracy?: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"default" | "mystery">("default");
@@ -1043,6 +1159,7 @@ export default function TripMap({
   const [selectedCloakingPin, setSelectedCloakingPin] = useState<CloakingPin | null>(null);
   const [isAchievementsOpen, setIsAchievementsOpen] = useState(false);
   const [isMissionsPanelOpen, setIsMissionsPanelOpen] = useState(false);
+  const [isMissionDetailOpen, setIsMissionDetailOpen] = useState(false);
   const [journalDebugSource, setJournalDebugSource] = useState<DebugOpenSource>(UNKNOWN_DEBUG_SOURCE);
   const [mapCooldownState, setMapCooldownState] = useState<MapCooldownState>(() => readMapCooldownState());
   // Basemap style fetch failure (e.g. a 404 from a misconfigured proxy host).
@@ -1075,9 +1192,13 @@ export default function TripMap({
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayPaused, setReplayPaused] = useState(false);
+  const stopFollowing = useCallback(() => {
+    setIsFollowing(false);
+  }, []);
   const canWrite = role === "traveler";
   const { resolvedMapBase, resolvedTheme } = useTheme();
   const routeLineColor = resolvedTheme === "constellation" ? "#ffd86a" : "#444444";
+  const gpsPulseColor = resolvedTheme === "constellation" ? "#ffb84a" : "#7a9cdc";
   const sheetPersonalities = useSheetPersonalities();
   const FUNDS_PERSONALITY = sheetPersonalities.funds;
   const mapStyleResolution = useMemo(() => getMapStyleResolution(resolvedMapBase), [resolvedMapBase]);
@@ -1097,7 +1218,14 @@ export default function TripMap({
     tripcastApi.cloakingPins.travelerListCloakingPins,
     role === "traveler" ? { token } : "skip",
   );
-  const checkpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token }) ?? [];
+  const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token });
+  const cutoffPreview = useFollowerCutoffPreview(role, token);
+  const checkpoints = useMemo(() => {
+    const all = rawCheckpoints ?? [];
+    return cutoffPreview.cutoffAt
+      ? all.filter((cp) => (cp.happenedAt ?? cp.createdAt) >= (cutoffPreview.cutoffAt as number))
+      : all;
+  }, [rawCheckpoints, cutoffPreview.cutoffAt]);
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
   });
@@ -1110,13 +1238,24 @@ export default function TripMap({
     role === "follower" ? { token } : "skip",
   );
   const liveTrailEnabled = role === "traveler" && travelerLiveTrailStatus?.enabled === true;
-  const liveTrailSamples = useMemo(
-    () =>
+  const followerPreferences = useQuery(
+    tripcastApi.travelerPreferences.followerGetPreferences,
+    role === "follower" ? { token } : "skip",
+  );
+
+  const travelerAllowsFollowerPath = followerPreferences?.visible
+    ? (followerPreferences.allowFollowersTripPath ?? false)
+    : false;
+
+  const liveTrailSamples = useMemo(() => {
+    const all =
       role === "traveler"
         ? (travelerLiveTrailStatus?.samples ?? [])
-        : (followerLiveTrail?.visible ? followerLiveTrail.samples : []),
-    [role, travelerLiveTrailStatus, followerLiveTrail],
-  );
+        : (followerLiveTrail?.visible ? followerLiveTrail.samples : []);
+    return cutoffPreview.cutoffAt
+      ? all.filter((s) => s.sampledAt >= (cutoffPreview.cutoffAt as number))
+      : all;
+  }, [role, travelerLiveTrailStatus, followerLiveTrail, cutoffPreview.cutoffAt]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
@@ -1133,11 +1272,6 @@ export default function TripMap({
     return () => window.removeEventListener("tripcast.preferencesUpdated", handler);
   }, []);
 
-  const followerPreferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
-
-  const travelerAllowsFollowerPath = followerPreferences?.visible
-    ? ((followerPreferences as any).allowFollowersTripPath ?? false)
-    : false;
   const showPath = role === "traveler"
     ? showTripPathLocal
     : travelerAllowsFollowerPath && showTripPathLocal;
@@ -1145,10 +1279,11 @@ export default function TripMap({
   const handleCloakingPinClick = useCallback(
     (pin: CloakingPin) => {
       music.sfx("tap");
+      stopFollowing();
       setSelectedCloakingPin(pin);
       mapInstance?.easeTo({ center: [pin.lon, pin.lat], duration: 500 });
     },
-    [music, mapInstance],
+    [music, mapInstance, stopFollowing],
   );
 
   useCloakingZones(
@@ -1172,7 +1307,12 @@ export default function TripMap({
   const currentSessionId = sessionData?.sessionId || followerSession?.sessionId;
 
   const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
-  const journalEvents = useMemo(() => queriedJournalEvents ?? [], [queriedJournalEvents]);
+  const journalEvents = useMemo(() => {
+    const all = queriedJournalEvents ?? [];
+    return cutoffPreview.cutoffAt
+      ? all.filter((e) => e.occurredAt >= (cutoffPreview.cutoffAt as number))
+      : all;
+  }, [queriedJournalEvents, cutoffPreview.cutoffAt]);
   const replayPins = useMemo<ReplayPin[]>(() => {
     const checkpointPins: ReplayPin[] = journalEvents
       .filter(isFiniteReplayCoordinate)
@@ -1313,11 +1453,10 @@ export default function TripMap({
   }, [isDesktop]);
 
   useTripAudioScenario({
-    token,
-    role,
-    storyOpen: selectedStoryEvent !== null || storyPrefill !== null,
-    voteActive: isVotePanelOpen || hasUnseenVote,
-    missionActive: isMissionsPanelOpen || missionBadgeCount > 0,
+    storyOpen: selectedStoryDetail !== null || storyPrefill !== null,
+    missionDetailOpen: isMissionDetailOpen,
+    achievementsOpen: isAchievementsOpen,
+    voteSheetOpen: isVotePanelOpen,
   });
 
   useEffect(() => {
@@ -1983,7 +2122,10 @@ export default function TripMap({
   // Keep placement mode ref in sync
   useEffect(() => {
     placementModeRef.current = isPlacementMode;
-  }, [isPlacementMode]);
+    if (isPlacementMode) {
+      stopFollowing();
+    }
+  }, [isPlacementMode, stopFollowing]);
 
   const cancelCoordinatePick = useCallback(() => {
     log.logInteraction("coordinate:pick-mode:cancel");
@@ -1994,12 +2136,13 @@ export default function TripMap({
   // ESC cancels coordinate pick mode
   useEffect(() => {
     if (!coordinatePickMode) return;
+    stopFollowing();
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") cancelCoordinatePick();
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [coordinatePickMode, cancelCoordinatePick]);
+  }, [coordinatePickMode, cancelCoordinatePick, stopFollowing]);
 
   // Map init
   useEffect(() => {
@@ -2114,6 +2257,7 @@ export default function TripMap({
 
     let touchTimer: ReturnType<typeof setTimeout> | null = null;
     map.on("touchstart", (e) => {
+      stopFollowing();
       if (e.points.length > 1) return;
       touchTimer = setTimeout(() => {
         const { lat, lng: lon } = e.lngLat;
@@ -2125,8 +2269,16 @@ export default function TripMap({
     map.on("touchend", () => touchTimer && clearTimeout(touchTimer));
     map.on("touchmove", () => touchTimer && clearTimeout(touchTimer));
     map.on("mousedown", () => setContextMenu(null));
-    map.on("dragstart", () => setContextMenu(null));
-    map.on("zoomstart", () => setContextMenu(null));
+    map.on("dragstart", () => {
+      stopFollowing();
+      setContextMenu(null);
+    });
+    map.on("zoomstart", (event) => {
+      if ((event as { originalEvent?: unknown }).originalEvent) {
+        stopFollowing();
+      }
+      setContextMenu(null);
+    });
 
     map.on("click", (event) => {
       setContextMenu(null);
@@ -2254,6 +2406,7 @@ export default function TripMap({
     mapInitRetryToken,
     recordMapResourceFailure,
     showToast,
+    stopFollowing,
   ]);
 
   // When no focus-driving sheet is open, drop the active focus + observer so a
@@ -2335,11 +2488,45 @@ export default function TripMap({
     });
   }, [liveTrailPathVisible, liveTrailSamples.length, log, role]);
 
-  // Track location only after an explicit Traveler opt-in. On a native
-  // (Capacitor) build use the background-capable watcher so location keeps
-  // emitting while the phone is locked; on web fall back to the browser API.
+  const centerMapOnCoordinate = useCallback(
+    (coordinate: { lat: number; lon: number }) => {
+      const map = mapRef.current;
+      if (!map) return;
+      if (mapServiceUnavailableRef.current) {
+        logMapEvent("map:camera:blocked", { trigger: "center:location" });
+        showToast("Map movement is paused until the map service resumes.");
+        return;
+      }
+      log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "center:location" });
+      // Reset any persistent padding set by handleNavigateToMission before easing
+      map.easeTo({
+        center: [coordinate.lon, coordinate.lat],
+        zoom: Math.max(map.getZoom(), 14),
+        duration: 700,
+        padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      });
+    },
+    [log, showToast],
+  );
+
   useEffect(() => {
-    if (role !== "traveler" || !isLocationSharing) {
+    if (!isFollowing) return;
+    const currentLocation =
+      role === "traveler"
+        ? (livePosition ?? storedTravelerLocation ?? null)
+        : (storedTravelerLocation ?? null);
+
+    if (currentLocation) {
+      centerMapOnCoordinate(currentLocation);
+    }
+  }, [centerMapOnCoordinate, isFollowing, livePosition, storedTravelerLocation, role]);
+
+  // Track location for Travelers. On a native (Capacitor) build, use the
+  // background-capable watcher when "Live" is ON; otherwise fall back to
+  // the foreground-only browser API to show the local GPS dot without
+  // draining battery for background tracking.
+  useEffect(() => {
+    if (role !== "traveler") {
       setLocationStale(false);
       return;
     }
@@ -2354,7 +2541,7 @@ export default function TripMap({
         liveTrailPermissionLoggedRef.current = true;
         log.logInteraction("live-trail:permission:result", { result: "granted" });
       }
-      const nextPosition = { lat, lon };
+      const nextPosition = { lat, lon, accuracy };
       livePositionRef.current = nextPosition;
       setLivePosition(nextPosition);
 
@@ -2411,9 +2598,9 @@ export default function TripMap({
 
       if (isLocationSharingRef.current) {
         publishTravelerLocation(nextPosition, accuracy);
-      }
-      if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
-        publishLiveTrailSample(nextPosition, accuracy);
+        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+          publishLiveTrailSample(nextPosition, accuracy);
+        }
       }
     };
 
@@ -2422,13 +2609,21 @@ export default function TripMap({
         typeof error === "object" && error !== null && "code" in error
           ? (error as { code?: unknown }).code
           : undefined;
-      // Native: location was denied. Guide the user to re-enable it once,
-      // rather than leaving them hunting through Settings (no crash here —
-      // a missing Info.plist usage string crashes natively before this fires).
-      if (code === "NOT_AUTHORIZED" && !locationDeniedPromptedRef.current) {
-        locationDeniedPromptedRef.current = true;
-        showToast("Location access is off for TripCast. Opening Settings to enable it.");
-        openNativeLocationSettings();
+      // Native/Web: location was denied. Toast once per session, but do not let
+      // passive foreground GPS consume the native settings handoff for Live.
+      if (code === "NOT_AUTHORIZED" || code === 1) {
+        if (!locationDeniedPromptedRef.current) {
+          locationDeniedPromptedRef.current = true;
+          showToast("Location access is off for TripCast. You can enable it in your device settings.");
+        }
+        if (
+          isLocationSharingRef.current &&
+          isNativeLocationAvailable() &&
+          !locationDeniedSettingsOpenedRef.current
+        ) {
+          locationDeniedSettingsOpenedRef.current = true;
+          openNativeLocationSettings();
+        }
       }
       if (!liveTrailEnabledRef.current) return;
       log.logInteraction("live-trail:permission:result", { result: "denied", code });
@@ -2436,7 +2631,7 @@ export default function TripMap({
 
     let cleanup: () => void = () => {};
 
-    if (isNativeLocationAvailable()) {
+    if (isLocationSharing && isNativeLocationAvailable()) {
       log.logInteraction("live-trail:native-watch:start", {});
       const stop = startNativeLocationWatch(
         (fix) => handleFix(fix.lat, fix.lon, fix.accuracy),
@@ -2519,6 +2714,7 @@ export default function TripMap({
   useEffect(() => {
     if (tripDataResetNonce === 0) return;
     setIsVotePanelOpen(false);
+    stopFollowing();
     setVoteMapOverlay(null);
     setVoteOptionNumberById(null);
     setCoordinatePickMode(null);
@@ -2532,7 +2728,7 @@ export default function TripMap({
     setReplayPaused(false);
     clearReplayResume(token);
     lastLiveTrailSampleRef.current = null;
-  }, [tripDataResetNonce, token]);
+  }, [tripDataResetNonce, stopFollowing, token]);
 
   function publishTravelerLocation(
     position: { lat: number; lon: number },
@@ -2594,6 +2790,7 @@ export default function TripMap({
     isLocationSharingRef.current = false;
     lastSentLocationRef.current = null;
     setIsLocationSharing(false);
+    stopFollowing();
     stopTravelerLocationSharing({ token }).catch(() => {});
   }
 
@@ -2636,12 +2833,13 @@ export default function TripMap({
       isLocationSharingRef.current = true;
       setIsLocationSharing(true);
       if (livePosition) {
-        publishTravelerLocation(livePosition);
+        publishTravelerLocation(livePosition, livePosition.accuracy);
       }
     }
   }
 
   function handleStartReplay() {
+    stopFollowing();
     if (!canReplayTrip) {
       log.logInteraction("replay:start:boundary", { reason: "no-coordinate-pins" });
       showToast("Trip Replay needs at least one located journal event.");
@@ -2769,6 +2967,8 @@ export default function TripMap({
       return;
     }
 
+    stopFollowing();
+
     if (focus.kind === "fit") {
       const padding = readOccluderPadding(map, {
         topOccluderEl: cardsWrapperRef.current,
@@ -2869,6 +3069,7 @@ export default function TripMap({
     coord: { lat: number; lon: number },
     opts: { trigger: string; sheetSelector: string | null; minZoom?: number; duration?: number },
   ) {
+    stopFollowing();
     activeFocusRef.current = { kind: "center", coord, ...opts };
     lastRecenterHeightRef.current = -1;
     applyActiveFocus("initial"); // move now with best-available measurement
@@ -2881,6 +3082,24 @@ export default function TripMap({
       sheetSelector: "[data-role='missions-sheet']",
     });
   }
+
+  const handleMysterySignalAppeared = useCallback(
+    (mission: MysteryMissionFeedItem) => {
+      if (mission.lat !== undefined && mission.lon !== undefined) {
+        music.sfx("success");
+        showToast("Mystery Signal detected.", "mystery");
+        focusCoordinate(
+          { lat: mission.lat, lon: mission.lon },
+          {
+            trigger: "mystery-signal:automatic-reveal",
+            sheetSelector: null,
+            minZoom: 14,
+          },
+        );
+      }
+    },
+    [music, showToast, focusCoordinate],
+  );
 
   function handleNavigateToVote(voteId: string) {
     log.logInteraction("panel:navigate", { from: "Missions", to: "votes", voteId });
@@ -3079,22 +3298,11 @@ export default function TripMap({
   }
 
 
-  function centerMapOnCoordinate(coordinate: { lat: number; lon: number }) {
-    const map = mapRef.current;
-    if (!map) return;
-    if (mapServiceUnavailableRef.current) {
-      logMapEvent("map:camera:blocked", { trigger: "center:location" });
-      showToast("Map movement is paused until the map service resumes.");
-      return;
-    }
-    log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "center:location" });
-    // Reset any persistent padding set by handleNavigateToMission before easing
-    map.easeTo({
-      center: [coordinate.lon, coordinate.lat],
-      zoom: Math.max(map.getZoom(), 14),
-      duration: 700,
-      padding: { top: 0, right: 0, bottom: 0, left: 0 },
-    });
+  function startFollowingTraveler(coordinate: { lat: number; lon: number }) {
+    pendingFocusRef.current = null;
+    focusAdjustArmRef.current = null;
+    setIsFollowing(true);
+    centerMapOnCoordinate(coordinate);
   }
 
   function handleHistoryLocationFocus(coordinate: { lat: number; lon: number }) {
@@ -3120,10 +3328,11 @@ export default function TripMap({
         : (storedTravelerLocation ?? null);
 
     if (currentLocation) {
-      centerMapOnCoordinate(currentLocation);
+      startFollowingTraveler(currentLocation);
       return;
     }
 
+    stopFollowing();
     const lastCheckpoint = checkpoints[checkpoints.length - 1];
     if (lastCheckpoint?.lat !== undefined && lastCheckpoint.lon !== undefined) {
       centerMapOnCoordinate(lastCheckpoint as { lat: number; lon: number });
@@ -3137,6 +3346,7 @@ export default function TripMap({
   // the focus machinery so padding is measured from the real sheet/card and the
   // fit re-applies once the sheet settles (and clears on close).
   function handleRequestFitMap(bounds: [[number, number], [number, number]] | null) {
+    stopFollowing();
     if (!bounds || !isFiniteLngLatBounds(bounds)) {
       if (activeFocusRef.current?.kind === "fit") {
         activeFocusRef.current = null;
@@ -3238,6 +3448,20 @@ export default function TripMap({
           });
         }}
       />
+      <AccuracyCircle
+        map={mapInstance}
+        position={
+          role === "traveler"
+            ? livePosition
+            : (storedTravelerLocation ?? null)
+        }
+        isVisible={role === "traveler" || (storedTravelerLocation?.isSharing ?? false)}
+        color={
+          role === "traveler"
+            ? (isLocationSharing ? gpsPulseColor : "#102a43")
+            : gpsPulseColor
+        }
+      />
       <TravelerLocationMarker
         map={mapInstance}
         isPulsing={
@@ -3265,6 +3489,7 @@ export default function TripMap({
           music.sfx("success");
           showToast("Mystery Mission revealed.", "mystery");
         }}
+        onMysterySignalAppeared={handleMysterySignalAppeared}
       />
       <MissionMarkers
         map={mapInstance}
@@ -3483,9 +3708,7 @@ export default function TripMap({
 
       {/* Debug chip — only visible when debug logging is enabled */}
       {onOpenDebugPanel ? (
-        <div className="absolute right-3 top-12 z-[3]">
-          <DebugChip onOpen={onOpenDebugPanel} />
-        </div>
+        <DebugChip onOpen={onOpenDebugPanel} />
       ) : null}
 
       {/* Calibration indicator — signals that map sheets won't dismiss on map interaction */}
@@ -3502,7 +3725,7 @@ export default function TripMap({
       {/* Map utility — center on traveler (replaces the LocateFixed FAB) */}
       <MapCenterButton
         className="absolute bottom-[118px] right-3 z-[2]"
-        active={role === "traveler" ? isLocationSharing : storedTravelerLocation !== null}
+        active={isFollowing}
         onClick={handleCenterLocation}
       />
 
@@ -3656,13 +3879,13 @@ export default function TripMap({
 
       <div
         ref={cardsWrapperRef}
-        className="absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
+        className="pointer-events-none absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
       >
         {locationStale ? (
           <button
             type="button"
             onClick={openNativeLocationSettings}
-            className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-left text-xs font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]"
+            className="pointer-events-auto rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-left text-xs font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]"
           >
             Live location hasn’t updated recently. Tap to check location access — or reinstall from
             Xcode if the app build has expired.
@@ -3691,6 +3914,7 @@ export default function TripMap({
                 on={isLocationSharing}
                 onToggle={handleToggleLocationSharing}
                 trailEnabled={liveTrailEnabled}
+                className="pointer-events-auto"
               />
             ) : null}
             <FeatureBoundary
@@ -3703,7 +3927,7 @@ export default function TripMap({
                 token={token}
                 role={role}
                 onOpenSheet={role === "traveler" ? () => openFunds({ source: "funds-chip", sourceLabel: "Funds chip" }) : undefined}
-                className="max-w-full"
+                className="pointer-events-auto max-w-full"
               />
             </FeatureBoundary>
           </div>
@@ -3712,7 +3936,7 @@ export default function TripMap({
             onClick={handleStartReplay}
             disabled={!canReplayTrip}
             aria-pressed={replayActive}
-            className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
+            className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
           >
             <Play className="h-3.5 w-3.5" aria-hidden="true" />
             {replayActive ? `${replaySpeed}x Replay` : "Replay"}
@@ -3846,6 +4070,7 @@ export default function TripMap({
           onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
           onRequestNavigateToVote={handleNavigateToVote}
           onOpenLinkedStory={handleOpenLinkedStory}
+          onDetailOpenChange={setIsMissionDetailOpen}
           debugSource={missionsDebugSource}
         />
       </FeatureBoundary>

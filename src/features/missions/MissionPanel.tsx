@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { Plus, RadioTower, Trophy } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
@@ -29,6 +29,7 @@ import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 
 type Props = {
   open: boolean;
@@ -58,6 +59,7 @@ type Props = {
   debugSource?: { source: string; sourceLabel: string };
   prefilledCoordinate?: { lat: number; lon: number } | null;
   onClearPrefill?: () => void;
+  onDetailOpenChange?: (open: boolean) => void;
 };
 
 type ViewMode = "list" | "create" | "detail";
@@ -107,6 +109,7 @@ export default function MissionPanel({
   debugSource,
   prefilledCoordinate,
   onClearPrefill,
+  onDetailOpenChange,
 }: Props) {
   const { missions: missionsPersonality } = useSheetPersonalities();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -125,6 +128,7 @@ export default function MissionPanel({
     sourceLabel: debugSource?.sourceLabel ?? "Unknown",
     file: "src/features/missions/MissionPanel.tsx",
   }, { boundsSelector: "[data-role='missions-sheet']" });
+
   const deleteMission = useMutation(tripcastApi.missions.travelerDeleteMission);
 
   async function handleConfirmDelete() {
@@ -193,8 +197,8 @@ export default function MissionPanel({
     if (!open || !pendingOpenDetailMissionId) return;
     if (pendingDetailMission === undefined) return; // still loading
     if (pendingDetailMission === null) {
-      // Mission was deleted while the user was writing the story — fall back
-      // to the list view and clear the pending id so we don't loop.
+      // Mission was deleted (or hidden by cutoff) while the user was writing — fall
+      // back to the list view and clear the pending id so we don't loop.
       onClearPendingDetail?.();
       setViewMode("list");
       setSelectedMission(null);
@@ -245,6 +249,14 @@ export default function MissionPanel({
     onClearPendingMysteryMission?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, pendingOpenMysteryMissionId, pendingDetailMysteryMission, pendingMysteryLinkedMission]);
+
+  // Emit detail-open changes so the parent (TripMap) can route the audio
+  // scenario to "story" while a mission detail sheet is being viewed.
+  useEffect(() => {
+    const detailOpen = open && viewMode === "detail" && selectedMission !== null;
+    onDetailOpenChange?.(detailOpen);
+    return () => onDetailOpenChange?.(false);
+  }, [open, viewMode, selectedMission, onDetailOpenChange]);
 
   // Entering the detail view auto-focuses the map on the mission's coordinates
   // — same UX as opening a story. The explicit "View on map" link in the
@@ -489,7 +501,14 @@ function TravelerListView({
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const [swipedId, setSwipedId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
-  const allMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const rawMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const preview = useFollowerCutoffPreview("traveler", token);
+  const allMissions = useMemo(
+    () => preview.cutoffAt && rawMissions
+      ? rawMissions.filter((m) => m.createdAt >= (preview.cutoffAt as number))
+      : rawMissions,
+    [rawMissions, preview.cutoffAt],
+  );
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   function clearHighlightTimers() {
@@ -755,6 +774,7 @@ function FollowerListView({
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
   const myMissions = useQuery(tripcastApi.missions.followerListMyMissions, { token });
+
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 
   const mine = myMissions?.mine ?? [];

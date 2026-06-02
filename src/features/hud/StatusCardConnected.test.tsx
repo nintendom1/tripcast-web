@@ -23,6 +23,42 @@ afterEach(() => {
 });
 
 describe("StatusCardConnected", () => {
+  it("wraps the card in a shrink-to-content hitbox", () => {
+    (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
+      if (ref === tripcastApi.travelerState.travelerGetState) {
+        return {
+          state: {
+            energyScore: 60,
+            stomachScore: 80,
+            stressScore: 20,
+            updatedAt: Date.now(),
+          },
+          visibility: null,
+        };
+      }
+      if (ref === tripcastApi.currentActivity.travelerGetCurrentActivity) {
+        return null;
+      }
+      if (ref === tripcastApi.travelerAutoState.travelerGetAutoState) {
+        return {
+          autoStateEnabled: false,
+          autoTimeZone: "UTC",
+          updatedAt: null,
+          updatedBySessionId: null,
+        };
+      }
+      if (ref === tripcastApi.travelerPreferences.travelerGetPreferences) {
+        return { updatedAt: null };
+      }
+      return null;
+    });
+
+    render(<StatusCardConnected token="token" role="traveler" onOpenState={vi.fn()} />);
+
+    const cardHitbox = screen.getByRole("button", { name: /Traveler status/i }).parentElement;
+    expect(cardHitbox).toHaveClass("pointer-events-auto", "w-fit", "max-w-full", "self-start");
+  });
+
   it("does not render placeholder state meters for Followers when state is hidden", () => {
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
       if (ref === tripcastApi.travelerState.followerGetTravelerState) {

@@ -2,8 +2,15 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
+import timezone from "dayjs/plugin/timezone";
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
 import {
   BookOpen,
+  Bell,
   Bomb,
   Bug,
   ChevronRight,
@@ -17,6 +24,7 @@ import {
   Play,
   RadioTower,
   Route,
+  Shield,
   ShieldAlert,
   Trash2,
   Trophy,
@@ -62,9 +70,11 @@ import CreateInviteControl from "../followers/CreateInviteControl";
 import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import BulkImportSheet from "./BulkImportSheet";
+import { useFollowerCutoffPreview } from "./followerCutoffPreview";
 import BulkExportSheet from "./BulkExportSheet";
 import MysteryMissionsSheet from "./MysteryMissionsSheet";
 import { TERMS } from "../../copy/terminology";
+import { useTicker, TripTicker } from "../hud";
 import { triggerMapCooldown } from "../map/mapService";
 import { triggerCrash } from "../../debug/crashTrigger";
 import { getMapStyleResolution } from "../map/mapService";
@@ -89,7 +99,12 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker";
+
+const TICKER_PREVIEW_MESSAGE = {
+  id: "preview-demo",
+  text: "Sample fact — this is what your ticker will look like.",
+};
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
   { value: "manual_review", label: "Manual review", desc: "You approve each mission before it is visible." },
@@ -104,15 +119,15 @@ const RATE_LIMIT_OPTIONS: { value: MissionRateLimitPreset; label: string }[] = [
   { value: "per_day", label: "1 per day" },
 ];
 
-const SOUNDTRACK_OPTIONS = [
+export const SOUNDTRACK_OPTIONS = [
   { value: "auto", label: "Auto" },
-  { value: "idle", label: "Calm" },
-  { value: "happy", label: "Happy" },
-  { value: "morning", label: "Morning" },
-  { value: "cafe", label: "Cafe" },
-  { value: "story", label: "Story" },
-  { value: "vote", label: "Vote" },
-  { value: "mission", label: "Mission" },
+  { value: "song4_day", label: "Day" },
+  { value: "song4_night", label: "Night" },
+  { value: "song7_story", label: "Story" },
+  { value: "song8_trophy", label: "Trophy" },
+  { value: "song6_vote", label: "Vote" },
+  { value: "song9_intro", label: "Hello" },
+  { value: "song10_credits", label: "Finale" },
 ] as const;
 
 const optionsContentFrameClass = "mx-auto w-full max-w-[1024px] px-4 sm:px-8 lg:px-10";
@@ -182,6 +197,272 @@ function combineDateTime(date: string, time: string) {
 }
 
 type LiveTrailPreviewSample = LiveTrailDeletePreview["samples"][number];
+
+export function FollowerCutoffSection({ token, log }: { token: string; log: DebugLogger }) {
+  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
+  const oldestContent = useQuery(tripcastApi.travelerPreferences.travelerGetOldestContent, { token });
+  const updatePreferences = useMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
+  const preview = useFollowerCutoffPreview("traveler", token);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const cutoffAt = preferences?.followerContentCutoffAt;
+  const enabled = preferences?.followerContentCutoffEnabled ?? false;
+  const timeZone = preferences?.travelerTimeZone ?? detectBrowserTimeZone() ?? "UTC";
+
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+
+  // Sync pickers from server. Run when the saved value or timezone changes so
+  // mutations from other clients reflect immediately.
+  useEffect(() => {
+    if (cutoffAt) {
+      setDate(formatDateInputValue(cutoffAt, timeZone));
+      setTime(formatTimeInputValue(cutoffAt, timeZone));
+    } else {
+      setDate("");
+      setTime("");
+    }
+  }, [cutoffAt, timeZone]);
+
+  const previewCutoffMs = useMemo(() => {
+    if (!date || !time) return null;
+    const dt = dayjs.tz(`${date}T${time}`, timeZone);
+    const ms = dt.valueOf();
+    return Number.isFinite(ms) ? ms : null;
+  }, [date, time, timeZone]);
+
+  const countsSkip = !enabled || previewCutoffMs === null;
+  const counts = useQuery(
+    tripcastApi.travelerPreferences.travelerCountContentBeforeCutoff,
+    countsSkip ? "skip" : { token, cutoffAt: previewCutoffMs as number },
+  );
+
+  useEffect(() => {
+    log.logInteraction("follower-cutoff:open");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleToggle(nextEnabled: boolean) {
+    setError(null);
+    setSaving(true);
+    log.logInteraction("follower-cutoff:toggle", { enabled: nextEnabled });
+    try {
+      await updatePreferences({ token, followerContentCutoffEnabled: nextEnabled });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSave() {
+    setError(null);
+    setSaving(true);
+    log.logInteraction("follower-cutoff:save", { date, time, timeZone });
+    try {
+      let nextCutoffAt: number | null = null;
+      if (date && time) {
+        const dt = dayjs.tz(`${date}T${time}`, timeZone);
+        nextCutoffAt = dt.valueOf();
+      }
+      await updatePreferences({ token, followerContentCutoffAt: nextCutoffAt });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleUseOldest() {
+    if (!oldestContent) return;
+    setDate(formatDateInputValue(oldestContent.timestamp, timeZone));
+    setTime(formatTimeInputValue(oldestContent.timestamp, timeZone));
+    log.logInteraction("follower-cutoff:use-oldest", {
+      sourceType: oldestContent.sourceType,
+      timestamp: oldestContent.timestamp,
+    });
+  }
+
+  function handleUseNow() {
+    const now = Date.now();
+    setDate(formatDateInputValue(now, timeZone));
+    setTime(formatTimeInputValue(now, timeZone));
+    log.logInteraction("follower-cutoff:use-now", { timestamp: now });
+  }
+
+  const savedFormatted = cutoffAt ? dayjs.tz(cutoffAt, timeZone).format("MMM D, YYYY h:mm A z") : null;
+  const previewFormatted = previewCutoffMs ? dayjs.tz(previewCutoffMs, timeZone).format("MMM D, YYYY h:mm A z") : null;
+  const oldestFormatted = oldestContent
+    ? dayjs.tz(oldestContent.timestamp, timeZone).format("MMM D, YYYY h:mm A z")
+    : null;
+  const pickerEditedSinceSave = previewCutoffMs !== null && previewCutoffMs !== cutoffAt;
+
+  return (
+    <div className="grid gap-6">
+      <OptionsSection label="About">
+        <OptionsGroup>
+          <div className="grid gap-3 p-4 sm:p-5">
+            <div className="flex items-start gap-4">
+              <OptionsIcon icon={Shield} />
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-semibold text-[var(--ink-1)]">Follower content cutoff</p>
+                <p className="text-sm text-[var(--ink-3)]">
+                  Hide trip content from before a chosen date/time from Followers. Hidden
+                  content is not deleted &mdash; you can change or remove the cutoff at any time
+                  and Followers will see it again instantly. Achievement points already
+                  earned are never removed.
+                </p>
+              </div>
+            </div>
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Enable">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            icon={enabled ? EyeOff : Eye}
+            title={enabled ? "Cutoff enabled" : "Cutoff disabled"}
+            detail={
+              enabled
+                ? "Followers see only content at or after the cutoff."
+                : "All trip content is visible to Followers."
+            }
+            checked={enabled}
+            onChange={(checked) => { void handleToggle(checked); }}
+          />
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Cutoff date and time">
+        <OptionsGroup>
+          <div className="grid gap-4 p-4 sm:p-5">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <label
+                  htmlFor="cutoff-date"
+                  className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-3)]"
+                >
+                  Date
+                </label>
+                <input
+                  id="cutoff-date"
+                  type="date"
+                  value={date}
+                  disabled={!enabled || saving}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)] disabled:opacity-60"
+                />
+              </div>
+              <div className="grid gap-2">
+                <label
+                  htmlFor="cutoff-time"
+                  className="text-xs font-semibold uppercase tracking-wider text-[var(--ink-3)]"
+                >
+                  Time
+                </label>
+                <input
+                  id="cutoff-time"
+                  type="time"
+                  value={time}
+                  disabled={!enabled || saving}
+                  onChange={(e) => setTime(e.target.value)}
+                  className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)] disabled:opacity-60"
+                />
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!enabled || saving || !date || !time || !pickerEditedSinceSave}
+              onClick={() => { void handleSave(); }}
+              className="w-full sm:w-fit"
+            >
+              {saving ? "Saving..." : "Save cutoff"}
+            </Button>
+
+            {error ? (
+              <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p>
+            ) : null}
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Status">
+        <OptionsGroup>
+          <div className="grid gap-2 p-4 text-sm text-[var(--ink-3)] sm:p-5">
+            <p>
+              <span className="font-semibold text-[var(--ink-1)]">Current cutoff: </span>
+              {enabled && savedFormatted
+                ? savedFormatted
+                : !enabled && savedFormatted
+                  ? `Disabled (saved: ${savedFormatted})`
+                  : "None"}
+            </p>
+            {enabled && previewCutoffMs !== null ? (
+              <p>
+                <span className="font-semibold text-[var(--ink-1)]">Hiding from Followers: </span>
+                {counts === undefined
+                  ? "Counting..."
+                  : `${counts.stories} Stories · ${counts.missions} Missions · ${counts.routeVotes} Route Votes · ${counts.trailSamples} Trail samples`}
+                {pickerEditedSinceSave ? ` (preview at ${previewFormatted})` : null}
+              </p>
+            ) : null}
+            <p>
+              <span className="font-semibold text-[var(--ink-1)]">Oldest item: </span>
+              {oldestContent === undefined
+                ? "Loading..."
+                : oldestContent === null
+                  ? "No trip content yet."
+                  : `${oldestFormatted} (${oldestContent.sourceType === "story" ? "Story" : "Mission"})`}
+            </p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {oldestContent ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={!enabled || saving}
+                  onClick={handleUseOldest}
+                  className="text-xs"
+                >
+                  Use oldest as cutoff
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={!enabled || saving}
+                onClick={handleUseNow}
+                className="text-xs"
+              >
+                Use now as cutoff
+              </Button>
+            </div>
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      {preview.available ? (
+        <OptionsSection label="Your view">
+          <OptionsGroup>
+            <OptionsSwitchRow
+              icon={Eye}
+              title="Show all"
+              detail="By default your own view is filtered to match what Followers see. Turn this on to bypass the cutoff and reach pre-cutoff content for admin, export, or debug. Per-tab only — closing the tab or starting a new session restores the filtered view."
+              checked={preview.showAll}
+              onChange={(next) => {
+                log.logInteraction("follower-cutoff:show-all-toggle", { showAll: next });
+                preview.setShowAll(next);
+              }}
+            />
+          </OptionsGroup>
+        </OptionsSection>
+      ) : null}
+    </div>
+  );
+}
 
 function TravelerTimezoneSection({ token }: { token: string }) {
   const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, {
@@ -982,6 +1263,11 @@ export default function OptionsSheet({
               title={TERMS.travelFunds}
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "trip-ticker" ? (
+            <SubViewHeader
+              title="Trip Ticker"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
           ) : view === "live-trail" ? (
             <SubViewHeader
               title="Live Trail"
@@ -990,6 +1276,11 @@ export default function OptionsSheet({
           ) : view === "cloaking-pins" ? (
             <SubViewHeader
               title="Cloaking Zones"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
+          ) : view === "follower-cutoff" ? (
+            <SubViewHeader
+              title="Follower content cutoff"
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
           ) : view === "emergency-reset" ? (
@@ -1019,6 +1310,13 @@ export default function OptionsSheet({
                 />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "trip-ticker" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <TripTickerSettings token={session.token} />
+              </OptionsContentFrame>
+            </SheetBody>
+
           ) : view === "live-trail" ? (
             <SheetBody className="p-0">
               <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
@@ -1031,6 +1329,12 @@ export default function OptionsSheet({
                 <CloakingPinsSheet token={session.token} log={log} />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "follower-cutoff" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <FollowerCutoffSection token={session.token} log={log} />
+              </OptionsContentFrame>
+            </SheetBody>
           ) : view === "options" ? (
             <OptionsHome
               role={role}
@@ -1041,17 +1345,22 @@ export default function OptionsSheet({
               onReplayFollowerTour={onReplayFollowerTour}
               onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
               onLiveTrail={() => { music.sfx("page"); navigateTo("live-trail"); }}
+              onTripTicker={() => { music.sfx("page"); navigateTo("trip-ticker"); }}
               onCloakingPins={() => { music.sfx("page"); navigateTo("cloaking-pins"); }}
               onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
               onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
+              onFollowerCutoff={() => { music.sfx("page"); navigateTo("follower-cutoff"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
               onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
               onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
             />
           ) : view === "debug-logs" ? (
             <SheetBody className="min-h-0 overflow-hidden p-0">
-              <DebugPanel onBack={() => { music.sfx("page"); navigateTo("options"); }} />
+              <DebugPanel
+                onBack={() => { music.sfx("page"); navigateTo("options"); }}
+                token={session?.token}
+              />
             </SheetBody>
           ) : null}
         </SheetContent>
@@ -1146,10 +1455,12 @@ function OptionsHome({
   onReplayFollowerTour,
   onTravelFunds,
   onLiveTrail,
+  onTripTicker,
   onCloakingPins,
   onBulkImport,
   onBulkExport,
   onEmergencyReset,
+  onFollowerCutoff,
   onDebugLogs,
   onEndTrip,
   onViewCredits,
@@ -1162,11 +1473,13 @@ function OptionsHome({
   onReplayFollowerTour: () => void;
   onTravelFunds: () => void;
   onLiveTrail: () => void;
+  onTripTicker: () => void;
   onCloakingPins: () => void;
   onDebugLogs: () => void;
   onBulkImport: () => void;
   onBulkExport: () => void;
   onEmergencyReset: () => void;
+  onFollowerCutoff: () => void;
   onEndTrip?: () => void;
   onViewCredits?: () => void;
 }) {
@@ -1228,6 +1541,17 @@ function OptionsHome({
                 onClick={() => {
                   log.logUi("action:live-trail-settings");
                   onLiveTrail();
+                }}
+              />
+            ) : null}
+            {role === "traveler" ? (
+              <OptionsRow
+                icon={Bell}
+                title="Trip Ticker"
+                detail="Persistent scrolling notices and fun facts"
+                onClick={() => {
+                  log.logUi("action:trip-ticker-settings");
+                  onTripTicker();
                 }}
               />
             ) : null}
@@ -1397,11 +1721,27 @@ function OptionsHome({
       )}
 
       {role === "traveler" ? (
-        <OptionsSection label={TERMS.dangerZone}>
-          <OptionsGroup>
-            <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
-          </OptionsGroup>
-        </OptionsSection>
+        <>
+          <OptionsSection label="Privacy">
+            <OptionsGroup>
+              <OptionsRow
+                icon={Shield}
+                title="Follower content cutoff"
+                detail="Hide older trip content from Followers"
+                onClick={() => {
+                  log.logUi("action:follower-cutoff");
+                  onFollowerCutoff();
+                }}
+              />
+            </OptionsGroup>
+          </OptionsSection>
+
+          <OptionsSection label={TERMS.dangerZone}>
+            <OptionsGroup>
+              <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
+            </OptionsGroup>
+          </OptionsSection>
+        </>
       ) : null}
 
       {role === "follower" ? developerSection : null}
@@ -1444,7 +1784,7 @@ function SubViewHeader({
   );
 }
 
-function SoundSection() {
+export function SoundSection() {
   const music = useMusicSafe();
   const volumePercent = Math.round(music.volume * 100);
 
@@ -1472,7 +1812,13 @@ function SoundSection() {
             <div className="min-w-0 flex-1">
               <p className="text-lg font-semibold text-[var(--ink-1)]">{music.mute ? "Muted" : "Playing"}</p>
               <p className="text-sm text-[var(--ink-3)]">
-                {music.mute ? "Audio disabled" : `${SOUNDTRACK_OPTIONS.find((option) => option.value === music.soundtrack)?.label ?? "Auto"} soundtrack`}
+                {music.mute
+                  ? "Audio disabled"
+                  : `Now Playing: ${
+                      music.nowPlaying
+                        ? SOUNDTRACK_OPTIONS.find((option) => option.value === music.nowPlaying)?.label ?? "—"
+                        : "—"
+                    }`}
               </p>
             </div>
           </div>
@@ -1497,24 +1843,30 @@ function SoundSection() {
           <div>
             <p className="mb-3 text-xs font-semibold uppercase text-[var(--ink-3)]">Soundtrack</p>
             <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {SOUNDTRACK_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => {
-                  music.sfx("tap");
-                  music.setSoundtrack(option.value);
-                }}
-                className={cn(
-                  "min-h-11 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors",
-                  music.soundtrack === option.value
-                    ? "border-[var(--ink-1)] bg-[var(--ink-1)] text-[var(--bg-paper)]"
-                    : "border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
+            {SOUNDTRACK_OPTIONS.map((option) => {
+              const isSelected = music.soundtrack === option.value;
+              const isAutoRouting =
+                music.soundtrack === "auto" && music.nowPlaying === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    music.sfx("tap");
+                    music.setSoundtrack(option.value);
+                  }}
+                  className={cn(
+                    "min-h-11 rounded-lg border px-4 py-2.5 text-sm font-semibold transition-colors",
+                    isSelected
+                      ? "border-[var(--ink-1)] bg-[var(--ink-1)] text-[var(--bg-paper)]"
+                      : "border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+                    isAutoRouting && "ring-2 ring-[var(--flag)]/40",
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
             </div>
           </div>
         </div>
@@ -1869,6 +2221,310 @@ function CloakingPinsSheet({ token, log }: { token: string; log: DebugLogger }) 
             ))}
           </OptionsGroup>
         )}
+      </OptionsSection>
+    </div>
+  );
+}
+
+function TickerBulkImportSheet({
+  open,
+  onOpenChange,
+  token,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  token: string;
+}) {
+  const [text, setText] = useState("");
+  const [isImporting, setIsImporting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const commitBulkImport = useMutation(tripcastApi.bulkImport.travelerBulkImport);
+  const music = useMusicSafe();
+
+  const handleImport = async () => {
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length === 0) return;
+
+    setIsImporting(true);
+    setErrorMessage(null);
+    try {
+      const entries = lines.map(line => ({
+        kind: "ticker_fact" as const,
+        text: line
+      }));
+      await commitBulkImport({ token, entries });
+      music.sfx("success");
+      onOpenChange(false);
+      setText("");
+    } catch (e) {
+      console.error("Bulk import failed", e);
+      const detail = e instanceof Error && e.message ? e.message : "Check console for details.";
+      setErrorMessage(`Import failed. ${detail}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  return (
+    <Sheet
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) setErrorMessage(null);
+        onOpenChange(next);
+      }}
+    >
+      <SheetContent side="bottom" className="h-[80dvh]">
+        <SheetTitle>Bulk Import Fun Facts</SheetTitle>
+        <SheetCloseButton />
+        <SheetBody className="flex flex-col gap-4 p-4">
+          <p className="text-sm text-[var(--ink-2)]">
+            Paste a list of fun facts, one per line. They will be added to your trip ticker.
+          </p>
+          <textarea
+            className="flex-1 w-full p-3 text-sm rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] font-mono resize-none focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
+            placeholder="Fact 1&#10;Fact 2&#10;Fact 3..."
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            disabled={isImporting}
+          />
+          {errorMessage ? (
+            <p role="alert" className="text-sm font-medium text-rose-600 dark:text-rose-400">
+              {errorMessage}
+            </p>
+          ) : null}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+              disabled={isImporting}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={handleImport}
+              disabled={isImporting || !text.trim()}
+            >
+              {isImporting ? "Importing..." : `Import ${text.split("\n").filter(l => l.trim()).length} Facts`}
+            </Button>
+          </div>
+        </SheetBody>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export function TripTickerSettings({ token }: { token: string }) {
+  const {
+    settings,
+    updateSettings,
+    addPriorityMessage,
+    removePriorityMessage,
+    addFunFact,
+    removeFunFact,
+    clearAll,
+  } = useTicker(token);
+  const [priorityInput, setPriorityInput] = useState("");
+  const [funFactInput, setFunFactInput] = useState("");
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const confirmingClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (confirmingClearTimeoutRef.current !== null) {
+        clearTimeout(confirmingClearTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  return (
+    <div className="grid gap-8">
+      <OptionsSection label="Preview">
+        <OptionsGroup>
+          <div className="p-4 bg-[var(--bg-paper-2)]/30 rounded-lg overflow-hidden">
+            <TripTicker
+              message={TICKER_PREVIEW_MESSAGE}
+              isPriority={false}
+              className="border rounded shadow-inner"
+            />
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="General">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Ticker"
+            detail="Show the scrolling banner below the top bar."
+            checked={settings.enabled}
+            onChange={(checked) => updateSettings({ enabled: checked })}
+          />
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Priority Messages">
+        <p className="text-xs text-[var(--ink-3)] mb-2">
+          Priority messages loop continuously and take precedence over fun facts.
+        </p>
+        <OptionsGroup>
+          <div className="p-4 sm:p-5 flex gap-2">
+            <input
+              type="text"
+              value={priorityInput}
+              onChange={(e) => setPriorityInput(e.target.value)}
+              placeholder="Notice text (e.g. Low reception ahead)"
+              className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && priorityInput.trim()) {
+                  addPriorityMessage(priorityInput.trim());
+                  setPriorityInput("");
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              onClick={() => {
+                if (priorityInput.trim()) {
+                  addPriorityMessage(priorityInput.trim());
+                  setPriorityInput("");
+                }
+              }}
+            >
+              Add
+            </Button>
+          </div>
+          {settings.priorityMessages.map((msg) => (
+            <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
+              <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
+              <button
+                type="button"
+                onClick={() => removePriorityMessage(msg.id)}
+                className="text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Fun Facts">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Fun Facts"
+            detail="Show random trivia when no priority messages exist."
+            checked={settings.funFactsEnabled}
+            onChange={(checked) => updateSettings({ funFactsEnabled: checked })}
+          />
+          <div className="p-4 sm:p-5 flex flex-col gap-4">
+            <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
+              Minutes between fun facts
+              <select
+                value={settings.funFactIntervalMinutes}
+                onChange={(e) => updateSettings({ funFactIntervalMinutes: Number(e.target.value) })}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              >
+                {[0, 1, 2, 5, 10, 20, 30, 60].map(m => (
+                  <option key={m} value={m}>{m} minutes</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={funFactInput}
+                onChange={(e) => setFunFactInput(e.target.value)}
+                placeholder="Fun fact text..."
+                className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && funFactInput.trim()) {
+                    addFunFact(funFactInput.trim());
+                    setFunFactInput("");
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (funFactInput.trim()) {
+                    addFunFact(funFactInput.trim());
+                    setFunFactInput("");
+                  }
+                }}
+              >
+                Add
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setIsBulkImportOpen(true)}
+            >
+              Bulk Import Fun Facts
+            </Button>
+          </div>
+          <TickerBulkImportSheet
+            open={isBulkImportOpen}
+            onOpenChange={setIsBulkImportOpen}
+            token={token}
+          />
+          {settings.funFacts.map((msg) => (
+            <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
+              <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
+              <button
+                type="button"
+                onClick={() => removeFunFact(msg.id)}
+                className="text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Danger Zone">
+        <OptionsGroup>
+          <div className="p-4 sm:p-5 grid gap-2">
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={() => {
+                if (!confirmingClear) {
+                  setConfirmingClear(true);
+                  if (confirmingClearTimeoutRef.current !== null) {
+                    clearTimeout(confirmingClearTimeoutRef.current);
+                  }
+                  confirmingClearTimeoutRef.current = setTimeout(() => {
+                    setConfirmingClear(false);
+                    confirmingClearTimeoutRef.current = null;
+                  }, 4000);
+                  return;
+                }
+                if (confirmingClearTimeoutRef.current !== null) {
+                  clearTimeout(confirmingClearTimeoutRef.current);
+                  confirmingClearTimeoutRef.current = null;
+                }
+                setConfirmingClear(false);
+                void clearAll();
+              }}
+            >
+              {confirmingClear ? "Tap again to confirm clear" : "Clear all messages"}
+            </Button>
+            {confirmingClear ? (
+              <p className="text-xs text-[var(--ink-3)] text-center">
+                This removes every priority message and fun fact.
+              </p>
+            ) : null}
+          </div>
+        </OptionsGroup>
       </OptionsSection>
     </div>
   );

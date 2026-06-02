@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useEffect, useRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
@@ -9,6 +10,7 @@ import TripMap from "./TripMap";
 import { useTripPath } from "./useTripPath";
 
 const mapEaseTo = vi.fn();
+const mapFitBounds = vi.fn();
 const markerElements: HTMLElement[] = [];
 const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
@@ -19,11 +21,21 @@ const setLiveTrailVisibility = vi.fn();
 const recordLiveTrailSample = vi.fn();
 const deleteRecentLiveTrail = vi.fn();
 const fetchMock = vi.fn();
+const nativeLocationMocks = vi.hoisted(() => ({
+  isNativeLocationAvailable: vi.fn(() => false),
+  openNativeLocationSettings: vi.fn(),
+  startNativeLocationWatch: vi.fn(
+    (_onFix: (fix: { lat: number; lon: number; accuracy?: number }) => void, _onError: (error: unknown) => void) =>
+      vi.fn(),
+  ),
+}));
+let mapStyleLoaded = true;
 const mapConstructorOptions: unknown[] = [];
 const mapInstances: Array<{
   handlers: Record<string, (event: any) => void>;
   remove: ReturnType<typeof vi.fn>;
   setStyle: ReturnType<typeof vi.fn>;
+  fitBounds: ReturnType<typeof vi.fn>;
   dragPan: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   scrollZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   boxZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
@@ -31,6 +43,9 @@ const mapInstances: Array<{
   keyboard: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   doubleClickZoom: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
   touchZoomRotate: { enable: ReturnType<typeof vi.fn>; disable: ReturnType<typeof vi.fn> };
+  addSource: ReturnType<typeof vi.fn>;
+  addLayer: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
 }> = [];
 const routeVotePanelProps: Array<{
   fallbackOrigin: { lat: number; lon: number } | null;
@@ -55,6 +70,12 @@ vi.mock("./useCloakingZones", () => ({
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
+vi.mock("../../native/locationWatcher", () => ({
+  isNativeLocationAvailable: nativeLocationMocks.isNativeLocationAvailable,
+  openNativeLocationSettings: nativeLocationMocks.openNativeLocationSettings,
+  startNativeLocationWatch: nativeLocationMocks.startNativeLocationWatch,
+}));
+
 vi.mock("maplibre-gl", () => {
   class MockMap {
     handlers: Record<string, (event: any) => void> = {};
@@ -73,7 +94,10 @@ vi.mock("maplibre-gl", () => {
     }
 
     addControl = vi.fn();
+    addSource = vi.fn();
+    addLayer = vi.fn();
     setStyle = vi.fn(() => this);
+    fitBounds = mapFitBounds;
     on = vi.fn((event: string, handler: (event: any) => void) => {
       this.handlers[event] = handler;
       return this;
@@ -82,7 +106,7 @@ vi.mock("maplibre-gl", () => {
     removeLayer = vi.fn();
     getSource = vi.fn(() => false);
     removeSource = vi.fn();
-    isStyleLoaded = vi.fn(() => true);
+    isStyleLoaded = vi.fn(() => mapStyleLoaded);
     getZoom = vi.fn(() => 12);
     project = vi.fn(() => ({ x: 120, y: 160 }));
     queryRenderedFeatures = vi.fn(() => []);
@@ -141,6 +165,24 @@ vi.mock("./MissionMarkers", () => ({
   default: () => null,
 }));
 
+vi.mock("./MysteryMissionMarkers", () => ({
+  default: (props: any) => {
+    const pins = convexReact.useQuery(tripcastApi.mysteryMissions.listMysteryMissionMapPins, { token: "test-token" }) ?? [];
+    const signalIdsRef = useRef(new Set());
+
+    // biome-ignore lint/correctness/useExhaustiveDependencies: test mock
+    useEffect(() => {
+      for (const pin of pins) {
+        if (pin.state === "signal" && !signalIdsRef.current.has(pin._id)) {
+          props.onMysterySignalAppeared?.(pin);
+        }
+      }
+      signalIdsRef.current = new Set(pins.filter((p: any) => p.state === "signal").map((p: any) => p._id));
+    }, [pins, props.onMysterySignalAppeared]);
+    return null;
+  },
+}));
+
 vi.mock("../routevote/RouteVoteButton", () => ({
   default: ({ onClick }: { onClick: () => void }) => (
     <button type="button" onClick={onClick}>
@@ -150,9 +192,21 @@ vi.mock("../routevote/RouteVoteButton", () => ({
 }));
 
 vi.mock("../routevote/RouteVotePanel", () => ({
-  default: (props: { fallbackOrigin: { lat: number; lon: number } | null }) => {
+  default: (props: {
+    fallbackOrigin: { lat: number; lon: number } | null;
+    onRequestFitMap: (bounds: [[number, number], [number, number]] | null) => void;
+  }) => {
     routeVotePanelProps.push({ fallbackOrigin: props.fallbackOrigin });
-    return <div data-testid="route-vote-panel" />;
+    return (
+      <div data-role="route-votes-sheet" data-testid="route-vote-panel">
+        <button
+          type="button"
+          onClick={() => props.onRequestFitMap([[-122.36, 47.6], [-122.3, 47.64]])}
+        >
+          Fit vote map
+        </button>
+      </div>
+    );
   },
 }));
 
@@ -167,6 +221,7 @@ vi.mock("../travelfunds/TravelFundsSheet", () => ({
 function setupQueries({
   checkpoints = [],
   journalEvents = [],
+  mysteryMissions = [],
   travelerLocation = null,
   allowFollowersTripPath = false,
   liveTrailStatus = {
@@ -191,7 +246,8 @@ function setupQueries({
     updatedAt: number;
   }>;
   journalEvents?: JournalEvent[];
-  travelerLocation?: { lat: number; lon: number; isSharing: true } | null;
+  mysteryMissions?: any[];
+  travelerLocation?: { lat: number; lon: number; accuracy?: number; isSharing: true } | null;
   allowFollowersTripPath?: boolean;
   liveTrailStatus?: {
     enabled: boolean;
@@ -237,6 +293,7 @@ function setupQueries({
       return { travelerTimeZone: "UTC" };
     }
     if (query === tripcastApi.journalEvents.listJournalEvents) return journalEvents;
+    if (query === tripcastApi.mysteryMissions.listMysteryMissionMapPins) return mysteryMissions;
     if (query === tripcastApi.routeVotes.travelerListRouteVotes) return [];
     if (query === tripcastApi.travelFunds.travelerGetConfig) {
       return {
@@ -305,12 +362,18 @@ beforeEach(() => {
   mapConstructorOptions.length = 0;
   mapInstances.length = 0;
   routeVotePanelProps.length = 0;
+  mapStyleLoaded = true;
+  mapFitBounds.mockClear();
   updateTravelerLocation.mockResolvedValue(null);
   stopTravelerLocationSharing.mockResolvedValue(null);
   setLiveTrailEnabled.mockResolvedValue(null);
   setLiveTrailVisibility.mockResolvedValue(null);
   recordLiveTrailSample.mockResolvedValue(null);
   deleteRecentLiveTrail.mockResolvedValue({ deleted: 0 });
+  nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(false);
+  nativeLocationMocks.openNativeLocationSettings.mockClear();
+  nativeLocationMocks.startNativeLocationWatch.mockReset();
+  nativeLocationMocks.startNativeLocationWatch.mockReturnValue(vi.fn());
   fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
   vi.stubGlobal("fetch", fetchMock);
 
@@ -351,6 +414,23 @@ afterEach(() => {
 });
 
 describe("TripMap location marker", () => {
+  it("lets map drags pass through empty top HUD space", () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    const statusCard = screen.getByRole("button", { name: /Traveler status/i });
+    const statusHitbox = statusCard.parentElement;
+    const topHud = statusHitbox?.closest(".tripcast-frame");
+
+    expect(topHud).toHaveClass("pointer-events-none");
+    expect(statusHitbox).toHaveClass("pointer-events-auto", "w-fit", "self-start");
+    expect(screen.getByRole("button", { name: /Start sharing live location/i })).toHaveClass(
+      "pointer-events-auto",
+    );
+    expect(screen.getByRole("button", { name: /Replay/i })).toHaveClass("pointer-events-auto");
+  });
+
   it("refreshes an open story detail when journal query data changes", async () => {
     const checkpoint = {
       _id: "checkpoint-1",
@@ -696,7 +776,40 @@ describe("TripMap location marker", () => {
     });
   });
 
-  it("starts browser location watching only after live location sharing is enabled", async () => {
+  it("waits for the map style before adding the traveler accuracy circle", async () => {
+    mapStyleLoaded = false;
+    setupQueries({
+      travelerLocation: { lat: 47.61, lon: -122.33, accuracy: 12, isSharing: true },
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    const map = mapInstances.at(-1);
+    await waitFor(() => {
+      expect(map?.on).toHaveBeenCalledWith("style.load", expect.any(Function));
+    });
+
+    expect(map?.addSource).not.toHaveBeenCalled();
+    expect(map?.addLayer).not.toHaveBeenCalled();
+
+    mapStyleLoaded = true;
+    act(() => {
+      map?.handlers["style.load"]?.({});
+    });
+
+    expect(map?.addSource).toHaveBeenCalledWith(
+      "accuracy-circle",
+      expect.objectContaining({ type: "geojson" }),
+    );
+    expect(map?.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "accuracy-circle-fill" }),
+    );
+    expect(map?.addLayer).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "accuracy-circle-stroke" }),
+    );
+  });
+
+  it("starts browser location watching immediately for Travelers", async () => {
     geolocationWatchPosition.mockImplementation((onSuccess) => {
       onSuccess({
         coords: {
@@ -711,8 +824,16 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    expect(geolocationWatchPosition).not.toHaveBeenCalled();
-    expect(getTravelerMarker()).toBeUndefined();
+    await waitFor(() => {
+      expect(geolocationWatchPosition).toHaveBeenCalled();
+    });
+
+    // The marker might be added asynchronously via state update after geolocation fix
+    await waitFor(() => {
+      expect(getTravelerMarker()).toBeDefined();
+    });
+    // Dot is present but NOT pulsing yet because Live is off by default
+    expect(getTravelerMarker()).not.toHaveClass("traveler-location-marker--pulsing");
 
     fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
 
@@ -726,6 +847,96 @@ describe("TripMap location marker", () => {
       accuracy: 9,
     });
   });
+
+  it("opens native settings on Live opt-in after a passive foreground GPS denial", async () => {
+    nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+    geolocationWatchPosition.mockImplementation((_onSuccess, onError) => {
+      onError({ code: 1 });
+      return 42;
+    });
+    nativeLocationMocks.startNativeLocationWatch.mockImplementation((_onFix, onError) => {
+      onError({ code: "NOT_AUTHORIZED" });
+      return vi.fn();
+    });
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(geolocationWatchPosition).toHaveBeenCalled();
+      expect(screen.getByText("Location access is off for TripCast. You can enable it in your device settings."))
+        .toBeInTheDocument();
+    });
+    expect(nativeLocationMocks.openNativeLocationSettings).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+    await waitFor(() => {
+      expect(nativeLocationMocks.startNativeLocationWatch).toHaveBeenCalled();
+      expect(nativeLocationMocks.openNativeLocationSettings).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("keeps follow mode active through programmatic zoom and stops it on user zoom", async () => {
+    setupQueries({
+      travelerLocation: { lat: 47.61, lon: -122.33, isSharing: true },
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+    expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+
+    fireEvent.click(centerButton);
+
+    await waitFor(() => {
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+      expect(mapEaseTo).toHaveBeenLastCalledWith(
+        expect.objectContaining({ center: [-122.33, 47.61] }),
+      );
+    });
+
+    act(() => {
+      mapInstances.at(-1)?.handlers.zoomstart?.({});
+    });
+
+    expect(centerButton).toHaveClass("text-[var(--flag)]");
+
+    act(() => {
+      mapInstances.at(-1)?.handlers.zoomstart?.({ originalEvent: new WheelEvent("wheel") });
+    });
+
+    await waitFor(() => {
+      expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+    });
+  });
+
+  it("lets sheet camera fit turn off GPS follow", async () => {
+    setupQueries({
+      travelerLocation: { lat: 47.61, lon: -122.33, isSharing: true },
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+    fireEvent.click(centerButton);
+
+    await waitFor(() => {
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Votes" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Fit vote map" }));
+
+    await waitFor(() => {
+      expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+      expect(mapFitBounds).toHaveBeenLastCalledWith(
+        [[-122.36, 47.6], [-122.3, 47.64]],
+        expect.objectContaining({ maxZoom: 14 }),
+      );
+    });
+  });
+
 
   it("throttles repeated traveler location publishes", async () => {
     vi.useFakeTimers();
@@ -1042,7 +1253,7 @@ describe("TripMap location marker", () => {
     expect(deleteRecentLiveTrail).not.toHaveBeenCalled();
   });
 
-  it("does not emit Live Trail breadcrumbs while Live GPS is off", () => {
+  it("does not emit Live Trail breadcrumbs while Live GPS is off", async () => {
     setupQueries({
       liveTrailStatus: {
         enabled: true,
@@ -1054,7 +1265,11 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    expect(geolocationWatchPosition).not.toHaveBeenCalled();
+    // Geolocation IS called now for always-on GPS
+    await waitFor(() => {
+      expect(geolocationWatchPosition).toHaveBeenCalled();
+    });
+    // But no breadcrumbs should be recorded
     expect(recordLiveTrailSample).not.toHaveBeenCalled();
   });
 
@@ -1168,33 +1383,39 @@ describe("TripMap location marker", () => {
     });
 
     nowMs += 30_000;
-    onGeolocationSuccess({
-      coords: {
-        latitude: 47.6201,
-        longitude: -122.3401,
-        accuracy: 8,
-      },
-    } as GeolocationPosition);
+    act(() => {
+      onGeolocationSuccess({
+        coords: {
+          latitude: 47.6201,
+          longitude: -122.3401,
+          accuracy: 8,
+        },
+      } as GeolocationPosition);
+    });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
 
     nowMs += 30_000;
-    onGeolocationSuccess({
-      coords: {
-        latitude: 47.6201,
-        longitude: -122.3401,
-        accuracy: 8,
-      },
-    } as GeolocationPosition);
+    act(() => {
+      onGeolocationSuccess({
+        coords: {
+          latitude: 47.6201,
+          longitude: -122.3401,
+          accuracy: 8,
+        },
+      } as GeolocationPosition);
+    });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
 
     nowMs += 1_000;
-    onGeolocationSuccess({
-      coords: {
-        latitude: 47.623,
-        longitude: -122.34,
-        accuracy: 8,
-      },
-    } as GeolocationPosition);
+    act(() => {
+      onGeolocationSuccess({
+        coords: {
+          latitude: 47.623,
+          longitude: -122.34,
+          accuracy: 8,
+        },
+      } as GeolocationPosition);
+    });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(3);
     dateNow.mockRestore();
   });
@@ -1391,5 +1612,67 @@ describe("TripMap location marker", () => {
         false,
       );
     });
+  });
+});
+
+describe("TripMap mystery mission reveal", () => {
+  it("centers the map and disables follow mode when a mystery mission signal appears", async () => {
+    setEnabled(true);
+    const travelerLoc = { lat: 47.61, lon: -122.33, isSharing: true as const };
+    setupQueries({
+      mysteryMissions: [],
+      travelerLocation: travelerLoc,
+    });
+
+    const { rerender } = render(<TripMap token="test-token" role="follower" />);
+
+    const centerButton = screen.getByRole("button", { name: "Center map on traveler" });
+    fireEvent.click(centerButton);
+
+    await waitFor(() => {
+      expect(centerButton).toHaveClass("text-[var(--flag)]");
+    });
+
+    // Clear calls from initial follow
+    mapEaseTo.mockClear();
+
+    // Simulate signal appearing. Keep traveler location object stable to avoid triggering follow-mode effect again
+    setupQueries({
+      mysteryMissions: [
+        {
+          _id: "mystery-1",
+          state: "signal",
+          lat: 47.65,
+          lon: -122.35,
+          type: "mystery",
+        },
+      ],
+      travelerLocation: travelerLoc,
+    });
+
+    rerender(<TripMap token="test-token" role="follower" />);
+
+    await waitFor(() => {
+      expect(mapEaseTo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          center: [-122.35, 47.65],
+          zoom: 14,
+        }),
+      );
+    });
+
+    // Follow mode should be disabled
+    await waitFor(() => {
+      expect(centerButton).not.toHaveClass("text-[var(--flag)]");
+    });
+
+    expect(screen.getByText("Mystery Signal detected.")).toBeInTheDocument();
+
+    // Verify via logs as well
+    const logs = getLogs();
+    const focusLog = logs.find((l) => l.action === "map:camera:focus" && l.details.trigger === "mystery-signal:automatic-reveal");
+    expect(focusLog).toBeDefined();
+    expect(focusLog?.details.lat).toBe(47.65);
+    expect(focusLog?.details.lon).toBe(-122.35);
   });
 });

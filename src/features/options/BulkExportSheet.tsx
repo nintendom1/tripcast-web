@@ -37,6 +37,19 @@ function isBulkExportResult(value: unknown): value is BulkExportResult {
   );
 }
 
+type TickerFactExportResult = {
+  entries: { kind: "ticker_fact"; ref: string; text: string }[];
+};
+
+function isTickerFactExportResult(value: unknown): value is TickerFactExportResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "entries" in value &&
+    Array.isArray((value as { entries?: unknown }).entries)
+  );
+}
+
 export default function BulkExportSheet({
   open,
   token,
@@ -47,6 +60,7 @@ export default function BulkExportSheet({
   const [endDate, setEndDate] = useState("");
   const [includeMysteryMissions, setIncludeMysteryMissions] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [tickerCopied, setTickerCopied] = useState(false);
   const music = useMusicSafe();
   const { resolvedTheme } = useTheme();
   const log = useDebugLogger("BulkExportSheet", "src/features/options/BulkExportSheet.tsx");
@@ -74,6 +88,12 @@ export default function BulkExportSheet({
   );
   const data = isBulkExportResult(queryResult) ? queryResult : undefined;
 
+  const tickerQueryResult = useQuery(
+    tripcastApi.bulkImport.travelerExportTickerFacts,
+    open ? { token } : "skip"
+  );
+  const tickerData = isTickerFactExportResult(tickerQueryResult) ? tickerQueryResult : undefined;
+
   async function handleCopy() {
     if (!data) return;
     try {
@@ -99,6 +119,33 @@ export default function BulkExportSheet({
     URL.revokeObjectURL(url);
     music.sfx("page");
     log.logUi("action:download-export");
+  }
+
+  async function handleCopyTicker() {
+    if (!tickerData) return;
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(tickerData, null, 2));
+      setTickerCopied(true);
+      music.sfx("success");
+      setTimeout(() => setTickerCopied(false), 2000);
+      log.logUi("action:copy-ticker-export");
+    } catch (err) {
+      log.error("copy-ticker:error", "ui", { err });
+    }
+  }
+
+  function handleDownloadTicker() {
+    if (!tickerData) return;
+    const blob = new Blob([JSON.stringify(tickerData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const timestamp = new Date().toISOString().split("T")[0];
+    a.href = url;
+    a.download = `tripcast-ticker-facts-${timestamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    music.sfx("page");
+    log.logUi("action:download-ticker-export");
   }
 
   return (
@@ -221,6 +268,43 @@ export default function BulkExportSheet({
                   <Button
                     type="button"
                     onClick={handleDownload}
+                    className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Download .json
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Trip Ticker</p>
+            {!tickerData ? (
+              <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-sm">Loading ticker facts...</span>
+              </div>
+            ) : (
+              <>
+                <p className="text-sm font-semibold text-[var(--ink-1)]">
+                  {tickerData.entries.length} fun {tickerData.entries.length === 1 ? "fact" : "facts"} ready for export
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    onClick={handleCopyTicker}
+                    disabled={tickerData.entries.length === 0}
+                    variant="outline"
+                    className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
+                  >
+                    {tickerCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                    {tickerCopied ? "Copied" : "Copy JSON"}
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleDownloadTicker}
+                    disabled={tickerData.entries.length === 0}
                     className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
                   >
                     <Download className="mr-2 h-4 w-4" />

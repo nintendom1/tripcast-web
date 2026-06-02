@@ -11,6 +11,7 @@ type Props = {
   debugShowAll?: boolean;
   onMysteryMissionClick?: (missionId: string) => void;
   onMysteryMissionReveal?: (mission: MysteryMissionFeedItem) => void;
+  onMysterySignalAppeared?: (mission: MysteryMissionFeedItem) => void;
 };
 
 function getMysteryMarkerColor(mission: MysteryMissionFeedItem) {
@@ -65,9 +66,11 @@ export default function MysteryMissionMarkers({
   debugShowAll = false,
   onMysteryMissionClick,
   onMysteryMissionReveal,
+  onMysterySignalAppeared,
 }: Props) {
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
   const revealedIdsRef = useRef<Set<string>>(new Set());
+  const signalIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
   const result = useQuery(
     tripcastApi.mysteryMissions.listMysteryMissionMapPins,
@@ -77,18 +80,27 @@ export default function MysteryMissionMarkers({
 
   useEffect(() => {
     const revealed = new Set(pins.filter((pin) => pin.state === "revealed").map((pin) => pin._id));
+    const signals = new Set(pins.filter((pin) => pin.state === "signal").map((pin) => pin._id));
+
     if (!initializedRef.current) {
       initializedRef.current = true;
       revealedIdsRef.current = revealed;
+      signalIdsRef.current = signals;
       return;
     }
+
     for (const pin of pins) {
       if (pin.state === "revealed" && !revealedIdsRef.current.has(pin._id)) {
         onMysteryMissionReveal?.(pin);
       }
+      if (pin.state === "signal" && !signalIdsRef.current.has(pin._id)) {
+        onMysterySignalAppeared?.(pin);
+      }
     }
+
     revealedIdsRef.current = revealed;
-  }, [onMysteryMissionReveal, pins]);
+    signalIdsRef.current = signals;
+  }, [onMysteryMissionReveal, onMysterySignalAppeared, pins]);
 
   useEffect(() => {
     if (!map) return;

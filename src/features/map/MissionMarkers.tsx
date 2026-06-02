@@ -3,6 +3,7 @@ import maplibregl, { Marker } from "maplibre-gl";
 import { useQuery } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, Role } from "../../convex/tripcastApi";
+import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 
 // Visual style by lifecycle state
 const STATUS_COLORS: Record<string, string> = {
@@ -84,6 +85,7 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
 
   const pins = useQuery(tripcastApi.missions.listMissionMapPins, { token });
+  const preview = useFollowerCutoffPreview(role, token);
 
   useEffect(() => {
     if (!map) return;
@@ -96,6 +98,7 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
 
     markersRef.current = pins
       .filter((c) => c.lat !== undefined && c.lon !== undefined)
+      .filter((c) => preview.cutoffAt === null || c.createdAt >= preview.cutoffAt)
       .map((Mission) => {
         const color = Mission.source === "mystery"
           ? MYSTERY_STATUS_COLORS[Mission.status] ?? "#09090b"
@@ -122,7 +125,7 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
       markersRef.current.forEach(({ marker }) => marker.remove());
       markersRef.current = [];
     };
-  }, [map, pins, onMissionClick]);
+  }, [map, pins, onMissionClick, preview.cutoffAt]);
 
   return null;
 }
