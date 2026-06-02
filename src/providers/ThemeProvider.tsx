@@ -226,7 +226,7 @@ function writeCachedTravelerTimeZone(timeZone: string) {
 
 type ResolvedAutoTheme = {
   theme: "meadow" | "constellation";
-  source: "live-traveler" | "preferences-traveler" | "cached-traveler" | "device-clock";
+  source: "live-traveler" | "preferences-traveler" | "device-loading" | "cached-traveler" | "device-clock";
   reason: string;
   timeZone: string | null;
   minuteOfDay: number | null;
@@ -260,6 +260,7 @@ export function resolveAutoTheme(
   snapshot: TravelerAutoThemeSnapshot | undefined,
   cachedTimeZone: string | null,
   now: number,
+  deviceTimeZone: string | null = null,
 ): ResolvedAutoTheme {
   // Step 1: live Traveler autoState.
   if (snapshot && snapshot.autoStateEnabled) {
@@ -319,29 +320,57 @@ export function resolveAutoTheme(
     }
   }
 
-  // Step 2: remembered last-known Traveler timezone, only while the live query
-  // is still loading (snapshot === undefined). A resolved-but-disabled snapshot
-  // intentionally skips this and falls straight to step 3 (or step 1.5 above).
-  if (snapshot === undefined && cachedTimeZone) {
-    try {
-      const minute = getMinuteOfDayInTimeZone(now, cachedTimeZone);
-      const phase = getPhaseAtMinute(
-        minute,
-        FALLBACK_NIGHT_START_MINUTES,
-        FALLBACK_DAY_START_MINUTES,
-      );
-      return {
-        theme: phase === "night" ? "constellation" : "meadow",
-        source: "cached-traveler",
-        reason: "snapshot-loading-using-cached-tz",
-        timeZone: cachedTimeZone,
-        minuteOfDay: minute,
-        bedtimeMinutes: FALLBACK_NIGHT_START_MINUTES,
-        wakeMinutes: FALLBACK_DAY_START_MINUTES,
-        phase,
-      };
-    } catch {
-      // Cached timezone no longer valid — fall through.
+  // Step 2: while the live query is still loading (snapshot === undefined),
+  // pick a tz for the loading paint. Prefer the viewer's device tz — it's a
+  // far better predictor of "is it dark for them right now" than a cached
+  // Traveler tz that may be stale (e.g. a "UTC" entry written before the
+  // real prefs landed). Fall back to the cache only if device detection
+  // fails (e.g. an unusual browser env without Intl). A resolved-but-disabled
+  // snapshot skips this and falls straight to step 3 (or step 1.5 above).
+  if (snapshot === undefined) {
+    if (deviceTimeZone) {
+      try {
+        const minute = getMinuteOfDayInTimeZone(now, deviceTimeZone);
+        const phase = getPhaseAtMinute(
+          minute,
+          FALLBACK_NIGHT_START_MINUTES,
+          FALLBACK_DAY_START_MINUTES,
+        );
+        return {
+          theme: phase === "night" ? "constellation" : "meadow",
+          source: "device-loading",
+          reason: "snapshot-loading-using-device-tz",
+          timeZone: deviceTimeZone,
+          minuteOfDay: minute,
+          bedtimeMinutes: FALLBACK_NIGHT_START_MINUTES,
+          wakeMinutes: FALLBACK_DAY_START_MINUTES,
+          phase,
+        };
+      } catch {
+        // Device tz unusable — fall through to the cache.
+      }
+    }
+    if (cachedTimeZone) {
+      try {
+        const minute = getMinuteOfDayInTimeZone(now, cachedTimeZone);
+        const phase = getPhaseAtMinute(
+          minute,
+          FALLBACK_NIGHT_START_MINUTES,
+          FALLBACK_DAY_START_MINUTES,
+        );
+        return {
+          theme: phase === "night" ? "constellation" : "meadow",
+          source: "cached-traveler",
+          reason: "snapshot-loading-using-cached-tz",
+          timeZone: cachedTimeZone,
+          minuteOfDay: minute,
+          bedtimeMinutes: FALLBACK_NIGHT_START_MINUTES,
+          wakeMinutes: FALLBACK_DAY_START_MINUTES,
+          phase,
+        };
+      } catch {
+        // Cached timezone no longer valid — fall through.
+      }
     }
   }
 
@@ -405,7 +434,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         phase: null,
       };
     }
-    return resolveAutoTheme(travelerAutoSnapshot, cachedTimeZone, now);
+    const deviceTimeZone = (() => {
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+      } catch {
+        return null;
+      }
+    })();
+    return resolveAutoTheme(travelerAutoSnapshot, cachedTimeZone, now, deviceTimeZone);
   }, [mode, travelerAutoSnapshot, cachedTimeZone, now]);
 
   const resolvedTheme = resolution.theme;

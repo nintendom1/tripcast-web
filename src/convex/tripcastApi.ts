@@ -756,6 +756,14 @@ export type TravelerPreferences = {
   followerContentCutoffEnabled: boolean;
   themeDayStartMinutes?: number;
   themeNightStartMinutes?: number;
+  movementDetectionEnabled?: boolean;
+  movementWalkingLabel?: string;
+  movementWalkingEmoji?: string;
+  movementWalkingThresholdMps?: number;
+  movementMovingLabel?: string;
+  movementMovingEmoji?: string;
+  movementMovingThresholdMps?: number;
+  movementOverridesSleep?: boolean;
   updatedAt: number | null;
 };
 
@@ -1846,6 +1854,7 @@ export const tripcastApi = {
     travelerListRecentActivities: (anyApi as any).currentActivity.travelerListRecentActivities as FunctionReference<"query", "public", { token: string }, CurrentActivity[]>,
     travelerGetStalenessSettings: (anyApi as any).currentActivity.travelerGetStalenessSettings as FunctionReference<"query", "public", { token: string }, CurrentActivityStalenessSettings>,
     travelerUpdateStalenessSettings: (anyApi as any).currentActivity.travelerUpdateStalenessSettings as FunctionReference<"mutation", "public", { token: string; enabled: boolean; fallbackTitle: string; fallbackEmoji?: string; resetAfterMs: number }, null>,
+    travelerApplyMovementDetection: (anyApi as any).currentActivity.travelerApplyMovementDetection as FunctionReference<"mutation", "public", { token: string; classification: "walking" | "moving" | "stopped"; speedMps?: number; sampledAt: number }, null>,
   },
   travelerState: {
     travelerGetState: (anyApi as any).travelerState.travelerGetState as FunctionReference<
@@ -1974,6 +1983,22 @@ export const tripcastApi = {
         sleepStartMinutes?: number;
         sleepEndMinutes?: number;
         sleepStaleThresholdMs?: number;
+      },
+      null
+    >,
+    travelerUpdateMovementDetection: (anyApi as any).travelerPreferences.travelerUpdateMovementDetection as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        movementDetectionEnabled?: boolean;
+        movementWalkingLabel?: string;
+        movementWalkingEmoji?: string;
+        movementWalkingThresholdMps?: number;
+        movementMovingLabel?: string;
+        movementMovingEmoji?: string;
+        movementMovingThresholdMps?: number;
+        movementOverridesSleep?: boolean;
       },
       null
     >,

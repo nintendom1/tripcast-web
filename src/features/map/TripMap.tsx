@@ -1212,6 +1212,13 @@ export default function TripMap({
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
   const recordLiveTrailSample = useMutation(tripcastApi.liveTrail.travelerRecordLiveTrailSample);
+  const applyMovementDetection = useMutation(tripcastApi.currentActivity.travelerApplyMovementDetection);
+  const movementPrefs = useQuery(
+    tripcastApi.travelerPreferences.travelerGetPreferences,
+    role === "traveler" ? { token } : "skip",
+  );
+  const movementPrefsRef = useRef<typeof movementPrefs>(undefined);
+  movementPrefsRef.current = movementPrefs;
   const addCloakingPin = useMutation(tripcastApi.cloakingPins.travelerAddCloakingPin);
   const cloakingPinsData = useQuery(
     tripcastApi.cloakingPins.travelerListCloakingPins,
@@ -2533,7 +2540,14 @@ export default function TripMap({
     lastLocationFixAtRef.current = Date.now();
     setLocationStale(false);
 
-    const handleFix = (lat: number, lon: number, accuracy?: number) => {
+    // Movement detection state — kept local to this effect so it resets when
+    // the watcher restarts (e.g. after toggling Live).
+    let lastMovementClassification: "walking" | "moving" | "stopped" | null = null;
+    let lastMovementMutationAt = 0;
+    let prevFixForSpeed: { lat: number; lon: number; at: number } | null = null;
+    const MOVEMENT_MUTATION_MIN_INTERVAL_MS = 60_000;
+
+    const handleFix = (lat: number, lon: number, accuracy?: number, speed?: number) => {
       lastLocationFixAtRef.current = Date.now();
       setLocationStale(false);
       if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
@@ -2601,6 +2615,57 @@ export default function TripMap({
           publishLiveTrailSample(nextPosition, accuracy);
         }
       }
+
+      // ── Movement auto-state (Capacitor-only) ──────────────────────────────
+      // Classify GPS speed into walking/moving/stopped and notify the backend
+      // when the classification transitions. Native-only because reliable
+      // background GPS is only available on the iOS Capacitor build.
+      if (isNativeLocationAvailable()) {
+        const prefs = movementPrefsRef.current;
+        const fixAt = Date.now();
+        if (prefs?.movementDetectionEnabled === true) {
+          const walkingMps = prefs.movementWalkingThresholdMps ?? 2.54;
+          const movingMps = prefs.movementMovingThresholdMps ?? 8.94;
+          let speedMps: number | undefined =
+            typeof speed === "number" && speed >= 0 ? speed : undefined;
+          if (speedMps === undefined && prevFixForSpeed) {
+            const dtSec = (fixAt - prevFixForSpeed.at) / 1000;
+            if (dtSec > 0 && dtSec < 600) {
+              const dMeters = distanceMeters(prevFixForSpeed, { lat, lon });
+              speedMps = dMeters / dtSec;
+            }
+          }
+          const classification: "walking" | "moving" | "stopped" =
+            speedMps === undefined
+              ? "stopped"
+              : speedMps >= movingMps
+                ? "moving"
+                : speedMps >= walkingMps
+                  ? "walking"
+                  : "stopped";
+          const changed = classification !== lastMovementClassification;
+          const throttleOk = fixAt - lastMovementMutationAt >= MOVEMENT_MUTATION_MIN_INTERVAL_MS;
+          if (changed && classification !== "stopped" && (throttleOk || lastMovementClassification === null)) {
+            const from = lastMovementClassification;
+            lastMovementClassification = classification;
+            lastMovementMutationAt = fixAt;
+            log.logUi("movement:classify", { speedMps, classification, from });
+            applyMovementDetection({
+              token,
+              classification,
+              speedMps,
+              sampledAt: fixAt,
+            }).catch((error) => {
+              log.error("movement:apply:error", "mutation", {
+                message: error instanceof Error ? error.message : String(error),
+              });
+            });
+          } else if (changed) {
+            lastMovementClassification = classification;
+          }
+        }
+        prevFixForSpeed = { lat, lon, at: fixAt };
+      }
     };
 
     const handleError = (error: unknown) => {
@@ -2633,7 +2698,7 @@ export default function TripMap({
     if (isLocationSharing && isNativeLocationAvailable()) {
       log.logInteraction("live-trail:native-watch:start", {});
       const stop = startNativeLocationWatch(
-        (fix) => handleFix(fix.lat, fix.lon, fix.accuracy),
+        (fix) => handleFix(fix.lat, fix.lon, fix.accuracy, fix.speed),
         handleError,
       );
       cleanup = () => {
@@ -2642,7 +2707,12 @@ export default function TripMap({
       };
     } else if (navigator.geolocation) {
       const watchId = navigator.geolocation.watchPosition(
-        (pos) => handleFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined),
+        (pos) => handleFix(
+          pos.coords.latitude,
+          pos.coords.longitude,
+          pos.coords.accuracy ?? undefined,
+          typeof pos.coords.speed === "number" && pos.coords.speed >= 0 ? pos.coords.speed : undefined,
+        ),
         handleError,
         { enableHighAccuracy: true },
       );
