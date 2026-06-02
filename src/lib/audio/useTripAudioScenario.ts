@@ -14,6 +14,15 @@ export type ScenarioInput = {
 type UseTripAudioScenarioArgs = ScenarioInput;
 
 /**
+ * Debounce window before committing a scenario change to the engine. Many
+ * scenario transitions arrive as a brief OFF -> ON pair across two renders
+ * (e.g. a sheet's onClose nulls the open state milliseconds before the next
+ * pin click sets it again). Holding the commit briefly lets the second value
+ * cancel the first, so the audio doesn't restart for transient flips.
+ */
+const SCENARIO_COMMIT_DELAY_MS = 200;
+
+/**
  * Pure resolution. The map's day/night theme drives the default scenario so
  * the soundtrack stays visually aligned with the map.
  */
@@ -30,7 +39,7 @@ export function deriveTripAudioScenario(
 export function useTripAudioScenario(args: UseTripAudioScenarioArgs) {
   const music = useMusicSafe();
   const { resolvedTheme } = useTheme();
-  const lastScenarioRef = useRef<AudioScenario | null>(null);
+  const lastCommittedRef = useRef<AudioScenario | null>(null);
 
   const scenario = useMemo(
     () => deriveTripAudioScenario(args, resolvedTheme),
@@ -38,9 +47,12 @@ export function useTripAudioScenario(args: UseTripAudioScenarioArgs) {
   );
 
   useEffect(() => {
-    if (lastScenarioRef.current === scenario) return;
-    lastScenarioRef.current = scenario;
-    music.setScenario(scenario);
+    if (lastCommittedRef.current === scenario) return;
+    const timeout = window.setTimeout(() => {
+      lastCommittedRef.current = scenario;
+      music.setScenario(scenario);
+    }, SCENARIO_COMMIT_DELAY_MS);
+    return () => window.clearTimeout(timeout);
   }, [music, scenario]);
 
   return scenario;

@@ -1338,7 +1338,7 @@ export default function TripMap({
   }, [isDesktop]);
 
   useTripAudioScenario({
-    storyOpen: selectedStoryEvent !== null || storyPrefill !== null,
+    storyOpen: selectedStoryDetail !== null || storyPrefill !== null,
     missionDetailOpen: isMissionDetailOpen,
     achievementsOpen: isAchievementsOpen,
     voteSheetOpen: isVotePanelOpen,

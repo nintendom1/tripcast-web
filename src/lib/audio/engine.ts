@@ -87,12 +87,21 @@ function midiToFrequency(midi: number) {
  */
 const FADE_OUT_SECONDS = 0.5;
 
+/**
+ * When an override CLEARS, defer the resolution recompute by this many ms so
+ * an incoming scenario change has time to land first. Prevents brief
+ * resolution flicker on natural override-to-scenario handoffs (e.g. vote
+ * splash dismissed because user tapped to open the vote panel).
+ */
+const OVERRIDE_CLEAR_DEFER_MS = 250;
+
 class TripcastAudioEngine implements AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private reverb: GainNode | null = null;
   private patchBus: GainNode | null = null;
   private scheduler: ReturnType<typeof setTimeout> | null = null;
+  private pendingResolutionTimer: ReturnType<typeof setTimeout> | null = null;
   private patchCursor = 0;
   private scenario: AudioScenario = "default-day";
   private soundtrack: AudioSoundtrack = "auto";
@@ -135,8 +144,10 @@ class TripcastAudioEngine implements AudioEngine {
 
   setMute(mute: boolean): void {
     if (this.muted === mute) return;
+    const wasSilenced = this.silenced;
     this.muted = mute;
     this.log.logAudio("engine:mute", { muted: mute, silenced: this.silenced });
+    if (wasSilenced && !this.silenced) this.flushPatchBusForResume();
     this.applyGain();
   }
 
@@ -148,6 +159,7 @@ class TripcastAudioEngine implements AudioEngine {
   setSuppressed(reason: string, active: boolean): void {
     const had = this.suppressions.has(reason);
     if (had === active) return;
+    const wasSilenced = this.silenced;
     if (active) this.suppressions.add(reason);
     else this.suppressions.delete(reason);
     this.log.logAudio("engine:suppress", {
@@ -156,7 +168,28 @@ class TripcastAudioEngine implements AudioEngine {
       reasons: [...this.suppressions],
       silenced: this.silenced,
     });
+    if (wasSilenced && !this.silenced) this.flushPatchBusForResume();
     this.applyGain();
+  }
+
+  /**
+   * On the transition out of silence (mute released, last suppression
+   * cleared), patch events scheduled BEFORE silence began are still queued
+   * on the current patchBus and would resume audibly alongside the freshly-
+   * scheduled events — two overlapping loops of the same song. Disconnect
+   * the old bus and start a new one so playback resumes cleanly from the
+   * top of the current resolution's loop.
+   */
+  private flushPatchBusForResume(): void {
+    if (!this.started || !this.ctx || !this.master) return;
+    if (this.patchBus) {
+      try { this.patchBus.disconnect(); } catch { /* already disconnected */ }
+    }
+    const next = this.ctx.createGain();
+    next.gain.value = 1;
+    next.connect(this.master);
+    this.patchBus = next;
+    this.patchCursor = this.ctx.currentTime + 0.05;
   }
 
   setScenario(scenario: AudioScenario): void {
@@ -177,14 +210,26 @@ class TripcastAudioEngine implements AudioEngine {
     if (songId === null) {
       if (!this.overrides.has(name)) return;
       this.overrides.delete(name);
-    } else {
-      if (this.overrides.get(name) === songId) return;
-      // Re-insert so the new entry sits at LIFO tail.
-      this.overrides.delete(name);
-      this.overrides.set(name, songId);
+      this.log.logAudio("engine:override", { name, songId: null, active: [...this.overrides] });
+      // Defer the recompute so a racing scenario commit (e.g. RouteVotePanel
+      // opening as the vote splash dismisses) can keep the resolution stable.
+      this.scheduleDeferredResolution();
+      return;
     }
+    if (this.overrides.get(name) === songId) return;
+    // Re-insert so the new entry sits at LIFO tail.
+    this.overrides.delete(name);
+    this.overrides.set(name, songId);
     this.log.logAudio("engine:override", { name, songId, active: [...this.overrides] });
     this.applyResolution();
+  }
+
+  private scheduleDeferredResolution(): void {
+    if (this.pendingResolutionTimer) clearTimeout(this.pendingResolutionTimer);
+    this.pendingResolutionTimer = setTimeout(() => {
+      this.pendingResolutionTimer = null;
+      this.applyResolution();
+    }, OVERRIDE_CLEAR_DEFER_MS);
   }
 
   onResolutionChange(cb: (resolved: PatchSoundtrackId) => void): () => void {
@@ -204,6 +249,10 @@ class TripcastAudioEngine implements AudioEngine {
    * fade-out / start, no overlap.
    */
   private applyResolution(): void {
+    if (this.pendingResolutionTimer) {
+      clearTimeout(this.pendingResolutionTimer);
+      this.pendingResolutionTimer = null;
+    }
     const next = resolveSoundtrack({
       scenario: this.scenario,
       soundtrack: this.soundtrack,
@@ -218,21 +267,34 @@ class TripcastAudioEngine implements AudioEngine {
   private swapPatchBus(): void {
     if (!this.ctx || !this.master) return;
     const ctx = this.ctx;
+    // When the engine is currently silenced (master gain at 0 from mute or
+    // suppression), the old patch hasn't been pre-scheduling audible events
+    // — see scheduleLoop's silenced guard. Kill the old bus immediately and
+    // let the new bus start at near-current time so audio begins cleanly the
+    // moment silence releases. Otherwise apply the normal fade-out / start.
+    const instant = this.silenced;
     if (this.patchBus) {
       const old = this.patchBus;
       const now = ctx.currentTime;
       old.gain.cancelScheduledValues(now);
-      old.gain.setValueAtTime(old.gain.value, now);
-      old.gain.linearRampToValueAtTime(0, now + FADE_OUT_SECONDS);
-      setTimeout(() => {
-        try { old.disconnect(); } catch { /* already disconnected */ }
-      }, (FADE_OUT_SECONDS + 0.03) * 1000);
+      if (instant) {
+        old.gain.setValueAtTime(0, now);
+        setTimeout(() => {
+          try { old.disconnect(); } catch { /* already disconnected */ }
+        }, 50);
+      } else {
+        old.gain.setValueAtTime(old.gain.value, now);
+        old.gain.linearRampToValueAtTime(0, now + FADE_OUT_SECONDS);
+        setTimeout(() => {
+          try { old.disconnect(); } catch { /* already disconnected */ }
+        }, (FADE_OUT_SECONDS + 0.03) * 1000);
+      }
     }
     const next = ctx.createGain();
     next.gain.value = 1;
     next.connect(this.master);
     this.patchBus = next;
-    this.patchCursor = ctx.currentTime + FADE_OUT_SECONDS;
+    this.patchCursor = ctx.currentTime + (instant ? 0.05 : FADE_OUT_SECONDS);
   }
 
   sfx(name: SfxName): void {
@@ -337,6 +399,15 @@ class TripcastAudioEngine implements AudioEngine {
   private scheduleLoop(): void {
     if (!this.started || !this.ctx) return;
     const lookahead = 0.4;
+    // While silenced (mute or any suppression), don't pre-schedule patch
+    // events into the audio graph — they'd become audible the instant
+    // silence releases and tail past any subsequent override swap. Park the
+    // cursor near current time so resumption schedules a fresh start.
+    if (this.silenced) {
+      this.patchCursor = this.ctx.currentTime + 0.05;
+      this.scheduler = setTimeout(() => this.scheduleLoop(), 100);
+      return;
+    }
     const patch = PATCHES[this.currentResolution];
     if (patch && this.patchBus) {
       const loopSec = computeLoopSeconds(patch);
