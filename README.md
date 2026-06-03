@@ -16,6 +16,17 @@ VITE_CONVEX_URL=
 
 Do not commit `.env` or `.env.local`. Keep real Convex URLs in local env files or encrypted GitHub settings.
 
+## Environment Variables
+
+- `VITE_CONVEX_URL`: The URL of your Convex deployment (e.g., `https://happy-otter-123.convex.cloud`).
+- `VITE_PUBLIC_APP_URL`: The base URL used for generating shareable links (like Follower invites).
+  - **Precedence**: If set in any `.env` file (like `.env.local`), it takes absolute precedence.
+  - **iOS/Capacitor Note**: If you set this to `http://localhost:5173` in `.env.local`, your iOS builds will generate `localhost` links because they share that environment file.
+  - **Fallback**: If omitted, the app automatically defaults to:
+    - `https://nintendom1.github.io/tripcast-web/` for production Capacitor builds.
+    - `window.location.origin` + `Vite base` for web builds.
+  - **Recommendation**: Leave `VITE_PUBLIC_APP_URL` unset in your local `.env.local` to let the automatic fallback handle both local web dev and iOS builds correctly.
+
 ## Run
 
 ```bash
