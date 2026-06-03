@@ -18,7 +18,7 @@ Do not commit `.env` or `.env.local`. Keep real Convex URLs in local env files o
 
 ## Environment Variables
 
-- `VITE_CONVEX_URL`: The URL of your Convex deployment (e.g., `https://happy-otter-123.convex.cloud`).
+- `VITE_CONVEX_URL`: The URL of your Convex deployment (e.g., `https://<your-slug>.convex.cloud`).
 - `VITE_PUBLIC_APP_URL`: The base URL used for generating shareable links (like Follower invites).
   - **Precedence**: If set in any `.env` file (like `.env.local`), it takes absolute precedence.
   - **iOS/Capacitor Note**: If you set this to `http://localhost:5173` in `.env.local`, your iOS builds will generate `localhost` links because they share that environment file.
@@ -80,16 +80,18 @@ Use the baseline command only after an intentional terminology cleanup.
 
 ## Secret Scanning
 
-This repo runs Gitleaks in GitHub Actions. Before pushing, scan the repository when Gitleaks is available:
+This repo runs Gitleaks in GitHub Actions. CI scans the full history of the pushed/PR ref, so a clean working tree is not enough — a flagged string in any reachable commit will fail the workflow.
+
+To reproduce the CI scan locally (full history, matches `.github/workflows/gitleaks.yml`):
 
 ```bash
-gitleaks git --config .gitleaks.toml --redact --verbose
+gitleaks git --config .gitleaks.toml --redact --verbose .
 ```
 
-Before committing staged changes:
+Faster pre-commit check on staged changes only:
 
 ```bash
 git diff --cached | gitleaks stdin --config .gitleaks.toml --redact --verbose
 ```
 
-Keep real Convex deployment URLs, site URLs, and secrets out of committed files.
+Keep real Convex deployment URLs, site URLs, and secrets out of committed files. In docs and examples, use placeholders the rule won't match — angle-bracket forms like `https://<your-slug>.convex.cloud` are safe because the `[a-z0-9-]` character class excludes `<` and `>`.

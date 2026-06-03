@@ -107,7 +107,7 @@ Do not read these files by default. Read them only when relevant.
 - Consume Convex through `src/convex/tripcastApi.ts`; backend API changes belong in `tripcast-backend`.
 - Do not hand-write Convex function references. Regenerate in backend with `npm run export:web-api`, then copy the generated file.
 - All Convex calls that require auth pass an explicit `token`; do not use `clientId`.
-- Do not commit secrets, `.env`, or `.env.local`; treat Gitleaks scanning as part of commit/PR work.
+- Do not commit secrets, `.env`, or `.env.local`; treat Gitleaks scanning as part of commit/PR work. CI scans full history, so before pushing run `gitleaks git --config .gitleaks.toml --redact --verbose .` (matches the GitHub workflow), not just a staged-diff scan. In docs, use placeholders the `tripcast-convex-url` rule won't match — e.g. `https://<your-slug>.convex.cloud`.
 - Keep UI barebones for this phase and use MapLibre GL JS; do not add paid or token-based map providers.
 - If stuck after two failed attempts, stop, summarize what failed, and propose the next attempt.
 
