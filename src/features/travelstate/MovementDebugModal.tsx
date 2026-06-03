@@ -1,6 +1,6 @@
 import { motion } from "framer-motion";
 import { X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import {
@@ -11,15 +11,34 @@ import {
 } from "../../lib/movementUnits";
 import { cn } from "../../lib/utils";
 import {
+  startCalibrationLocationWatch,
+  type CalibrationFix,
+} from "../../native/calibrationWatcher";
+import {
   useMovementDebugRecords,
   useMovementDebugSpeed,
   type AlmostRecord,
+  type RecentFix,
   type TriggeredRecord,
 } from "../../providers/MovementDebugProvider";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { useQuery } from "convex/react";
 
 import { formatRelativeTime } from "./travelerStateUtils";
+
+function haversineMeters(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number },
+): number {
+  const R = 6_371_000;
+  const toRad = (v: number) => (v * Math.PI) / 180;
+  const dlat = toRad(b.lat - a.lat);
+  const dlon = toRad(b.lon - a.lon);
+  const hav =
+    Math.sin(dlat / 2) ** 2 +
+    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dlon / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
+}
 
 const PANEL_MOTION = {
   initial: { y: "100%" },
@@ -104,6 +123,44 @@ function AlmostRow({
   );
 }
 
+function RecentFixesPanel({
+  fixes,
+  unit,
+  now,
+}: {
+  fixes: RecentFix[];
+  unit: SpeedUnit;
+  now: number;
+}) {
+  return (
+    <div className="grid gap-1.5 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2">
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--ink-3)]">
+        Recent fixes (last {fixes.length || 0})
+      </span>
+      {fixes.length === 0 ? (
+        <span className="text-xs text-[var(--ink-3)]">No fixes yet this session.</span>
+      ) : (
+        <ul className="grid gap-0.5">
+          {[...fixes].reverse().map((fix) => {
+            const secs = Math.max(0, Math.floor((now - fix.at) / 1000));
+            return (
+              <li
+                key={fix.at}
+                className="flex items-baseline justify-between gap-2 text-xs tabular-nums text-[var(--ink-2)]"
+              >
+                <span className="text-[var(--ink-3)]">{secs}s ago</span>
+                <span>
+                  {formatSpeed(fix.speedMps, unit)} {UNIT_LABEL[unit]}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 export interface MovementDebugModalProps {
   token: string;
   onClose: () => void;
@@ -112,7 +169,7 @@ export interface MovementDebugModalProps {
 export default function MovementDebugModal({ token, onClose }: MovementDebugModalProps) {
   const log = useDebugLogger("MovementDebugModal", "src/features/travelstate/MovementDebugModal.tsx");
   const records = useMovementDebugRecords();
-  const { currentSpeedMps } = useMovementDebugSpeed();
+  const { currentSpeedMps, lastFixAt, recentFixes, recordCurrentSpeed } = useMovementDebugSpeed();
 
   const movementPrefs = useQuery(
     tripcastApi.travelerPreferences.travelerGetPreferences,
@@ -132,12 +189,58 @@ export default function MovementDebugModal({ token, onClose }: MovementDebugModa
   const walkingMps = movementPrefs?.movementWalkingThresholdMps ?? DEFAULT_WALKING_MPS;
   const movingMps = movementPrefs?.movementMovingThresholdMps ?? DEFAULT_MOVING_MPS;
 
-  // Refresh relative times even when no data changes, so "2m ago" ticks.
-  const [, setTick] = useState(0);
+  // 1s tick keeps "Last fix Xs ago" and the recent-fixes ages live while the
+  // modal is open. Cheap (one setState/sec).
+  const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = window.setInterval(() => setTick((n) => n + 1), 15_000);
+    const id = window.setInterval(() => setTick((n) => n + 1), 1_000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Calibration watcher: foreground-only, distanceFilter:0. The everyday
+  // watcher in TripMap uses a 50m filter to save battery — far too coarse for
+  // calibration. We start a second, high-frequency watcher only while the
+  // modal is open AND calibration is on, so battery cost is bounded.
+  const recordRef = useRef(recordCurrentSpeed);
+  recordRef.current = recordCurrentSpeed;
+  const logRef = useRef(log);
+  logRef.current = log;
+  useEffect(() => {
+    if (!records.isCalibrationModeEnabled) return;
+    logRef.current.logUi("calibration:watch:start", {});
+    let prev: { lat: number; lon: number; at: number } | null = null;
+    const stop = startCalibrationLocationWatch(
+      (fix: CalibrationFix) => {
+        let speedMps: number | null = typeof fix.speed === "number" ? fix.speed : null;
+        if (speedMps === null && prev) {
+          const dtSec = (fix.at - prev.at) / 1000;
+          if (dtSec > 0 && dtSec < 60) {
+            speedMps = haversineMeters(prev, fix) / dtSec;
+          }
+        }
+        prev = { lat: fix.lat, lon: fix.lon, at: fix.at };
+        recordRef.current(speedMps);
+      },
+      (error) => {
+        logRef.current.error("calibration:watch:error", "state", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+      },
+    );
+    return () => {
+      logRef.current.logUi("calibration:watch:stop", {});
+      stop();
+    };
+  }, [records.isCalibrationModeEnabled]);
+
+  const fixAgeLabel = useMemo(() => {
+    if (!records.isCalibrationModeEnabled) return null;
+    if (lastFixAt === null) return "Waiting for first GPS fix…";
+    const secs = Math.max(0, Math.floor((Date.now() - lastFixAt) / 1000));
+    if (secs < 1) return "Last fix just now";
+    return `Last fix ${secs}s ago`;
+    // tick drives the re-evaluation each second.
+  }, [lastFixAt, records.isCalibrationModeEnabled, tick]);
 
   const speedDisplay = useMemo(() => {
     if (!records.isCalibrationModeEnabled) return "—";
@@ -238,7 +341,15 @@ export default function MovementDebugModal({ token, onClose }: MovementDebugModa
                 Moving ≥ {formatSpeed(movingMps, unit)} {UNIT_LABEL[unit]}
               </span>
             </div>
+            {fixAgeLabel && (
+              <span className="text-[11px] text-[var(--ink-3)]">{fixAgeLabel}</span>
+            )}
           </div>
+
+          {/* Recent fixes (only meaningful while calibration is on) */}
+          {records.isCalibrationModeEnabled && (
+            <RecentFixesPanel fixes={recentFixes} unit={unit} now={Date.now()} />
+          )}
 
           {/* Records */}
           <div className="grid gap-2">

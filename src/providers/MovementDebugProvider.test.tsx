@@ -105,6 +105,53 @@ describe("MovementDebugProvider", () => {
     expect(c.speed?.currentSpeedMps).toBeNull();
   });
 
+  it("records lastFixAt and appends to recentFixes (capped at 10)", () => {
+    const c: { speed?: MovementDebugSpeedContextValue } = {};
+    captureContexts(c);
+    const before = Date.now();
+    act(() => c.speed?.recordCurrentSpeed(1.5));
+    expect(c.speed?.lastFixAt).not.toBeNull();
+    expect(c.speed!.lastFixAt!).toBeGreaterThanOrEqual(before);
+    expect(c.speed?.recentFixes).toHaveLength(1);
+    expect(c.speed?.recentFixes[0].speedMps).toBe(1.5);
+
+    for (let i = 0; i < 15; i++) {
+      act(() => c.speed?.recordCurrentSpeed(i));
+    }
+    expect(c.speed?.recentFixes).toHaveLength(10);
+    // Oldest dropped; newest preserved.
+    expect(c.speed?.recentFixes[0].speedMps).toBe(5);
+    expect(c.speed?.recentFixes[9].speedMps).toBe(14);
+  });
+
+  it("clears lastFixAt and recentFixes when calibration is disabled", () => {
+    const c: {
+      records?: MovementDebugRecordsContextValue;
+      speed?: MovementDebugSpeedContextValue;
+    } = {};
+    captureContexts(c);
+    act(() => c.records?.setCalibrationEnabled(true));
+    act(() => c.speed?.recordCurrentSpeed(2.0));
+    act(() => c.speed?.recordCurrentSpeed(2.1));
+    expect(c.speed?.recentFixes).toHaveLength(2);
+    expect(c.speed?.lastFixAt).not.toBeNull();
+    act(() => c.records?.setCalibrationEnabled(false));
+    expect(c.speed?.recentFixes).toEqual([]);
+    expect(c.speed?.lastFixAt).toBeNull();
+  });
+
+  it("clearRecentFixes empties the buffer without affecting lastFixAt", () => {
+    const c: { speed?: MovementDebugSpeedContextValue } = {};
+    captureContexts(c);
+    act(() => c.speed?.recordCurrentSpeed(1.0));
+    act(() => c.speed?.recordCurrentSpeed(1.1));
+    expect(c.speed?.recentFixes).toHaveLength(2);
+    act(() => c.speed?.clearRecentFixes());
+    expect(c.speed?.recentFixes).toEqual([]);
+    // lastFixAt is a separate "when did GPS last tick" signal — kept.
+    expect(c.speed?.lastFixAt).not.toBeNull();
+  });
+
   it("returns safe fallbacks when used without a provider", () => {
     function Probe() {
       const records = useMovementDebugRecords();
