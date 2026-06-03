@@ -41,6 +41,13 @@ The `IntroSequence` manages its own visual dark/light state independently of the
 - Canonical pattern (`src/features/map/useTripPath.ts`): add on `style.load`/`load` ungated; keep `styledata`/`idle` as `isStyleLoaded()`-gated backstops; guard each add with `!map.getSource(id)` to stay idempotent and quiet during pan/zoom.
 - GL paint properties **can't use CSS variables** — read `useTheme()` and pass hex values. DOM markers (`maplibregl.Marker`, `pinStyles.ts`) survive `setStyle` and *can* use CSS vars, so they theme by a different mechanism than GL layers.
 
+## Replay And Live Trail
+
+- Normal map load should keep using the bounded recent Live Trail queries. Whole-trip breadcrumbs are loaded by replay as a one-shot paged Convex query, not as a full-history reactive subscription.
+- Traveler replay should not pass the Follower cutoff to the replay Live Trail query. The Traveler's normal map can still use the cutoff preview state, but replay is the escape hatch for seeing the whole trip.
+- Follower replay relies on backend cutoff enforcement for Live Trail samples. Frontend debug logs may show `cutoffApplied: null` for Followers because the server applies the effective cutoff internally.
+- Delete Trail mini-map state is driven by selected sample IDs. Retained breadcrumbs should remain grey, while selected/deleting points use the destructive trail color; keep the GeoJSON `selected` property in sync when ranges, modes, or checkboxes change.
+
 ## Map Camera (MapLibre GL)
 
 - **Padding is sticky across calls.** Whenever `focusCoordinate` / `applyActiveFocus` (`src/features/map/focusCoordinate.ts`) runs, it sets camera padding so the target lands in the visible band above a sheet. That padding state **persists**. A subsequent plain `easeTo({center: X})` will put X at the *band* center, not the geometric center. Pass an explicit `padding: {top:0, right:0, bottom:0, left:0}` whenever you want geometric semantics (e.g. the crosshair-at-center invariant of the picker).

@@ -3,7 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsDesktop } from "../../lib/useIsDesktop";
 import { DesktopMapFrame } from "../layout/DesktopMapFrame";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
 import { Crosshair, DollarSign, EyeOff, Pause, Play, RotateCcw, Trash2, X } from "lucide-react";
@@ -14,6 +14,8 @@ import {
   type Checkpoint,
   type CloakingPin,
   type JournalEvent,
+  type LiveTrailReplayPage,
+  type LiveTrailSample,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
   type Transaction,
@@ -124,6 +126,8 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
+const REPLAY_TRAIL_PAGE_SIZE = 500;
+const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 1000;
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
 
@@ -279,6 +283,40 @@ function isFiniteReplayCoordinate(event: JournalEvent): event is JournalEvent & 
     typeof event.lon === "number" &&
     Number.isFinite(event.lon)
   );
+}
+
+function buildReplayPins(
+  journalEvents: JournalEvent[],
+  liveTrailSamples: Array<{ _id?: string; lat: number; lon: number; sampledAt: number }>,
+) {
+  const checkpointPins: ReplayPin[] = journalEvents
+    .filter(isFiniteReplayCoordinate)
+    .map((event) => ({
+      eventId: event._id,
+      occurredAt: event.occurredAt,
+      lat: event.lat,
+      lon: event.lon,
+      kind: "checkpoint" as const,
+    }));
+
+  const MIN_REPLAY_BC_INTERVAL_MS = 60_000;
+  let lastKeptAt = -Infinity;
+  const breadcrumbPins: ReplayPin[] = [];
+  for (const s of [...liveTrailSamples].sort((a, b) => a.sampledAt - b.sampledAt)) {
+    if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
+    if (s.sampledAt - lastKeptAt >= MIN_REPLAY_BC_INTERVAL_MS) {
+      breadcrumbPins.push({
+        eventId: s._id ?? `bc-${s.sampledAt}`,
+        occurredAt: s.sampledAt,
+        lat: s.lat,
+        lon: s.lon,
+        kind: "breadcrumb" as const,
+      });
+      lastKeptAt = s.sampledAt;
+    }
+  }
+
+  return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
 }
 
 function formatReplayTime(timestamp: number) {
@@ -1205,6 +1243,7 @@ export default function TripMap({
   const lastRecenterHeightRef = useRef<number>(-1);
   const music = useMusicSafe();
   const musicRef = useRef(music);
+  const convex = useConvex();
   const log = useDebugLogger("TripMap", "src/features/map/TripMap.tsx");
   const calibration = useCenteringCalibration();
   // The moveend listener runs inside a mount-time closure, so mirror calibration
@@ -1281,6 +1320,15 @@ export default function TripMap({
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayPaused, setReplayPaused] = useState(false);
+  const [replayTrailSamples, setReplayTrailSamples] = useState<LiveTrailSample[] | null>(null);
+  const [replayTrailLoad, setReplayTrailLoad] = useState<{
+    status: "idle" | "loading" | "loaded" | "error";
+    pages: number;
+    samples: number;
+    durationMs?: number;
+    error?: string;
+  }>({ status: "idle", pages: 0, samples: 0 });
+  const replayTrailLoadSeqRef = useRef(0);
   const stopFollowing = useCallback(() => {
     setIsFollowing(false);
   }, []);
@@ -1357,6 +1405,9 @@ export default function TripMap({
       : all;
   }, [role, travelerLiveTrailStatus, followerLiveTrail, cutoffPreview.cutoffAt]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
+  const replaySourceTrailSamples = replayTrailSamples ?? liveTrailSamples;
+  const pathTrailSamples = replayActive && replayTrailSamples ? replayTrailSamples : liveTrailSamples;
+  const pathTrailVisible = pathTrailSamples.length >= 1;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
     const val = localStorage.getItem("tripcast.showTripPath");
@@ -1375,6 +1426,14 @@ export default function TripMap({
   const showPath = role === "traveler"
     ? showTripPathLocal
     : travelerAllowsFollowerPath && showTripPathLocal;
+  const replayTrailLoading = replayTrailLoad.status === "loading";
+  const canAttemptReplay = showPath && !replayTrailLoading;
+
+  useEffect(() => {
+    replayTrailLoadSeqRef.current += 1;
+    setReplayTrailSamples(null);
+    setReplayTrailLoad({ status: "idle", pages: 0, samples: 0 });
+  }, [token, role, cutoffPreview.cutoffAt]);
 
   const handleCloakingPinClick = useCallback(
     (pin: CloakingPin) => {
@@ -1413,41 +1472,81 @@ export default function TripMap({
       ? all.filter((e) => e.occurredAt >= (cutoffPreview.cutoffAt as number))
       : all;
   }, [queriedJournalEvents, cutoffPreview.cutoffAt]);
-  const replayPins = useMemo<ReplayPin[]>(() => {
-    const checkpointPins: ReplayPin[] = journalEvents
-      .filter(isFiniteReplayCoordinate)
-      .map((event) => ({
-        eventId: event._id,
-        occurredAt: event.occurredAt,
-        lat: event.lat,
-        lon: event.lon,
-        kind: "checkpoint" as const,
-      }));
+  const replayJournalEvents = useMemo(
+    () => (role === "traveler" ? (queriedJournalEvents ?? []) : journalEvents),
+    [journalEvents, queriedJournalEvents, role],
+  );
+  const loadReplayTrailSamples = useCallback(async () => {
+    if (replayTrailSamples) return replayTrailSamples;
+    const seq = ++replayTrailLoadSeqRef.current;
+    const startedAt = performance.now();
+    const cutoffAt = role === "follower" ? (cutoffPreview.cutoffAt ?? undefined) : undefined;
+    let cursor: string | null = null;
+    let pages = 0;
+    const samples: LiveTrailSample[] = [];
+    setReplayTrailLoad({ status: "loading", pages: 0, samples: 0 });
+    log.logInteraction("live-trail:replay-fetch:start", { role, cutoffApplied: cutoffAt ?? null });
 
-    if (!liveTrailPathVisible || liveTrailSamples.length === 0) {
-      return checkpointPins.sort((a, b) => a.occurredAt - b.occurredAt);
-    }
-
-    // Include decimated breadcrumbs so the camera follows the trail during replay.
-    const MIN_REPLAY_BC_INTERVAL_MS = 60_000;
-    let lastKeptAt = -Infinity;
-    const breadcrumbPins: ReplayPin[] = [];
-    for (const s of [...liveTrailSamples].sort((a, b) => a.sampledAt - b.sampledAt)) {
-      if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
-      if (s.sampledAt - lastKeptAt >= MIN_REPLAY_BC_INTERVAL_MS) {
-        breadcrumbPins.push({
-          eventId: `bc-${s.sampledAt}`,
-          occurredAt: s.sampledAt,
-          lat: s.lat,
-          lon: s.lon,
-          kind: "breadcrumb" as const,
+    try {
+      for (;;) {
+        const page: LiveTrailReplayPage = await convex.query(tripcastApi.liveTrail.listReplayLiveTrailSamples, {
+          token,
+          cutoffAt,
+          paginationOpts: {
+            numItems: REPLAY_TRAIL_PAGE_SIZE,
+            cursor,
+            maximumRowsRead: REPLAY_TRAIL_PAGE_SIZE * 2,
+            maximumBytesRead: 256_000,
+          },
         });
-        lastKeptAt = s.sampledAt;
+        pages += 1;
+        samples.push(...page.page);
+        const durationMs = Math.round(performance.now() - startedAt);
+        log.logInteraction("live-trail:replay-fetch:page", {
+          role,
+          page: pages,
+          pageSamples: page.page.length,
+          samples: samples.length,
+          durationMs,
+        });
+        if (seq === replayTrailLoadSeqRef.current) {
+          setReplayTrailLoad({ status: "loading", pages, samples: samples.length, durationMs });
+        }
+        if (page.isDone) break;
+        cursor = page.continueCursor;
       }
-    }
 
-    return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
-  }, [journalEvents, liveTrailSamples, liveTrailPathVisible]);
+      const durationMs = Math.round(performance.now() - startedAt);
+      const estimatedPayloadBytes = samples.length * REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE;
+      log.logInteraction("live-trail:replay-fetch:complete", {
+        role,
+        pages,
+        samples: samples.length,
+        durationMs,
+        estimatedPayloadBytes,
+        cutoffApplied: cutoffAt ?? null,
+        firstSampleTs: samples[0]?.sampledAt ?? null,
+        lastSampleTs: samples.at(-1)?.sampledAt ?? null,
+      });
+      if (seq === replayTrailLoadSeqRef.current) {
+        setReplayTrailSamples(samples);
+        setReplayTrailLoad({ status: "loaded", pages, samples: samples.length, durationMs });
+      }
+      return samples;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const durationMs = Math.round(performance.now() - startedAt);
+      log.error("live-trail:replay-fetch:error", "query", { role, pages, samples: samples.length, durationMs, message });
+      if (seq === replayTrailLoadSeqRef.current) {
+        setReplayTrailLoad({ status: "error", pages, samples: samples.length, durationMs, error: message });
+      }
+      throw error;
+    }
+  }, [convex, cutoffPreview.cutoffAt, log, replayTrailSamples, role, token]);
+  const replayPins = useMemo<ReplayPin[]>(
+    () => buildReplayPins(replayJournalEvents, replaySourceTrailSamples),
+    [replayJournalEvents, replaySourceTrailSamples],
+  );
   const replayEndIndex = replayPins.length;
   const canReplayTrip = replayPins.length > 1;
   // Categorize the current beat. End = synthetic terminal beat at index === length.
@@ -1479,8 +1578,8 @@ export default function TripMap({
     showPath,
     replayRevealUpTo,
     routeLineColor,
-    liveTrailSamples,
-    liveTrailPathVisible,
+    pathTrailSamples,
+    pathTrailVisible,
   );
 
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
@@ -1723,6 +1822,7 @@ export default function TripMap({
   }, [log, replayActive, replayPins, replayPlayheadIndex, token]);
 
   useEffect(() => {
+    let cancelled = false;
     if (!finaleReplayActive) {
       if (finaleReplayStartedRef.current) {
         finaleReplayStartedRef.current = false;
@@ -1735,20 +1835,28 @@ export default function TripMap({
       return;
     }
 
-    if (!canReplayTrip) return;
-    const resumeIndex = resolveReplayResumeIndex(token, replayPins);
-    if (!finaleReplayStartedRef.current) {
-      snappedReplayEventRef.current = null;
-      finaleReplayStartedRef.current = true;
-      setReplaySpeed((speed) => Math.max(speed, 2));
-      log.logInteraction("finale:map-replay:start", {
-        totalPins: replayPins.length,
-        resumeIndex,
-      });
-    }
-    setReplayActive(true);
-    setReplayPlayheadIndex(resumeIndex);
-  }, [canReplayTrip, finaleReplayActive, log, replayPins, token]);
+    if (!canAttemptReplay) return;
+    void loadReplayTrailSamples().then((samples) => {
+      if (cancelled) return;
+      const pins = buildReplayPins(replayJournalEvents, samples);
+      if (pins.length <= 1) return;
+      const resumeIndex = resolveReplayResumeIndex(token, pins);
+      if (!finaleReplayStartedRef.current) {
+        snappedReplayEventRef.current = null;
+        finaleReplayStartedRef.current = true;
+        setReplaySpeed((speed) => Math.max(speed, 2));
+        log.logInteraction("finale:map-replay:start", {
+          totalPins: pins.length,
+          resumeIndex,
+        });
+      }
+      setReplayActive(true);
+      setReplayPlayheadIndex(resumeIndex);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [canAttemptReplay, finaleReplayActive, loadReplayTrailSamples, log, replayJournalEvents, token]);
 
   // Close replay if any sheet/panel/menu opens. Pin taps, dock taps, and the
   // right-click context menu all funnel through these states, so a single effect
@@ -3194,11 +3302,24 @@ export default function TripMap({
     }
   }
 
-  function handleStartReplay() {
+  async function handleStartReplay() {
     stopFollowing();
-    if (!canReplayTrip) {
-      log.logInteraction("replay:start:boundary", { reason: "no-coordinate-pins" });
-      showToast("Trip Replay needs at least one located journal event.");
+    if (!canAttemptReplay) {
+      log.logInteraction("replay:start:boundary", { reason: replayTrailLoading ? "loading" : "path-hidden" });
+      showToast(replayTrailLoading ? "Trip Replay is loading breadcrumbs." : "Trip path is hidden.");
+      return;
+    }
+    let nextTrailSamples: LiveTrailSample[];
+    try {
+      nextTrailSamples = await loadReplayTrailSamples();
+    } catch {
+      showToast("Trip Replay could not load breadcrumbs. Try again.");
+      return;
+    }
+    const nextReplayPins = buildReplayPins(replayJournalEvents, nextTrailSamples);
+    if (nextReplayPins.length <= 1) {
+      log.logInteraction("replay:start:boundary", { reason: "no-coordinate-pins", trailSamples: nextTrailSamples.length });
+      showToast("Trip Replay needs at least two located breadcrumbs or journal events.");
       return;
     }
     music.sfx("page");
@@ -3216,11 +3337,12 @@ export default function TripMap({
     setContextMenu(null);
     setStoryPrefill(null);
     snappedReplayEventRef.current = null;
-    const resumeIndex = resolveReplayResumeIndex(token, replayPins);
+    const resumeIndex = resolveReplayResumeIndex(token, nextReplayPins);
     setReplayActive(true);
     setReplayPlayheadIndex(resumeIndex);
     log.logInteraction("replay:start", {
-      totalPins: replayPins.length,
+      totalPins: nextReplayPins.length,
+      trailSamples: nextTrailSamples.length,
       resumeIndex,
       speed: replaySpeed,
     });
@@ -4314,14 +4436,21 @@ export default function TripMap({
           <div className="flex flex-col items-end gap-2">
             <button
               type="button"
-              onClick={handleStartReplay}
-              disabled={!canReplayTrip}
+              onClick={() => void handleStartReplay()}
+              disabled={!canAttemptReplay}
               aria-pressed={replayActive}
               className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Play className="h-3.5 w-3.5" aria-hidden="true" />
-              {replayActive ? `${replaySpeed}x Replay` : "Replay"}
+              {replayTrailLoading
+                ? `Loading ${replayTrailLoad.samples}`
+                : replayActive ? `${replaySpeed}x Replay` : "Replay"}
             </button>
+            {replayTrailLoad.status === "error" ? (
+              <p className="pointer-events-auto max-w-[12rem] rounded-md bg-[var(--bg-card)] px-2 py-1 text-right text-[10px] font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]">
+                Replay breadcrumbs failed to load.
+              </p>
+            ) : null}
             <MusicMuteIndicator className="pointer-events-auto" />
           </div>
         </div>

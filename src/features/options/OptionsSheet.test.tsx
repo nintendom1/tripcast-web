@@ -155,6 +155,7 @@ function setupMocks({
   setLiveTrailEnabledFn = vi.fn().mockResolvedValue(null),
   setLiveTrailVisibilityFn = vi.fn().mockResolvedValue(null),
   deleteLiveTrailRangeFn = vi.fn().mockResolvedValue({ deleted: 0 }),
+  deleteLiveTrailSamplesFn = vi.fn().mockResolvedValue({ deleted: 0 }),
   setMysterySettingsFn = vi.fn().mockResolvedValue(null),
 }: {
   travelerTimeZone?: string | null;
@@ -188,6 +189,7 @@ function setupMocks({
   setLiveTrailEnabledFn?: ReturnType<typeof vi.fn>;
   setLiveTrailVisibilityFn?: ReturnType<typeof vi.fn>;
   deleteLiveTrailRangeFn?: ReturnType<typeof vi.fn>;
+  deleteLiveTrailSamplesFn?: ReturnType<typeof vi.fn>;
   setMysterySettingsFn?: ReturnType<typeof vi.fn>;
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: unknown) => {
@@ -241,6 +243,9 @@ function setupMocks({
     if (ref === tripcastApi.liveTrail.travelerDeleteLiveTrailRange) {
       return deleteLiveTrailRangeFn as any;
     }
+    if (ref === tripcastApi.liveTrail.travelerDeleteLiveTrailSamples) {
+      return deleteLiveTrailSamplesFn as any;
+    }
     if (ref === tripcastApi.mysteryMissions.travelerSetMysteryMissionsEnabled) {
       return setMysterySettingsFn as any;
     }
@@ -253,6 +258,7 @@ function setupMocks({
     setLiveTrailEnabledFn,
     setLiveTrailVisibilityFn,
     deleteLiveTrailRangeFn,
+    deleteLiveTrailSamplesFn,
     setMysterySettingsFn,
   };
 }
@@ -516,9 +522,9 @@ describe("OptionsSheet Live Trail settings", () => {
 
     await userEvent.click(screen.getByText("1 hour"));
 
-    expect(screen.getByText(/5 breadcrumbs selected/i)).toBeInTheDocument();
+    expect(screen.getByText(/5 of 5 breadcrumbs selected/i)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /Delete selected breadcrumbs/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Delete 5 breadcrumbs/i }));
 
     expect(deleteLiveTrailRangeFn).toHaveBeenCalledWith({
       token: "test-token",
@@ -545,15 +551,77 @@ describe("OptionsSheet Live Trail settings", () => {
     renderOptions({ defaultView: "live-trail" });
 
     expect(screen.getByRole("img", { name: "Live Trail deletion preview map" })).toBeInTheDocument();
-    expect(screen.getByText(/2 breadcrumbs selected/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 of 2 breadcrumbs selected/i)).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /Delete selected breadcrumbs/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Delete 2 breadcrumbs/i }));
 
     expect(deleteLiveTrailRangeFn).toHaveBeenCalledWith({
       token: "test-token",
       startDate: expect.stringContaining("T"),
       endDate: expect.stringContaining("T"),
       timeZone: "America/Los_Angeles",
+    });
+  });
+
+  it("deletes every other breadcrumb by explicit sample id", async () => {
+    const { deleteLiveTrailSamplesFn } = setupMocks({
+      travelerTimeZone: "America/Los_Angeles",
+      liveTrailPreview: {
+        startMs: Date.UTC(2026, 4, 1, 7),
+        endExclusiveMs: Date.UTC(2026, 4, 2, 7),
+        timeZone: "America/Los_Angeles",
+        count: 5,
+        samples: [
+          { _id: "sample-1", lat: 47.61, lon: -122.31, sampledAt: Date.UTC(2026, 4, 1, 16) },
+          { _id: "sample-2", lat: 47.62, lon: -122.32, sampledAt: Date.UTC(2026, 4, 1, 17) },
+          { _id: "sample-3", lat: 47.63, lon: -122.33, sampledAt: Date.UTC(2026, 4, 1, 18) },
+          { _id: "sample-4", lat: 47.64, lon: -122.34, sampledAt: Date.UTC(2026, 4, 1, 19) },
+          { _id: "sample-5", lat: 47.65, lon: -122.35, sampledAt: Date.UTC(2026, 4, 1, 20) },
+        ],
+      },
+    });
+    renderOptions({ defaultView: "live-trail" });
+
+    await userEvent.selectOptions(screen.getByLabelText(/Delete mode/i), "every_other");
+
+    expect(screen.getByText(/2 of 5 breadcrumbs selected/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Delete 2 breadcrumbs/i }));
+
+    expect(deleteLiveTrailSamplesFn).toHaveBeenCalledWith({
+      token: "test-token",
+      sampleIds: ["sample-2", "sample-4"],
+    });
+  });
+
+  it("lets the traveler select individual breadcrumbs before deleting", async () => {
+    const { deleteLiveTrailSamplesFn } = setupMocks({
+      travelerTimeZone: "America/Los_Angeles",
+      liveTrailPreview: {
+        startMs: Date.UTC(2026, 4, 1, 7),
+        endExclusiveMs: Date.UTC(2026, 4, 2, 7),
+        timeZone: "America/Los_Angeles",
+        count: 3,
+        samples: [
+          { _id: "sample-1", lat: 47.61, lon: -122.31, sampledAt: Date.UTC(2026, 4, 1, 16) },
+          { _id: "sample-2", lat: 47.62, lon: -122.32, sampledAt: Date.UTC(2026, 4, 1, 17) },
+          { _id: "sample-3", lat: 47.63, lon: -122.33, sampledAt: Date.UTC(2026, 4, 1, 18) },
+        ],
+      },
+    });
+    renderOptions({ defaultView: "live-trail" });
+
+    await userEvent.selectOptions(screen.getByLabelText(/Delete mode/i), "individual");
+    expect(screen.getByText(/0 of 3 breadcrumbs selected/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText(/#2/i));
+    await userEvent.click(screen.getByLabelText(/#3/i));
+
+    expect(screen.getByText(/2 of 3 breadcrumbs selected/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Delete 2 breadcrumbs/i }));
+
+    expect(deleteLiveTrailSamplesFn).toHaveBeenCalledWith({
+      token: "test-token",
+      sampleIds: ["sample-2", "sample-3"],
     });
   });
 
