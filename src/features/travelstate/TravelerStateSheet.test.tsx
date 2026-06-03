@@ -18,6 +18,7 @@ vi.mock("framer-motion", () => ({
       <div {...rest}>{children}</div>
     ),
   },
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
 }));
 
 // Keep mutation mocks keyed by Convex reference so AutoStateTab renders do not

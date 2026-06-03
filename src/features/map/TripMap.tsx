@@ -67,7 +67,12 @@ import { MessagingSheet } from "../messaging/MessagingSheet";
 import { useMessagingUnread } from "../messaging/useMessagingUnread";
 import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
+import {
+  useMovementDebugRecords,
+  useMovementDebugSpeed,
+} from "../../providers/MovementDebugProvider";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { DEFAULT_MOVING_MPS, DEFAULT_WALKING_MPS } from "../../lib/movementUnits";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
@@ -1170,6 +1175,12 @@ export default function TripMap({
   const mapDiagnosticFetchUrlRef = useRef<string | null>(null);
   const mapFailureStatsRef = useRef(createMapFailureStats());
   const mapLoadedRef = useRef(false);
+  // Ref-pattern for onMapLoaded: the map-init effect must NOT re-run when the
+  // parent passes a fresh callback identity (would tear down + rebuild the
+  // entire MapLibre instance). We capture the latest callback here so the
+  // `map.on("load", ...)` handler always invokes the freshest version.
+  const onMapLoadedRef = useRef(onMapLoaded);
+  onMapLoadedRef.current = onMapLoaded;
   const mapInteractionsFrozenRef = useRef(false);
   const snappedReplayEventRef = useRef<string | null>(null);
   const finaleReplayStartedRef = useRef(false);
@@ -1298,6 +1309,10 @@ export default function TripMap({
   );
   const movementPrefsRef = useRef<typeof movementPrefs>(undefined);
   movementPrefsRef.current = movementPrefs;
+  const movementDebugRecords = useMovementDebugRecords();
+  const movementDebugSpeed = useMovementDebugSpeed();
+  const movementDebugRef = useRef({ records: movementDebugRecords, speed: movementDebugSpeed });
+  movementDebugRef.current = { records: movementDebugRecords, speed: movementDebugSpeed };
   const addCloakingPin = useMutation(tripcastApi.cloakingPins.travelerAddCloakingPin);
   const cloakingPinsData = useQuery(
     tripcastApi.cloakingPins.travelerListCloakingPins,
@@ -2417,7 +2432,7 @@ export default function TripMap({
         styleUrl: activeMapStyleUrlRef.current ?? initialMapStyleUrl,
         zoom: map.getZoom(),
       });
-      onMapLoaded?.();
+      onMapLoadedRef.current?.();
     });
 
     map.on("error", (event) => {
@@ -2848,8 +2863,8 @@ export default function TripMap({
         const prefs = movementPrefsRef.current;
         const fixAt = Date.now();
         if (prefs?.movementDetectionEnabled === true) {
-          const walkingMps = prefs.movementWalkingThresholdMps ?? 2.54;
-          const movingMps = prefs.movementMovingThresholdMps ?? 8.94;
+          const walkingMps = prefs.movementWalkingThresholdMps ?? DEFAULT_WALKING_MPS;
+          const movingMps = prefs.movementMovingThresholdMps ?? DEFAULT_MOVING_MPS;
           let speedMps: number | undefined =
             typeof speed === "number" && speed >= 0 ? speed : undefined;
           if (speedMps === undefined && prevFixForSpeed) {
@@ -2867,6 +2882,39 @@ export default function TripMap({
                 : speedMps >= walkingMps
                   ? "walking"
                   : "stopped";
+
+          // Movement debug telemetry — always-on recording when detection is
+          // enabled. Live speed updates only while calibration mode is on
+          // (high-frequency, only useful while the debug modal is open).
+          const debug = movementDebugRef.current;
+          if (debug.records.isCalibrationModeEnabled && speedMps !== undefined) {
+            debug.speed.recordCurrentSpeed(speedMps);
+          }
+          if (speedMps !== undefined) {
+            const inWalkingNearMiss =
+              classification === "stopped" &&
+              speedMps >= 0.9 * walkingMps &&
+              speedMps <= 0.99 * walkingMps;
+            const inMovingNearMiss =
+              classification !== "moving" &&
+              speedMps >= 0.9 * movingMps &&
+              speedMps <= 0.99 * movingMps;
+            if (inWalkingNearMiss) {
+              debug.records.recordAlmostTriggered({
+                thresholdType: "walking",
+                speedMps,
+                thresholdMps: walkingMps,
+              });
+            }
+            if (inMovingNearMiss) {
+              debug.records.recordAlmostTriggered({
+                thresholdType: "moving",
+                speedMps,
+                thresholdMps: movingMps,
+              });
+            }
+          }
+
           const changed = classification !== lastMovementClassification;
           const throttleOk = fixAt - lastMovementMutationAt >= MOVEMENT_MUTATION_MIN_INTERVAL_MS;
           if (changed && classification !== "stopped" && (throttleOk || lastMovementClassification === null)) {
@@ -2874,16 +2922,26 @@ export default function TripMap({
             lastMovementClassification = classification;
             lastMovementMutationAt = fixAt;
             log.logUi("movement:classify", { speedMps, classification, from });
+            const triggeredSpeedMps = speedMps;
             applyMovementDetection({
               token,
               classification,
               speedMps,
               sampledAt: fixAt,
-            }).catch((error) => {
-              log.error("movement:apply:error", "mutation", {
-                message: error instanceof Error ? error.message : String(error),
+            })
+              .then(() => {
+                if (triggeredSpeedMps === undefined) return;
+                movementDebugRef.current.records.recordTriggered({
+                  from,
+                  to: classification,
+                  speedMps: triggeredSpeedMps,
+                });
+              })
+              .catch((error) => {
+                log.error("movement:apply:error", "mutation", {
+                  message: error instanceof Error ? error.message : String(error),
+                });
               });
-            });
           } else if (changed) {
             lastMovementClassification = classification;
           }
