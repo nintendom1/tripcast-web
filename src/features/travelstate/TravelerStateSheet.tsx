@@ -6,7 +6,7 @@ import {
 } from "../../lib/sleepTimeUtils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMutation, useQuery } from "convex/react";
-import { motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { Heart, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
@@ -14,11 +14,9 @@ import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { Capacitor } from "@capacitor/core";
 import { tripcastApi } from "../../convex/tripcastApi";
 import {
-  ftPerMinToMps,
   mphToMps,
-  mpsToFtPerMin,
   mpsToMph,
-  DEFAULT_WALKING_FT_PER_MIN,
+  DEFAULT_WALKING_MPH,
   DEFAULT_MOVING_MPH,
 } from "../../lib/movementUnits";
 import type {
@@ -55,6 +53,12 @@ import {
 } from "./travelerStateUtils";
 import { formatSaveError } from "./formatSaveError";
 import AutoStateTab, { type AutoStateFooterAction } from "./AutoStateTab";
+import MovementDebugModal from "./MovementDebugModal";
+import {
+  useMovementDebugRecords,
+  type AlmostRecord,
+  type TriggeredRecord,
+} from "../../providers/MovementDebugProvider";
 import { computeAutoState } from "./autoStateCalc";
 import { TERMS } from "../../copy/terminology";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
@@ -267,6 +271,45 @@ function ToggleRow({
   );
 }
 
+function MovementEventStrip({
+  triggered,
+  almost,
+  formatSpeed,
+  unitLabel,
+  triggeredLabel,
+}: {
+  triggered: TriggeredRecord | null;
+  almost: AlmostRecord | null;
+  formatSpeed: (mps: number) => string;
+  unitLabel: string;
+  triggeredLabel: string;
+}) {
+  return (
+    <div className="grid gap-0.5 text-[11px] text-[var(--ink-3)]">
+      <div>
+        Last triggered:{" "}
+        {triggered ? (
+          <span className="text-[var(--ink-2)]">
+            {formatRelativeTime(triggered.timestamp)} · {triggeredLabel} @ {formatSpeed(triggered.speedMps)} {unitLabel}
+          </span>
+        ) : (
+          <span>—</span>
+        )}
+      </div>
+      <div>
+        Last almost:{" "}
+        {almost ? (
+          <span className="text-[var(--ink-2)]">
+            {formatRelativeTime(almost.timestamp)} · {formatSpeed(almost.speedMps)} {unitLabel} (threshold {formatSpeed(almost.thresholdMps)} {unitLabel})
+          </span>
+        ) : (
+          <span>—</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Grouped "segment" of the State form — a titled card that reduces density by
  *  visually separating the bars, the chip pickers, notes, and biometrics. */
 function StateSegment({
@@ -384,10 +427,13 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [sleepEnd, setSleepEnd] = useState("07:00");
   const [sleepThresholdMs, setSleepThresholdMs] = useState(3_600_000);
 
+  const movementDebug = useMovementDebugRecords();
+  const [showDebugModal, setShowDebugModal] = useState(false);
+
   const [movementEnabled, setMovementEnabled] = useState(false);
   const [walkingLabel, setWalkingLabel] = useState("Walking");
   const [walkingEmoji, setWalkingEmoji] = useState("🚶");
-  const [walkingFtPerMin, setWalkingFtPerMin] = useState<number>(DEFAULT_WALKING_FT_PER_MIN);
+  const [walkingMph, setWalkingMph] = useState<number>(DEFAULT_WALKING_MPH);
   const [movingLabel, setMovingLabel] = useState("Moving");
   const [movingEmoji, setMovingEmoji] = useState("🚄");
   const [movingMph, setMovingMph] = useState<number>(DEFAULT_MOVING_MPH);
@@ -522,7 +568,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     if (prefs.movementWalkingLabel !== undefined) setWalkingLabel(prefs.movementWalkingLabel);
     if (prefs.movementWalkingEmoji !== undefined) setWalkingEmoji(prefs.movementWalkingEmoji);
     if (prefs.movementWalkingThresholdMps !== undefined)
-      setWalkingFtPerMin(Math.round(mpsToFtPerMin(prefs.movementWalkingThresholdMps)));
+      setWalkingMph(Number(mpsToMph(prefs.movementWalkingThresholdMps).toFixed(1)));
     if (prefs.movementMovingLabel !== undefined) setMovingLabel(prefs.movementMovingLabel);
     if (prefs.movementMovingEmoji !== undefined) setMovingEmoji(prefs.movementMovingEmoji);
     if (prefs.movementMovingThresholdMps !== undefined)
@@ -704,6 +750,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const footerError = tab === "auto" ? autoFooterAction?.error ?? null : error;
 
   return (
+    <>
     <motion.div
       {...PANEL_MOTION}
       data-role="traveler-state-sheet"
@@ -1217,20 +1264,28 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
-                          min={1}
-                          step={10}
-                          value={walkingFtPerMin}
-                          onChange={(e) => setWalkingFtPerMin(Number(e.target.value) || 0)}
+                          min={0.1}
+                          step={0.1}
+                          inputMode="decimal"
+                          value={walkingMph}
+                          onChange={(e) => setWalkingMph(Number(e.target.value) || 0)}
                           onBlur={() => {
-                            const v = walkingFtPerMin > 0 ? walkingFtPerMin : DEFAULT_WALKING_FT_PER_MIN;
-                            updateMovementDetection({ token, movementWalkingThresholdMps: ftPerMinToMps(v) }).catch(() => {});
+                            const v = walkingMph > 0 ? walkingMph : DEFAULT_WALKING_MPH;
+                            updateMovementDetection({ token, movementWalkingThresholdMps: mphToMps(v) }).catch(() => {});
                           }}
-                          aria-label="Walking threshold (ft/min)"
+                          aria-label="Walking threshold (mph)"
                           className={cn("h-9 w-20 px-2 text-sm", stateInputClass)}
                         />
-                        <span className={stateHintClass}>ft/min</span>
+                        <span className={stateHintClass}>mph</span>
                       </div>
                     </div>
+                    <MovementEventStrip
+                      triggered={movementDebug.lastTriggeredWalking}
+                      almost={movementDebug.lastAlmostTriggeredWalking}
+                      formatSpeed={(mps) => mpsToMph(mps).toFixed(1)}
+                      unitLabel="mph"
+                      triggeredLabel="Walking"
+                    />
                   </div>
 
                   {/* Moving band */}
@@ -1276,6 +1331,13 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                         <span className={stateHintClass}>mph</span>
                       </div>
                     </div>
+                    <MovementEventStrip
+                      triggered={movementDebug.lastTriggeredMoving}
+                      almost={movementDebug.lastAlmostTriggeredMoving}
+                      formatSpeed={(mps) => mpsToMph(mps).toFixed(1)}
+                      unitLabel="mph"
+                      triggeredLabel="Moving"
+                    />
                   </div>
 
                   <ToggleRow
@@ -1286,6 +1348,17 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                       updateMovementDetection({ token, movementOverridesSleep: v }).catch(() => {});
                     }}
                   />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      log.logInteraction("debug-modal:open", {});
+                      setShowDebugModal(true);
+                    }}
+                    className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm font-medium text-[var(--ink-2)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
+                  >
+                    Calibration & Debug
+                  </button>
                 </div>
               )}
             </StateSegment>
@@ -1357,5 +1430,17 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         ) : null}
       </SheetSaveFooter>
     </motion.div>
+    <AnimatePresence>
+      {showDebugModal ? (
+        <MovementDebugModal
+          token={token}
+          onClose={() => {
+            log.logInteraction("debug-modal:close", {});
+            setShowDebugModal(false);
+          }}
+        />
+      ) : null}
+    </AnimatePresence>
+    </>
   );
 }
