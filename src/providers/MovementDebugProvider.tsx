@@ -70,10 +70,20 @@ export interface MovementDebugRecordsContextValue {
   recordAlmostTriggered: (input: { thresholdType: ThresholdKind; speedMps: number; thresholdMps: number }) => void;
 }
 
+export type RecentFix = {
+  at: number;
+  speedMps: number | null;
+};
+
 export interface MovementDebugSpeedContextValue {
   currentSpeedMps: number | null;
+  lastFixAt: number | null;
+  recentFixes: RecentFix[];
   recordCurrentSpeed: (mps: number | null) => void;
+  clearRecentFixes: () => void;
 }
+
+const RECENT_FIXES_CAP = 10;
 
 const RecordsContext = React.createContext<MovementDebugRecordsContextValue | null>(null);
 const SpeedContext = React.createContext<MovementDebugSpeedContextValue | null>(null);
@@ -85,6 +95,8 @@ export interface MovementDebugProviderProps {
 export function MovementDebugProvider({ children }: MovementDebugProviderProps) {
   const [persisted, setPersisted] = React.useState<PersistedShape>(() => readPersisted());
   const [currentSpeedMps, setCurrentSpeedMps] = React.useState<number | null>(null);
+  const [lastFixAt, setLastFixAt] = React.useState<number | null>(null);
+  const [recentFixes, setRecentFixes] = React.useState<RecentFix[]>([]);
 
   // Keep latest persisted snapshot in a ref so setters can compose without
   // stale-closure issues when called from a high-frequency GPS handler.
@@ -103,7 +115,11 @@ export function MovementDebugProvider({ children }: MovementDebugProviderProps) 
   const setCalibrationEnabled = React.useCallback(
     (next: boolean) => {
       update({ isCalibrationModeEnabled: next });
-      if (!next) setCurrentSpeedMps(null);
+      if (!next) {
+        setCurrentSpeedMps(null);
+        setLastFixAt(null);
+        setRecentFixes([]);
+      }
     },
     [update],
   );
@@ -131,7 +147,18 @@ export function MovementDebugProvider({ children }: MovementDebugProviderProps) 
   );
 
   const recordCurrentSpeed = React.useCallback((mps: number | null) => {
+    const at = Date.now();
     setCurrentSpeedMps(mps);
+    setLastFixAt(at);
+    setRecentFixes((prev) => {
+      const next = [...prev, { at, speedMps: mps }];
+      if (next.length > RECENT_FIXES_CAP) next.splice(0, next.length - RECENT_FIXES_CAP);
+      return next;
+    });
+  }, []);
+
+  const clearRecentFixes = React.useCallback(() => {
+    setRecentFixes([]);
   }, []);
 
   const recordsValue = React.useMemo<MovementDebugRecordsContextValue>(
@@ -149,8 +176,8 @@ export function MovementDebugProvider({ children }: MovementDebugProviderProps) 
   );
 
   const speedValue = React.useMemo<MovementDebugSpeedContextValue>(
-    () => ({ currentSpeedMps, recordCurrentSpeed }),
-    [currentSpeedMps, recordCurrentSpeed],
+    () => ({ currentSpeedMps, lastFixAt, recentFixes, recordCurrentSpeed, clearRecentFixes }),
+    [currentSpeedMps, lastFixAt, recentFixes, recordCurrentSpeed, clearRecentFixes],
   );
 
   return (
@@ -173,7 +200,10 @@ const FALLBACK_RECORDS: MovementDebugRecordsContextValue = {
 
 const FALLBACK_SPEED: MovementDebugSpeedContextValue = {
   currentSpeedMps: null,
+  lastFixAt: null,
+  recentFixes: [],
   recordCurrentSpeed: () => undefined,
+  clearRecentFixes: () => undefined,
 };
 
 export function useMovementDebugRecords(): MovementDebugRecordsContextValue {
