@@ -173,6 +173,20 @@ export type LiveTrailDeletePreview = {
   samples: LiveTrailPreviewSample[];
 };
 
+export type PaginationOpts = {
+  numItems: number;
+  cursor: string | null;
+  endCursor?: string | null;
+  maximumRowsRead?: number;
+  maximumBytesRead?: number;
+};
+
+export type LiveTrailReplayPage = {
+  page: LiveTrailSample[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
 export type LinkedMissionAction = "planned" | "visible" | "leave";
 
 export type RouteVoteOptionInput = {
@@ -1081,7 +1095,7 @@ export type TickerSettings = {
 // Bulk Import types
 // ---------------------------------------------------------------------------
 
-export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote" | "mystery_mission" | "ticker_fact" | "ticker_tip";
+export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote" | "mystery_mission" | "ticker_fact" | "ticker_tip" | "live_trail_sample";
 export type BulkImportTimestamp = number | string;
 
 export type BulkImportRouteVoteOption = {
@@ -1210,6 +1224,17 @@ export type BulkImportEntry =
       text?: string;
       tip?: string;
       title?: string;
+    }
+  | {
+      kind: "live_trail_sample" | "breadcrumb";
+      ref?: string;
+      timeZone?: string;
+      lat: number;
+      lon: number;
+      accuracy?: number;
+      sampledAt?: BulkImportTimestamp;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
     };
 
 export type BulkImportPayload =
@@ -1227,6 +1252,7 @@ export type BulkImportCounts = {
   mysteryMissions: number;
   tickerFacts: number;
   tickerTips: number;
+  liveTrailSamples: number;
 };
 
 export type BulkImportPreviewError = {
@@ -1347,7 +1373,7 @@ export const tripcastApi = {
     travelerExportTripData: (anyApi as any).bulkImport.travelerExportTripData as FunctionReference<
       "query",
       "public",
-      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean },
+      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean; includeLiveTrail?: boolean },
       BulkImportPayload
     >,
     travelerExportTickerFacts: (anyApi as any).bulkImport.travelerExportTickerFacts as FunctionReference<
@@ -1522,6 +1548,12 @@ export const tripcastApi = {
       { token: string; startDate: string; endDate: string; timeZone: string },
       { deleted: number }
     >,
+    travelerDeleteLiveTrailSamples: (anyApi as any).liveTrail.travelerDeleteLiveTrailSamples as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; sampleIds: string[] },
+      { deleted: number }
+    >,
     travelerGetLiveTrailStatus: (anyApi as any).liveTrail.travelerGetLiveTrailStatus as FunctionReference<
       "query",
       "public",
@@ -1533,6 +1565,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       FollowerLiveTrail
+    >,
+    listReplayLiveTrailSamples: (anyApi as any).liveTrail.listReplayLiveTrailSamples as FunctionReference<
+      "query",
+      "public",
+      { token: string; paginationOpts: PaginationOpts; cutoffAt?: number },
+      LiveTrailReplayPage
     >,
   },
   routeVotes: {

@@ -59,6 +59,7 @@ export default function BulkExportSheet({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [includeMysteryMissions, setIncludeMysteryMissions] = useState(false);
+  const [includeLiveTrail, setIncludeLiveTrail] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tickerCopied, setTickerCopied] = useState(false);
   const music = useMusicSafe();
@@ -84,7 +85,7 @@ export default function BulkExportSheet({
 
   const queryResult = useQuery(
     tripcastApi.bulkImport.travelerExportTripData,
-    open ? { token, startMs, endMs, includeMysteryMissions } : "skip"
+    open ? { token, startMs, endMs, includeMysteryMissions, includeLiveTrail } : "skip"
   );
   const data = isBulkExportResult(queryResult) ? queryResult : undefined;
 
@@ -239,6 +240,25 @@ export default function BulkExportSheet({
                 <span className="font-medium">Include Mystery Missions</span>
                 <span className="text-[var(--ink-2)]">
                   Adds full Mystery Mission definitions, including true intent and spoiler metadata.
+                </span>
+              </span>
+            </label>
+
+            <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
+              <input
+                type="checkbox"
+                checked={includeLiveTrail}
+                onChange={(event) => {
+                  log.logUi("action:include-live-trail", { enabled: event.currentTarget.checked });
+                  setIncludeLiveTrail(event.currentTarget.checked);
+                }}
+                className="mt-1 h-4 w-4"
+                style={{ accentColor: "var(--ink-1)" }}
+              />
+              <span className="grid gap-1">
+                <span className="font-medium">Include Live Trail breadcrumbs</span>
+                <span className="text-[var(--ink-2)]">
+                  Adds sampled breadcrumb coordinates for dev fixtures and replay data round-trips.
                 </span>
               </span>
             </label>

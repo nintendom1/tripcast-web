@@ -96,6 +96,23 @@ describe("BulkExportSheet", () => {
     expect(screen.getByText(/End Date/i)).toBeInTheDocument();
   });
 
+  it("requests Live Trail breadcrumbs only when the option is enabled", async () => {
+    mockQueries(mockData, tickerData);
+    render(<BulkExportSheet open={true} token={token} onOpenChange={() => {}} />);
+
+    expect((useQuery as any).mock.calls).toContainEqual([
+      expect.anything(),
+      expect.objectContaining({ includeLiveTrail: false }),
+    ]);
+
+    await userEvent.click(screen.getByLabelText(/Include Live Trail breadcrumbs/i));
+
+    expect((useQuery as any).mock.calls).toContainEqual([
+      expect.anything(),
+      expect.objectContaining({ includeLiveTrail: true }),
+    ]);
+  });
+
   it("calls clipboard API when the trip-data Copy JSON is clicked", async () => {
     mockQueries(mockData, tickerData);
     render(<BulkExportSheet open={true} token={token} onOpenChange={() => {}} />);

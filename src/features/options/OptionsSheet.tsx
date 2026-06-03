@@ -101,6 +101,7 @@ type OptionsSheetProps = {
 };
 
 export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker";
+type LiveTrailDeleteMode = "range" | "every_other" | "individual";
 
 const TICKER_PREVIEW_MESSAGE = {
   id: "preview-demo",
@@ -1079,6 +1080,7 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   const setEnabled = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailEnabled);
   const setVisibility = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailVisibility);
   const deleteRange = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailRange);
+  const deleteSamples = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailSamples);
 
   const timeZone = preferences?.travelerTimeZone ?? fallbackTimeZone;
   const [startDate, setStartDate] = useState(() => formatDateInputValue(Date.now(), fallbackTimeZone));
@@ -1087,6 +1089,8 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   const [endTime, setEndTime] = useState(() => "23:59");
   const [savingField, setSavingField] = useState<"enabled" | "visibility" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleteMode, setDeleteMode] = useState<LiveTrailDeleteMode>("range");
+  const [individualSelection, setIndividualSelection] = useState<Record<string, boolean>>({});
 
   const combinedStart = combineDateTime(startDate, startTime);
   const combinedEnd = combineDateTime(endDate, endTime);
@@ -1100,6 +1104,28 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   const enabled = status?.enabled ?? false;
   const visibleToFollowers = status?.visibleToFollowers ?? false;
   const previewCount = preview?.count ?? 0;
+  const previewSamples = useMemo(
+    () => [...(preview?.samples ?? [])].sort((a, b) => a.sampledAt - b.sampledAt),
+    [preview?.samples],
+  );
+  const selectedSampleIds = useMemo(() => {
+    if (deleteMode === "range") return previewSamples.map((sample) => sample._id);
+    if (deleteMode === "every_other") {
+      if (previewSamples.length <= 2) return [];
+      return previewSamples
+        .filter((_, index) => index > 0 && index < previewSamples.length - 1 && index % 2 === 1)
+        .map((sample) => sample._id);
+    }
+    return previewSamples
+      .filter((sample) => individualSelection[sample._id] === true)
+      .map((sample) => sample._id);
+  }, [deleteMode, individualSelection, previewSamples]);
+  const selectedSampleIdSet = useMemo(() => new Set(selectedSampleIds), [selectedSampleIds]);
+  const selectedCount = deleteMode === "range" ? previewCount : selectedSampleIds.length;
+
+  useEffect(() => {
+    setIndividualSelection({});
+  }, [combinedStart, combinedEnd, deleteMode]);
 
   useEffect(() => {
     log.logInteraction("live-trail:settings:open");
@@ -1160,7 +1186,7 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   }
 
   async function handleDeleteRange() {
-    if (savingField || !rangeIsValid || previewCount === 0) return;
+    if (savingField || !rangeIsValid || selectedCount === 0) return;
     setSavingField("delete");
     setError(null);
     log.logInteraction("live-trail:delete-range:confirm", {
@@ -1168,18 +1194,24 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
       endDate: combinedEnd,
       timeZone,
       previewCount,
+      selectedCount,
+      deleteMode,
     });
     try {
-      const result = await deleteRange({
-        token,
-        startDate: combinedStart,
-        endDate: combinedEnd,
-        timeZone,
-      });
+      const result = deleteMode === "range"
+        ? await deleteRange({
+          token,
+          startDate: combinedStart,
+          endDate: combinedEnd,
+          timeZone,
+        })
+        : await deleteSamples({ token, sampleIds: selectedSampleIds });
       log.logInteraction("live-trail:delete-range:result", {
         deleted: result.deleted,
         ok: true,
+        deleteMode,
       });
+      setIndividualSelection({});
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
@@ -1269,25 +1301,70 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
             </div>
 
             <div className="grid gap-2">
-              <LiveTrailPreviewMap samples={preview?.samples ?? []} log={log} />
+              <label
+                htmlFor="live-trail-delete-mode"
+                className="text-sm font-semibold text-[var(--ink-1)]"
+              >
+                Delete mode
+              </label>
+              <select
+                id="live-trail-delete-mode"
+                value={deleteMode}
+                onChange={(event) => setDeleteMode(event.target.value as LiveTrailDeleteMode)}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              >
+                <option value="range">Delete all breadcrumbs in Range</option>
+                <option value="every_other">Delete every other breadcrumb in range</option>
+                <option value="individual">Delete individual breadcrumbs</option>
+              </select>
+            </div>
+
+            <div className="grid gap-2">
+              <LiveTrailPreviewMap samples={previewSamples} deletingIds={selectedSampleIdSet} log={log} />
               <p className="text-sm text-[var(--ink-3)]" aria-live="polite">
                 {!rangeIsValid
                   ? "Choose an end time after the start time."
                   : preview
-                    ? `${previewCount} breadcrumb${previewCount === 1 ? "" : "s"} selected in ${timeZone}.`
+                    ? `${selectedCount} of ${previewCount} breadcrumb${previewCount === 1 ? "" : "s"} selected in ${timeZone}.`
                     : `Loading preview in ${timeZone}...`}
               </p>
             </div>
 
+            {deleteMode === "individual" && previewSamples.length > 0 ? (
+              <div className="max-h-52 overflow-auto rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)]">
+                {previewSamples.map((sample, index) => (
+                  <label
+                    key={sample._id}
+                    className="flex items-center gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-sm last:border-b-0"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={individualSelection[sample._id] === true}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setIndividualSelection((current) => ({
+                          ...current,
+                          [sample._id]: checked,
+                        }));
+                      }}
+                    />
+                    <span className="flex-1 text-[var(--ink-1)]">
+                      #{index + 1} · {dayjs(sample.sampledAt).tz(timeZone).format("MMM D, h:mm A")}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+
             <Button
               type="button"
               variant="destructive"
-              disabled={!rangeIsValid || previewCount === 0 || savingField === "delete"}
+              disabled={!rangeIsValid || selectedCount === 0 || savingField === "delete"}
               onClick={() => void handleDeleteRange()}
               className="w-full sm:w-fit"
             >
               <Trash2 className="mr-2 h-4 w-4" aria-hidden />
-              {savingField === "delete" ? "Deleting..." : "Delete selected breadcrumbs"}
+              {savingField === "delete" ? "Deleting..." : `Delete ${selectedCount} breadcrumb${selectedCount === 1 ? "" : "s"}`}
             </Button>
 
             {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
@@ -1298,12 +1375,21 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   );
 }
 
-function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample[]; log: DebugLogger }) {
+function LiveTrailPreviewMap({
+  samples,
+  deletingIds,
+  log,
+}: {
+  samples: LiveTrailPreviewSample[];
+  deletingIds: Set<string>;
+  log: DebugLogger;
+}) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const { resolvedMapBase, resolvedTheme } = useTheme();
   const lineColor = resolvedTheme === "constellation" ? "#ffd86a" : "#d92332";
+  const retainedColor = "#8a8f98";
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -1357,7 +1443,7 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
     if (sorted.length > 1) {
       features.push({
         type: "Feature",
-        properties: { kind: "line" },
+        properties: { kind: "line", selected: sorted.every((s) => deletingIds.has(s._id)) },
         geometry: {
           type: "LineString",
           coordinates: sorted.map((s) => [s.lon, s.lat]),
@@ -1368,7 +1454,7 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
     sorted.forEach((s) => {
       features.push({
         type: "Feature",
-        properties: { kind: "point" },
+        properties: { kind: "point", selected: deletingIds.has(s._id) },
         geometry: {
           type: "Point",
           coordinates: [s.lon, s.lat],
@@ -1415,7 +1501,7 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
             filter: ["==", ["get", "kind"], "line"],
             layout: { "line-join": "round", "line-cap": "round" },
             paint: {
-              "line-color": lineColor,
+              "line-color": ["case", ["==", ["get", "selected"], true], lineColor, retainedColor],
               "line-width": 4,
               "line-dasharray": [2, 1],
             },
@@ -1427,16 +1513,17 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
             filter: ["==", ["get", "kind"], "point"],
             paint: {
               "circle-radius": 5,
-              "circle-color": "#ffffff",
-              "circle-stroke-color": lineColor,
+              "circle-color": ["case", ["==", ["get", "selected"], true], "#ffffff", retainedColor],
+              "circle-stroke-color": ["case", ["==", ["get", "selected"], true], lineColor, retainedColor],
               "circle-stroke-width": 2,
             },
           });
         } else {
           log.logMap("minimap:layers:update");
           (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(geojson);
-          map.setPaintProperty(lineLayerId, "line-color", lineColor);
-          map.setPaintProperty(pointLayerId, "circle-stroke-color", lineColor);
+          map.setPaintProperty(lineLayerId, "line-color", ["case", ["==", ["get", "selected"], true], lineColor, retainedColor]);
+          map.setPaintProperty(pointLayerId, "circle-color", ["case", ["==", ["get", "selected"], true], "#ffffff", retainedColor]);
+          map.setPaintProperty(pointLayerId, "circle-stroke-color", ["case", ["==", ["get", "selected"], true], lineColor, retainedColor]);
         }
 
         if (sorted.length > 0) {
@@ -1511,7 +1598,7 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
       resizeObserver = null;
       if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
     };
-  }, [samples, lineColor, log, mapLoaded]);
+  }, [samples, deletingIds, lineColor, retainedColor, log, mapLoaded]);
 
   return (
     <div
