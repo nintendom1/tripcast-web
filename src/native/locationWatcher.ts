@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 import type { BackgroundGeolocationPlugin } from "@capacitor-community/background-geolocation";
+import { log as debugLog } from "../debug/debugLogger";
 
 /**
  * Native (Capacitor) location source. iOS browsers / PWAs cannot emit GPS while
@@ -70,6 +71,11 @@ export function startNativeLocationWatch(
   )
     .then((id) => {
       if (cancelled) {
+        debugLog("info", "locationWatcher", "gps:native:removeWatcher", "ui", {
+          id,
+          raceCancelled: true,
+          src: "src/native/locationWatcher.ts",
+        });
         void BackgroundGeolocation.removeWatcher({ id });
         return;
       }
@@ -80,6 +86,11 @@ export function startNativeLocationWatch(
   return () => {
     cancelled = true;
     if (watcherId) {
+      debugLog("info", "locationWatcher", "gps:native:removeWatcher", "ui", {
+        id: watcherId,
+        raceCancelled: false,
+        src: "src/native/locationWatcher.ts",
+      });
       void BackgroundGeolocation.removeWatcher({ id: watcherId });
       watcherId = null;
     }
