@@ -39,6 +39,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: undefined,
@@ -126,6 +127,23 @@ describe("FollowerManagementPanel", () => {
 
     expect(mockReset).toHaveBeenCalledWith({ token: "test-token", userId: "user1" });
     expect(await screen.findByText(/password reset link/i)).toBeInTheDocument();
+  });
+
+  it("uses the configured public app URL for the password reset link", async () => {
+    vi.stubEnv("VITE_PUBLIC_APP_URL", "https://nintendom1.github.io/tripcast-web");
+    const mockReset = vi.fn().mockResolvedValue({ resetToken: "reset-tok-abc" });
+    vi.mocked(convexReact.useMutation).mockImplementation(
+      () => mockReset as any,
+    );
+
+    render(<FollowerManagementPanel token="test-token" />);
+    const resetButtons = screen.getAllByRole("button", { name: /issue reset/i });
+    await userEvent.click(resetButtons[0]);
+    await userEvent.click(screen.getByRole("button", { name: /confirm/i }));
+
+    expect(
+      await screen.findByText("https://nintendom1.github.io/tripcast-web/?reset=reset-tok-abc"),
+    ).toBeInTheDocument();
   });
 
   it("restarts the reset link copied state timer on repeated copies", async () => {

@@ -5,6 +5,7 @@ import { tripcastApi, type FollowerInfo } from "../../convex/tripcastApi";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
+import { getPublicAppUrl } from "./publicAppUrl";
 
 type FollowerManagementPanelProps = {
   token: string;
@@ -73,8 +74,9 @@ export default function FollowerManagementPanel({ token }: FollowerManagementPan
         await deleteFollowerAccount({ token, userId });
       } else if (type === "reset") {
         const result = await issuePasswordReset({ token, userId });
-        const url = `${window.location.origin}?reset=${result.resetToken}`;
-        setResetUrl(url);
+        const resetLink = new URL(getPublicAppUrl());
+        resetLink.searchParams.set("reset", result.resetToken);
+        setResetUrl(resetLink.toString());
         setResetForUserId(userId);
         clearCopiedTimer();
         setCopied(false);
