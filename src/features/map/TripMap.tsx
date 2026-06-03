@@ -2216,6 +2216,10 @@ export default function TripMap({
       case "mission":
         openMissions({ source: "fan-menu:mission", sourceLabel: "FanMenu -> Add Mission" });
         break;
+      case "status":
+        setStateDebugSource({ source: "fan-menu:status", sourceLabel: "FanMenu -> Update Status" });
+        setIsTravelerStateOpen(true);
+        break;
       case "vote":
         openVotes({ source: "fan-menu:vote", sourceLabel: "FanMenu -> Add Vote" });
         break;

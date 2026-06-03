@@ -52,7 +52,8 @@ For GitHub Pages project hosting at `https://nintendom1.github.io/tripcast-web/`
 | Symptom | Likely cause |
 |---|---|
 | `/assets/index...js` returns 404 | Vite `base` does not match the Pages project path |
-| App shows `VITE_CONVEX_URL is not set` | Build did not receive the variable, or Pages was not rebuilt |
+| App shows `VITE_CONVEX_URL is not set` | **Resolution**: Ensure `tripcast-web/.env.local` exists and contains a valid `VITE_CONVEX_URL`. If running locally, copy the URL from `tripcast-backend/.env.local` (usually `http://127.0.0.1:3210`). |
+| App shows `VITE_CONVEX_URL is not set. Configure Convex to use TripCast.` | **Resolution**: Same as above. This error means the frontend cannot find the backend API. Create `tripcast-web/.env.local` with your Convex URL. |
 | WebSocket URL contains `cloud//api` | `VITE_CONVEX_URL` has a trailing slash |
 | Convex cannot find `auth:signIn` | Frontend points at the wrong or undeployed Convex deployment |
 

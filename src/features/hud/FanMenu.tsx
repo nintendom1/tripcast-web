@@ -1,11 +1,12 @@
 import * as React from "react";
-import { useEffect } from "react";
-import { MapPin, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
+import { useEffect, useMemo } from "react";
+import { Heart, MapPin, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { TERMS } from "../../copy/terminology";
+import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
-export type FanAction = "checkin" | "transaction" | "mission" | "vote";
+export type FanAction = "checkin" | "transaction" | "mission" | "status" | "vote";
 
 export interface FanMenuProps {
   open: boolean;
@@ -15,35 +16,7 @@ export interface FanMenuProps {
   className?: string;
 }
 
-const ITEM_CONFIG: Record<FanAction, { label: string; icon: React.ReactNode; color: string }> = {
-  checkin: {
-    label: `${TERMS.checkIn} / ${TERMS.story}`,
-    icon: <MapPin className="h-4 w-4" aria-hidden="true" />,
-    color: "var(--flag)",
-  },
-  transaction: {
-    label: "Add Spending",
-    icon: <Wallet className="h-4 w-4" aria-hidden="true" />,
-    color: "var(--green)",
-  },
-  mission: {
-    label: `Create ${TERMS.mission}`,
-    icon: <Trophy className="h-4 w-4" aria-hidden="true" />,
-    color: "var(--plum)",
-  },
-  vote: {
-    label: `Create ${TERMS.routeVote}`,
-    icon: <VoteIcon className="h-4 w-4" aria-hidden="true" />,
-    color: "var(--teal)",
-  },
-};
-
-const DEFAULT_TRAVELER_ITEMS: FanAction[] = [
-  "checkin",
-  "transaction",
-  "mission",
-  "vote",
-];
+const DEFAULT_TRAVELER_ITEMS: FanAction[] = ["checkin", "transaction", "mission", "status", "vote"];
 
 /**
  * FanMenu — quick-action stack above the Dock's center "+" for Traveler.
@@ -60,6 +33,40 @@ export function FanMenu({
   className,
 }: FanMenuProps) {
   const log = useDebugLogger("FanMenu", "src/features/hud/FanMenu.tsx");
+  const personalities = useSheetPersonalities();
+
+  const itemConfigs = useMemo<
+    Record<FanAction, { label: string; icon: React.ReactNode; color: string }>
+  >(
+    () => ({
+      checkin: {
+        label: `${TERMS.checkIn} / ${TERMS.story}`,
+        icon: <MapPin className="h-4 w-4" aria-hidden="true" />,
+        color: "var(--flag)",
+      },
+      transaction: {
+        label: "Add Spending",
+        icon: <Wallet className="h-4 w-4" aria-hidden="true" />,
+        color: "var(--green)",
+      },
+      mission: {
+        label: `Create ${TERMS.mission}`,
+        icon: <Trophy className="h-4 w-4" aria-hidden="true" />,
+        color: "var(--plum)",
+      },
+      status: {
+        label: "Update Status",
+        icon: <Heart className="h-4 w-4" aria-hidden="true" />,
+        color: personalities.state.color,
+      },
+      vote: {
+        label: `Create ${TERMS.routeVote}`,
+        icon: <VoteIcon className="h-4 w-4" aria-hidden="true" />,
+        color: "var(--teal)",
+      },
+    }),
+    [personalities.state.color],
+  );
 
   useEffect(() => {
     if (open) log.logInteraction("menu:open");
@@ -84,13 +91,16 @@ export function FanMenu({
         )}
       >
         {items.map((id) => {
-          const cfg = ITEM_CONFIG[id];
+          const cfg = itemConfigs[id];
           return (
             <button
               key={id}
               type="button"
               role="menuitem"
-              onClick={() => { log.logInteraction("action:select", { action: id, label: cfg.label }); onPick(id); }}
+              onClick={() => {
+                log.logInteraction("action:select", { action: id, label: cfg.label });
+                onPick(id);
+              }}
               className="flex items-center gap-2 rounded-full bg-[var(--bg-card)] py-2 pl-2 pr-4 text-sm font-semibold text-[var(--ink-1)] shadow-[var(--shadow-card)] transition-transform active:scale-[0.98]"
             >
               <span
