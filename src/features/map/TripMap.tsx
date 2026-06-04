@@ -1159,6 +1159,14 @@ function ConvexCheckpointSheet({
 
 type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
 type LastLiveTrailSample = { lat: number; lon: number; sentAt: number } | null;
+
+// Names which watcher (if any) currently owns GPS. `live-pill` is the only
+// background-allowed reason. `map-foreground` is the foreground browser
+// fallback that must be torn down on visibilitychange→hidden.
+type GpsOwner =
+  | { kind: "native"; reason: "live-pill"; startedAt: number }
+  | { kind: "browser"; reason: "map-foreground"; startedAt: number }
+  | null;
 type SelectedStoryDetail = {
   eventId: string;
   checkpointId?: string;
@@ -1196,6 +1204,19 @@ export default function TripMap({
   const latestMapStyleUrlRef = useRef<string | null>(null);
   const placementModeRef = useRef(false);
   const browserLocationWatchRef = useRef<number | null>(null);
+  // Names whichever watcher (if any) is currently delivering GPS. Read by the
+  // visibilitychange listener and the debug logs so the user can answer
+  // "what is keeping GPS on?" by reading a single log entry.
+  const gpsOwnerRef = useRef<GpsOwner>(null);
+  // Lets non-effect call sites (visibilitychange, pagehide, sign-out) tear down
+  // the active watcher without waiting for the watcher effect to re-run.
+  const gpsCleanupRef = useRef<(() => void) | null>(null);
+  // Mirrors document.visibilityState. Used to refuse to start the foreground
+  // browser watcher while the app is backgrounded (the leak scenario).
+  const isAppActiveRef = useRef<boolean>(
+    typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
+  const lastGpsFixLogAtRef = useRef<number>(0);
   const isLocationSharingRef = useRef(false);
   const liveTrailEnabledRef = useRef(false);
   const liveTrailCanRecordRef = useRef(false);
@@ -1260,6 +1281,12 @@ export default function TripMap({
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(false);
+  // Mirrors document.visibilityState. Drives the foreground-only browser
+  // watcher gate so it does not survive backgrounding (and to re-arm on
+  // foreground without churning the native watcher when LIVE is on).
+  const [isAppActive, setIsAppActive] = useState(
+    typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number; accuracy?: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
   // Live center of the map while the crosshair picker is active. Updated on
@@ -2878,6 +2905,15 @@ export default function TripMap({
     }
   }, [centerMapOnCoordinate, isFollowing, livePosition, storedTravelerLocation, role]);
 
+  // Browser-watcher gate. True whenever the foreground browser watch is the
+  // *active* path — i.e. LIVE is off (display-only GPS dot) OR LIVE is on
+  // but the platform is non-native (web/PWA share via WKWebView/browser API).
+  // The native LIVE-on case takes the if-branch above and skips this gate
+  // entirely, so visibility flips never churn the background-capable native
+  // watcher.
+  const browserWatcherEnabled =
+    isAppActive && (!isLocationSharing || !isNativeLocationAvailable());
+
   // Track location for Travelers. On a native (Capacitor) build, use the
   // background-capable watcher when "Live" is ON; otherwise fall back to
   // the foreground-only browser API to show the local GPS dot without
@@ -2901,6 +2937,22 @@ export default function TripMap({
     const handleFix = (lat: number, lon: number, accuracy?: number, speed?: number) => {
       lastLocationFixAtRef.current = Date.now();
       setLocationStale(false);
+      // Debounced "who is delivering fixes" log so the user can correlate
+      // background GPS usage with the watcher that produced it. Throttled to
+      // once per 30s to keep the debug overlay legible. No coords or accuracy
+      // by design — those are guarded by the privacy assertion in
+      // TripMap.location.test.tsx; speed is a magnitude only.
+      const fixLogElapsed = Date.now() - lastGpsFixLogAtRef.current;
+      if (fixLogElapsed >= 30_000) {
+        lastGpsFixLogAtRef.current = Date.now();
+        const owner = gpsOwnerRef.current;
+        log.logUi("gps:fix", {
+          ownerKind: owner?.kind ?? "unknown",
+          ownerReason: owner?.reason ?? null,
+          isAppActive: isAppActiveRef.current,
+          speed,
+        });
+      }
       if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
         liveTrailPermissionLoggedRef.current = true;
         log.logInteraction("live-trail:permission:result", { result: "granted" });
@@ -3091,15 +3143,42 @@ export default function TripMap({
 
     if (isLocationSharing && isNativeLocationAvailable()) {
       log.logInteraction("live-trail:native-watch:start", {});
+      log.logInteraction("gps:watcher:start", {
+        kind: "native",
+        reason: "live-pill",
+        liveSharing: true,
+        liveTrail: liveTrailEnabledRef.current,
+        movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
+        isAppActive: isAppActiveRef.current,
+      });
+      gpsOwnerRef.current = { kind: "native", reason: "live-pill", startedAt: Date.now() };
       const stop = startNativeLocationWatch(
         (fix) => handleFix(fix.lat, fix.lon, fix.accuracy, fix.speed),
         handleError,
       );
       cleanup = () => {
         log.logInteraction("live-trail:native-watch:stop", {});
+        log.logInteraction("gps:watcher:stop", {
+          kind: "native",
+          reason: "live-pill",
+          trigger: "effect-cleanup",
+        });
+        gpsOwnerRef.current = null;
         stop();
       };
-    } else if (navigator.geolocation) {
+    } else if (navigator.geolocation && browserWatcherEnabled) {
+      // Foreground-only fallback. Skipped while backgrounded so the WKWebView
+      // geolocation cannot keep CLLocationManager alive after the user swiped
+      // home with the LIVE pill off (the reported leak).
+      log.logInteraction("gps:watcher:start", {
+        kind: "browser",
+        reason: "map-foreground",
+        liveSharing: false,
+        liveTrail: liveTrailEnabledRef.current,
+        movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
+        isAppActive: true,
+      });
+      gpsOwnerRef.current = { kind: "browser", reason: "map-foreground", startedAt: Date.now() };
       const watchId = navigator.geolocation.watchPosition(
         (pos) => handleFix(
           pos.coords.latitude,
@@ -3112,12 +3191,20 @@ export default function TripMap({
       );
       browserLocationWatchRef.current = watchId;
       cleanup = () => {
+        log.logInteraction("gps:watcher:stop", {
+          kind: "browser",
+          reason: "map-foreground",
+          trigger: "effect-cleanup",
+        });
+        gpsOwnerRef.current = null;
         navigator.geolocation.clearWatch(watchId);
         if (browserLocationWatchRef.current === watchId) {
           browserLocationWatchRef.current = null;
         }
       };
     }
+
+    gpsCleanupRef.current = cleanup;
 
     // Native only: if LIVE is on but no fix has landed in a while, the plugin
     // may have silently stalled (iOS background-task timeout, system location
@@ -3139,11 +3226,18 @@ export default function TripMap({
 
     return () => {
       cleanup();
+      if (gpsCleanupRef.current === cleanup) {
+        gpsCleanupRef.current = null;
+      }
       clearInterval(staleInterval);
     };
-  // publish* only uses refs plus stable mutation inputs.
+  // publish* only uses refs plus stable mutation inputs. We depend on
+  // `browserWatcherEnabled` (derived below) rather than `isAppActive` so
+  // visibility changes do NOT tear down the native watcher while LIVE is on
+  // — Travelers backgrounding with LIVE on must keep streaming fixes to
+  // Followers without a gap.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocationSharing, role, token, log]);
+  }, [isLocationSharing, browserWatcherEnabled, role, token, log]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -3162,16 +3256,82 @@ export default function TripMap({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationResetNonce]);
 
+  // Force-stop whatever watcher is currently active, regardless of which
+  // useEffect started it. Synchronous so pagehide / sign-out can guarantee
+  // teardown before the JS context goes away. Logs name the trigger so the
+  // user can read the debug log and immediately see WHO stopped GPS.
+  function forceStopAllWatchers(
+    trigger: "appstate-background" | "pagehide" | "sign-out",
+  ) {
+    const owner = gpsOwnerRef.current;
+    const fn = gpsCleanupRef.current;
+    if (owner) {
+      log.logInteraction("gps:watcher:stop", {
+        kind: owner.kind,
+        reason: owner.reason,
+        trigger,
+      });
+    }
+    gpsOwnerRef.current = null;
+    gpsCleanupRef.current = null;
+    if (fn) fn();
+    // Defensive: clear any stray browser watch that lost track of its closure.
+    const stray = browserLocationWatchRef.current;
+    if (stray !== null && typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.clearWatch(stray);
+      browserLocationWatchRef.current = null;
+    }
+  }
+
+  // Visibilitychange is the WKWebView signal for "iOS suspended/resumed the
+  // app" (swipe home, app switcher). On Capacitor it fires reliably without
+  // adding @capacitor/app. When the app is hidden AND the LIVE pill is off,
+  // tear down the browser fallback so it cannot keep CLLocationManager alive
+  // through the iOS `UIBackgroundModes: location` entitlement. LIVE on is the
+  // only permitted background-GPS owner.
+  useEffect(() => {
+    if (role !== "traveler") return;
+    if (typeof document === "undefined") return;
+
+    function handleVisibilityChange() {
+      const nextActive = document.visibilityState !== "hidden";
+      isAppActiveRef.current = nextActive;
+      setIsAppActive(nextActive);
+      log.logInteraction("gps:appstate:change", {
+        isActive: nextActive,
+        owner: gpsOwnerRef.current?.kind ?? "none",
+        reason: gpsOwnerRef.current?.reason ?? null,
+        liveSharing: isLocationSharingRef.current,
+        liveTrail: liveTrailEnabledRef.current,
+        movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
+      });
+      if (nextActive) return; // foregrounded: watcher effect re-runs via dep
+      if (isLocationSharingRef.current) return; // LIVE on: keep streaming
+      forceStopAllWatchers("appstate-background");
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  // forceStopAllWatchers reads refs only; safe to omit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, log]);
+
   useEffect(() => {
     if (role !== "traveler") return;
 
     function handlePageHide() {
+      // Tear down the watcher before the WebView disappears. iOS's
+      // appstate-background path also covers this, but pagehide is the
+      // PWA/Safari path and must work without Capacitor.
+      forceStopAllWatchers("pagehide");
       if (!isLocationSharingRef.current) return;
       stopTravelerLocationSharing({ token }).catch(() => {});
     }
 
     window.addEventListener("pagehide", handlePageHide);
     return () => window.removeEventListener("pagehide", handlePageHide);
+  // forceStopAllWatchers reads refs only; safe to omit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, stopTravelerLocationSharing, token]);
 
   useEffect(() => {

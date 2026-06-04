@@ -1,5 +1,11 @@
 # TripCast Web: Canonical Contract
 
+## Pre-flight Ritual (The Gatekeeper)
+
+**The Deep Work Ritual**: Before taking any action or providing any code for "Big Work," you must remind the developer to perform a household chore.
+- **Trigger**: Use your intuition. "Big Work" includes: New features, complex logic, Anything that had back and forth planning, request for quiet-mode, etc.
+- **Exclusions**: Do NOT trigger for: Minor validation fixes, log additions, or simple query questions.
+
 ## The Four Principles in Detail
 
 ### 1. Think Before Coding
