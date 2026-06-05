@@ -189,6 +189,20 @@ export type LiveTrailReplayPage = {
 
 export type LinkedMissionAction = "planned" | "visible" | "leave";
 
+export type ReactionTargetType = "checkpoint" | "mission" | "route_vote";
+
+/**
+ * Aggregated reactions for a single target (checkpoint / mission / route vote).
+ * Entries is an array (not a record keyed by emoji) because Convex object keys
+ * must be ASCII — emoji characters cannot be used as field names.
+ */
+export type ReactionSummary = {
+  /** Per-emoji counts. Empty array means no reactions. Order is not guaranteed. */
+  entries: Array<{ emoji: string; count: number }>;
+  /** The emoji character the current user reacted with, if any. */
+  myReaction?: string;
+};
+
 export type RouteVoteOptionInput = {
   title: string;
   description?: string;
@@ -237,6 +251,7 @@ export type RouteVoteListItem = {
   suggestedWinnerId: string | null;
   isTied: boolean;
   totalSubmissions: number;
+  reactions?: ReactionSummary;
 };
 
 export type RouteVoteDetail = RouteVoteListItem & {
@@ -278,6 +293,7 @@ export type VisibleRouteVote = {
   }>;
   optionVoteCounts?: Record<string, number>;
   totalSubmissions?: number;
+  reactions?: ReactionSummary;
 };
 
 export type RouteVoteSummary = {
@@ -328,6 +344,7 @@ export type Mission = {
   droppedAt?: number;
   createdAt: number;
   updatedAt: number;
+  reactions?: ReactionSummary;
 };
 
 export type MissionSettings = {
@@ -885,6 +902,7 @@ export type JournalEvent = {
   checkpointId?: string;
   routeVoteId?: string;
   missionId?: string;
+  reactions?: ReactionSummary;
   // State snapshot (story events only)
   moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
@@ -2517,6 +2535,20 @@ export const tripcastApi = {
       "mutation",
       "public",
       { token: string },
+      null
+    >,
+  },
+  reactions: {
+    toggleReaction: (anyApi as any).reactions.toggleReaction as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        /** ID of the checkpoint / mission / route vote being reacted to. */
+        targetId: string;
+        targetType: ReactionTargetType;
+        emoji: string;
+      },
       null
     >,
   },

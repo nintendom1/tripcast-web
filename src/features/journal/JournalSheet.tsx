@@ -36,6 +36,7 @@ import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
+import { ReactionSection } from "../../components/ui/ReactionSection";
 import { useSheetPersonalities, type SheetPersonality } from "../redesign/sheetPersonality";
 import { uploadStoryImage, validateStoryImageFile } from "./storyImageUpload";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
@@ -606,6 +607,14 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
     ? `${eventTypeLabel(event.type)}: ${event.title ?? "untitled"}`
     : eventTypeLabel(event.type);
 
+  const reactionTarget = event.checkpointId
+    ? { id: event.checkpointId, type: "checkpoint" as const }
+    : event.missionId
+    ? { id: event.missionId, type: "mission" as const }
+    : event.routeVoteId
+    ? { id: event.routeVoteId, type: "route_vote" as const }
+    : null;
+
   return (
     <li className="grid grid-cols-[28px_1fr] gap-3 py-1.5">
       <div className="flex flex-col items-center">
@@ -621,12 +630,19 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
         ) : null}
       </div>
 
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
         aria-label={cardLabel}
         className={cn(
-          "group relative mb-2 flex flex-col items-stretch overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] text-left shadow-[var(--shadow-card)] transition-transform",
+          "group relative mb-2 flex flex-col items-stretch overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] text-left shadow-[var(--shadow-card)] transition-transform cursor-pointer",
           "active:scale-[0.99]",
         )}
       >
@@ -662,11 +678,25 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
             </div>
           ) : null}
 
-          {event.body ? (
-            <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)]">
-              {event.body}
-            </p>
-          ) : null}
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-3">
+            {event.body ? (
+              <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)] md:min-w-0 md:flex-1">
+                {event.body}
+              </p>
+            ) : (
+              <div className="hidden md:block md:flex-1" aria-hidden="true" />
+            )}
+
+            {reactionTarget ? (
+              <ReactionSection
+                targetId={reactionTarget.id}
+                targetType={reactionTarget.type}
+                reactions={event.reactions}
+                token={token}
+                className="flex justify-end md:shrink-0"
+              />
+            ) : null}
+          </div>
 
           {event.type === "story" && event.checkpointId ? (
             <AttributionPublicLine
@@ -690,7 +720,7 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
             </div>
           ) : null}
         </div>
-      </button>
+      </div>
     </li>
   );
 }

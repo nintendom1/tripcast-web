@@ -19,6 +19,10 @@ const BASE_MISSION: Mission = {
   acceptedAt: NOW,
   createdAt: NOW,
   updatedAt: NOW,
+  reactions: {
+    entries: [{ emoji: "❤️", count: 4 }, { emoji: "👍", count: 2 }],
+    myReaction: "👍",
+  },
 } as unknown as Mission;
 
 const MYSTERY_MISSION: Mission = {

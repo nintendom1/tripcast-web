@@ -18,10 +18,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+const REACTIONS_MIXED = {
+  entries: [{ emoji: "❤️", count: 5 }, { emoji: "👍", count: 2 }, { emoji: "😹", count: 1 }],
+  myReaction: "❤️",
+};
+
 /** @tag ai-generated */
 export const Narrative: Story = {
   args: {
-    event: FAKE_STORY as any,
+    event: { ...FAKE_STORY, reactions: REACTIONS_MIXED } as any,
     role: "traveler",
     token: "mock-token",
     onClose: () => {},
@@ -58,6 +63,7 @@ export const Activity: Story = {
       stomachLevel: "full",
       stressLevel: "calm",
       statusNote: "Sun is out!",
+      reactions: { entries: [{ emoji: "👍", count: 3 }] },
     } as any,
     role: "traveler",
     token: "mock-token",
@@ -69,8 +75,39 @@ export const Activity: Story = {
 /** @tag ai-generated */
 export const FollowerView: Story = {
   args: {
-    event: FAKE_STORY as any,
+    event: { ...FAKE_STORY, reactions: REACTIONS_MIXED } as any,
     role: "follower",
+    token: "mock-token",
+    onClose: () => {},
+    onLocationFocus: () => {},
+  },
+};
+
+/**
+ * Stress test for header wrap behavior: long location text + all 6 emoji presets
+ * with high counts. Use to verify the date · location · reactions row wraps
+ * naturally only when content overflows.
+ * @tag ai-generated
+ */
+export const HeaderWrapStress: Story = {
+  args: {
+    event: {
+      ...FAKE_STORY,
+      title: "A Night in the Desert Under the Milky Way",
+      locationLabel: "Joshua Tree National Park, Mojave Desert, California",
+      reactions: {
+        entries: [
+          { emoji: "❤️", count: 12 },
+          { emoji: "👍", count: 8 },
+          { emoji: "😲", count: 5 },
+          { emoji: "😡", count: 1 },
+          { emoji: "😹", count: 7 },
+          { emoji: "😕", count: 2 },
+        ],
+        myReaction: "😹",
+      },
+    } as any,
+    role: "traveler",
     token: "mock-token",
     onClose: () => {},
     onLocationFocus: () => {},

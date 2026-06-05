@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { Mission } from "../../convex/tripcastApi";
 import MissionCard from "./MissionCard";
 
@@ -8,6 +8,7 @@ function makeMission(overrides: Partial<Mission> = {}): Mission {
     _id: "Mission-1",
     _creationTime: 1,
     title: "Try a tiny neighborhood bakery with a surprisingly long name",
+    description: "Climb to the top of the ridge for a view of the valley.",
     status: "in_progress",
     source: "traveler",
     createdAt: 1,
@@ -19,12 +20,28 @@ function makeMission(overrides: Partial<Mission> = {}): Mission {
 }
 
 describe("MissionCard", () => {
-  it("reserves space for swipe actions and truncates the status pill", () => {
+  it("truncates the long title and constrains the status pill", () => {
     render(<MissionCard Mission={makeMission()} />);
 
-    expect(screen.getByRole("button")).toHaveClass("pr-10");
     expect(screen.getByText("Try a tiny neighborhood bakery with a surprisingly long name"))
       .toHaveClass("min-w-0", "line-clamp-2");
     expect(screen.getByText("Active")).toHaveClass("max-w-[48%]", "truncate");
+  });
+
+  it("renders an aria-hidden flex spacer when the description is missing so reactions still right-justify", () => {
+    const { container } = render(
+      <MissionCard Mission={makeMission({ description: undefined })} token="t" />,
+    );
+
+    const spacer = container.querySelector('[aria-hidden="true"].md\\:flex-1');
+    expect(spacer).not.toBeNull();
+  });
+
+  it("fires onClick when the card body is clicked", () => {
+    const onClick = vi.fn();
+    render(<MissionCard Mission={makeMission()} onClick={onClick} />);
+
+    fireEvent.click(screen.getByRole("button"));
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

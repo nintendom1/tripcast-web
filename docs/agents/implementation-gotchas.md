@@ -24,6 +24,7 @@ Read only when touching the related area.
 - The Dock is the only mobile nav surface. Do not reintroduce vertical FAB clusters.
 - Only one map-adjacent bottom sheet should be open at a time.
 - Non-modal map sheets slide under the Dock; fix covered footer actions with internal padding, not a higher z-index.
+- When a child component renders into `document.body` via `createPortal` while a `Sheet` is open, mark the portal target with a data attribute and add the selector to `sheet.tsx`'s outside-press allowlist (existing entries: `[data-debug-chip]`, `[data-reaction-tray]`). Otherwise the Sheet's Base UI `Dialog` treats clicks on the portaled element as `outside-press` and closes itself.
 
 ## Intro Sequence Theming
 
