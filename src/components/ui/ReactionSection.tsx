@@ -1,4 +1,5 @@
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useMutation } from "convex/react";
 import { AnimatePresence } from "framer-motion";
 import { tripcastApi, type ReactionSummary } from "@/convex/tripcastApi";
@@ -56,6 +57,8 @@ export function ReactionSection({
 }: ReactionSectionProps) {
   const [showTray, setShowTray] = React.useState(false);
   const [optimistic, setOptimistic] = React.useState<ReactionSummary | null>(null);
+  const [trayPos, setTrayPos] = React.useState<{ bottom: number; right: number } | null>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
   const trayRef = React.useRef<HTMLDivElement>(null);
   const music = useMusicSafe();
   const toggleReaction = useMutation(tripcastApi.reactions.toggleReaction);
@@ -65,13 +68,42 @@ export function ReactionSection({
     setOptimistic(null);
   }, [reactions]);
 
+  // Compute portal-anchored tray position relative to the badge container so
+  // the tray escapes any ancestor with `overflow: hidden` (rail cards / vote
+  // cards) but still visually aligns above the + button.
+  React.useEffect(() => {
+    if (!showTray || !containerRef.current) {
+      setTrayPos(null);
+      return;
+    }
+    const rect = containerRef.current.getBoundingClientRect();
+    setTrayPos({
+      bottom: window.innerHeight - rect.top + 8,
+      right: window.innerWidth - rect.right,
+    });
+  }, [showTray]);
+
+  // Close on scroll / resize — the fixed-position tray would otherwise drift
+  // away from its anchor without continuous recomputation.
+  React.useEffect(() => {
+    if (!showTray) return;
+    const close = () => setShowTray(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [showTray]);
+
   React.useEffect(() => {
     if (!showTray) return;
 
     const handleClickOutside = (e: MouseEvent) => {
-      if (trayRef.current && !trayRef.current.contains(e.target as Node)) {
-        setShowTray(false);
-      }
+      const target = e.target as Node;
+      if (trayRef.current && trayRef.current.contains(target)) return;
+      if (containerRef.current && containerRef.current.contains(target)) return;
+      setShowTray(false);
     };
 
     document.addEventListener("mousedown", handleClickOutside);
@@ -99,7 +131,7 @@ export function ReactionSection({
 
   return (
     <div className={className} onClick={(e) => e.stopPropagation()}>
-      <div className="relative flex flex-wrap items-center gap-1.5">
+      <div ref={containerRef} className="flex flex-wrap items-center gap-1.5">
         {sorted.map(({ emoji, count }) => (
           <ReactionBadge
             key={emoji}
@@ -115,21 +147,27 @@ export function ReactionSection({
           onClick={() => setShowTray(!showTray)}
           onLongPress={() => setShowTray(true)}
         />
-
-        <AnimatePresence>
-          {showTray && (
-            <div
-              ref={trayRef}
-              className="absolute bottom-full right-0 mb-2 z-50"
-            >
-              <ReactionTray
-                currentSelection={myReaction}
-                onSelect={handleToggle}
-              />
-            </div>
-          )}
-        </AnimatePresence>
       </div>
+
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {showTray && trayPos && (
+              <div
+                ref={trayRef}
+                className="fixed z-[1000]"
+                style={{ bottom: trayPos.bottom, right: trayPos.right }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ReactionTray
+                  currentSelection={myReaction}
+                  onSelect={handleToggle}
+                />
+              </div>
+            )}
+          </AnimatePresence>,
+          document.body,
+        )}
     </div>
   );
 }

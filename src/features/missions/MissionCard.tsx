@@ -122,7 +122,7 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
               targetType="mission"
               reactions={Mission.reactions}
               token={token}
-              className="flex justify-end md:shrink-0"
+              className="-mr-7 flex justify-end md:shrink-0"
             />
           )}
         </div>

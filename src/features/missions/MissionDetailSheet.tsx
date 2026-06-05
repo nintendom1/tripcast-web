@@ -471,7 +471,7 @@ export default function MissionDetailSheet({
 
   if (isEditing) {
     return (
-      <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
+      <div className={cn("flex flex-col gap-4 p-4 pt-2", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-[var(--ink-1)]">Edit Mission</span>
           <button
@@ -845,7 +845,7 @@ export default function MissionDetailSheet({
           : "Unknown Signal";
 
   return (
-    <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
+    <div className={cn("flex flex-col gap-4 p-4 pt-2", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
       {isMysteryMission ? (
         <>
           {/* Mystery hero — RadioTower chip + dark zinc card with CrypticText. */}
