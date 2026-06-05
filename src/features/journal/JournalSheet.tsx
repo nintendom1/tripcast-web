@@ -665,12 +665,14 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
             </div>
           ) : null}
 
-          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between md:gap-3">
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-3">
             {event.body ? (
               <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)] md:min-w-0 md:flex-1">
                 {event.body}
               </p>
-            ) : null}
+            ) : (
+              <div className="hidden md:block md:flex-1" aria-hidden="true" />
+            )}
 
             {reactionTarget ? (
               <ReactionSection

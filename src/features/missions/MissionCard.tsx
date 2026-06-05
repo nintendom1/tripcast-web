@@ -110,11 +110,13 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
           </span>
         )}
 
-        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between md:gap-3">
-          {Mission.description && (
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-3">
+          {Mission.description ? (
             <span className="text-xs leading-snug text-[var(--ink-2)] line-clamp-1 md:min-w-0 md:flex-1">
               {Mission.description}
             </span>
+          ) : (
+            <div className="hidden md:block md:flex-1" aria-hidden="true" />
           )}
           {token && (
             <ReactionSection

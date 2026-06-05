@@ -130,8 +130,12 @@ export function ReactionSection({
   };
 
   return (
-    <div className={className} onClick={(e) => e.stopPropagation()}>
-      <div ref={containerRef} className="flex flex-wrap items-center gap-1.5">
+    <div className={className}>
+      <div
+        ref={containerRef}
+        className="flex flex-wrap items-center gap-1.5"
+        onClick={(e) => e.stopPropagation()}
+      >
         {sorted.map(({ emoji, count }) => (
           <ReactionBadge
             key={emoji}
@@ -155,9 +159,11 @@ export function ReactionSection({
             {showTray && trayPos && (
               <div
                 ref={trayRef}
+                data-reaction-tray=""
                 className="fixed z-[1000]"
                 style={{ bottom: trayPos.bottom, right: trayPos.right }}
                 onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
               >
                 <ReactionTray
                   currentSelection={myReaction}
