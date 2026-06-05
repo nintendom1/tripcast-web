@@ -19,10 +19,9 @@ function makeMission(overrides: Partial<Mission> = {}): Mission {
 }
 
 describe("MissionCard", () => {
-  it("reserves space for swipe actions and truncates the status pill", () => {
+  it("truncates the long title and constrains the status pill", () => {
     render(<MissionCard Mission={makeMission()} />);
 
-    expect(screen.getByRole("button")).toHaveClass("pr-10");
     expect(screen.getByText("Try a tiny neighborhood bakery with a surprisingly long name"))
       .toHaveClass("min-w-0", "line-clamp-2");
     expect(screen.getByText("Active")).toHaveClass("max-w-[48%]", "truncate");

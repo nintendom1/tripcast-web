@@ -44,7 +44,7 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
       role="button"
       tabIndex={0}
       data-mission-id={Mission._id}
-      className={`group relative flex w-full items-start gap-3 rounded-2xl border bg-[var(--bg-card)] p-3 pr-10 text-left shadow-[var(--shadow-card)] transition-all hover:-translate-y-0.5 cursor-pointer ${
+      className={`group relative flex w-full items-start gap-3 rounded-2xl border bg-[var(--bg-card)] p-3 text-left shadow-[var(--shadow-card)] transition-all hover:-translate-y-0.5 cursor-pointer ${
         isHighlighted ? "ring-2" : ""
       }`}
       style={{
@@ -122,7 +122,7 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
               targetType="mission"
               reactions={Mission.reactions}
               token={token}
-              className="-mr-7 flex justify-end md:shrink-0"
+              className="flex justify-end md:shrink-0"
             />
           )}
         </div>
