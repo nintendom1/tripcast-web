@@ -116,37 +116,100 @@ export function LocationPickerField({
   );
 }
 
-export interface MapPickerBannerProps {
+export interface MapPickerHelperBannerProps {
   label: string;
-  onCancel: () => void;
+  lat: number | null;
+  lon: number | null;
   className?: string;
 }
 
 /**
- * Banner displayed at the top of the map while a coordinate pick is in progress.
- *
- * Mirrors the design handoff's pick banner styling — Cancel reverts the pick mode
- * and re-shows the originating form.
+ * Top helper banner shown while the crosshair picker is active. Tells the user
+ * to move the map and surfaces the live center coordinate.
  */
-export function MapPickerBanner({ label, onCancel, className }: MapPickerBannerProps) {
+export function MapPickerHelperBanner({ label, lat, lon, className }: MapPickerHelperBannerProps) {
+  const coordText =
+    lat !== null && lon !== null && Number.isFinite(lat) && Number.isFinite(lon)
+      ? `${lat.toFixed(5)}, ${lon.toFixed(5)}`
+      : "—";
   return (
     <div
       role="status"
       className={cn(
-        "pointer-events-auto flex items-center justify-between gap-3 rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-2 shadow-[var(--shadow-card)]",
+        "pointer-events-auto flex flex-col items-center gap-0.5 rounded-md bg-[var(--bg-card)] px-3 py-2 text-[var(--ink-1)] shadow-[var(--shadow-card)]",
         className,
       )}
     >
-      <span className="flex items-center gap-2 text-sm font-semibold text-[var(--ink-1)]">
-        <MapPin className="h-4 w-4 text-[var(--flag)]" aria-hidden="true" />
-        Tap the map to set {label}.
+      <span className="text-sm font-semibold">
+        Move the map until the crosshair is on the place
       </span>
+      <span className="font-[var(--font-mono)] text-[11px] text-[var(--ink-3)]">
+        {label} · {coordText}
+      </span>
+    </div>
+  );
+}
+
+export interface MapPickerCrosshairProps {
+  className?: string;
+}
+
+/**
+ * Fixed pin drawn at the center of the map container while picking. The pin
+ * tip points at the map center (anchored bottom-center). Pointer-events-none
+ * so the user can pan/zoom through it.
+ */
+export function MapPickerCrosshair({ className }: MapPickerCrosshairProps) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute left-1/2 top-1/2 z-[5] -translate-x-1/2 -translate-y-full",
+        className,
+      )}
+    >
+      <MapPin
+        className="h-10 w-10 fill-[var(--flag)] text-[var(--flag)] drop-shadow-[0_2px_3px_rgba(0,0,0,0.45)]"
+        strokeWidth={1.75}
+      />
+    </div>
+  );
+}
+
+export interface MapPickerConfirmPanelProps {
+  onCancel: () => void;
+  onConfirm: () => void;
+  className?: string;
+}
+
+/**
+ * Bottom action panel for the crosshair picker. Sits above the Dock so the
+ * primary "Use this location" button is in the mobile thumb zone.
+ */
+export function MapPickerConfirmPanel({ onCancel, onConfirm, className }: MapPickerConfirmPanelProps) {
+  return (
+    <div
+      role="group"
+      aria-label="Confirm picked location"
+      className={cn(
+        "pointer-events-auto flex items-center gap-2 rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] px-2 py-2 shadow-[var(--shadow-card)]",
+        className,
+      )}
+    >
       <button
         type="button"
         onClick={onCancel}
-        className="rounded-full px-3 py-1 text-xs font-semibold text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)]"
+        className="rounded-full px-4 py-1.5 text-sm font-semibold text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)]"
       >
         Cancel
+      </button>
+      <button
+        type="button"
+        onClick={onConfirm}
+        className="inline-flex items-center gap-1.5 rounded-full bg-[var(--flag)] px-4 py-1.5 text-sm font-semibold text-[var(--ink-on-brand)] shadow-sm transition-opacity hover:opacity-90"
+      >
+        <MapPin className="h-4 w-4" aria-hidden="true" />
+        Use this location
       </button>
     </div>
   );

@@ -123,6 +123,9 @@ function ConnectedApp() {
   const [isEndTripOpen, setIsEndTripOpen] = useState(false);
   const [isCreditsOpen, setIsCreditsOpen] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  // True while TripMap is in crosshair coordinate-pick mode. Used to hide the
+  // TopBar / TripTicker so they don't overlap the picker's helper banner.
+  const [isPickerActive, setIsPickerActive] = useState(false);
   const [hasAutoOpenedCredits, setHasAutoOpenedCredits] = useState(false);
   const [optionsDefaultView, setOptionsDefaultView] = useState<OptionsView>("options");
   const [preserveDebugContext, setPreserveDebugContext] = useState(false);
@@ -460,21 +463,23 @@ function ConnectedApp() {
   return (
     <div className="relative flex flex-col h-dvh">
       <TravelerThemeBridge token={session.token} role={role} />
-      <TopBar
-        role={role}
-        onOpenOptions={() => {
-          music.sfx("open");
-          setPreserveDebugContext(false);
-          setOptionsDefaultView("options");
-          setIsOptionsOpen(true);
-        }}
-      />
+      <div className={isPickerActive ? "invisible pointer-events-none h-0 overflow-hidden" : undefined}>
+        <TopBar
+          role={role}
+          onOpenOptions={() => {
+            music.sfx("open");
+            setPreserveDebugContext(false);
+            setOptionsDefaultView("options");
+            setIsOptionsOpen(true);
+          }}
+        />
 
-      <TripTicker
-        message={currentMessage}
-        isPriority={isPriority}
-        onComplete={onFunFactComplete}
-      />
+        <TripTicker
+          message={currentMessage}
+          isPriority={isPriority}
+          onComplete={onFunFactComplete}
+        />
+      </div>
 
       <OptionsSheet
         open={isOptionsOpen}
@@ -553,6 +558,7 @@ function ConnectedApp() {
             tripDataResetNonce={tripDataResetNonce}
             finaleReplayActive={isCreditsOpen}
             onMapLoaded={() => setMapLoaded(true)}
+            onPickerActiveChange={setIsPickerActive}
             onOpenDebugPanel={() => {
               music.sfx("open");
               setPreserveDebugContext(true);

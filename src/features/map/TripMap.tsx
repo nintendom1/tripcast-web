@@ -3,7 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useIsDesktop } from "../../lib/useIsDesktop";
 import { DesktopMapFrame } from "../layout/DesktopMapFrame";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
 import { Crosshair, DollarSign, EyeOff, Pause, Play, RotateCcw, Trash2, X } from "lucide-react";
@@ -14,6 +14,8 @@ import {
   type Checkpoint,
   type CloakingPin,
   type JournalEvent,
+  type LiveTrailReplayPage,
+  type LiveTrailSample,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
   type Transaction,
@@ -23,6 +25,11 @@ import AddCheckpointSheet, {
   type SelectedCoordinate,
 } from "./AddCheckpointSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
+import {
+  MapPickerConfirmPanel,
+  MapPickerCrosshair,
+  MapPickerHelperBanner,
+} from "./MapPicker";
 import MissionMarkers from "./MissionMarkers";
 import MysteryMissionMarkers from "./MysteryMissionMarkers";
 import MissionPanel from "../missions/MissionPanel";
@@ -62,7 +69,12 @@ import { MessagingSheet } from "../messaging/MessagingSheet";
 import { useMessagingUnread } from "../messaging/useMessagingUnread";
 import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
+import {
+  useMovementDebugRecords,
+  useMovementDebugSpeed,
+} from "../../providers/MovementDebugProvider";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { DEFAULT_MOVING_MPS, DEFAULT_WALKING_MPS } from "../../lib/movementUnits";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
@@ -114,6 +126,8 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
+const REPLAY_TRAIL_PAGE_SIZE = 500;
+const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 1000;
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
 
@@ -165,7 +179,29 @@ const CARD_ERROR_CLASS =
 type CoordinatePickMode = {
   label: string;
   callback: (coord: { lat: number; lon: number }) => void;
+  /** Sheet selector that owns the originating form, used to re-center the
+   * map above it after confirm so the picked point isn't hidden by the sheet. */
+  sheetSelector: string | null;
+  /** Existing coordinate the form holds (e.g. when editing an existing pin via
+   * "Change"). The picker eases the map to this point on entry so the user
+   * starts looking at the original location instead of wherever they were panning. */
+  initialCoord?: { lat: number; lon: number } | null;
 };
+
+export type CoordinatePickOptions = {
+  initialCoord?: { lat: number; lon: number } | null;
+};
+
+export type CoordinatePickRequest = (
+  callback: (coord: { lat: number; lon: number }) => void,
+  options?: CoordinatePickOptions,
+) => void;
+
+export type RouteVoteCoordinatePickRequest = (
+  optionIndex: number,
+  callback: (coord: { lat: number; lon: number }) => void,
+  options?: CoordinatePickOptions,
+) => void;
 
 type DebugOpenSource = {
   source: string;
@@ -247,6 +283,40 @@ function isFiniteReplayCoordinate(event: JournalEvent): event is JournalEvent & 
     typeof event.lon === "number" &&
     Number.isFinite(event.lon)
   );
+}
+
+function buildReplayPins(
+  journalEvents: JournalEvent[],
+  liveTrailSamples: Array<{ _id?: string; lat: number; lon: number; sampledAt: number }>,
+) {
+  const checkpointPins: ReplayPin[] = journalEvents
+    .filter(isFiniteReplayCoordinate)
+    .map((event) => ({
+      eventId: event._id,
+      occurredAt: event.occurredAt,
+      lat: event.lat,
+      lon: event.lon,
+      kind: "checkpoint" as const,
+    }));
+
+  const MIN_REPLAY_BC_INTERVAL_MS = 60_000;
+  let lastKeptAt = -Infinity;
+  const breadcrumbPins: ReplayPin[] = [];
+  for (const s of [...liveTrailSamples].sort((a, b) => a.sampledAt - b.sampledAt)) {
+    if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
+    if (s.sampledAt - lastKeptAt >= MIN_REPLAY_BC_INTERVAL_MS) {
+      breadcrumbPins.push({
+        eventId: s._id ?? `bc-${s.sampledAt}`,
+        occurredAt: s.sampledAt,
+        lat: s.lat,
+        lon: s.lon,
+        kind: "breadcrumb" as const,
+      });
+      lastKeptAt = s.sampledAt;
+    }
+  }
+
+  return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
 }
 
 function formatReplayTime(timestamp: number) {
@@ -503,6 +573,46 @@ function AccuracyCircle({
     };
   }, [map]);
 
+  return null;
+}
+
+function PreviewPinMarker({
+  map,
+  coord,
+}: {
+  map: maplibregl.Map | null;
+  coord: { lat: number; lon: number } | null;
+}) {
+  const markerRef = useRef<maplibregl.Marker | null>(null);
+  useEffect(() => {
+    if (!map) return;
+    if (!coord || !Number.isFinite(coord.lat) || !Number.isFinite(coord.lon)) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+    if (markerRef.current) {
+      markerRef.current.setLngLat([coord.lon, coord.lat]);
+    } else {
+      const el = document.createElement("div");
+      el.className = "preview-pin-marker";
+      el.setAttribute("aria-label", "Selected location");
+      el.style.cssText = "pointer-events:none;line-height:0";
+      el.innerHTML = `
+        <svg width="36" height="48" viewBox="0 0 30 40" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.55))">
+          <path d="M15 0 C23.284 0 30 6.716 30 15 C30 23.5 15 40 15 40 C15 40 0 23.5 0 15 C0 6.716 6.716 0 15 0 Z" style="fill:#10b981;stroke:white;stroke-width:2"/>
+          <circle cx="15" cy="15" r="5" style="fill:white"/>
+        </svg>
+      `;
+      markerRef.current = new maplibregl.Marker({ element: el, anchor: "bottom" })
+        .setLngLat([coord.lon, coord.lat])
+        .addTo(map);
+    }
+    return () => {
+      markerRef.current?.remove();
+      markerRef.current = null;
+    };
+  }, [map, coord]);
   return null;
 }
 
@@ -1049,6 +1159,14 @@ function ConvexCheckpointSheet({
 
 type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
 type LastLiveTrailSample = { lat: number; lon: number; sentAt: number } | null;
+
+// Names which watcher (if any) currently owns GPS. `live-pill` is the only
+// background-allowed reason. `map-foreground` is the foreground browser
+// fallback that must be torn down on visibilitychange→hidden.
+type GpsOwner =
+  | { kind: "native"; reason: "live-pill"; startedAt: number }
+  | { kind: "browser"; reason: "map-foreground"; startedAt: number }
+  | null;
 type SelectedStoryDetail = {
   eventId: string;
   checkpointId?: string;
@@ -1065,6 +1183,9 @@ type TripMapProps = {
   finaleReplayActive?: boolean;
   onOpenDebugPanel?: () => void;
   onMapLoaded?: () => void;
+  /** Fires when the crosshair location picker enters or exits. Used by App to
+   * hide the TopBar / TripTicker so they don't overlap the helper banner. */
+  onPickerActiveChange?: (active: boolean) => void;
 };
 
 export default function TripMap({
@@ -1075,6 +1196,7 @@ export default function TripMap({
   finaleReplayActive = false,
   onOpenDebugPanel,
   onMapLoaded,
+  onPickerActiveChange,
 }: TripMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -1082,6 +1204,19 @@ export default function TripMap({
   const latestMapStyleUrlRef = useRef<string | null>(null);
   const placementModeRef = useRef(false);
   const browserLocationWatchRef = useRef<number | null>(null);
+  // Names whichever watcher (if any) is currently delivering GPS. Read by the
+  // visibilitychange listener and the debug logs so the user can answer
+  // "what is keeping GPS on?" by reading a single log entry.
+  const gpsOwnerRef = useRef<GpsOwner>(null);
+  // Lets non-effect call sites (visibilitychange, pagehide, sign-out) tear down
+  // the active watcher without waiting for the watcher effect to re-run.
+  const gpsCleanupRef = useRef<(() => void) | null>(null);
+  // Mirrors document.visibilityState. Used to refuse to start the foreground
+  // browser watcher while the app is backgrounded (the leak scenario).
+  const isAppActiveRef = useRef<boolean>(
+    typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
+  const lastGpsFixLogAtRef = useRef<number>(0);
   const isLocationSharingRef = useRef(false);
   const liveTrailEnabledRef = useRef(false);
   const liveTrailCanRecordRef = useRef(false);
@@ -1099,6 +1234,12 @@ export default function TripMap({
   const mapDiagnosticFetchUrlRef = useRef<string | null>(null);
   const mapFailureStatsRef = useRef(createMapFailureStats());
   const mapLoadedRef = useRef(false);
+  // Ref-pattern for onMapLoaded: the map-init effect must NOT re-run when the
+  // parent passes a fresh callback identity (would tear down + rebuild the
+  // entire MapLibre instance). We capture the latest callback here so the
+  // `map.on("load", ...)` handler always invokes the freshest version.
+  const onMapLoadedRef = useRef(onMapLoaded);
+  onMapLoadedRef.current = onMapLoaded;
   const mapInteractionsFrozenRef = useRef(false);
   const snappedReplayEventRef = useRef<string | null>(null);
   const finaleReplayStartedRef = useRef(false);
@@ -1123,6 +1264,7 @@ export default function TripMap({
   const lastRecenterHeightRef = useRef<number>(-1);
   const music = useMusicSafe();
   const musicRef = useRef(music);
+  const convex = useConvex();
   const log = useDebugLogger("TripMap", "src/features/map/TripMap.tsx");
   const calibration = useCenteringCalibration();
   // The moveend listener runs inside a mount-time closure, so mirror calibration
@@ -1139,8 +1281,22 @@ export default function TripMap({
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(false);
+  // Mirrors document.visibilityState. Drives the foreground-only browser
+  // watcher gate so it does not survive backgrounding (and to re-arm on
+  // foreground without churning the native watcher when LIVE is on).
+  const [isAppActive, setIsAppActive] = useState(
+    typeof document === "undefined" || document.visibilityState !== "hidden",
+  );
   const [livePosition, setLivePosition] = useState<{ lat: number; lon: number; accuracy?: number } | null>(null);
   const [coordinatePickMode, setCoordinatePickMode] = useState<CoordinatePickMode | null>(null);
+  // Live center of the map while the crosshair picker is active. Updated on
+  // map "move" events so the helper banner reflects the candidate coordinate.
+  const [pickCenter, setPickCenter] = useState<{ lat: number; lon: number } | null>(null);
+  // Preview pin shown after a coordinate is confirmed but before the form
+  // saves it (so the user can see where their selection landed while filling
+  // out the rest of the form). Cleared when the picker re-opens (Change) or
+  // the originating sheet closes.
+  const [previewCoord, setPreviewCoord] = useState<{ lat: number; lon: number } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<"default" | "mystery">("default");
   const [debugShowAllMysteryPins, setDebugShowAllMysteryPins] = useState(() => {
@@ -1191,6 +1347,15 @@ export default function TripMap({
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayPaused, setReplayPaused] = useState(false);
+  const [replayTrailSamples, setReplayTrailSamples] = useState<LiveTrailSample[] | null>(null);
+  const [replayTrailLoad, setReplayTrailLoad] = useState<{
+    status: "idle" | "loading" | "loaded" | "error";
+    pages: number;
+    samples: number;
+    durationMs?: number;
+    error?: string;
+  }>({ status: "idle", pages: 0, samples: 0 });
+  const replayTrailLoadSeqRef = useRef(0);
   const stopFollowing = useCallback(() => {
     setIsFollowing(false);
   }, []);
@@ -1219,6 +1384,10 @@ export default function TripMap({
   );
   const movementPrefsRef = useRef<typeof movementPrefs>(undefined);
   movementPrefsRef.current = movementPrefs;
+  const movementDebugRecords = useMovementDebugRecords();
+  const movementDebugSpeed = useMovementDebugSpeed();
+  const movementDebugRef = useRef({ records: movementDebugRecords, speed: movementDebugSpeed });
+  movementDebugRef.current = { records: movementDebugRecords, speed: movementDebugSpeed };
   const addCloakingPin = useMutation(tripcastApi.cloakingPins.travelerAddCloakingPin);
   const cloakingPinsData = useQuery(
     tripcastApi.cloakingPins.travelerListCloakingPins,
@@ -1263,6 +1432,9 @@ export default function TripMap({
       : all;
   }, [role, travelerLiveTrailStatus, followerLiveTrail, cutoffPreview.cutoffAt]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
+  const replaySourceTrailSamples = replayTrailSamples ?? liveTrailSamples;
+  const pathTrailSamples = replayActive && replayTrailSamples ? replayTrailSamples : liveTrailSamples;
+  const pathTrailVisible = pathTrailSamples.length >= 1;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
     const val = localStorage.getItem("tripcast.showTripPath");
@@ -1281,6 +1453,14 @@ export default function TripMap({
   const showPath = role === "traveler"
     ? showTripPathLocal
     : travelerAllowsFollowerPath && showTripPathLocal;
+  const replayTrailLoading = replayTrailLoad.status === "loading";
+  const canAttemptReplay = showPath && !replayTrailLoading;
+
+  useEffect(() => {
+    replayTrailLoadSeqRef.current += 1;
+    setReplayTrailSamples(null);
+    setReplayTrailLoad({ status: "idle", pages: 0, samples: 0 });
+  }, [token, role, cutoffPreview.cutoffAt]);
 
   const handleCloakingPinClick = useCallback(
     (pin: CloakingPin) => {
@@ -1319,41 +1499,81 @@ export default function TripMap({
       ? all.filter((e) => e.occurredAt >= (cutoffPreview.cutoffAt as number))
       : all;
   }, [queriedJournalEvents, cutoffPreview.cutoffAt]);
-  const replayPins = useMemo<ReplayPin[]>(() => {
-    const checkpointPins: ReplayPin[] = journalEvents
-      .filter(isFiniteReplayCoordinate)
-      .map((event) => ({
-        eventId: event._id,
-        occurredAt: event.occurredAt,
-        lat: event.lat,
-        lon: event.lon,
-        kind: "checkpoint" as const,
-      }));
+  const replayJournalEvents = useMemo(
+    () => (role === "traveler" ? (queriedJournalEvents ?? []) : journalEvents),
+    [journalEvents, queriedJournalEvents, role],
+  );
+  const loadReplayTrailSamples = useCallback(async () => {
+    if (replayTrailSamples) return replayTrailSamples;
+    const seq = ++replayTrailLoadSeqRef.current;
+    const startedAt = performance.now();
+    const cutoffAt = role === "follower" ? (cutoffPreview.cutoffAt ?? undefined) : undefined;
+    let cursor: string | null = null;
+    let pages = 0;
+    const samples: LiveTrailSample[] = [];
+    setReplayTrailLoad({ status: "loading", pages: 0, samples: 0 });
+    log.logInteraction("live-trail:replay-fetch:start", { role, cutoffApplied: cutoffAt ?? null });
 
-    if (!liveTrailPathVisible || liveTrailSamples.length === 0) {
-      return checkpointPins.sort((a, b) => a.occurredAt - b.occurredAt);
-    }
-
-    // Include decimated breadcrumbs so the camera follows the trail during replay.
-    const MIN_REPLAY_BC_INTERVAL_MS = 60_000;
-    let lastKeptAt = -Infinity;
-    const breadcrumbPins: ReplayPin[] = [];
-    for (const s of [...liveTrailSamples].sort((a, b) => a.sampledAt - b.sampledAt)) {
-      if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
-      if (s.sampledAt - lastKeptAt >= MIN_REPLAY_BC_INTERVAL_MS) {
-        breadcrumbPins.push({
-          eventId: `bc-${s.sampledAt}`,
-          occurredAt: s.sampledAt,
-          lat: s.lat,
-          lon: s.lon,
-          kind: "breadcrumb" as const,
+    try {
+      for (;;) {
+        const page: LiveTrailReplayPage = await convex.query(tripcastApi.liveTrail.listReplayLiveTrailSamples, {
+          token,
+          cutoffAt,
+          paginationOpts: {
+            numItems: REPLAY_TRAIL_PAGE_SIZE,
+            cursor,
+            maximumRowsRead: REPLAY_TRAIL_PAGE_SIZE * 2,
+            maximumBytesRead: 256_000,
+          },
         });
-        lastKeptAt = s.sampledAt;
+        pages += 1;
+        samples.push(...page.page);
+        const durationMs = Math.round(performance.now() - startedAt);
+        log.logInteraction("live-trail:replay-fetch:page", {
+          role,
+          page: pages,
+          pageSamples: page.page.length,
+          samples: samples.length,
+          durationMs,
+        });
+        if (seq === replayTrailLoadSeqRef.current) {
+          setReplayTrailLoad({ status: "loading", pages, samples: samples.length, durationMs });
+        }
+        if (page.isDone) break;
+        cursor = page.continueCursor;
       }
-    }
 
-    return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
-  }, [journalEvents, liveTrailSamples, liveTrailPathVisible]);
+      const durationMs = Math.round(performance.now() - startedAt);
+      const estimatedPayloadBytes = samples.length * REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE;
+      log.logInteraction("live-trail:replay-fetch:complete", {
+        role,
+        pages,
+        samples: samples.length,
+        durationMs,
+        estimatedPayloadBytes,
+        cutoffApplied: cutoffAt ?? null,
+        firstSampleTs: samples[0]?.sampledAt ?? null,
+        lastSampleTs: samples.at(-1)?.sampledAt ?? null,
+      });
+      if (seq === replayTrailLoadSeqRef.current) {
+        setReplayTrailSamples(samples);
+        setReplayTrailLoad({ status: "loaded", pages, samples: samples.length, durationMs });
+      }
+      return samples;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const durationMs = Math.round(performance.now() - startedAt);
+      log.error("live-trail:replay-fetch:error", "query", { role, pages, samples: samples.length, durationMs, message });
+      if (seq === replayTrailLoadSeqRef.current) {
+        setReplayTrailLoad({ status: "error", pages, samples: samples.length, durationMs, error: message });
+      }
+      throw error;
+    }
+  }, [convex, cutoffPreview.cutoffAt, log, replayTrailSamples, role, token]);
+  const replayPins = useMemo<ReplayPin[]>(
+    () => buildReplayPins(replayJournalEvents, replaySourceTrailSamples),
+    [replayJournalEvents, replaySourceTrailSamples],
+  );
   const replayEndIndex = replayPins.length;
   const canReplayTrip = replayPins.length > 1;
   // Categorize the current beat. End = synthetic terminal beat at index === length.
@@ -1385,8 +1605,8 @@ export default function TripMap({
     showPath,
     replayRevealUpTo,
     routeLineColor,
-    liveTrailSamples,
-    liveTrailPathVisible,
+    pathTrailSamples,
+    pathTrailVisible,
   );
 
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
@@ -1629,6 +1849,7 @@ export default function TripMap({
   }, [log, replayActive, replayPins, replayPlayheadIndex, token]);
 
   useEffect(() => {
+    let cancelled = false;
     if (!finaleReplayActive) {
       if (finaleReplayStartedRef.current) {
         finaleReplayStartedRef.current = false;
@@ -1641,20 +1862,28 @@ export default function TripMap({
       return;
     }
 
-    if (!canReplayTrip) return;
-    const resumeIndex = resolveReplayResumeIndex(token, replayPins);
-    if (!finaleReplayStartedRef.current) {
-      snappedReplayEventRef.current = null;
-      finaleReplayStartedRef.current = true;
-      setReplaySpeed((speed) => Math.max(speed, 2));
-      log.logInteraction("finale:map-replay:start", {
-        totalPins: replayPins.length,
-        resumeIndex,
-      });
-    }
-    setReplayActive(true);
-    setReplayPlayheadIndex(resumeIndex);
-  }, [canReplayTrip, finaleReplayActive, log, replayPins, token]);
+    if (!canAttemptReplay) return;
+    void loadReplayTrailSamples().then((samples) => {
+      if (cancelled) return;
+      const pins = buildReplayPins(replayJournalEvents, samples);
+      if (pins.length <= 1) return;
+      const resumeIndex = resolveReplayResumeIndex(token, pins);
+      if (!finaleReplayStartedRef.current) {
+        snappedReplayEventRef.current = null;
+        finaleReplayStartedRef.current = true;
+        setReplaySpeed((speed) => Math.max(speed, 2));
+        log.logInteraction("finale:map-replay:start", {
+          totalPins: pins.length,
+          resumeIndex,
+        });
+      }
+      setReplayActive(true);
+      setReplayPlayheadIndex(resumeIndex);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [canAttemptReplay, finaleReplayActive, loadReplayTrailSamples, log, replayJournalEvents, token]);
 
   // Close replay if any sheet/panel/menu opens. Pin taps, dock taps, and the
   // right-click context menu all funnel through these states, so a single effect
@@ -2087,6 +2316,7 @@ export default function TripMap({
             : null;
 
   function handleDockSelect(tab: DockTab) {
+    if (coordinatePickModeRef.current) cancelCoordinatePick();
     setFanOpen(false);
     setIsTravelerStateOpen(false);
     if (tab === "journal") openJournal({ source: "dock:journal", sourceLabel: "Dock -> Journal" });
@@ -2098,11 +2328,13 @@ export default function TripMap({
   }
 
   function handleDockAdd() {
+    if (coordinatePickModeRef.current) cancelCoordinatePick();
     music.sfx("tap");
     setFanOpen((prev) => !prev);
   }
 
   function handleFanPick(action: FanAction) {
+    if (coordinatePickModeRef.current) cancelCoordinatePick();
     music.sfx("tap");
     setFanOpen(false);
     switch (action) {
@@ -2119,6 +2351,10 @@ export default function TripMap({
       case "mission":
         openMissions({ source: "fan-menu:mission", sourceLabel: "FanMenu -> Add Mission" });
         break;
+      case "status":
+        setStateDebugSource({ source: "fan-menu:status", sourceLabel: "FanMenu -> Update Status" });
+        setIsTravelerStateOpen(true);
+        break;
       case "vote":
         openVotes({ source: "fan-menu:vote", sourceLabel: "FanMenu -> Add Vote" });
         break;
@@ -2133,22 +2369,159 @@ export default function TripMap({
     }
   }, [isPlacementMode, stopFollowing]);
 
+  // Clear the preview pin whenever every form-bearing sheet is closed — the
+  // user is done with the flow that owned the picked coord.
+  useEffect(() => {
+    if (
+      !isMissionsPanelOpen &&
+      !isJournalOpen &&
+      !isVotePanelOpen &&
+      !isMissionDetailOpen
+    ) {
+      setPreviewCoord(null);
+    }
+  }, [isMissionsPanelOpen, isJournalOpen, isVotePanelOpen, isMissionDetailOpen]);
+
+  // Called by form panels after a successful save so the preview pin retires
+  // once the real mission/story marker takes over.
+  const clearPreviewPin = useCallback(() => setPreviewCoord(null), []);
+
   const cancelCoordinatePick = useCallback(() => {
     log.logInteraction("coordinate:pick-mode:cancel");
     coordinatePickModeRef.current = null;
     setCoordinatePickMode(null);
+    setPickCenter(null);
   }, [log]);
 
-  // ESC cancels coordinate pick mode
+  function confirmCoordinatePick() {
+    const pick = coordinatePickModeRef.current;
+    const map = mapRef.current;
+    if (!pick || !map) return;
+    const center = map.getCenter();
+    const coord = { lat: center.lat, lon: center.lng };
+    log.logInteraction("coordinate:pick-mode:confirm", {
+      lat: coord.lat,
+      lon: coord.lon,
+      label: pick.label,
+    });
+    log.logInteraction("coordinate:picked", {
+      lat: coord.lat,
+      lon: coord.lon,
+      source: "coordinate-pick",
+    });
+    musicRef.current.sfx("pin");
+    const sheetSelector = pick.sheetSelector;
+    coordinatePickModeRef.current = null;
+    setCoordinatePickMode(null);
+    setPickCenter(null);
+    setPreviewCoord(coord);
+    pick.callback(coord);
+    // Recenter the camera so the picked point lands above the returning sheet.
+    // We bypass the focusCoordinate / applyActiveFocus pipeline here because it
+    // measures DOM occluders (cardsWrapperRef, sheetSelector) — and the gotchas
+    // in docs/agents/implementation-gotchas.md note that map vs. style/DOM
+    // measurement races are fragile when overlays toggle visibility in the same
+    // React commit. A direct easeTo with a measured offset is independent of
+    // when the sheet's `invisible` class flushes. We schedule on rAF so the
+    // sheet has dropped `invisible` before measuring its height.
+    if (sheetSelector) {
+      requestAnimationFrame(() => {
+        const m = mapRef.current;
+        if (!m) return;
+        const sheetEl = document.querySelector(sheetSelector) as HTMLElement | null;
+        const sheetH = sheetEl?.getBoundingClientRect().height ?? 0;
+        const topEl = cardsWrapperRef.current;
+        const topH = topEl ? topEl.getBoundingClientRect().height : 0;
+        // Positive offset.y moves the target DOWN on screen, negative moves it
+        // UP. We want the coord to land at the center of the visible band
+        // between the status card (top, topH) and the returning sheet (bottom,
+        // sheetH). Band center sits at (topH - sheetH)/2 relative to the
+        // container center — negative when the sheet is taller than the card.
+        const offsetY = (topH - sheetH) / 2;
+        log.logMap("coordinate-pick:recenter", {
+          lat: coord.lat,
+          lon: coord.lon,
+          sheetH: Math.round(sheetH),
+          topH: Math.round(topH),
+          offsetY: Math.round(offsetY),
+        });
+        stopFollowing();
+        m.easeTo({
+          center: [coord.lon, coord.lat],
+          offset: [0, offsetY],
+          duration: 600,
+        });
+      });
+    }
+  }
+
+  // ESC cancels coordinate pick mode; live-track map center while picking.
+  // The move listener is rAF-coalesced so React renders at most once per frame
+  // regardless of how aggressively MapLibre fires `move` during a drag.
   useEffect(() => {
-    if (!coordinatePickMode) return;
+    onPickerActiveChange?.(Boolean(coordinatePickMode));
+    if (!coordinatePickMode) {
+      setPickCenter(null);
+      return;
+    }
+    // Clear the preview pin from a previous confirm — re-entering pick mode
+    // means the user is about to choose a new spot.
+    setPreviewCoord(null);
     stopFollowing();
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") cancelCoordinatePick();
     }
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [coordinatePickMode, cancelCoordinatePick, stopFollowing]);
+
+    const map = mapRef.current;
+    if (!map) {
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }
+    // Reset MapLibre's camera padding when entering pick mode — any leftover
+    // padding from a prior focusCoordinate call (e.g. the mission-detail focus
+    // that put the pin in the band above the sheet) would otherwise place the
+    // map center off-axis from the crosshair. With the originating sheet now
+    // hidden, the picker should treat the full container as the visible map.
+    // jumpTo (not easeTo) sidesteps a race: when picker enters, the top
+    // wrapper collapses → map container resizes → MapLibre re-projects, and an
+    // animated easeTo overlaps that resize unpredictably. jumpTo commits the
+    // new center+padding atomically.
+    const zeroPadding = { top: 0, right: 0, bottom: 0, left: 0 };
+    const initialCoord = coordinatePickMode.initialCoord;
+    if (
+      initialCoord &&
+      Number.isFinite(initialCoord.lat) &&
+      Number.isFinite(initialCoord.lon)
+    ) {
+      map.jumpTo({
+        center: [initialCoord.lon, initialCoord.lat],
+        padding: zeroPadding,
+      });
+      setPickCenter({ lat: initialCoord.lat, lon: initialCoord.lon });
+    } else {
+      const initial = map.getCenter();
+      map.jumpTo({
+        center: [initial.lng, initial.lat],
+        padding: zeroPadding,
+      });
+      setPickCenter({ lat: initial.lat, lon: initial.lng });
+    }
+    let rafId: number | null = null;
+    const handleMove = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const c = map.getCenter();
+        setPickCenter({ lat: c.lat, lon: c.lng });
+      });
+    };
+    map.on("move", handleMove);
+    return () => {
+      map.off("move", handleMove);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [coordinatePickMode, cancelCoordinatePick, stopFollowing, onPickerActiveChange]);
 
   // Map init
   useEffect(() => {
@@ -2198,7 +2571,7 @@ export default function TripMap({
         styleUrl: activeMapStyleUrlRef.current ?? initialMapStyleUrl,
         zoom: map.getZoom(),
       });
-      onMapLoaded?.();
+      onMapLoadedRef.current?.();
     });
 
     map.on("error", (event) => {
@@ -2304,14 +2677,19 @@ export default function TripMap({
         });
       }
 
-      // Coordinate pick mode takes priority
+      // Picker in progress — tapping anywhere recenters the map on that point
+      // (the crosshair stays fixed at the center). The user confirms via the
+      // bottom "Use this location" button, which reads map.getCenter().
+      // Explicit zero padding is required: MapLibre retains the camera padding
+      // from prior focusCoordinate calls, which would otherwise place the
+      // clicked lngLat at the band center instead of the geometric center
+      // (where the crosshair sits).
       if (coordinatePickModeRef.current) {
-        const pick = coordinatePickModeRef.current;
-        coordinatePickModeRef.current = null;
-        setCoordinatePickMode(null);
-        log.logInteraction("coordinate:picked", { lat: event.lngLat.lat, lon: event.lngLat.lng, source: "coordinate-pick" });
-        musicRef.current.sfx("pin");
-        pick.callback({ lat: event.lngLat.lat, lon: event.lngLat.lng });
+        map.easeTo({
+          center: event.lngLat,
+          padding: { top: 0, right: 0, bottom: 0, left: 0 },
+          duration: 300,
+        });
         return;
       }
 
@@ -2527,6 +2905,15 @@ export default function TripMap({
     }
   }, [centerMapOnCoordinate, isFollowing, livePosition, storedTravelerLocation, role]);
 
+  // Browser-watcher gate. True whenever the foreground browser watch is the
+  // *active* path — i.e. LIVE is off (display-only GPS dot) OR LIVE is on
+  // but the platform is non-native (web/PWA share via WKWebView/browser API).
+  // The native LIVE-on case takes the if-branch above and skips this gate
+  // entirely, so visibility flips never churn the background-capable native
+  // watcher.
+  const browserWatcherEnabled =
+    isAppActive && (!isLocationSharing || !isNativeLocationAvailable());
+
   // Track location for Travelers. On a native (Capacitor) build, use the
   // background-capable watcher when "Live" is ON; otherwise fall back to
   // the foreground-only browser API to show the local GPS dot without
@@ -2550,6 +2937,22 @@ export default function TripMap({
     const handleFix = (lat: number, lon: number, accuracy?: number, speed?: number) => {
       lastLocationFixAtRef.current = Date.now();
       setLocationStale(false);
+      // Debounced "who is delivering fixes" log so the user can correlate
+      // background GPS usage with the watcher that produced it. Throttled to
+      // once per 30s to keep the debug overlay legible. No coords or accuracy
+      // by design — those are guarded by the privacy assertion in
+      // TripMap.location.test.tsx; speed is a magnitude only.
+      const fixLogElapsed = Date.now() - lastGpsFixLogAtRef.current;
+      if (fixLogElapsed >= 30_000) {
+        lastGpsFixLogAtRef.current = Date.now();
+        const owner = gpsOwnerRef.current;
+        log.logUi("gps:fix", {
+          ownerKind: owner?.kind ?? "unknown",
+          ownerReason: owner?.reason ?? null,
+          isAppActive: isAppActiveRef.current,
+          speed,
+        });
+      }
       if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
         liveTrailPermissionLoggedRef.current = true;
         log.logInteraction("live-trail:permission:result", { result: "granted" });
@@ -2624,8 +3027,8 @@ export default function TripMap({
         const prefs = movementPrefsRef.current;
         const fixAt = Date.now();
         if (prefs?.movementDetectionEnabled === true) {
-          const walkingMps = prefs.movementWalkingThresholdMps ?? 2.54;
-          const movingMps = prefs.movementMovingThresholdMps ?? 8.94;
+          const walkingMps = prefs.movementWalkingThresholdMps ?? DEFAULT_WALKING_MPS;
+          const movingMps = prefs.movementMovingThresholdMps ?? DEFAULT_MOVING_MPS;
           let speedMps: number | undefined =
             typeof speed === "number" && speed >= 0 ? speed : undefined;
           if (speedMps === undefined && prevFixForSpeed) {
@@ -2643,6 +3046,39 @@ export default function TripMap({
                 : speedMps >= walkingMps
                   ? "walking"
                   : "stopped";
+
+          // Movement debug telemetry — always-on recording when detection is
+          // enabled. Live speed updates only while calibration mode is on
+          // (high-frequency, only useful while the debug modal is open).
+          const debug = movementDebugRef.current;
+          if (debug.records.isCalibrationModeEnabled && speedMps !== undefined) {
+            debug.speed.recordCurrentSpeed(speedMps);
+          }
+          if (speedMps !== undefined) {
+            const inWalkingNearMiss =
+              classification === "stopped" &&
+              speedMps >= 0.9 * walkingMps &&
+              speedMps <= 0.99 * walkingMps;
+            const inMovingNearMiss =
+              classification !== "moving" &&
+              speedMps >= 0.9 * movingMps &&
+              speedMps <= 0.99 * movingMps;
+            if (inWalkingNearMiss) {
+              debug.records.recordAlmostTriggered({
+                thresholdType: "walking",
+                speedMps,
+                thresholdMps: walkingMps,
+              });
+            }
+            if (inMovingNearMiss) {
+              debug.records.recordAlmostTriggered({
+                thresholdType: "moving",
+                speedMps,
+                thresholdMps: movingMps,
+              });
+            }
+          }
+
           const changed = classification !== lastMovementClassification;
           const throttleOk = fixAt - lastMovementMutationAt >= MOVEMENT_MUTATION_MIN_INTERVAL_MS;
           if (changed && classification !== "stopped" && (throttleOk || lastMovementClassification === null)) {
@@ -2650,16 +3086,26 @@ export default function TripMap({
             lastMovementClassification = classification;
             lastMovementMutationAt = fixAt;
             log.logUi("movement:classify", { speedMps, classification, from });
+            const triggeredSpeedMps = speedMps;
             applyMovementDetection({
               token,
               classification,
               speedMps,
               sampledAt: fixAt,
-            }).catch((error) => {
-              log.error("movement:apply:error", "mutation", {
-                message: error instanceof Error ? error.message : String(error),
+            })
+              .then(() => {
+                if (triggeredSpeedMps === undefined) return;
+                movementDebugRef.current.records.recordTriggered({
+                  from,
+                  to: classification,
+                  speedMps: triggeredSpeedMps,
+                });
+              })
+              .catch((error) => {
+                log.error("movement:apply:error", "mutation", {
+                  message: error instanceof Error ? error.message : String(error),
+                });
               });
-            });
           } else if (changed) {
             lastMovementClassification = classification;
           }
@@ -2697,15 +3143,42 @@ export default function TripMap({
 
     if (isLocationSharing && isNativeLocationAvailable()) {
       log.logInteraction("live-trail:native-watch:start", {});
+      log.logInteraction("gps:watcher:start", {
+        kind: "native",
+        reason: "live-pill",
+        liveSharing: true,
+        liveTrail: liveTrailEnabledRef.current,
+        movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
+        isAppActive: isAppActiveRef.current,
+      });
+      gpsOwnerRef.current = { kind: "native", reason: "live-pill", startedAt: Date.now() };
       const stop = startNativeLocationWatch(
         (fix) => handleFix(fix.lat, fix.lon, fix.accuracy, fix.speed),
         handleError,
       );
       cleanup = () => {
         log.logInteraction("live-trail:native-watch:stop", {});
+        log.logInteraction("gps:watcher:stop", {
+          kind: "native",
+          reason: "live-pill",
+          trigger: "effect-cleanup",
+        });
+        gpsOwnerRef.current = null;
         stop();
       };
-    } else if (navigator.geolocation) {
+    } else if (navigator.geolocation && browserWatcherEnabled) {
+      // Foreground-only fallback. Skipped while backgrounded so the WKWebView
+      // geolocation cannot keep CLLocationManager alive after the user swiped
+      // home with the LIVE pill off (the reported leak).
+      log.logInteraction("gps:watcher:start", {
+        kind: "browser",
+        reason: "map-foreground",
+        liveSharing: false,
+        liveTrail: liveTrailEnabledRef.current,
+        movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
+        isAppActive: true,
+      });
+      gpsOwnerRef.current = { kind: "browser", reason: "map-foreground", startedAt: Date.now() };
       const watchId = navigator.geolocation.watchPosition(
         (pos) => handleFix(
           pos.coords.latitude,
@@ -2718,12 +3191,20 @@ export default function TripMap({
       );
       browserLocationWatchRef.current = watchId;
       cleanup = () => {
+        log.logInteraction("gps:watcher:stop", {
+          kind: "browser",
+          reason: "map-foreground",
+          trigger: "effect-cleanup",
+        });
+        gpsOwnerRef.current = null;
         navigator.geolocation.clearWatch(watchId);
         if (browserLocationWatchRef.current === watchId) {
           browserLocationWatchRef.current = null;
         }
       };
     }
+
+    gpsCleanupRef.current = cleanup;
 
     // Native only: if LIVE is on but no fix has landed in a while, the plugin
     // may have silently stalled (iOS background-task timeout, system location
@@ -2745,11 +3226,18 @@ export default function TripMap({
 
     return () => {
       cleanup();
+      if (gpsCleanupRef.current === cleanup) {
+        gpsCleanupRef.current = null;
+      }
       clearInterval(staleInterval);
     };
-  // publish* only uses refs plus stable mutation inputs.
+  // publish* only uses refs plus stable mutation inputs. We depend on
+  // `browserWatcherEnabled` (derived below) rather than `isAppActive` so
+  // visibility changes do NOT tear down the native watcher while LIVE is on
+  // — Travelers backgrounding with LIVE on must keep streaming fixes to
+  // Followers without a gap.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocationSharing, role, token, log]);
+  }, [isLocationSharing, browserWatcherEnabled, role, token, log]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -2768,16 +3256,82 @@ export default function TripMap({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locationResetNonce]);
 
+  // Force-stop whatever watcher is currently active, regardless of which
+  // useEffect started it. Synchronous so pagehide / sign-out can guarantee
+  // teardown before the JS context goes away. Logs name the trigger so the
+  // user can read the debug log and immediately see WHO stopped GPS.
+  function forceStopAllWatchers(
+    trigger: "appstate-background" | "pagehide" | "sign-out",
+  ) {
+    const owner = gpsOwnerRef.current;
+    const fn = gpsCleanupRef.current;
+    if (owner) {
+      log.logInteraction("gps:watcher:stop", {
+        kind: owner.kind,
+        reason: owner.reason,
+        trigger,
+      });
+    }
+    gpsOwnerRef.current = null;
+    gpsCleanupRef.current = null;
+    if (fn) fn();
+    // Defensive: clear any stray browser watch that lost track of its closure.
+    const stray = browserLocationWatchRef.current;
+    if (stray !== null && typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.clearWatch(stray);
+      browserLocationWatchRef.current = null;
+    }
+  }
+
+  // Visibilitychange is the WKWebView signal for "iOS suspended/resumed the
+  // app" (swipe home, app switcher). On Capacitor it fires reliably without
+  // adding @capacitor/app. When the app is hidden AND the LIVE pill is off,
+  // tear down the browser fallback so it cannot keep CLLocationManager alive
+  // through the iOS `UIBackgroundModes: location` entitlement. LIVE on is the
+  // only permitted background-GPS owner.
+  useEffect(() => {
+    if (role !== "traveler") return;
+    if (typeof document === "undefined") return;
+
+    function handleVisibilityChange() {
+      const nextActive = document.visibilityState !== "hidden";
+      isAppActiveRef.current = nextActive;
+      setIsAppActive(nextActive);
+      log.logInteraction("gps:appstate:change", {
+        isActive: nextActive,
+        owner: gpsOwnerRef.current?.kind ?? "none",
+        reason: gpsOwnerRef.current?.reason ?? null,
+        liveSharing: isLocationSharingRef.current,
+        liveTrail: liveTrailEnabledRef.current,
+        movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
+      });
+      if (nextActive) return; // foregrounded: watcher effect re-runs via dep
+      if (isLocationSharingRef.current) return; // LIVE on: keep streaming
+      forceStopAllWatchers("appstate-background");
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  // forceStopAllWatchers reads refs only; safe to omit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, log]);
+
   useEffect(() => {
     if (role !== "traveler") return;
 
     function handlePageHide() {
+      // Tear down the watcher before the WebView disappears. iOS's
+      // appstate-background path also covers this, but pagehide is the
+      // PWA/Safari path and must work without Capacitor.
+      forceStopAllWatchers("pagehide");
       if (!isLocationSharingRef.current) return;
       stopTravelerLocationSharing({ token }).catch(() => {});
     }
 
     window.addEventListener("pagehide", handlePageHide);
     return () => window.removeEventListener("pagehide", handlePageHide);
+  // forceStopAllWatchers reads refs only; safe to omit.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, stopTravelerLocationSharing, token]);
 
   useEffect(() => {
@@ -2788,6 +3342,7 @@ export default function TripMap({
     setVoteOptionNumberById(null);
     setCoordinatePickMode(null);
     coordinatePickModeRef.current = null;
+    setPickCenter(null);
     setIsJournalOpen(false);
     setIsAchievementsOpen(false);
     setSelectedStoryDetail(null);
@@ -2907,11 +3462,24 @@ export default function TripMap({
     }
   }
 
-  function handleStartReplay() {
+  async function handleStartReplay() {
     stopFollowing();
-    if (!canReplayTrip) {
-      log.logInteraction("replay:start:boundary", { reason: "no-coordinate-pins" });
-      showToast("Trip Replay needs at least one located journal event.");
+    if (!canAttemptReplay) {
+      log.logInteraction("replay:start:boundary", { reason: replayTrailLoading ? "loading" : "path-hidden" });
+      showToast(replayTrailLoading ? "Trip Replay is loading breadcrumbs." : "Trip path is hidden.");
+      return;
+    }
+    let nextTrailSamples: LiveTrailSample[];
+    try {
+      nextTrailSamples = await loadReplayTrailSamples();
+    } catch {
+      showToast("Trip Replay could not load breadcrumbs. Try again.");
+      return;
+    }
+    const nextReplayPins = buildReplayPins(replayJournalEvents, nextTrailSamples);
+    if (nextReplayPins.length <= 1) {
+      log.logInteraction("replay:start:boundary", { reason: "no-coordinate-pins", trailSamples: nextTrailSamples.length });
+      showToast("Trip Replay needs at least two located breadcrumbs or journal events.");
       return;
     }
     music.sfx("page");
@@ -2929,11 +3497,12 @@ export default function TripMap({
     setContextMenu(null);
     setStoryPrefill(null);
     snappedReplayEventRef.current = null;
-    const resumeIndex = resolveReplayResumeIndex(token, replayPins);
+    const resumeIndex = resolveReplayResumeIndex(token, nextReplayPins);
     setReplayActive(true);
     setReplayPlayheadIndex(resumeIndex);
     log.logInteraction("replay:start", {
-      totalPins: replayPins.length,
+      totalPins: nextReplayPins.length,
+      trailSamples: nextTrailSamples.length,
       resumeIndex,
       speed: replaySpeed,
     });
@@ -3001,12 +3570,19 @@ export default function TripMap({
   function handleRequestCoordinatePick(
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
+    options?: CoordinatePickOptions,
   ) {
-    log.logInteraction("coordinate:pick-mode:enter", { source: "route-vote", optionIndex });
+    log.logInteraction("coordinate:pick-mode:enter", {
+      source: "route-vote",
+      optionIndex,
+      hasInitial: Boolean(options?.initialCoord),
+    });
     music.sfx("page");
     const label = `Option ${optionIndex + 1} location`;
-    coordinatePickModeRef.current = { label, callback };
-    setCoordinatePickMode({ label, callback });
+    const sheetSelector = "[data-role='route-votes-sheet']";
+    const mode = { label, callback, sheetSelector, initialCoord: options?.initialCoord ?? null };
+    coordinatePickModeRef.current = mode;
+    setCoordinatePickMode(mode);
   }
 
   function disconnectSheetObserver() {
@@ -3263,22 +3839,34 @@ export default function TripMap({
 
   function handleRequestMissionCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
+    options?: CoordinatePickOptions,
   ) {
-    log.logInteraction("coordinate:pick-mode:enter", { source: "Mission" });
+    log.logInteraction("coordinate:pick-mode:enter", {
+      source: "Mission",
+      hasInitial: Boolean(options?.initialCoord),
+    });
     music.sfx("page");
-    const label = "the mission location";
-    coordinatePickModeRef.current = { label, callback };
-    setCoordinatePickMode({ label, callback });
+    const label = "Mission location";
+    const sheetSelector = "[data-role='missions-sheet']";
+    const mode = { label, callback, sheetSelector, initialCoord: options?.initialCoord ?? null };
+    coordinatePickModeRef.current = mode;
+    setCoordinatePickMode(mode);
   }
 
   function handleRequestStoryCoordinatePick(
     callback: (coord: { lat: number; lon: number }) => void,
+    options?: CoordinatePickOptions,
   ) {
-    log.logInteraction("coordinate:pick-mode:enter", { source: "Story" });
+    log.logInteraction("coordinate:pick-mode:enter", {
+      source: "Story",
+      hasInitial: Boolean(options?.initialCoord),
+    });
     music.sfx("page");
-    const label = "the story location";
-    coordinatePickModeRef.current = { label, callback };
-    setCoordinatePickMode({ label, callback });
+    const label = "Story location";
+    const sheetSelector = "[data-role='journal-sheet']";
+    const mode = { label, callback, sheetSelector, initialCoord: options?.initialCoord ?? null };
+    coordinatePickModeRef.current = mode;
+    setCoordinatePickMode(mode);
   }
 
   function handleVoteOverlayChange(
@@ -3493,6 +4081,7 @@ export default function TripMap({
       <div ref={mapContainerRef} className={mapClassName} />
 
       {/* Side-effect marker components */}
+      <PreviewPinMarker map={mapInstance} coord={previewCoord} />
       <CheckpointMarkers
         map={mapInstance}
         checkpoints={checkpoints}
@@ -3589,23 +4178,34 @@ export default function TripMap({
 
         {coordinatePickMode && (
           <motion.div
-            key="coordinate-pick-banner"
+            key="coordinate-pick-helper"
             initial={{ y: -20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -20, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
-            className="absolute left-1/2 top-4 z-[5] flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-3 rounded-md bg-[var(--bg-card)] px-3 py-2.5 text-[var(--ink-1)] shadow-lg"
+            className="absolute left-1/2 top-4 z-[6] flex max-w-[calc(100%-24px)] -translate-x-1/2"
           >
-            <span className="text-sm">
-              Tap the map to set {coordinatePickMode.label}.
-            </span>
-            <button
-              type="button"
-              className="rounded bg-[var(--meter-track)] px-2.5 py-1 text-sm font-medium text-[var(--ink-1)]"
-              onClick={cancelCoordinatePick}
-            >
-              Cancel
-            </button>
+            <MapPickerHelperBanner
+              label={coordinatePickMode.label}
+              lat={pickCenter?.lat ?? null}
+              lon={pickCenter?.lon ?? null}
+            />
+          </motion.div>
+        )}
+        {coordinatePickMode && <MapPickerCrosshair key="coordinate-pick-crosshair" />}
+        {coordinatePickMode && (
+          <motion.div
+            key="coordinate-pick-confirm"
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 16, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" as const }}
+            className="absolute bottom-[88px] left-1/2 z-[21] -translate-x-1/2"
+          >
+            <MapPickerConfirmPanel
+              onCancel={cancelCoordinatePick}
+              onConfirm={confirmCoordinatePick}
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -3880,6 +4480,7 @@ export default function TripMap({
             setVoteOptionNumberById(null);
           }}
           onRequestCoordinatePick={handleRequestCoordinatePick}
+          onCoordinatePickSaved={clearPreviewPin}
           referenceLocation={livePosition}
           onVoteOverlayChange={handleVoteOverlayChange}
           onRequestFitMap={handleRequestFitMap}
@@ -3937,7 +4538,10 @@ export default function TripMap({
 
       <div
         ref={cardsWrapperRef}
-        className="pointer-events-none absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame"
+        className={cn(
+          "pointer-events-none absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame",
+          coordinatePickMode && "invisible",
+        )}
       >
         {locationStale ? (
           <button
@@ -3992,14 +4596,21 @@ export default function TripMap({
           <div className="flex flex-col items-end gap-2">
             <button
               type="button"
-              onClick={handleStartReplay}
-              disabled={!canReplayTrip}
+              onClick={() => void handleStartReplay()}
+              disabled={!canAttemptReplay}
               aria-pressed={replayActive}
               className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Play className="h-3.5 w-3.5" aria-hidden="true" />
-              {replayActive ? `${replaySpeed}x Replay` : "Replay"}
+              {replayTrailLoading
+                ? `Loading ${replayTrailLoad.samples}`
+                : replayActive ? `${replaySpeed}x Replay` : "Replay"}
             </button>
+            {replayTrailLoad.status === "error" ? (
+              <p className="pointer-events-auto max-w-[12rem] rounded-md bg-[var(--bg-card)] px-2 py-1 text-right text-[10px] font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]">
+                Replay breadcrumbs failed to load.
+              </p>
+            ) : null}
             <MusicMuteIndicator className="pointer-events-auto" />
           </div>
         </div>
@@ -4114,6 +4725,7 @@ export default function TripMap({
             setIsMissionsPanelOpen(false);
           }}
           onRequestCoordinatePick={handleRequestMissionCoordinatePick}
+          onCoordinatePickSaved={clearPreviewPin}
           isPickingCoordinate={isPickingCoordinate}
           pendingOpenMissionId={pendingOpenMissionId}
           pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
@@ -4169,6 +4781,7 @@ export default function TripMap({
               onLocationFocus={handleHistoryLocationFocus}
               onMarkAllRead={markAllRead}
               onRequestCoordinatePick={handleRequestStoryCoordinatePick}
+              onCoordinatePickSaved={clearPreviewPin}
               isPickingCoordinate={isPickingCoordinate}
               debugSource={journalDebugSource}
             />

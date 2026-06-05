@@ -37,11 +37,11 @@ function isBulkExportResult(value: unknown): value is BulkExportResult {
   );
 }
 
-type TickerFactExportResult = {
-  entries: { kind: "ticker_fact"; ref: string; text: string }[];
+type TickerExportResult = {
+  entries: { kind: "ticker_fact" | "ticker_tip"; ref: string; text: string }[];
 };
 
-function isTickerFactExportResult(value: unknown): value is TickerFactExportResult {
+function isTickerExportResult(value: unknown): value is TickerExportResult {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -59,6 +59,7 @@ export default function BulkExportSheet({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [includeMysteryMissions, setIncludeMysteryMissions] = useState(false);
+  const [includeLiveTrail, setIncludeLiveTrail] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tickerCopied, setTickerCopied] = useState(false);
   const music = useMusicSafe();
@@ -84,15 +85,15 @@ export default function BulkExportSheet({
 
   const queryResult = useQuery(
     tripcastApi.bulkImport.travelerExportTripData,
-    open ? { token, startMs, endMs, includeMysteryMissions } : "skip"
+    open ? { token, startMs, endMs, includeMysteryMissions, includeLiveTrail } : "skip"
   );
   const data = isBulkExportResult(queryResult) ? queryResult : undefined;
 
   const tickerQueryResult = useQuery(
-    tripcastApi.bulkImport.travelerExportTickerFacts,
+    tripcastApi.bulkImport.travelerExportTickerMessages,
     open ? { token } : "skip"
   );
-  const tickerData = isTickerFactExportResult(tickerQueryResult) ? tickerQueryResult : undefined;
+  const tickerData = isTickerExportResult(tickerQueryResult) ? tickerQueryResult : undefined;
 
   async function handleCopy() {
     if (!data) return;
@@ -141,7 +142,7 @@ export default function BulkExportSheet({
     const a = document.createElement("a");
     const timestamp = new Date().toISOString().split("T")[0];
     a.href = url;
-    a.download = `tripcast-ticker-facts-${timestamp}.json`;
+    a.download = `tripcast-ticker-${timestamp}.json`;
     a.click();
     URL.revokeObjectURL(url);
     music.sfx("page");
@@ -242,6 +243,25 @@ export default function BulkExportSheet({
                 </span>
               </span>
             </label>
+
+            <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
+              <input
+                type="checkbox"
+                checked={includeLiveTrail}
+                onChange={(event) => {
+                  log.logUi("action:include-live-trail", { enabled: event.currentTarget.checked });
+                  setIncludeLiveTrail(event.currentTarget.checked);
+                }}
+                className="mt-1 h-4 w-4"
+                style={{ accentColor: "var(--ink-1)" }}
+              />
+              <span className="grid gap-1">
+                <span className="font-medium">Include Live Trail breadcrumbs</span>
+                <span className="text-[var(--ink-2)]">
+                  Adds sampled breadcrumb coordinates for dev fixtures and replay data round-trips.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
@@ -283,12 +303,12 @@ export default function BulkExportSheet({
             {!tickerData ? (
               <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span className="text-sm">Loading ticker facts...</span>
+                <span className="text-sm">Loading ticker items...</span>
               </div>
             ) : (
               <>
                 <p className="text-sm font-semibold text-[var(--ink-1)]">
-                  {tickerData.entries.length} fun {tickerData.entries.length === 1 ? "fact" : "facts"} ready for export
+                  {tickerData.entries.length} ticker {tickerData.entries.length === 1 ? "item" : "items"} ready for export
                 </p>
                 <div className="flex gap-2">
                   <Button

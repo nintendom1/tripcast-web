@@ -139,7 +139,7 @@ const BULK_IMPORT_SCHEMA = {
     entryArray: {
       type: "array",
       items: { $ref: "#/definitions/entry" },
-      maxItems: 50,
+      maxItems: 100,
     },
     timestamp: {
       oneOf: [
@@ -152,7 +152,7 @@ const BULK_IMPORT_SCHEMA = {
       type: "object",
       required: ["kind"],
       properties: {
-        kind: { enum: ["checkin", "story", "transaction", "mission", "mystery_mission", "route_vote", "vote"] },
+        kind: { enum: ["checkin", "story", "transaction", "mission", "mystery_mission", "route_vote", "vote", "ticker_fact", "fact", "ticker_tip", "tip"] },
         ref: { type: "string", maxLength: 80 },
         timeZone: { type: "string" },
         occurredAt: { $ref: "#/definitions/timestamp" },
@@ -435,8 +435,8 @@ export default function BulkImportSheet({
           {stage === "paste" ? (
             <>
               <p className="text-sm leading-relaxed text-[var(--ink-2)]">
-                Paste a JSON array or {"{ timeZone, entries }"} object with up to 50 entries.
-                Supported kinds are checkin, story, transaction, mission, Mystery Mission, and route vote.
+                Paste a JSON array or {"{ timeZone, entries }"} object with up to 100 entries.
+                Supported kinds are checkin, story, transaction, mission, Mystery Mission, route vote, ticker fact, and ticker tip.
                 Timestamps can be epoch milliseconds, ISO strings with an offset, or YYYY-MM-DD dates.
               </p>
               <textarea
@@ -559,7 +559,8 @@ export default function BulkImportSheet({
                 <p className="mt-1 text-sm text-[var(--ink-2)]">
                   {result.counts.checkins} check-ins, {result.counts.transactions} transactions,{" "}
                   {result.counts.missions} missions, {result.counts.mysteryMissions} mystery missions,{" "}
-                  {result.counts.routeVotes} route votes.
+                  {result.counts.routeVotes} route votes, {result.counts.tickerFacts} ticker facts,{" "}
+                  {result.counts.tickerTips} ticker tips.
                 </p>
               </div>
               <Button
@@ -603,13 +604,15 @@ function PreviewSummary({ preview }: { preview: BulkImportPreview | undefined })
     );
   }
   return (
-    <div className="grid grid-cols-5 gap-2">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       {[
         ["Pins", preview.counts.checkins],
         ["Funds", preview.counts.transactions],
         ["Missions", preview.counts.missions],
         ["Mystery", preview.counts.mysteryMissions],
         ["Votes", preview.counts.routeVotes],
+        ["Facts", preview.counts.tickerFacts],
+        ["Tips", preview.counts.tickerTips],
       ].map(([label, value]) => (
         <div key={label} className={cn("rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-center shadow-sm")}>
           <p className="font-[var(--font-display)] text-xl font-extrabold text-[var(--ink-1)]">{value}</p>

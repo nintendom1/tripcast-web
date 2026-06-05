@@ -18,7 +18,10 @@ const energyChipIdleClass = "border-[var(--line-soft)] bg-[var(--bg-card)] text-
 type Props = {
   token: string;
   onSuccess: (autoPublished: boolean) => void;
-  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  onRequestCoordinatePick?: (
+    callback: (coord: { lat: number; lon: number }) => void,
+    options?: { initialCoord?: { lat: number; lon: number } | null },
+  ) => void;
   prefilledCoordinate?: { lat: number; lon: number } | null;
 };
 
@@ -109,10 +112,13 @@ export default function MissionProposalForm({
   }
 
   function handlePickOnMap() {
-    onRequestCoordinatePick?.((coord) => {
-      setLat(coord.lat);
-      setLon(coord.lon);
-    });
+    onRequestCoordinatePick?.(
+      (coord) => {
+        setLat(coord.lat);
+        setLon(coord.lon);
+      },
+      lat !== undefined && lon !== undefined ? { initialCoord: { lat, lon } } : undefined,
+    );
   }
 
   if (showNoLocationConfirm) {

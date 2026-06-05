@@ -54,7 +54,11 @@ type RouteVotePanelProps = {
   onRequestCoordinatePick?: (
     optionIndex: number,
     callback: (coord: { lat: number; lon: number }) => void,
+    options?: { initialCoord?: { lat: number; lon: number } | null },
   ) => void;
+  /** Called after the route vote is created so TripMap can drop the post-pick
+   * preview pin. */
+  onCoordinatePickSaved?: () => void;
   referenceLocation?: { lat: number; lon: number } | null;
   onVoteOverlayChange: (
     overlay: RouteVoteMapOverlay | null,
@@ -827,6 +831,7 @@ export default function RouteVotePanel({
   role = "follower",
   onClose,
   onRequestCoordinatePick,
+  onCoordinatePickSaved,
   referenceLocation = null,
   onVoteOverlayChange,
   onRequestFitMap,
@@ -1020,6 +1025,7 @@ export default function RouteVotePanel({
                     log.logInteraction("view:change", { from: "create", to: "detail", voteId: id });
                     setSelectedVoteId(id);
                     setView("detail");
+                    onCoordinatePickSaved?.();
                   }}
                   onCancel={handleBack}
                   onRequestCoordinatePick={onRequestCoordinatePick}

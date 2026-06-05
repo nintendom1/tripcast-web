@@ -253,5 +253,11 @@ export function useTripPath(
       map.off("styledata", ensureAfterStyle);
       map.off("idle", ensureAfterStyle);
     };
+    // `checkpoints`, `liveTrailSamples`, and `showBreadcrumbs` are read only
+    // for the descriptive log snapshot above — they intentionally do NOT
+    // re-fire the layer sync, which depends solely on map/pathData/lineColor.
+    // Adding them would tear down + re-bind map listeners on every live-trail
+    // sample (multiple times per minute on an active trip).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, pathData, lineColor]);
 }

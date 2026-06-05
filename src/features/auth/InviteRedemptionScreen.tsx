@@ -1,5 +1,5 @@
 import { FormEvent, useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
@@ -51,6 +51,7 @@ export default function InviteRedemptionScreen({
   onSignIn,
   onBack,
 }: InviteRedemptionScreenProps) {
+  const inviteStatus = useQuery(tripcastApi.followers.getInviteStatus, { inviteToken });
   const redeemInvite = useMutation(tripcastApi.followers.redeemInvite);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -70,6 +71,41 @@ export default function InviteRedemptionScreen({
     password === confirmPassword &&
     termsAccepted &&
     !isPending;
+
+  if (inviteStatus === undefined) {
+    return (
+      <AuthShell kicker="Invite" title="Checking invite…">
+        <div className="flex flex-col items-center justify-center py-8">
+          <div
+            className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--line-soft)] border-t-[var(--flag)]"
+            role="status"
+            aria-label="Checking invite status"
+          />
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (inviteStatus.status !== "valid") {
+    let title = "Invite expired";
+    let message = "This invite link has expired. Please ask the traveler for a new one.";
+
+    if (inviteStatus.status === "already_used") {
+      title = "Invite used";
+      message = "This invite link has already been used to create an account.";
+    } else if (inviteStatus.status === "invalid") {
+      title = "Invalid link";
+      message = "This invite link is invalid or no longer exists.";
+    }
+
+    return (
+      <AuthShell kicker="Invite" title={title}>
+        <div className="flex flex-col gap-4">
+          <p className="text-center text-sm text-[var(--ink-2)]">{message}</p>
+        </div>
+      </AuthShell>
+    );
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();

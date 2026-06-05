@@ -17,4 +17,8 @@ storybook-static
 
 .claude/worktrees/
 
+# Local-only Playwright session for agent-driven smoke tests
+.playwright-session.json
+scripts/picker-smoke-screenshots/
+
 music-rework/

@@ -101,10 +101,12 @@ type OptionsSheetProps = {
 };
 
 export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker";
+type LiveTrailDeleteMode = "range" | "every_other" | "individual";
 
 const TICKER_PREVIEW_MESSAGE = {
   id: "preview-demo",
   text: "Sample fact — this is what your ticker will look like.",
+  kind: "fact" as const,
 };
 
 const MODERATION_OPTIONS: { value: MissionModerationMode; label: string; desc: string }[] = [
@@ -1078,6 +1080,7 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   const setEnabled = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailEnabled);
   const setVisibility = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailVisibility);
   const deleteRange = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailRange);
+  const deleteSamples = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailSamples);
 
   const timeZone = preferences?.travelerTimeZone ?? fallbackTimeZone;
   const [startDate, setStartDate] = useState(() => formatDateInputValue(Date.now(), fallbackTimeZone));
@@ -1086,6 +1089,8 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   const [endTime, setEndTime] = useState(() => "23:59");
   const [savingField, setSavingField] = useState<"enabled" | "visibility" | "delete" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleteMode, setDeleteMode] = useState<LiveTrailDeleteMode>("range");
+  const [individualSelection, setIndividualSelection] = useState<Record<string, boolean>>({});
 
   const combinedStart = combineDateTime(startDate, startTime);
   const combinedEnd = combineDateTime(endDate, endTime);
@@ -1099,6 +1104,28 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   const enabled = status?.enabled ?? false;
   const visibleToFollowers = status?.visibleToFollowers ?? false;
   const previewCount = preview?.count ?? 0;
+  const previewSamples = useMemo(
+    () => [...(preview?.samples ?? [])].sort((a, b) => a.sampledAt - b.sampledAt),
+    [preview?.samples],
+  );
+  const selectedSampleIds = useMemo(() => {
+    if (deleteMode === "range") return previewSamples.map((sample) => sample._id);
+    if (deleteMode === "every_other") {
+      if (previewSamples.length <= 2) return [];
+      return previewSamples
+        .filter((_, index) => index > 0 && index < previewSamples.length - 1 && index % 2 === 1)
+        .map((sample) => sample._id);
+    }
+    return previewSamples
+      .filter((sample) => individualSelection[sample._id] === true)
+      .map((sample) => sample._id);
+  }, [deleteMode, individualSelection, previewSamples]);
+  const selectedSampleIdSet = useMemo(() => new Set(selectedSampleIds), [selectedSampleIds]);
+  const selectedCount = deleteMode === "range" ? previewCount : selectedSampleIds.length;
+
+  useEffect(() => {
+    setIndividualSelection({});
+  }, [combinedStart, combinedEnd, deleteMode]);
 
   useEffect(() => {
     log.logInteraction("live-trail:settings:open");
@@ -1159,7 +1186,7 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   }
 
   async function handleDeleteRange() {
-    if (savingField || !rangeIsValid || previewCount === 0) return;
+    if (savingField || !rangeIsValid || selectedCount === 0) return;
     setSavingField("delete");
     setError(null);
     log.logInteraction("live-trail:delete-range:confirm", {
@@ -1167,18 +1194,24 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
       endDate: combinedEnd,
       timeZone,
       previewCount,
+      selectedCount,
+      deleteMode,
     });
     try {
-      const result = await deleteRange({
-        token,
-        startDate: combinedStart,
-        endDate: combinedEnd,
-        timeZone,
-      });
+      const result = deleteMode === "range"
+        ? await deleteRange({
+          token,
+          startDate: combinedStart,
+          endDate: combinedEnd,
+          timeZone,
+        })
+        : await deleteSamples({ token, sampleIds: selectedSampleIds });
       log.logInteraction("live-trail:delete-range:result", {
         deleted: result.deleted,
         ok: true,
+        deleteMode,
       });
+      setIndividualSelection({});
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
@@ -1268,25 +1301,70 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
             </div>
 
             <div className="grid gap-2">
-              <LiveTrailPreviewMap samples={preview?.samples ?? []} log={log} />
+              <label
+                htmlFor="live-trail-delete-mode"
+                className="text-sm font-semibold text-[var(--ink-1)]"
+              >
+                Delete mode
+              </label>
+              <select
+                id="live-trail-delete-mode"
+                value={deleteMode}
+                onChange={(event) => setDeleteMode(event.target.value as LiveTrailDeleteMode)}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+              >
+                <option value="range">Delete all breadcrumbs in Range</option>
+                <option value="every_other">Delete every other breadcrumb in range</option>
+                <option value="individual">Delete individual breadcrumbs</option>
+              </select>
+            </div>
+
+            <div className="grid gap-2">
+              <LiveTrailPreviewMap samples={previewSamples} deletingIds={selectedSampleIdSet} log={log} />
               <p className="text-sm text-[var(--ink-3)]" aria-live="polite">
                 {!rangeIsValid
                   ? "Choose an end time after the start time."
                   : preview
-                    ? `${previewCount} breadcrumb${previewCount === 1 ? "" : "s"} selected in ${timeZone}.`
+                    ? `${selectedCount} of ${previewCount} breadcrumb${previewCount === 1 ? "" : "s"} selected in ${timeZone}.`
                     : `Loading preview in ${timeZone}...`}
               </p>
             </div>
 
+            {deleteMode === "individual" && previewSamples.length > 0 ? (
+              <div className="max-h-52 overflow-auto rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)]">
+                {previewSamples.map((sample, index) => (
+                  <label
+                    key={sample._id}
+                    className="flex items-center gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-sm last:border-b-0"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={individualSelection[sample._id] === true}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setIndividualSelection((current) => ({
+                          ...current,
+                          [sample._id]: checked,
+                        }));
+                      }}
+                    />
+                    <span className="flex-1 text-[var(--ink-1)]">
+                      #{index + 1} · {dayjs(sample.sampledAt).tz(timeZone).format("MMM D, h:mm A")}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+
             <Button
               type="button"
               variant="destructive"
-              disabled={!rangeIsValid || previewCount === 0 || savingField === "delete"}
+              disabled={!rangeIsValid || selectedCount === 0 || savingField === "delete"}
               onClick={() => void handleDeleteRange()}
               className="w-full sm:w-fit"
             >
               <Trash2 className="mr-2 h-4 w-4" aria-hidden />
-              {savingField === "delete" ? "Deleting..." : "Delete selected breadcrumbs"}
+              {savingField === "delete" ? "Deleting..." : `Delete ${selectedCount} breadcrumb${selectedCount === 1 ? "" : "s"}`}
             </Button>
 
             {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
@@ -1297,12 +1375,21 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
   );
 }
 
-function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample[]; log: DebugLogger }) {
+function LiveTrailPreviewMap({
+  samples,
+  deletingIds,
+  log,
+}: {
+  samples: LiveTrailPreviewSample[];
+  deletingIds: Set<string>;
+  log: DebugLogger;
+}) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const { resolvedMapBase, resolvedTheme } = useTheme();
   const lineColor = resolvedTheme === "constellation" ? "#ffd86a" : "#d92332";
+  const retainedColor = "#8a8f98";
 
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
@@ -1356,7 +1443,7 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
     if (sorted.length > 1) {
       features.push({
         type: "Feature",
-        properties: { kind: "line" },
+        properties: { kind: "line", selected: sorted.every((s) => deletingIds.has(s._id)) },
         geometry: {
           type: "LineString",
           coordinates: sorted.map((s) => [s.lon, s.lat]),
@@ -1367,7 +1454,7 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
     sorted.forEach((s) => {
       features.push({
         type: "Feature",
-        properties: { kind: "point" },
+        properties: { kind: "point", selected: deletingIds.has(s._id) },
         geometry: {
           type: "Point",
           coordinates: [s.lon, s.lat],
@@ -1414,7 +1501,7 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
             filter: ["==", ["get", "kind"], "line"],
             layout: { "line-join": "round", "line-cap": "round" },
             paint: {
-              "line-color": lineColor,
+              "line-color": ["case", ["==", ["get", "selected"], true], lineColor, retainedColor],
               "line-width": 4,
               "line-dasharray": [2, 1],
             },
@@ -1426,16 +1513,17 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
             filter: ["==", ["get", "kind"], "point"],
             paint: {
               "circle-radius": 5,
-              "circle-color": "#ffffff",
-              "circle-stroke-color": lineColor,
+              "circle-color": ["case", ["==", ["get", "selected"], true], "#ffffff", retainedColor],
+              "circle-stroke-color": ["case", ["==", ["get", "selected"], true], lineColor, retainedColor],
               "circle-stroke-width": 2,
             },
           });
         } else {
           log.logMap("minimap:layers:update");
           (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(geojson);
-          map.setPaintProperty(lineLayerId, "line-color", lineColor);
-          map.setPaintProperty(pointLayerId, "circle-stroke-color", lineColor);
+          map.setPaintProperty(lineLayerId, "line-color", ["case", ["==", ["get", "selected"], true], lineColor, retainedColor]);
+          map.setPaintProperty(pointLayerId, "circle-color", ["case", ["==", ["get", "selected"], true], "#ffffff", retainedColor]);
+          map.setPaintProperty(pointLayerId, "circle-stroke-color", ["case", ["==", ["get", "selected"], true], lineColor, retainedColor]);
         }
 
         if (sorted.length > 0) {
@@ -1510,7 +1598,7 @@ function LiveTrailPreviewMap({ samples, log }: { samples: LiveTrailPreviewSample
       resizeObserver = null;
       if (rafHandle !== null) { cancelAnimationFrame(rafHandle); rafHandle = null; }
     };
-  }, [samples, lineColor, log, mapLoaded]);
+  }, [samples, deletingIds, lineColor, retainedColor, log, mapLoaded]);
 
   return (
     <div
@@ -1906,7 +1994,7 @@ function OptionsHome({
               <OptionsRow
                 icon={Bell}
                 title="Trip Ticker"
-                detail="Persistent scrolling notices and fun facts"
+                detail="Persistent scrolling notices, fun facts, and tips"
                 onClick={() => {
                   log.logUi("action:trip-ticker-settings");
                   onTripTicker();
@@ -2588,16 +2676,21 @@ function TickerBulkImportSheet({
   open,
   onOpenChange,
   token,
+  kind,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   token: string;
+  kind: "fact" | "tip";
 }) {
   const [text, setText] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const commitBulkImport = useMutation(tripcastApi.bulkImport.travelerBulkImport);
   const music = useMusicSafe();
+  const labels = kind === "tip"
+    ? { title: "Bulk Import Tips", noun: "tips", singular: "Tip", entryKind: "ticker_tip" as const, placeholder: "Tip 1\nTip 2\nTip 3..." }
+    : { title: "Bulk Import Fun Facts", noun: "fun facts", singular: "Fact", entryKind: "ticker_fact" as const, placeholder: "Fact 1\nFact 2\nFact 3..." };
 
   const handleImport = async () => {
     const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
@@ -2607,7 +2700,7 @@ function TickerBulkImportSheet({
     setErrorMessage(null);
     try {
       const entries = lines.map(line => ({
-        kind: "ticker_fact" as const,
+        kind: labels.entryKind,
         text: line
       }));
       await commitBulkImport({ token, entries });
@@ -2632,15 +2725,15 @@ function TickerBulkImportSheet({
       }}
     >
       <SheetContent side="bottom" className="h-[80dvh]">
-        <SheetTitle>Bulk Import Fun Facts</SheetTitle>
+        <SheetTitle>{labels.title}</SheetTitle>
         <SheetCloseButton />
         <SheetBody className="flex flex-col gap-4 p-4">
           <p className="text-sm text-[var(--ink-2)]">
-            Paste a list of fun facts, one per line. They will be added to your trip ticker.
+            Paste a list of {labels.noun}, one per line. They will be added to your trip ticker.
           </p>
           <textarea
             className="flex-1 w-full p-3 text-sm rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] font-mono resize-none focus:outline-none focus:ring-2 focus:ring-[var(--brand)]"
-            placeholder="Fact 1&#10;Fact 2&#10;Fact 3..."
+            placeholder={labels.placeholder}
             value={text}
             onChange={(e) => {
               setText(e.target.value);
@@ -2667,12 +2760,48 @@ function TickerBulkImportSheet({
               onClick={handleImport}
               disabled={isImporting || !text.trim()}
             >
-              {isImporting ? "Importing..." : `Import ${text.split("\n").filter(l => l.trim()).length} Facts`}
+              {isImporting ? "Importing..." : `Import ${text.split("\n").filter(l => l.trim()).length} ${labels.singular}s`}
             </Button>
           </div>
         </SheetBody>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function TickerWeightRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  const inputId = `ticker-weight-${label.toLowerCase().replaceAll(" ", "-")}`;
+  const displayValue = Number.isFinite(value) ? value : 1;
+  return (
+    <div className="grid gap-3 p-4 sm:p-5">
+      <div className="flex items-center justify-between gap-4">
+        <label className="text-sm font-semibold text-[var(--ink-1)]" htmlFor={inputId}>
+          {label}
+        </label>
+        <span className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-paper-2)] px-2 py-1 font-[var(--font-mono)] text-xs font-bold text-[var(--ink-2)]">
+          {displayValue === 0 ? "Off" : displayValue}
+        </span>
+      </div>
+      <input
+        id={inputId}
+        type="range"
+        min={0}
+        max={5}
+        step={1}
+        value={displayValue}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-[var(--brand)]"
+      />
+      <p className="text-xs text-[var(--ink-3)]">0 = Off</p>
+    </div>
   );
 }
 
@@ -2684,11 +2813,14 @@ export function TripTickerSettings({ token }: { token: string }) {
     removePriorityMessage,
     addFunFact,
     removeFunFact,
+    addTip,
+    removeTip,
     clearAll,
   } = useTicker(token);
   const [priorityInput, setPriorityInput] = useState("");
   const [funFactInput, setFunFactInput] = useState("");
-  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
+  const [tipInput, setTipInput] = useState("");
+  const [bulkImportKind, setBulkImportKind] = useState<"fact" | "tip" | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
   const confirmingClearTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -2725,9 +2857,9 @@ export function TripTickerSettings({ token }: { token: string }) {
         </OptionsGroup>
       </OptionsSection>
 
-      <OptionsSection label="Priority Messages">
+      <OptionsSection label="Alerts">
         <p className="text-xs text-[var(--ink-3)] mb-2">
-          Priority messages loop continuously and take precedence over fun facts.
+          Alerts loop continuously and take precedence over fun facts and tips.
         </p>
         <OptionsGroup>
           <div className="p-4 sm:p-5 flex gap-2">
@@ -2735,7 +2867,7 @@ export function TripTickerSettings({ token }: { token: string }) {
               type="text"
               value={priorityInput}
               onChange={(e) => setPriorityInput(e.target.value)}
-              placeholder="Notice text (e.g. Low reception ahead)"
+              placeholder="Alert text (e.g. Low reception ahead)"
               className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && priorityInput.trim()) {
@@ -2771,17 +2903,11 @@ export function TripTickerSettings({ token }: { token: string }) {
         </OptionsGroup>
       </OptionsSection>
 
-      <OptionsSection label="Fun Facts">
+      <OptionsSection label="Ticker Timing">
         <OptionsGroup>
-          <OptionsSwitchRow
-            title="Enable Fun Facts"
-            detail="Show random trivia when no priority messages exist."
-            checked={settings.funFactsEnabled}
-            onChange={(checked) => updateSettings({ funFactsEnabled: checked })}
-          />
-          <div className="p-4 sm:p-5 flex flex-col gap-4">
+          <div className="p-4 sm:p-5">
             <label className="grid gap-2 text-sm font-semibold text-[var(--ink-1)]">
-              Minutes between fun facts
+              Minutes between ticker items
               <select
                 value={settings.funFactIntervalMinutes}
                 onChange={(e) => updateSettings({ funFactIntervalMinutes: Number(e.target.value) })}
@@ -2792,7 +2918,40 @@ export function TripTickerSettings({ token }: { token: string }) {
                 ))}
               </select>
             </label>
+          </div>
+        </OptionsGroup>
+      </OptionsSection>
 
+      <OptionsSection label="Ticker Mix">
+        <OptionsGroup>
+          <TickerWeightRow
+            label="Fun Facts rate"
+            value={settings.funFactWeight}
+            onChange={(value) => updateSettings({ funFactWeight: value })}
+          />
+          <TickerWeightRow
+            label="Tips rate"
+            value={settings.tipWeight}
+            onChange={(value) => updateSettings({ tipWeight: value })}
+          />
+        </OptionsGroup>
+      </OptionsSection>
+
+      <OptionsSection label="Fun Facts">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Fun Facts"
+            detail="Show random trivia when no alerts exist."
+            checked={settings.funFactsEnabled}
+            onChange={(checked) => updateSettings({ funFactsEnabled: checked })}
+          />
+          <OptionsSwitchRow
+            title="Show Fun Facts to Followers"
+            detail="Allow Followers to see fun facts in the ticker."
+            checked={settings.showFunFactsToFollowers}
+            onChange={(checked) => updateSettings({ showFunFactsToFollowers: checked })}
+          />
+          <div className="p-4 sm:p-5 flex flex-col gap-4">
             <div className="flex gap-2">
               <input
                 type="text"
@@ -2823,16 +2982,11 @@ export function TripTickerSettings({ token }: { token: string }) {
               variant="outline"
               size="sm"
               className="w-full"
-              onClick={() => setIsBulkImportOpen(true)}
+              onClick={() => setBulkImportKind("fact")}
             >
               Bulk Import Fun Facts
             </Button>
           </div>
-          <TickerBulkImportSheet
-            open={isBulkImportOpen}
-            onOpenChange={setIsBulkImportOpen}
-            token={token}
-          />
           {settings.funFacts.map((msg) => (
             <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
               <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
@@ -2847,6 +3001,80 @@ export function TripTickerSettings({ token }: { token: string }) {
           ))}
         </OptionsGroup>
       </OptionsSection>
+
+      <OptionsSection label="Tips">
+        <OptionsGroup>
+          <OptionsSwitchRow
+            title="Enable Tips"
+            detail="Show trip tips when no alerts exist."
+            checked={settings.tipsEnabled}
+            onChange={(checked) => updateSettings({ tipsEnabled: checked })}
+          />
+          <OptionsSwitchRow
+            title="Show Tips to Followers"
+            detail="Allow Followers to see tips in the ticker."
+            checked={settings.showTipsToFollowers}
+            onChange={(checked) => updateSettings({ showTipsToFollowers: checked })}
+          />
+          <div className="p-4 sm:p-5 flex flex-col gap-4">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={tipInput}
+                onChange={(e) => setTipInput(e.target.value)}
+                placeholder="Tip text..."
+                className="flex-1 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-sm text-[var(--ink-1)]"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && tipInput.trim()) {
+                    addTip(tipInput.trim());
+                    setTipInput("");
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (tipInput.trim()) {
+                    addTip(tipInput.trim());
+                    setTipInput("");
+                  }
+                }}
+              >
+                Add
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => setBulkImportKind("tip")}
+            >
+              Bulk Import Tips
+            </Button>
+          </div>
+          {settings.tips.map((msg) => (
+            <div key={msg.id} className="flex items-center gap-4 px-4 py-3 sm:px-5">
+              <span className="flex-1 text-sm text-[var(--ink-1)]">{msg.text}</span>
+              <button
+                type="button"
+                onClick={() => removeTip(msg.id)}
+                className="text-[var(--ink-3)] hover:text-[var(--ink-danger)]"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </OptionsGroup>
+      </OptionsSection>
+
+      <TickerBulkImportSheet
+        open={bulkImportKind !== null}
+        onOpenChange={(open) => {
+          if (!open) setBulkImportKind(null);
+        }}
+        token={token}
+        kind={bulkImportKind ?? "fact"}
+      />
 
       <OptionsSection label="Danger Zone">
         <OptionsGroup>
@@ -2878,7 +3106,7 @@ export function TripTickerSettings({ token }: { token: string }) {
             </Button>
             {confirmingClear ? (
               <p className="text-xs text-[var(--ink-3)] text-center">
-                This removes every priority message and fun fact.
+                This removes every alert, fun fact, and tip.
               </p>
             ) : null}
           </div>

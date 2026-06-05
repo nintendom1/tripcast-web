@@ -9,7 +9,6 @@ description = "Convex deployment or site URL committed to source"
 regex = '''https?://[a-z0-9-]+\.convex\.(cloud|site)'''
 tags = ["convex", "deployment-url"]
 
-[allowlist]
-commits = [
-  "2ede0622cd3c748402019b9c9db8cefc303c3d77"
-]
+  [rules.allowlist]
+  description = "docs(README): placeholder example URL, not a real deployment"
+  commits = ["2ede0622cd3c748402019b9c9db8cefc303c3d77"]

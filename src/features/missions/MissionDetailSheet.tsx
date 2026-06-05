@@ -50,7 +50,13 @@ type Props = {
   isOwn?: boolean;
   onClose: () => void;
   onStartMission?: () => void;
-  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  onRequestCoordinatePick?: (
+    callback: (coord: { lat: number; lon: number }) => void,
+    options?: { initialCoord?: { lat: number; lon: number } | null },
+  ) => void;
+  /** Called after a successful Edit-save so TripMap can drop the post-pick
+   * preview pin (the real mission marker takes over). */
+  onCoordinatePickSaved?: () => void;
   onViewOnMap?: () => void;
   /** Mission Complete-as-Story branch — when provided and the mission is
    *  in-progress, a "Complete as story" button appears alongside the existing
@@ -112,6 +118,7 @@ export default function MissionDetailSheet({
   onClose,
   onStartMission,
   onRequestCoordinatePick,
+  onCoordinatePickSaved,
   onViewOnMap,
   onCompleteAsStory,
   onRequestNavigateToVote,
@@ -266,6 +273,7 @@ export default function MissionDetailSheet({
         estimatedEnergyImpact: editEnergy || undefined,
       });
       setIsEditing(false);
+      onCoordinatePickSaved?.();
     } catch (e) {
       log.error("Mission:edit:error", "mutation", { message: String(e) });
       setActionError(friendlyError(e));
@@ -275,10 +283,15 @@ export default function MissionDetailSheet({
   }
 
   function handlePickEditCoordinates() {
-    onRequestCoordinatePick?.((coord) => {
-      setEditLat(coord.lat);
-      setEditLon(coord.lon);
-    });
+    onRequestCoordinatePick?.(
+      (coord) => {
+        setEditLat(coord.lat);
+        setEditLon(coord.lon);
+      },
+      editLat !== undefined && editLon !== undefined
+        ? { initialCoord: { lat: editLat, lon: editLon } }
+        : undefined,
+    );
   }
 
   async function handleAccept() {

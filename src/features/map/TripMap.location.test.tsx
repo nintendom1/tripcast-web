@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
@@ -20,6 +21,10 @@ const setLiveTrailVisibility = vi.fn();
 const recordLiveTrailSample = vi.fn();
 const deleteRecentLiveTrail = vi.fn();
 const fetchMock = vi.fn();
+const convexMocks = vi.hoisted(() => ({
+  query: vi.fn(),
+}));
+const convexQuery = convexMocks.query;
 const nativeLocationMocks = vi.hoisted(() => ({
   isNativeLocationAvailable: vi.fn(() => false),
   openNativeLocationSettings: vi.fn(),
@@ -51,6 +56,7 @@ const routeVotePanelProps: Array<{
 }> = [];
 
 vi.mock("convex/react", () => ({
+  useConvex: vi.fn(() => ({ query: convexMocks.query })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
 }));
@@ -206,6 +212,7 @@ function setupQueries({
   mysteryPins = [],
   mysteryPinsLoading = false,
   allowFollowersTripPath = false,
+  travelerPreferences = { travelerTimeZone: "UTC" },
   liveTrailStatus = {
     enabled: false,
     visibleToFollowers: false,
@@ -232,6 +239,11 @@ function setupQueries({
   mysteryPins?: MysteryMissionFeedItem[];
   mysteryPinsLoading?: boolean;
   allowFollowersTripPath?: boolean;
+  travelerPreferences?: {
+    travelerTimeZone?: string;
+    followerContentCutoffEnabled?: boolean;
+    followerContentCutoffAt?: number;
+  };
   liveTrailStatus?: {
     enabled: boolean;
     visibleToFollowers: boolean;
@@ -273,7 +285,7 @@ function setupQueries({
     }
     if (query === tripcastApi.travelerAutoState.travelerGetAutoState) return null;
     if (query === tripcastApi.travelerPreferences.travelerGetPreferences) {
-      return { travelerTimeZone: "UTC" };
+      return travelerPreferences;
     }
     if (query === tripcastApi.journalEvents.listJournalEvents) return journalEvents;
     if (query === tripcastApi.mysteryMissions.listMysteryMissionMapPins) {
@@ -371,6 +383,7 @@ beforeEach(() => {
   setLiveTrailVisibility.mockResolvedValue(null);
   recordLiveTrailSample.mockResolvedValue(null);
   deleteRecentLiveTrail.mockResolvedValue({ deleted: 0 });
+  convexQuery.mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
   nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(false);
   nativeLocationMocks.openNativeLocationSettings.mockClear();
   nativeLocationMocks.startNativeLocationWatch.mockReset();
@@ -1384,6 +1397,11 @@ describe("TripMap location marker", () => {
 
   it("keeps Live Trail settings out of the map HUD while indicating enabled state on Live GPS", () => {
     setupQueries({
+      travelerPreferences: {
+        travelerTimeZone: "UTC",
+        followerContentCutoffEnabled: true,
+        followerContentCutoffAt: 60_000,
+      },
       liveTrailStatus: {
         enabled: true,
         visibleToFollowers: true,
@@ -1742,6 +1760,67 @@ describe("TripMap location marker", () => {
         null,
         "#444444",
         [{ _id: "bc-1", lat: 47.615, lon: -122.335, sampledAt: 500 }],
+        true,
+      );
+    });
+  });
+
+  it("keeps recent breadcrumbs on normal map load and switches to replay snapshot after Replay starts", async () => {
+    localStorage.setItem("tripcast.showTripPath", "true");
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: true,
+        sampleCount: 1,
+        samples: [{ _id: "recent-1", lat: 47.615, lon: -122.335, sampledAt: 500 }],
+      },
+    });
+    const replaySamples = [
+      { _id: "older-1", lat: 47.601, lon: -122.301, sampledAt: 100 },
+      { _id: "older-2", lat: 47.602, lon: -122.302, sampledAt: 60_100 },
+      { _id: "recent-1", lat: 47.615, lon: -122.335, sampledAt: 120_100 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: replaySamples,
+      isDone: true,
+      continueCursor: "",
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        null,
+        true,
+        null,
+        "#444444",
+        [{ _id: "recent-1", lat: 47.615, lon: -122.335, sampledAt: 500 }],
+        true,
+      );
+    });
+    expect(convexQuery).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: /Replay/i }));
+
+    await waitFor(() => {
+      expect(convexQuery).toHaveBeenCalledWith(
+        tripcastApi.liveTrail.listReplayLiveTrailSamples,
+        expect.objectContaining({
+          token: "test-token",
+          cutoffAt: undefined,
+          paginationOpts: expect.objectContaining({ cursor: null, numItems: 500 }),
+        }),
+      );
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(),
+        expect.anything(),
+        null,
+        true,
+        expect.any(Number),
+        "#444444",
+        replaySamples,
         true,
       );
     });

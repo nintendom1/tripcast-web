@@ -6,6 +6,7 @@ import InviteRedemptionScreen from "./InviteRedemptionScreen";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
+  useQuery: vi.fn(),
 }));
 
 const mockOnSignIn = vi.fn();
@@ -44,10 +45,41 @@ beforeEach(() => {
   vi.clearAllMocks();
 
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any);
+  vi.mocked(convexReact.useQuery).mockReturnValue({ status: "valid" } as any);
 });
 
 describe("InviteRedemptionScreen", () => {
-  it("renders all required fields", () => {
+  it("shows loading state when invite status is pending", () => {
+    vi.mocked(convexReact.useQuery).mockReturnValue(undefined);
+    renderScreen();
+    expect(screen.getByLabelText(/checking invite status/i)).toBeInTheDocument();
+    expect(screen.getByText(/checking invite…/i)).toBeInTheDocument();
+  });
+
+  it("shows expired message when invite is expired", () => {
+    vi.mocked(convexReact.useQuery).mockReturnValue({ status: "expired" });
+    renderScreen();
+    expect(screen.getByText(/invite expired/i)).toBeInTheDocument();
+    expect(screen.getByText(/has expired/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /back/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/^username/i)).not.toBeInTheDocument();
+  });
+
+  it("shows used message when invite is already used", () => {
+    vi.mocked(convexReact.useQuery).mockReturnValue({ status: "already_used" });
+    renderScreen();
+    expect(screen.getByText(/invite used/i)).toBeInTheDocument();
+    expect(screen.getByText(/already been used/i)).toBeInTheDocument();
+  });
+
+  it("shows invalid message when invite is invalid", () => {
+    vi.mocked(convexReact.useQuery).mockReturnValue({ status: "invalid" });
+    renderScreen();
+    expect(screen.getByText(/invalid link/i)).toBeInTheDocument();
+    expect(screen.getByText(/link is invalid/i)).toBeInTheDocument();
+  });
+
+  it("renders all required fields when invite is valid", () => {
     renderScreen();
     expect(screen.getByLabelText(/^username/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/^password/i)).toBeInTheDocument();

@@ -30,8 +30,15 @@ export const Default: Story = {
       enabled: true,
       priorityMessages: [{ id: "p1", text: "⚠️ Low reception expected in the valley." }],
       funFacts: [{ id: "f1", text: "🇯🇵 This is my 3rd time in Japan!" }],
+      tips: [{ id: "t1", text: "Pack a battery before the Shinkansen transfer." }],
       funFactsEnabled: true,
+      tipsEnabled: true,
       funFactIntervalMinutes: 10,
+      funFactWeight: 1,
+      tipWeight: 2,
+      showPriorityToFollowers: true,
+      showFunFactsToFollowers: true,
+      showTipsToFollowers: true,
       lastFunFactAt: 0,
     };
     localStorage.setItem("tripcast.ticker_settings", JSON.stringify(mockSettings));

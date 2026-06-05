@@ -16,6 +16,17 @@ VITE_CONVEX_URL=
 
 Do not commit `.env` or `.env.local`. Keep real Convex URLs in local env files or encrypted GitHub settings.
 
+## Environment Variables
+
+- `VITE_CONVEX_URL`: The URL of your Convex deployment (e.g., `https://<your-slug>.convex.cloud`).
+- `VITE_PUBLIC_APP_URL`: The base URL used for generating shareable links (like Follower invites).
+  - **Precedence**: If set in any `.env` file (like `.env.local`), it takes absolute precedence.
+  - **iOS/Capacitor Note**: If you set this to `http://localhost:5173` in `.env.local`, your iOS builds will generate `localhost` links because they share that environment file.
+  - **Fallback**: If omitted, the app automatically defaults to:
+    - `https://nintendom1.github.io/tripcast-web/` for production Capacitor builds.
+    - `window.location.origin` + `Vite base` for web builds.
+  - **Recommendation**: Leave `VITE_PUBLIC_APP_URL` unset in your local `.env.local` to let the automatic fallback handle both local web dev and iOS builds correctly.
+
 ## Run
 
 ```bash
@@ -52,7 +63,8 @@ For GitHub Pages project hosting at `https://nintendom1.github.io/tripcast-web/`
 | Symptom | Likely cause |
 |---|---|
 | `/assets/index...js` returns 404 | Vite `base` does not match the Pages project path |
-| App shows `VITE_CONVEX_URL is not set` | Build did not receive the variable, or Pages was not rebuilt |
+| App shows `VITE_CONVEX_URL is not set` | **Resolution**: Ensure `tripcast-web/.env.local` exists and contains a valid `VITE_CONVEX_URL`. If running locally, copy the URL from `tripcast-backend/.env.local` (usually `http://127.0.0.1:3210`). |
+| App shows `VITE_CONVEX_URL is not set. Configure Convex to use TripCast.` | **Resolution**: Same as above. This error means the frontend cannot find the backend API. Create `tripcast-web/.env.local` with your Convex URL. |
 | WebSocket URL contains `cloud//api` | `VITE_CONVEX_URL` has a trailing slash |
 | Convex cannot find `auth:signIn` | Frontend points at the wrong or undeployed Convex deployment |
 
@@ -68,16 +80,18 @@ Use the baseline command only after an intentional terminology cleanup.
 
 ## Secret Scanning
 
-This repo runs Gitleaks in GitHub Actions. Before pushing, scan the repository when Gitleaks is available:
+This repo runs Gitleaks in GitHub Actions. CI scans the full history of the pushed/PR ref, so a clean working tree is not enough — a flagged string in any reachable commit will fail the workflow.
+
+To reproduce the CI scan locally (full history, matches `.github/workflows/gitleaks.yml`):
 
 ```bash
-gitleaks git --config .gitleaks.toml --redact --verbose
+gitleaks git --config .gitleaks.toml --redact --verbose .
 ```
 
-Before committing staged changes:
+Faster pre-commit check on staged changes only:
 
 ```bash
 git diff --cached | gitleaks stdin --config .gitleaks.toml --redact --verbose
 ```
 
-Keep real Convex deployment URLs, site URLs, and secrets out of committed files.
+Keep real Convex deployment URLs, site URLs, and secrets out of committed files. In docs and examples, use placeholders the rule won't match — angle-bracket forms like `https://<your-slug>.convex.cloud` are safe because the `[a-z0-9-]` character class excludes `<` and `>`.

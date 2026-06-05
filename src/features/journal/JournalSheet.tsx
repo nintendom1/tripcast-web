@@ -152,7 +152,13 @@ type JournalSheetProps = {
   onLocationFocus: (coord: { lat: number; lon: number }) => void;
   onMarkAllRead: () => void;
   /** Enter map coordinate-pick mode; receives a callback invoked with the picked coord. */
-  onRequestCoordinatePick?: (callback: (coord: { lat: number; lon: number }) => void) => void;
+  onRequestCoordinatePick?: (
+    callback: (coord: { lat: number; lon: number }) => void,
+    options?: { initialCoord?: { lat: number; lon: number } | null },
+  ) => void;
+  /** Called after a successful story save so TripMap can drop the post-pick
+   * preview pin (the real story marker takes over). */
+  onCoordinatePickSaved?: () => void;
   /** True while a map coordinate pick is in progress — hides the sheet so the map is tappable. */
   isPickingCoordinate?: boolean;
   debugSource?: { source: string; sourceLabel: string };
@@ -168,6 +174,7 @@ export default function JournalSheet({
   onLocationFocus,
   onMarkAllRead,
   onRequestCoordinatePick,
+  onCoordinatePickSaved,
   isPickingCoordinate,
   debugSource,
 }: JournalSheetProps) {
@@ -318,6 +325,7 @@ export default function JournalSheet({
       setStoryImageFile(null);
       setStoryImagePreviewUrl(null);
       setViewMode("list");
+      onCoordinatePickSaved?.();
     } catch (e) {
       log.error("create-story:error", "mutation", {
         message: e instanceof Error ? e.message : String(e),
@@ -488,10 +496,15 @@ export default function JournalSheet({
                   lon={storyLon}
                   onPick={() => {
                     log.logInteraction("coordinate:pick-mode:request", { form: "journal-new-story" });
-                    onRequestCoordinatePick((coord) => {
-                      setStoryLat(coord.lat);
-                      setStoryLon(coord.lon);
-                    });
+                    onRequestCoordinatePick(
+                      (coord) => {
+                        setStoryLat(coord.lat);
+                        setStoryLon(coord.lon);
+                      },
+                      storyLat !== undefined && storyLon !== undefined
+                        ? { initialCoord: { lat: storyLat, lon: storyLon } }
+                        : undefined,
+                    );
                   }}
                   onClear={() => {
                     setStoryLat(undefined);
