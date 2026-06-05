@@ -634,6 +634,17 @@ export type CurrentActivityStalenessSettings = {
   updatedBySessionId: string | null;
 };
 
+export type QuickActivity = {
+  label: string;
+  emoji: string;
+};
+
+export type QuickActivitySettings = {
+  activities: QuickActivity[];
+  displayCount: number;
+  updatedAt: number | null;
+};
+
 // ---------------------------------------------------------------------------
 // Traveler State types
 // ---------------------------------------------------------------------------
@@ -1945,6 +1956,8 @@ export const tripcastApi = {
     travelerGetStalenessSettings: (anyApi as any).currentActivity.travelerGetStalenessSettings as FunctionReference<"query", "public", { token: string }, CurrentActivityStalenessSettings>,
     travelerUpdateStalenessSettings: (anyApi as any).currentActivity.travelerUpdateStalenessSettings as FunctionReference<"mutation", "public", { token: string; enabled: boolean; fallbackTitle: string; fallbackEmoji?: string; resetAfterMs: number }, null>,
     travelerApplyMovementDetection: (anyApi as any).currentActivity.travelerApplyMovementDetection as FunctionReference<"mutation", "public", { token: string; classification: "walking" | "moving" | "stopped"; speedMps?: number; sampledAt: number }, null>,
+    travelerGetQuickActivitySettings: (anyApi as any).currentActivity.travelerGetQuickActivitySettings as FunctionReference<"query", "public", { token: string }, QuickActivitySettings>,
+    travelerUpdateQuickActivitySettings: (anyApi as any).currentActivity.travelerUpdateQuickActivitySettings as FunctionReference<"mutation", "public", { token: string; activities: QuickActivity[]; displayCount: number }, null>,
   },
   travelerState: {
     travelerGetState: (anyApi as any).travelerState.travelerGetState as FunctionReference<
