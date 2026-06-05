@@ -42,6 +42,7 @@ import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
+import { ReactionSection } from "../../components/ui/ReactionSection";
 import { cn } from "@/lib/utils";
 
 type RouteVotePanelProps = {
@@ -75,6 +76,7 @@ type VoteCardProps = {
   vote: PanelVote;
   showTallies: boolean;
   onSelect: () => void;
+  token?: string;
 };
 
 function voteCode(id: string): string {
@@ -103,17 +105,24 @@ function OptionCheckbox({ checked }: { checked: boolean }) {
   );
 }
 
-export function VoteCard({ vote, showTallies, onSelect }: VoteCardProps) {
+export function VoteCard({ vote, showTallies, onSelect, token }: VoteCardProps) {
   const { votes: votesPersonality, missions: missionPersonality } = useSheetPersonalities();
   const total = getVoteTotal(vote);
   const winner = vote.options.find((option) => option._id === vote.confirmedWinningOptionId);
   const isClosed = vote.effectiveStatus !== "active";
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onSelect}
-      className="w-full rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      className="w-full cursor-pointer rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2.5 text-left shadow-[var(--shadow-card)] transition-transform active:scale-[0.99]"
     >
       <div className="flex items-center gap-2">
         {vote.effectiveStatus === "active" ? (
@@ -209,13 +218,24 @@ export function VoteCard({ vote, showTallies, onSelect }: VoteCardProps) {
         </div>
       ) : null}
 
-      <div className="mt-1.5 font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
-        {formatTimeRemaining(vote.expiresAt)} · {vote.options.length} options
+      <div className="mt-1.5 flex flex-col gap-1 md:flex-row md:items-center md:justify-between md:gap-3">
+        <div className="font-[var(--font-mono)] text-[10px] uppercase tracking-[0.08em] text-[var(--ink-3)]">
+          {formatTimeRemaining(vote.expiresAt)} · {vote.options.length} options
+        </div>
+        {token ? (
+          <ReactionSection
+            targetId={vote._id}
+            targetType="route_vote"
+            reactions={vote.reactions}
+            token={token}
+            className="flex justify-end md:shrink-0"
+          />
+        ) : null}
       </div>
       {"mySubmission" in vote && vote.mySubmission ? (
         <div className="mt-1 text-xs italic text-[var(--ink-3)]">You voted</div>
       ) : null}
-    </button>
+    </div>
   );
 }
 
@@ -329,12 +349,19 @@ function FollowerVoteDetail({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={onBack} className="text-sm text-[var(--ink-3)] hover:text-[var(--ink-1)]">
           ← Back
         </button>
         <StatusBadge status={vote.effectiveStatus} />
-        <span className="ml-auto text-xs text-[var(--ink-3)]">{formatTimeRemaining(vote.expiresAt)}</span>
+        <span className="text-xs text-[var(--ink-3)]">{formatTimeRemaining(vote.expiresAt)}</span>
+        <ReactionSection
+          targetId={vote._id}
+          targetType="route_vote"
+          reactions={vote.reactions}
+          token={token}
+          className="ml-auto flex justify-end"
+        />
       </div>
 
       <DialogueBox title={vote.title}>
@@ -576,12 +603,19 @@ function TravelerVoteDetail({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={onBack} className="text-sm text-[var(--ink-3)] hover:text-[var(--ink-1)]">
           ← Back
         </button>
         <StatusBadge status={detail.effectiveStatus} />
-        <span className="ml-auto text-xs text-[var(--ink-3)]">{formatTimeRemaining(detail.expiresAt)}</span>
+        <span className="text-xs text-[var(--ink-3)]">{formatTimeRemaining(detail.expiresAt)}</span>
+        <ReactionSection
+          targetId={vote._id}
+          targetType="route_vote"
+          reactions={detail.reactions}
+          token={token}
+          className="ml-auto flex justify-end"
+        />
       </div>
 
       {(detail.effectiveStatus === "active" || canCancel || canArchive) && (
@@ -1077,6 +1111,7 @@ export default function RouteVotePanel({
                     <VoteCard
                       key={vote._id}
                       vote={vote}
+                      token={token}
                       showTallies={isTraveler || vote.optionVoteCounts !== undefined}
                       onSelect={() => {
                         log.logInteraction("view:change", { from: "list", to: "detail", voteId: vote._id });

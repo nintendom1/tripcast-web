@@ -594,6 +594,14 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
     ? `${eventTypeLabel(event.type)}: ${event.title ?? "untitled"}`
     : eventTypeLabel(event.type);
 
+  const reactionTarget = event.checkpointId
+    ? { id: event.checkpointId, type: "checkpoint" as const }
+    : event.missionId
+    ? { id: event.missionId, type: "mission" as const }
+    : event.routeVoteId
+    ? { id: event.routeVoteId, type: "route_vote" as const }
+    : null;
+
   return (
     <li className="grid grid-cols-[28px_1fr] gap-3 py-1.5">
       <div className="flex flex-col items-center">
@@ -657,11 +665,23 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
             </div>
           ) : null}
 
-          {event.body ? (
-            <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)]">
-              {event.body}
-            </p>
-          ) : null}
+          <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between md:gap-3">
+            {event.body ? (
+              <p className="line-clamp-2 text-[13px] leading-snug text-[var(--ink-2)] md:min-w-0 md:flex-1">
+                {event.body}
+              </p>
+            ) : null}
+
+            {reactionTarget ? (
+              <ReactionSection
+                targetId={reactionTarget.id}
+                targetType={reactionTarget.type}
+                reactions={event.reactions}
+                token={token}
+                className="flex justify-end md:shrink-0"
+              />
+            ) : null}
+          </div>
 
           {event.type === "story" && event.checkpointId ? (
             <AttributionPublicLine
@@ -678,14 +698,6 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
               {event.locationLabel}
             </div>
           ) : null}
-
-          <ReactionSection
-            targetId={event.checkpointId || event._id}
-            targetType="checkpoint"
-            reactions={event.reactions}
-            token={token}
-            className="mt-1 self-end"
-          />
 
           {actualCostUsd !== undefined && actualCostUsd !== 0 ? (
             <div className="text-[11px] font-semibold" style={{ color: "var(--green)" }}>

@@ -110,9 +110,22 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
           </span>
         )}
 
-        {Mission.description && (
-          <span className="text-xs leading-snug text-[var(--ink-2)] line-clamp-1">{Mission.description}</span>
-        )}
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between md:gap-3">
+          {Mission.description && (
+            <span className="text-xs leading-snug text-[var(--ink-2)] line-clamp-1 md:min-w-0 md:flex-1">
+              {Mission.description}
+            </span>
+          )}
+          {token && (
+            <ReactionSection
+              targetId={Mission._id}
+              targetType="mission"
+              reactions={Mission.reactions}
+              token={token}
+              className="flex justify-end md:shrink-0"
+            />
+          )}
+        </div>
 
         {token ? (
           <AttributionPublicLine
@@ -122,16 +135,6 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
             className="text-xs text-[var(--ink-3)]"
           />
         ) : null}
-
-        {token && (
-          <ReactionSection
-            targetId={Mission._id}
-            targetType="mission"
-            reactions={Mission.reactions}
-            token={token}
-            className="mt-0.5"
-          />
-        )}
 
         <span className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-[var(--ink-3)]">
           {Mission.locationLabel && (

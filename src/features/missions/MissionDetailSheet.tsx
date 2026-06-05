@@ -854,6 +854,12 @@ export default function MissionDetailSheet({
               <RadioTower className="h-3.5 w-3.5" aria-hidden="true" />
               {mysteryStateLabel}
             </span>
+            <ReactionSection
+              targetId={c._id}
+              targetType="mission"
+              reactions={c.reactions}
+              token={token}
+            />
           </div>
           <section className="grid gap-2 rounded-2xl border border-zinc-500/40 bg-zinc-950 p-4 text-zinc-100 shadow-[var(--shadow-card)]">
             <p className="font-[var(--font-display)] text-xl font-extrabold leading-tight">
@@ -904,22 +910,21 @@ export default function MissionDetailSheet({
           {c.description && (
             <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
           )}
-
-          <ReactionSection
-            targetId={c._id}
-            targetType="mission"
-            reactions={c.reactions}
-            token={token}
-          />
         </>
       ) : (
         <>
-          {/* Header — status only; Edit lives in the About section so lifecycle
-              actions and field edits stay visually separate. */}
-          <div className="flex items-center justify-between">
+          {/* Header — status + reactions on the right. Edit lives in the About
+              section so lifecycle actions and field edits stay visually separate. */}
+          <div className="flex items-center justify-between gap-3">
             <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">
               {statusLabel(status, c.source)}
             </span>
+            <ReactionSection
+              targetId={c._id}
+              targetType="mission"
+              reactions={c.reactions}
+              token={token}
+            />
           </div>
 
           {/* Title + description */}
@@ -929,13 +934,6 @@ export default function MissionDetailSheet({
               <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
             )}
           </div>
-
-          <ReactionSection
-            targetId={c._id}
-            targetType="mission"
-            reactions={c.reactions}
-            token={token}
-          />
         </>
       )}
 

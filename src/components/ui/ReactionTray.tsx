@@ -1,8 +1,7 @@
 import * as React from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useMusicSafe } from "@/providers/MusicProvider";
 
 export const REACTION_PRESETS = ["❤️", "👍", "😲", "😡", "😹", "😕"];
 
@@ -13,8 +12,6 @@ interface ReactionTrayProps {
 }
 
 export function ReactionTray({ onSelect, currentSelection, className }: ReactionTrayProps) {
-  const music = useMusicSafe();
-
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.8, y: 10 }}
@@ -31,7 +28,6 @@ export function ReactionTray({ onSelect, currentSelection, className }: Reaction
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            music.sfx("bubble");
             onSelect(emoji);
           }}
           className={cn(

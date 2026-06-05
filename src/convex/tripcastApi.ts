@@ -173,7 +173,35 @@ export type LiveTrailDeletePreview = {
   samples: LiveTrailPreviewSample[];
 };
 
+export type PaginationOpts = {
+  numItems: number;
+  cursor: string | null;
+  endCursor?: string | null;
+  maximumRowsRead?: number;
+  maximumBytesRead?: number;
+};
+
+export type LiveTrailReplayPage = {
+  page: LiveTrailSample[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
 export type LinkedMissionAction = "planned" | "visible" | "leave";
+
+export type ReactionTargetType = "checkpoint" | "mission" | "route_vote";
+
+/**
+ * Aggregated reactions for a single target (checkpoint / mission / route vote).
+ * Entries is an array (not a record keyed by emoji) because Convex object keys
+ * must be ASCII — emoji characters cannot be used as field names.
+ */
+export type ReactionSummary = {
+  /** Per-emoji counts. Empty array means no reactions. Order is not guaranteed. */
+  entries: Array<{ emoji: string; count: number }>;
+  /** The emoji character the current user reacted with, if any. */
+  myReaction?: string;
+};
 
 export type RouteVoteOptionInput = {
   title: string;
@@ -223,6 +251,7 @@ export type RouteVoteListItem = {
   suggestedWinnerId: string | null;
   isTied: boolean;
   totalSubmissions: number;
+  reactions?: ReactionSummary;
 };
 
 export type RouteVoteDetail = RouteVoteListItem & {
@@ -264,6 +293,7 @@ export type VisibleRouteVote = {
   }>;
   optionVoteCounts?: Record<string, number>;
   totalSubmissions?: number;
+  reactions?: ReactionSummary;
 };
 
 export type RouteVoteSummary = {
@@ -794,13 +824,6 @@ export type ContentBeforeCutoffCounts = {
   routeVotes: number;
 };
 
-export type ReactionSummary = {
-  /** Map of emoji characters to the number of people who have reacted with them. */
-  counts: Record<string, number>;
-  /** The emoji character the current user reacted with, if any. */
-  myReaction?: string;
-};
-
 export type Message = {
   _id: string;
   _creationTime: number;
@@ -956,7 +979,6 @@ export type Transaction = {
   occurredAt: number;
   createdAt: number;
   updatedAt: number;
-  reactions?: ReactionSummary;
 };
 
 export type TransactionForFollowerSummary = {
@@ -1062,6 +1084,10 @@ export type CloakingPin = {
   createdAt: number;
 };
 
+export type InviteStatus = {
+  status: "valid" | "expired" | "already_used" | "invalid";
+};
+
 // ---------------------------------------------------------------------------
 // Ticker types
 // ---------------------------------------------------------------------------
@@ -1069,23 +1095,29 @@ export type CloakingPin = {
 export type TickerMessage = {
   id: string;
   text: string;
+  kind?: "alert" | "fact" | "tip";
 };
 
 export type TickerSettings = {
   enabled: boolean;
   priorityMessages: TickerMessage[];
   funFacts: TickerMessage[];
+  tips: TickerMessage[];
   funFactsEnabled: boolean;
+  tipsEnabled: boolean;
   funFactIntervalMinutes: number;
+  funFactWeight: number;
+  tipWeight: number;
   showPriorityToFollowers: boolean;
   showFunFactsToFollowers: boolean;
+  showTipsToFollowers: boolean;
 };
 
 // ---------------------------------------------------------------------------
 // Bulk Import types
 // ---------------------------------------------------------------------------
 
-export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote" | "mystery_mission" | "ticker_fact";
+export type BulkImportKind = "checkin" | "story" | "transaction" | "mission" | "route_vote" | "mystery_mission" | "ticker_fact" | "ticker_tip" | "live_trail_sample";
 export type BulkImportTimestamp = number | string;
 
 export type BulkImportRouteVoteOption = {
@@ -1207,6 +1239,24 @@ export type BulkImportEntry =
       text?: string;
       fact?: string;
       title?: string;
+    }
+  | {
+      kind: "ticker_tip" | "tip";
+      ref?: string;
+      text?: string;
+      tip?: string;
+      title?: string;
+    }
+  | {
+      kind: "live_trail_sample" | "breadcrumb";
+      ref?: string;
+      timeZone?: string;
+      lat: number;
+      lon: number;
+      accuracy?: number;
+      sampledAt?: BulkImportTimestamp;
+      occurredAt?: BulkImportTimestamp;
+      when?: BulkImportTimestamp;
     };
 
 export type BulkImportPayload =
@@ -1223,6 +1273,8 @@ export type BulkImportCounts = {
   routeVotes: number;
   mysteryMissions: number;
   tickerFacts: number;
+  tickerTips: number;
+  liveTrailSamples: number;
 };
 
 export type BulkImportPreviewError = {
@@ -1262,6 +1314,16 @@ export type TickerFactExportEntry = {
 
 export type TickerFactExport = {
   entries: TickerFactExportEntry[];
+};
+
+export type TickerExportEntry = {
+  kind: "ticker_fact" | "ticker_tip";
+  ref: string;
+  text: string;
+};
+
+export type TickerExport = {
+  entries: TickerExportEntry[];
 };
 
 // ---------------------------------------------------------------------------
@@ -1333,7 +1395,7 @@ export const tripcastApi = {
     travelerExportTripData: (anyApi as any).bulkImport.travelerExportTripData as FunctionReference<
       "query",
       "public",
-      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean },
+      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean; includeLiveTrail?: boolean },
       BulkImportPayload
     >,
     travelerExportTickerFacts: (anyApi as any).bulkImport.travelerExportTickerFacts as FunctionReference<
@@ -1341,6 +1403,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       TickerFactExport
+    >,
+    travelerExportTickerMessages: (anyApi as any).bulkImport.travelerExportTickerMessages as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      TickerExport
     >,
   },
   auth: {
@@ -1502,6 +1570,12 @@ export const tripcastApi = {
       { token: string; startDate: string; endDate: string; timeZone: string },
       { deleted: number }
     >,
+    travelerDeleteLiveTrailSamples: (anyApi as any).liveTrail.travelerDeleteLiveTrailSamples as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; sampleIds: string[] },
+      { deleted: number }
+    >,
     travelerGetLiveTrailStatus: (anyApi as any).liveTrail.travelerGetLiveTrailStatus as FunctionReference<
       "query",
       "public",
@@ -1513,6 +1587,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       FollowerLiveTrail
+    >,
+    listReplayLiveTrailSamples: (anyApi as any).liveTrail.listReplayLiveTrailSamples as FunctionReference<
+      "query",
+      "public",
+      { token: string; paginationOpts: PaginationOpts; cutoffAt?: number },
+      LiveTrailReplayPage
     >,
   },
   routeVotes: {
@@ -2236,6 +2316,12 @@ export const tripcastApi = {
       },
       { token: string; username: string }
     >,
+    getInviteStatus: (anyApi as any).followers.getInviteStatus as FunctionReference<
+      "query",
+      "public",
+      { inviteToken: string },
+      InviteStatus
+    >,
   },
   followerAdmin: {
     createInvite: (anyApi as any).followerAdmin.createInvite as FunctionReference<
@@ -2423,16 +2509,20 @@ export const tripcastApi = {
         token: string;
         enabled?: boolean;
         funFactsEnabled?: boolean;
+        tipsEnabled?: boolean;
         funFactIntervalMinutes?: number;
+        funFactWeight?: number;
+        tipWeight?: number;
         showPriorityToFollowers?: boolean;
         showFunFactsToFollowers?: boolean;
+        showTipsToFollowers?: boolean;
       },
       null
     >,
     addTickerMessage: (anyApi as any).ticker.addTickerMessage as FunctionReference<
       "mutation",
       "public",
-      { token: string; type: "priority" | "fact"; text: string },
+      { token: string; type: "priority" | "fact" | "tip"; text: string },
       string
     >,
     removeTickerMessage: (anyApi as any).ticker.removeTickerMessage as FunctionReference<
@@ -2454,9 +2544,9 @@ export const tripcastApi = {
       "public",
       {
         token: string;
-        /** Either a checkpointId (for stories) or missionId. */
+        /** ID of the checkpoint / mission / route vote being reacted to. */
         targetId: string;
-        targetType: "checkpoint" | "mission";
+        targetType: ReactionTargetType;
         emoji: string;
       },
       null
