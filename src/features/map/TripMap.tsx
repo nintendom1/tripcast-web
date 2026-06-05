@@ -681,6 +681,8 @@ export function TripReplayHud({
   speed,
   isPaused,
   range,
+  rangeStartTime,
+  rangeEndTime,
   onRangeChange,
   onTogglePause,
   onRestart,
@@ -699,6 +701,8 @@ export function TripReplayHud({
   speed: number;
   isPaused: boolean;
   range: [number, number];
+  rangeStartTime: number | null;
+  rangeEndTime: number | null;
   onRangeChange: (range: [number, number]) => void;
   onTogglePause: () => void;
   onRestart: () => void;
@@ -779,35 +783,42 @@ export function TripReplayHud({
         </div>
       </div>
 
-      <label className="mt-3 grid gap-1.5">
-        <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-          <span>Filter Range</span>
-        </span>
-        <RangeSlider
-          min={0}
-          max={totalIndex}
-          value={range}
-          onValueChange={onRangeChange}
-          className="py-2"
-        />
-      </label>
+      <div className="mt-3 grid grid-cols-2 gap-4">
+        <label className="grid gap-1">
+          <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+            <span>Filter Window</span>
+          </span>
+          <RangeSlider
+            min={0}
+            max={totalIndex}
+            value={range}
+            onValueChange={onRangeChange}
+            className="py-1"
+          />
+          <div className="flex justify-between px-0.5 text-[9px] font-medium text-[var(--ink-3)]">
+            <span>{rangeStartTime ? formatReplayTime(rangeStartTime) : ""}</span>
+            <span>{rangeEndTime ? formatReplayTime(rangeEndTime) : ""}</span>
+          </div>
+        </label>
 
-      <label className="mt-1 grid gap-1.5">
-        <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-          <span>Timeline</span>
-          <span>{progress}%</span>
-        </span>
-        <input
-          type="range"
-          min={startIndex}
-          max={endIndex}
-          step={1}
-          value={Math.min(endIndex, Math.max(startIndex, playheadIndex))}
-          onChange={(event) => onScrub(Number(event.currentTarget.value))}
-          className="h-2 w-full accent-[var(--flag)]"
-          aria-label="Replay timeline"
-        />
-      </label>
+        <label className="grid gap-1">
+          <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+            <span>Timeline</span>
+            <span>{progress}%</span>
+          </span>
+          <input
+            type="range"
+            min={startIndex}
+            max={endIndex}
+            step={1}
+            value={Math.min(endIndex, Math.max(startIndex, playheadIndex))}
+            onChange={(event) => onScrub(Number(event.currentTarget.value))}
+            className="h-2 w-full accent-[var(--flag)]"
+            aria-label="Replay timeline"
+          />
+          <div className="h-3" /> {/* Spacer to align with range label's timestamps */}
+        </label>
+      </div>
 
       <label className="mt-3 grid gap-1.5">
         <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
@@ -1639,6 +1650,11 @@ export default function TripMap({
     if (!replayActive) return null;
     return replayPins[replayStartIndex]?.occurredAt ?? null;
   }, [replayActive, replayPins, replayStartIndex]);
+
+  const pathEndTime = useMemo(() => {
+    if (!replayActive) return null;
+    return replayPins[replayEndIndex]?.occurredAt ?? null;
+  }, [replayActive, replayPins, replayEndIndex]);
 
   const filteredCheckpoints = useMemo(() => {
     if (!replayActive) return checkpoints;
@@ -4324,6 +4340,8 @@ export default function TripMap({
             speed={replaySpeed}
             isPaused={replayPaused}
             range={replayRange}
+            rangeStartTime={pathStartTime}
+            rangeEndTime={pathEndTime}
             onRangeChange={handleReplayRangeChange}
             onTogglePause={handleToggleReplayPause}
             onRestart={handleRestartReplay}

@@ -41,6 +41,8 @@ export const Default: Story = {
     speed: 1,
     isPaused: false,
     range: [0, 20],
+    rangeStartTime: Date.now() - 3600000 * 5,
+    rangeEndTime: Date.now(),
     onRangeChange: () => {},
     onTogglePause: () => {},
     onRestart: () => {},
@@ -59,6 +61,8 @@ export const FilteredRange: Story = {
     startIndex: 5,
     endIndex: 15,
     range: [5, 15],
+    rangeStartTime: Date.now() - 3600000 * 3,
+    rangeEndTime: Date.now() - 3600000 * 1,
   },
 };
 
