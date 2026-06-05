@@ -14,6 +14,7 @@ import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
 import CrypticText from "./CrypticText";
+import { ReactionSection } from "../../components/ui/ReactionSection";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { cn } from "@/lib/utils";
@@ -903,6 +904,13 @@ export default function MissionDetailSheet({
           {c.description && (
             <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
           )}
+
+          <ReactionSection
+            targetId={c._id}
+            targetType="mission"
+            reactions={c.reactions}
+            token={token}
+          />
         </>
       ) : (
         <>
@@ -921,6 +929,13 @@ export default function MissionDetailSheet({
               <p className="text-sm text-[var(--ink-3)]">{c.description}</p>
             )}
           </div>
+
+          <ReactionSection
+            targetId={c._id}
+            targetType="mission"
+            reactions={c.reactions}
+            token={token}
+          />
         </>
       )}
 

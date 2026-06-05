@@ -36,6 +36,7 @@ import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
+import { ReactionSection } from "../../components/ui/ReactionSection";
 import { useSheetPersonalities, type SheetPersonality } from "../redesign/sheetPersonality";
 import { uploadStoryImage, validateStoryImageFile } from "./storyImageUpload";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
@@ -608,12 +609,19 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
         ) : null}
       </div>
 
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         onClick={onSelect}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect();
+          }
+        }}
         aria-label={cardLabel}
         className={cn(
-          "group relative mb-2 flex flex-col items-stretch overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] text-left shadow-[var(--shadow-card)] transition-transform",
+          "group relative mb-2 flex flex-col items-stretch overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] text-left shadow-[var(--shadow-card)] transition-transform cursor-pointer",
           "active:scale-[0.99]",
         )}
       >
@@ -671,13 +679,21 @@ function StoryRailItem({ event, token, isLast, actualCostUsd, personalities, onS
             </div>
           ) : null}
 
+          <ReactionSection
+            targetId={event.checkpointId || event._id}
+            targetType="checkpoint"
+            reactions={event.reactions}
+            token={token}
+            className="mt-1 self-end"
+          />
+
           {actualCostUsd !== undefined && actualCostUsd !== 0 ? (
             <div className="text-[11px] font-semibold" style={{ color: "var(--green)" }}>
               Actual cost: {formatUsd(actualCostUsd)}
             </div>
           ) : null}
         </div>
-      </button>
+      </div>
     </li>
   );
 }

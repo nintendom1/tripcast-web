@@ -6,7 +6,7 @@ export default meta;
 const FAKE_EVENTS = [{ _id: "e1", type: "story", narrativeLevel: "narrative", title: "Day 1", body: "Started!", occurredAt: Date.now() }];
  /** @tag ai-generated */
 export const Default: StoryObj<typeof meta> = {
-  args: { token: "t", open: true, events: FAKE_EVENTS, onMarkAllRead: () => {}, onClose: () => {}, onStorySelect: () => {}, onLocationFocus: () => {} },
+  args: { token: "t", role: "follower", open: true, events: FAKE_EVENTS, onMarkAllRead: () => {}, onClose: () => {}, onStorySelect: () => {}, onLocationFocus: () => {} },
   parameters: {
     convexMocks: {
       queries: [

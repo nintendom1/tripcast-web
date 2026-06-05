@@ -26,6 +26,7 @@ import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { ReactionSection } from "../../components/ui/ReactionSection";
 import AttributionBlock from "../attributions/AttributionBlock";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
@@ -738,7 +739,7 @@ export default function StoryDetailSheet({
                   isTraveler={isTraveler}
                 />
               ) : (
-                <ActivityContent event={displayEvent} />
+                <ActivityContent event={displayEvent} token={token || ""} />
               )}
             </SheetBody>
 
@@ -839,6 +840,14 @@ function NarrativeContent({
         </blockquote>
       ) : null}
 
+      <ReactionSection
+        targetId={event.checkpointId || event._id}
+        targetType="checkpoint"
+        reactions={event.reactions}
+        token={token}
+        className="mt-4"
+      />
+
       {event.checkpointId && token && role ? (
         <div className="mt-4">
           <AttributionBlock token={token} viewerRole={role} sourceType="story" sourceId={event.checkpointId} editable={false} />
@@ -870,7 +879,7 @@ function NarrativeContent({
   );
 }
 
-function ActivityContent({ event }: { event: JournalEvent }) {
+function ActivityContent({ event, token }: { event: JournalEvent; token: string }) {
   const hasState =
     event.moodValue !== undefined ||
     event.energyLevel !== undefined ||
@@ -919,6 +928,14 @@ function ActivityContent({ event }: { event: JournalEvent }) {
           {event.statusNote && <p className="text-xs italic text-[var(--ink-2)]">&ldquo;{event.statusNote}&rdquo;</p>}
         </div>
       )}
+
+      <ReactionSection
+        targetId={event.checkpointId || event._id}
+        targetType="checkpoint"
+        reactions={event.reactions}
+        token={token}
+        className="mt-1 self-end"
+      />
     </div>
   );
 }

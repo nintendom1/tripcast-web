@@ -314,6 +314,7 @@ export type Mission = {
   droppedAt?: number;
   createdAt: number;
   updatedAt: number;
+  reactions?: ReactionSummary;
 };
 
 export type MissionSettings = {
@@ -793,6 +794,13 @@ export type ContentBeforeCutoffCounts = {
   routeVotes: number;
 };
 
+export type ReactionSummary = {
+  /** Map of emoji characters to the number of people who have reacted with them. */
+  counts: Record<string, number>;
+  /** The emoji character the current user reacted with, if any. */
+  myReaction?: string;
+};
+
 export type Message = {
   _id: string;
   _creationTime: number;
@@ -871,6 +879,7 @@ export type JournalEvent = {
   checkpointId?: string;
   routeVoteId?: string;
   missionId?: string;
+  reactions?: ReactionSummary;
   // State snapshot (story events only)
   moodValue?: TravelerMoodValue;
   energyLevel?: TravelerEnergyLevel;
@@ -947,6 +956,7 @@ export type Transaction = {
   occurredAt: number;
   createdAt: number;
   updatedAt: number;
+  reactions?: ReactionSummary;
 };
 
 export type TransactionForFollowerSummary = {
@@ -2435,6 +2445,20 @@ export const tripcastApi = {
       "mutation",
       "public",
       { token: string },
+      null
+    >,
+  },
+  reactions: {
+    toggleReaction: (anyApi as any).reactions.toggleReaction as FunctionReference<
+      "mutation",
+      "public",
+      {
+        token: string;
+        /** Either a checkpointId (for stories) or missionId. */
+        targetId: string;
+        targetType: "checkpoint" | "mission";
+        emoji: string;
+      },
       null
     >,
   },
