@@ -704,15 +704,16 @@ function ThemeChoicePanel({
           );
         })}
       </div>
-      <p
+      <div
         className={cn(
-          "text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] transition-colors duration-500",
+          "grid gap-1 text-center font-[var(--meadow-font-mono,var(--font-mono))] text-[10px] font-bold uppercase tracking-[0.14em] transition-colors duration-500",
           isDark ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]",
           value !== "auto" && "invisible"
         )}
       >
-        Auto will open in {resolvedTheme === "constellation" ? "dark" : "light"} mode now
-      </p>
+        <p>Auto changes the theme based on the Traveler's local day/night time.</p>
+        <p>Auto will open in {resolvedTheme === "constellation" ? "dark" : "light"} mode now</p>
+      </div>
     </div>
   );
 }
