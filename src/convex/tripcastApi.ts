@@ -1066,6 +1066,10 @@ export type CloakingPin = {
   createdAt: number;
 };
 
+export type InviteStatus = {
+  status: "valid" | "expired" | "already_used" | "invalid";
+};
+
 // ---------------------------------------------------------------------------
 // Ticker types
 // ---------------------------------------------------------------------------
@@ -2293,6 +2297,12 @@ export const tripcastApi = {
         privacyVersion: string;
       },
       { token: string; username: string }
+    >,
+    getInviteStatus: (anyApi as any).followers.getInviteStatus as FunctionReference<
+      "query",
+      "public",
+      { inviteToken: string },
+      InviteStatus
     >,
   },
   followerAdmin: {
