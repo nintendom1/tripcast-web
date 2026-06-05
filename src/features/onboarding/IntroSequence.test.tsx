@@ -124,6 +124,7 @@ describe("IntroSequence", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Auto" }));
 
+    expect(screen.getByText(/Auto changes the theme based on the Traveler's local day\/night time\./i)).toBeInTheDocument();
     expect(localStorage.getItem("tripcast.theme_mode")).toBe("auto");
     expect(document.documentElement).toHaveClass("theme-dark");
   });
