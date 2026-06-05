@@ -39,3 +39,21 @@ export function StorybookConvexProvider({ children }: { children: React.ReactNod
   return ( <ConvexMockContext.Provider value={{ queries, mutations, setQueryMock, setMutationMock }}>{children}</ConvexMockContext.Provider> );
 }
 export const useConvexMock = () => useContext(ConvexMockContext);
+export const useConvex = () => {
+  const context = useContext(ConvexMockContext);
+  return {
+    query: async (query: any, args: any) => {
+      if (args === "skip") return undefined;
+      if (context.queries.has(query)) return context.queries.get(query);
+      return undefined;
+    },
+    mutation: async (mutation: any, args: any) => {
+      if (context.mutations.has(mutation)) {
+        const mock = context.mutations.get(mutation);
+        if (typeof mock === "function") return mock(args);
+        return mock;
+      }
+      return null;
+    },
+  };
+};
