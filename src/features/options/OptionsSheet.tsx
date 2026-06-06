@@ -904,6 +904,7 @@ function AppearanceSection() {
             <button
               type="button"
               onClick={() => setMode("meadow")}
+              aria-pressed={mode === "meadow"}
               className={cn(
                 "flex min-h-11 flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all",
                 mode === "meadow"
@@ -917,6 +918,7 @@ function AppearanceSection() {
             <button
               type="button"
               onClick={() => setMode("constellation")}
+              aria-pressed={mode === "constellation"}
               className={cn(
                 "flex min-h-11 flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all",
                 mode === "constellation"
@@ -930,6 +932,7 @@ function AppearanceSection() {
             <button
               type="button"
               onClick={() => setMode("auto")}
+              aria-pressed={mode === "auto"}
               className={cn(
                 "flex min-h-11 flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all",
                 mode === "auto"
@@ -943,7 +946,7 @@ function AppearanceSection() {
           </div>
           {mode === "auto" ? (
             <p className="text-center text-xs font-medium text-[var(--ink-3)]">
-              Using {resolvedTheme === "meadow" ? "Light" : "Dark"} mode based on local time.
+              Using {resolvedTheme === "meadow" ? "Light" : "Dark"} mode based on the Traveler's local day/night time.
             </p>
           ) : null}
         </div>
