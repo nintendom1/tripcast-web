@@ -1830,6 +1830,10 @@ export default function TripMap({
         : cardsWrapperRef.current,
       sheetSelector: finaleReplayActive ? "[data-finale-banner]" : null,
       minZoom: 13,
+      // Finale: drop the pin below band-center so it reads lower on screen.
+      // y is 0..1 of the band (header bottom -> banner top); 0.5 = center.
+      // Raise toward 0.8 for lower, lower toward 0.5 for centered.
+      anchor: finaleReplayActive ? { x: 0.5, y: 0.7 } : undefined,
     });
     log.logMap("map:camera:focus", {
       trigger: "replay:coordinate-snap",
