@@ -308,7 +308,7 @@ function buildReplayPins(
 ) {
   const checkpointPins: ReplayPin[] = journalEvents
     .filter(isFiniteReplayCoordinate)
-    .filter((e) => e.type === "story" || e.type === "mission_completed")
+    .filter((e) => e.type === "story")
     .map((event) => ({
       eventId: event._id,
       occurredAt: event.occurredAt,
