@@ -221,6 +221,9 @@ type ReplayPin = {
   lat: number;
   lon: number;
   kind: "checkpoint" | "breadcrumb";
+  title?: string;
+  imageId?: string;
+  checkpointId?: string;
 };
 
 type FocusEntry = {
@@ -304,6 +307,9 @@ function buildReplayPins(
       lat: event.lat,
       lon: event.lon,
       kind: "checkpoint" as const,
+      title: event.title,
+      imageId: event.imageId,
+      checkpointId: event.checkpointId,
     }));
 
   const MIN_REPLAY_BC_INTERVAL_MS = 60_000;
@@ -628,6 +634,128 @@ function PreviewPinMarker({
     };
   }, [map, coord]);
   return null;
+}
+
+function ReplayFocusMarker({
+  map,
+  position,
+}: {
+  map: maplibregl.Map | null;
+  position: { lat: number; lon: number } | null;
+}) {
+  const markerRef = useRef<maplibregl.Marker | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+
+    if (!position) {
+      markerRef.current?.remove();
+      markerRef.current = null;
+      return;
+    }
+
+    if (markerRef.current) {
+      markerRef.current.setLngLat([position.lon, position.lat]);
+    } else {
+      const el = document.createElement("div");
+      el.className = "replay-focus-marker";
+      const ring = document.createElement("div");
+      ring.className = "replay-focus-ring";
+      const dot = document.createElement("div");
+      dot.className = "replay-focus-dot";
+      el.appendChild(ring);
+      el.appendChild(dot);
+
+      markerRef.current = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat([position.lon, position.lat])
+        .addTo(map);
+    }
+
+    return () => {
+      markerRef.current?.remove();
+      markerRef.current = null;
+    };
+  }, [map, position]);
+
+  return null;
+}
+
+function ReplayCheckpointOverlay({
+  map,
+  pin,
+  onClose,
+  onClick,
+  token,
+}: {
+  map: maplibregl.Map | null;
+  pin: ReplayPin;
+  onClose: () => void;
+  onClick: () => void;
+  token: string;
+}) {
+  const imageUrl = useQuery(
+    tripcastApi.checkpoints.getStoryImageUrl,
+    pin.imageId ? { token, imageId: pin.imageId } : "skip",
+  );
+
+  const [pixelPos, setPixelPos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!map) return;
+    const update = () => {
+      const pos = map.project([pin.lon, pin.lat]);
+      setPixelPos({ x: pos.x, y: pos.y });
+    };
+    update();
+    map.on("move", update);
+    map.on("zoom", update);
+    return () => {
+      if (typeof (map as any).off === "function") {
+        map.off("move", update);
+        map.off("zoom", update);
+      }
+    };
+  }, [map, pin.lat, pin.lon]);
+
+  if (!pixelPos) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.8, y: -20 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.8, y: -20 }}
+      transition={{ duration: 0.25, ease: "easeOut" }}
+      className="pointer-events-auto absolute z-[30] flex flex-col items-center gap-2"
+      style={{
+        left: pixelPos.x,
+        top: pixelPos.y,
+        transform: "translate(-50%, -100%)",
+        marginTop: -24,
+      }}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick();
+        }}
+        className="flex max-w-[180px] flex-col overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]/90 shadow-xl backdrop-blur-md transition-transform active:scale-95"
+      >
+        {imageUrl && (
+          <div className="aspect-[4/3] w-full overflow-hidden bg-muted">
+            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+          </div>
+        )}
+        <div className="px-3 py-2">
+          <p className="text-center text-xs font-bold leading-tight text-[var(--ink-1)]">
+            {pin.title || "Checkpoint"}
+          </p>
+        </div>
+      </button>
+      {/* Connector triangle */}
+      <div className="h-2 w-3 [clip-path:polygon(50%_100%,0_0,100%_0)] bg-[var(--bg-card)]/90" />
+    </motion.div>
+  );
 }
 
 function TravelerLocationMarker({
@@ -1346,6 +1474,8 @@ export default function TripMap({
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayPaused, setReplayPaused] = useState(false);
+  const [replayOverlayQueue, setReplayOverlayQueue] = useState<ReplayPin[]>([]);
+  const [currentOverlayPin, setCurrentOverlayPin] = useState<ReplayPin | null>(null);
   const [replayTrailSamples, setReplayTrailSamples] = useState<LiveTrailSample[] | null>(null);
   const [replayTrailLoad, setReplayTrailLoad] = useState<{
     status: "idle" | "loading" | "loaded" | "error";
@@ -1858,6 +1988,13 @@ export default function TripMap({
     // Persist the resume point on every successful pin transition (not End).
     writeReplayResume(token, { eventId: target.eventId, index: replayPlayheadIndex });
 
+    if (target.kind === "checkpoint") {
+      setReplayOverlayQueue((q) => {
+        if (q.some((p) => p.eventId === target.eventId)) return q;
+        return [...q, target];
+      });
+    }
+
     if (!map || mapServiceUnavailableRef.current) {
       log.logInteraction("replay:coordinate-snap:blocked", {
         eventId: target.eventId,
@@ -1963,6 +2100,21 @@ export default function TripMap({
   // catches everything the user might do that isn't map panning/zooming. Finale
   // replays are not interactive — let them play through.
   useEffect(() => {
+    if (currentOverlayPin || replayOverlayQueue.length === 0) return;
+
+    const next = replayOverlayQueue[0];
+    setCurrentOverlayPin(next);
+    setReplayOverlayQueue((q) => q.slice(1));
+
+    const OVERLAY_DURATION_MS = 3000;
+    const timeout = setTimeout(() => {
+      setCurrentOverlayPin(null);
+    }, OVERLAY_DURATION_MS);
+
+    return () => clearTimeout(timeout);
+  }, [currentOverlayPin, replayOverlayQueue]);
+
+  useEffect(() => {
     if (!replayActive || finaleReplayActive) return;
     const anyUiOpen =
       selectedStoryDetail !== null ||
@@ -1982,6 +2134,8 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
+    setReplayOverlayQueue([]);
+    setCurrentOverlayPin(null);
     setReplayWindow(null);
     setIsReplaySpeedSheetOpen(false);
     setIsReplayDateSheetOpen(false);
@@ -3426,6 +3580,8 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
+    setReplayOverlayQueue([]);
+    setCurrentOverlayPin(null);
     setReplayWindow(null);
     setIsReplaySpeedSheetOpen(false);
     setIsReplayDateSheetOpen(false);
@@ -3579,6 +3735,8 @@ export default function TripMap({
     const resumeIndex = resolveReplayResumeIndex(token, nextReplayPins);
     setReplayActive(true);
     setReplayPlayheadIndex(resumeIndex);
+    setReplayOverlayQueue([]);
+    setCurrentOverlayPin(null);
     log.logInteraction("replay:start", {
       totalPins: nextReplayPins.length,
       trailSamples: nextTrailSamples.length,
@@ -3589,6 +3747,10 @@ export default function TripMap({
 
   function handleReplayScrub(index: number) {
     const nextIndex = Math.min(replayEndIndex, Math.max(0, Math.round(index)));
+    if (nextIndex !== replayPlayheadIndex) {
+      setReplayOverlayQueue([]);
+      setCurrentOverlayPin(null);
+    }
     setReplayPlayheadIndex(nextIndex);
     // Touching the timeline implies the user wants to dwell on a specific pin —
     // auto-pause so they aren't fighting the auto-advance.
@@ -3642,6 +3804,8 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
+    setReplayOverlayQueue([]);
+    setCurrentOverlayPin(null);
     setReplayWindow(null);
     setIsReplaySpeedSheetOpen(false);
     setIsReplayDateSheetOpen(false);
@@ -3662,6 +3826,8 @@ export default function TripMap({
     snappedReplayEventRef.current = null;
     setReplayPlayheadIndex(0);
     setReplayPaused(false);
+    setReplayOverlayQueue([]);
+    setCurrentOverlayPin(null);
     log.logInteraction("replay:restart", { speed: replaySpeed });
   }
 
@@ -4197,6 +4363,34 @@ export default function TripMap({
           });
         }}
       />
+      {replayActive && (
+        <ReplayFocusMarker
+          map={mapInstance}
+          position={currentReplayPin ? { lat: currentReplayPin.lat, lon: currentReplayPin.lon } : null}
+        />
+      )}
+      <AnimatePresence>
+        {replayActive && currentOverlayPin && (
+          <ReplayCheckpointOverlay
+            map={mapInstance}
+            pin={currentOverlayPin}
+            onClose={() => setCurrentOverlayPin(null)}
+            onClick={() => {
+              if (currentOverlayPin.checkpointId) {
+                const event = journalEvents.find((e) => e.checkpointId === currentOverlayPin.checkpointId);
+                if (event) {
+                  setSelectedStoryDetail({
+                    eventId: event._id,
+                    checkpointId: event.checkpointId,
+                    fallbackEvent: event,
+                  });
+                }
+              }
+            }}
+            token={token}
+          />
+        )}
+      </AnimatePresence>
       <AccuracyCircle
         map={mapInstance}
         position={
