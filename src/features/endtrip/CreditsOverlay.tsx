@@ -138,73 +138,73 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
       </div>
 
       <motion.div
-        className="pointer-events-none absolute bottom-6 left-[-18vw] right-[-18vw] top-[60%] rotate-[-8deg] bg-[linear-gradient(135deg,rgba(255,139,74,0.94),rgba(28,31,58,0.96))] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
+        className="pointer-events-none absolute bottom-6 left-[-18vw] right-[-18vw] top-[60%] rotate-[-8deg] overflow-hidden bg-[linear-gradient(135deg,rgba(255,139,74,0.94),rgba(28,31,58,0.96))] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
         initial={{ x: "-110%" }}
         animate={{ x: 0 }}
         transition={{ duration: 0.75, ease: [0.22, 0.9, 0.3, 1] }}
-      />
-
-      <div
-        className="absolute inset-x-0 bottom-8 top-16 overflow-hidden"
-        style={{
-          maskImage:
-            "linear-gradient(to bottom, transparent 0%, #000 12%, #000 80%, transparent 100%)",
-          WebkitMaskImage:
-            "linear-gradient(to bottom, transparent 0%, #000 12%, #000 80%, transparent 100%)",
-        }}
       >
-        <motion.div
-          className="px-8 text-center"
-          initial={{ y: "15vh" }}
-          animate={{ y: "-100%" }}
-          transition={{ duration: 22, ease: "linear", repeat: Infinity }}
+        <div
+          className="absolute inset-0 rotate-[8deg]"
+          style={{
+            maskImage:
+              "linear-gradient(to bottom, transparent 0%, #000 12%, #000 80%, transparent 100%)",
+            WebkitMaskImage:
+              "linear-gradient(to bottom, transparent 0%, #000 12%, #000 80%, transparent 100%)",
+          }}
         >
-          <div className="py-10" />
-          <div className="mb-10">
-            <h1 className="mt-2 font-[var(--font-display)] text-4xl font-black text-white">
-              Trip Complete
-            </h1>
-          </div>
-          {credits?.thankYouNote ? (
+          <motion.div
+            className="px-[18vw] text-center"
+            initial={{ y: "15vh" }}
+            animate={{ y: "-100%" }}
+            transition={{ duration: 22, ease: "linear", repeat: Infinity }}
+          >
+            <div className="py-10" />
             <div className="mb-10">
-              <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">
-                A note from the Traveler
-              </div>
-              <p className="mx-auto mt-3 max-w-[300px] text-lg italic leading-relaxed text-white">
-                “{credits.thankYouNote}”
-              </p>
+              <h1 className="mt-2 font-[var(--font-display)] text-4xl font-black text-white">
+                Trip Complete
+              </h1>
             </div>
-          ) : null}
+            {credits?.thankYouNote ? (
+              <div className="mb-10">
+                <div className="text-[10px] uppercase tracking-[0.3em] text-white/50">
+                  A note from the Traveler
+                </div>
+                <p className="mx-auto mt-3 max-w-[300px] text-lg italic leading-relaxed text-white">
+                  “{credits.thankYouNote}”
+                </p>
+              </div>
+            ) : null}
 
-          <CreditRow role="Traveler" names={[credits?.travelerName ?? "The Traveler"]} />
-          <CreditRow role="Followers" names={credits?.followers ?? []} />
-          <CreditRow role="Leaderboard" names={topByPoints} />
-          <CreditRow role="Most badges" names={topByBadges} />
+            <CreditRow role="Traveler" names={[credits?.travelerName ?? "The Traveler"]} />
+            <CreditRow role="Followers" names={credits?.followers ?? []} />
+            <CreditRow role="Leaderboard" names={topByPoints} />
+            <CreditRow role="Most badges" names={topByBadges} />
 
-          <div className="mt-10 text-[10px] uppercase tracking-[0.3em] text-white/50">
-            By the numbers
-          </div>
-          <div className="mt-2 text-sm text-white/80">
-            {stats.storyCount} Stories · {stats.completedMissions} completed Missions · {stats.routeSteps} mapped stops
-          </div>
-          <div className="mt-1 text-sm text-white/80">
-            {credits?.totals.points ?? 0} points · {credits?.totals.badges ?? 0} badges ·{" "}
-            {credits?.totals.followers ?? 0} followers · {stats.durationDays} days
-          </div>
+            <div className="mt-10 text-[10px] uppercase tracking-[0.3em] text-white/50">
+              By the numbers
+            </div>
+            <div className="mt-2 text-sm text-white/80">
+              {stats.storyCount} Stories · {stats.completedMissions} completed Missions · {stats.routeSteps} mapped stops
+            </div>
+            <div className="mt-1 text-sm text-white/80">
+              {credits?.totals.points ?? 0} points · {credits?.totals.badges ?? 0} badges ·{" "}
+              {credits?.totals.followers ?? 0} followers · {stats.durationDays} days
+            </div>
 
-          <div className="mt-12 text-[10px] uppercase tracking-[0.3em] text-white/50">
-            Cartography
-          </div>
-          <div className="mt-2 text-sm text-white/80">
-            Maps by OpenFreeMap · Data © OpenStreetMap contributors
-          </div>
-          <div className="mt-1 text-xs text-white/60">Rendered with MapLibre GL</div>
+            <div className="mt-12 text-[10px] uppercase tracking-[0.3em] text-white/50">
+              Cartography
+            </div>
+            <div className="mt-2 text-sm text-white/80">
+              Maps by OpenFreeMap · Data © OpenStreetMap contributors
+            </div>
+            <div className="mt-1 text-xs text-white/60">Rendered with MapLibre GL</div>
 
-          <div className="mt-12 pb-20 font-[var(--font-display)] text-base font-extrabold text-white">
-            TripCast
-          </div>
-        </motion.div>
-      </div>
+            <div className="mt-12 pb-20 font-[var(--font-display)] text-base font-extrabold text-white">
+              TripCast
+            </div>
+          </motion.div>
+        </div>
+      </motion.div>
     </div>
   );
 }
