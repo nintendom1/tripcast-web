@@ -4,16 +4,17 @@ import { ChevronLeft, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const DEBUG_CHIP_SELECTOR = "[data-debug-chip]";
+const REACTION_TRAY_SELECTOR = "[data-reaction-tray]";
 
 type SheetProps = React.ComponentPropsWithoutRef<typeof Dialog.Root>;
 
-function isDebugChipEvent(event: Event) {
+function matchesSelector(event: Event, selector: string) {
   const target = event.target;
   const relatedTarget = event instanceof FocusEvent ? event.relatedTarget : null;
 
   return (
-    (target instanceof Element && target.closest(DEBUG_CHIP_SELECTOR) !== null) ||
-    (relatedTarget instanceof Element && relatedTarget.closest(DEBUG_CHIP_SELECTOR) !== null)
+    (target instanceof Element && target.closest(selector) !== null) ||
+    (relatedTarget instanceof Element && relatedTarget.closest(selector) !== null)
   );
 }
 
@@ -23,7 +24,8 @@ const Sheet = ({ onOpenChange, ...props }: SheetProps) => (
       if (
         !open &&
         (eventDetails.reason === "outside-press" || eventDetails.reason === "focus-out") &&
-        isDebugChipEvent(eventDetails.event)
+        (matchesSelector(eventDetails.event, DEBUG_CHIP_SELECTOR) ||
+          matchesSelector(eventDetails.event, REACTION_TRAY_SELECTOR))
       ) {
         eventDetails.cancel();
         return;

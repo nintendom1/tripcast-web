@@ -19,8 +19,6 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
-import { SwipeRow } from "../../components/ui/SwipeRow";
-import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { PendingNotice } from "../../components/resilience/PendingNotice";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -121,8 +119,6 @@ export default function MissionPanel({
   const { missions: missionsPersonality } = useSheetPersonalities();
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [selectedMission, setSelectedMission] = useState<SelectedMission | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<Mission | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
   const [travelerFilter, setTravelerFilter] = useState<TravelerFilter>("all");
   const music = useMusicSafe();
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
@@ -135,26 +131,6 @@ export default function MissionPanel({
     sourceLabel: debugSource?.sourceLabel ?? "Unknown",
     file: "src/features/missions/MissionPanel.tsx",
   }, { boundsSelector: "[data-role='missions-sheet']" });
-
-  const deleteMission = useMutation(tripcastApi.missions.travelerDeleteMission);
-
-  async function handleConfirmDelete() {
-    if (!pendingDelete || isDeleting) return;
-    setIsDeleting(true);
-    log.logUi("action:confirm-delete", { missionId: pendingDelete._id });
-    try {
-      await deleteMission({ token, missionId: pendingDelete._id });
-      music.sfx("success");
-      setPendingDelete(null);
-    } catch {
-      // Mutation already shows the user-friendly error inline via MissionDetailSheet
-      // when they get there; here we just close the confirm and trust the data
-      // subscription to either reflect the delete or keep the row.
-      setPendingDelete(null);
-    } finally {
-      setIsDeleting(false);
-    }
-  }
 
   // Reset view when panel closes — the next open should always land on the list
   useEffect(() => {
@@ -397,7 +373,6 @@ export default function MissionPanel({
                 onClearPendingMission={onClearPendingMission}
                 onRequestNavigateToMission={onRequestNavigateToMission}
                 onOpenDetail={goToDetail}
-                onRequestDelete={(c) => setPendingDelete(c)}
               />
             ) : (
               <FollowerListView
@@ -475,18 +450,6 @@ export default function MissionPanel({
           ) : null}
         </div>
       </SheetContent>
-
-      <ConfirmDelete
-        open={pendingDelete !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null);
-        }}
-        title="Delete this mission?"
-        itemLabel={pendingDelete?.title ?? undefined}
-        description="The mission is removed for everyone. Linked transactions are kept but unlinked. This can't be undone."
-        onConfirm={handleConfirmDelete}
-        pending={isDeleting}
-      />
     </Sheet>
   );
 }
@@ -502,7 +465,6 @@ function TravelerListView({
   onClearPendingMission,
   onRequestNavigateToMission,
   onOpenDetail,
-  onRequestDelete,
 }: {
   token: string;
   filter: TravelerFilter;
@@ -510,10 +472,8 @@ function TravelerListView({
   onClearPendingMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
   onOpenDetail: (c: Mission, isOwn?: boolean) => void;
-  onRequestDelete?: (c: Mission) => void;
 }) {
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
-  const [swipedId, setSwipedId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
   const rawMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
   const preview = useFollowerCutoffPreview("traveler", token);
@@ -590,26 +550,15 @@ function TravelerListView({
         ) : (
           feedItems.map((entry) => {
             const c = entry.item;
-            const card = (
-              <MissionCard
-                Mission={c}
-                token={token}
-                isHighlighted={c._id === highlightedMissionId}
-                onClick={() => onOpenDetail(c)}
-              />
-            );
-            if (!onRequestDelete) return <div key={c._id}>{card}</div>;
             return (
-              <SwipeRow
-                key={c._id}
-                id={c._id}
-                openId={swipedId}
-                onOpenChange={setSwipedId}
-                onEdit={() => onOpenDetail(c)}
-                onDelete={() => onRequestDelete(c)}
-              >
-                {card}
-              </SwipeRow>
+              <div key={c._id}>
+                <MissionCard
+                  Mission={c}
+                  token={token}
+                  isHighlighted={c._id === highlightedMissionId}
+                  onClick={() => onOpenDetail(c)}
+                />
+              </div>
             );
           })
         )}

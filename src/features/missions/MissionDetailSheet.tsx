@@ -14,6 +14,7 @@ import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
 import CrypticText from "./CrypticText";
+import { ReactionSection } from "../../components/ui/ReactionSection";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { cn } from "@/lib/utils";
@@ -483,7 +484,7 @@ export default function MissionDetailSheet({
 
   if (isEditing) {
     return (
-      <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
+      <div className={cn("flex flex-col gap-4 p-4 pt-2", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-[var(--ink-1)]">Edit Mission</span>
           <button
@@ -857,7 +858,7 @@ export default function MissionDetailSheet({
           : "Unknown Signal";
 
   return (
-    <div className={cn("flex flex-col gap-4 p-4 pt-0", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
+    <div className={cn("flex flex-col gap-4 p-4 pt-2", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
       {isMysteryMission ? (
         <>
           {/* Mystery hero — RadioTower chip + dark zinc card with CrypticText. */}
@@ -866,6 +867,12 @@ export default function MissionDetailSheet({
               <RadioTower className="h-3.5 w-3.5" aria-hidden="true" />
               {mysteryStateLabel}
             </span>
+            <ReactionSection
+              targetId={c._id}
+              targetType="mission"
+              reactions={c.reactions}
+              token={token}
+            />
           </div>
           <section className="grid gap-2 rounded-2xl border border-zinc-500/40 bg-zinc-950 p-4 text-zinc-100 shadow-[var(--shadow-card)]">
             <p className="font-[var(--font-display)] text-xl font-extrabold leading-tight">
@@ -919,12 +926,18 @@ export default function MissionDetailSheet({
         </>
       ) : (
         <>
-          {/* Header — status only; Edit lives in the About section so lifecycle
-              actions and field edits stay visually separate. */}
-          <div className="flex items-center justify-between">
+          {/* Header — status + reactions on the right. Edit lives in the About
+              section so lifecycle actions and field edits stay visually separate. */}
+          <div className="flex items-center justify-between gap-3">
             <span className="text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">
               {statusLabel(status, c.source)}
             </span>
+            <ReactionSection
+              targetId={c._id}
+              targetType="mission"
+              reactions={c.reactions}
+              token={token}
+            />
           </div>
 
           {/* Title + description */}

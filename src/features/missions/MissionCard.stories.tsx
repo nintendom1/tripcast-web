@@ -2,6 +2,11 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import MissionCard from "./MissionCard";
 import { FAKE_MISSION } from "../../stories/fixtures/tripcast";
 
+const REACTIONS_MIXED = {
+  entries: [{ emoji: "❤️", count: 4 }, { emoji: "👍", count: 2 }],
+  myReaction: "👍",
+};
+
 const meta = {
   title: "Missions/MissionCard",
   component: MissionCard,
@@ -23,6 +28,7 @@ export const Proposed: Story = {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     } as any,
+    token: "mock-token",
   },
 };
 
@@ -35,7 +41,9 @@ export const InProgress: Story = {
       source: "traveler",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      reactions: REACTIONS_MIXED,
     } as any,
+    token: "mock-token",
   },
 };
 
@@ -48,7 +56,12 @@ export const Completed: Story = {
       source: "traveler",
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      reactions: {
+        entries: [{ emoji: "❤️", count: 8 }, { emoji: "👍", count: 4 }, { emoji: "😲", count: 1 }],
+        myReaction: "❤️",
+      },
     } as any,
+    token: "mock-token",
   },
 };
 

@@ -720,7 +720,7 @@ describe("OptionsSheet developer scoring toggle", () => {
 });
 
 describe("OptionsSheet appearance", () => {
-  it("shows light/dark choices and automatic theme as a toggle", () => {
+  it("shows light, dark, and auto choices", () => {
     setupMocks();
     renderOptions();
 
@@ -730,8 +730,7 @@ describe("OptionsSheet appearance", () => {
       button.textContent?.trim(),
     );
 
-    expect(labels).toEqual(["Light", "Dark"]);
-    expect(within(appearanceSection!).getByRole("checkbox", { name: /automatic theme/i })).toBeChecked();
+    expect(labels).toEqual(["Light", "Dark", "Auto"]);
   });
 });
 

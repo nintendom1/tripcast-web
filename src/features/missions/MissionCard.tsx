@@ -1,5 +1,6 @@
 import type { Mission } from "../../convex/tripcastApi";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
+import { ReactionSection } from "../../components/ui/ReactionSection";
 import { CheckSquare, Clock, DollarSign, MapPin, RadioTower, Trophy, Zap } from "lucide-react";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
@@ -39,10 +40,11 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
   const iconColor = isMystery ? "#09090b" : missionPersonality.color;
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       data-mission-id={Mission._id}
-      className={`group relative flex w-full items-start gap-3 rounded-2xl border bg-[var(--bg-card)] p-3 pr-10 text-left shadow-[var(--shadow-card)] transition-all hover:-translate-y-0.5 ${
+      className={`group relative flex w-full items-start gap-3 rounded-2xl border bg-[var(--bg-card)] p-3 text-left shadow-[var(--shadow-card)] transition-all hover:-translate-y-0.5 cursor-pointer ${
         isHighlighted ? "ring-2" : ""
       }`}
       style={{
@@ -55,6 +57,12 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
           : undefined,
       }}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
     >
       <span
         className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl border"
@@ -102,9 +110,24 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
           </span>
         )}
 
-        {Mission.description && (
-          <span className="text-xs leading-snug text-[var(--ink-2)] line-clamp-1">{Mission.description}</span>
-        )}
+        <div className="flex flex-col gap-1 md:flex-row md:items-center md:gap-3">
+          {Mission.description ? (
+            <span className="text-xs leading-snug text-[var(--ink-2)] line-clamp-1 md:min-w-0 md:flex-1">
+              {Mission.description}
+            </span>
+          ) : (
+            <div className="hidden md:block md:flex-1" aria-hidden="true" />
+          )}
+          {token && (
+            <ReactionSection
+              targetId={Mission._id}
+              targetType="mission"
+              reactions={Mission.reactions}
+              token={token}
+              className="flex justify-end md:shrink-0"
+            />
+          )}
+        </div>
 
         {token ? (
           <AttributionPublicLine
@@ -141,6 +164,6 @@ export default function MissionCard({ Mission, token, isOwn, isHighlighted, onCl
           )}
         </span>
       </span>
-    </button>
+    </div>
   );
 }

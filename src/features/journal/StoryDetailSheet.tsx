@@ -26,6 +26,7 @@ import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { ReactionSection } from "../../components/ui/ReactionSection";
 import AttributionBlock from "../attributions/AttributionBlock";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
@@ -507,60 +508,71 @@ export default function StoryDetailSheet({
         ) : displayEvent && (
           <>
             <SheetGradientHeader color={journalPersonality.color} bg={journalPersonality.bg}>
-              <div className="flex min-w-0 flex-col gap-1.5">
-                <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold leading-tight tracking-tight text-[var(--ink-1)]">
-                  {displayEvent.title ?? (isNarrative ? "Story" : "Check In")}
-                </SheetTitle>
-                <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-                  {formatDate(displayEvent.occurredAt)} · {formatTime(displayEvent.occurredAt)}
-                  {Math.abs(displayEvent.occurredAt - displayEvent.createdAt) > MANUAL_TIME_THRESHOLD_MS ? (
-                    <span className="ml-2 normal-case tracking-normal text-[var(--amber)]">(Edited)</span>
-                  ) : null}
-                </p>
-                {displayEvent.locationLabel ? (
-                  <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-                    {displayEvent.locationLabel}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {navigation && navigation.total > 1 ? (
-                  <div className="flex items-center gap-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] px-1 py-0.5 shadow-sm">
-                    <button
-                      type="button"
-                      aria-label="Previous story"
-                      aria-disabled={!navigation.hasPrevious}
-                      onClick={() => handleStoryNavigation("previous")}
-                      className={cn(
-                        "grid h-7 w-7 place-items-center rounded-full text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]",
-                        !navigation.hasPrevious && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-[var(--ink-2)]",
-                      )}
-                    >
-                      <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                    <span className="min-w-8 text-center font-[var(--font-mono)] text-[10px] font-semibold text-[var(--ink-3)]">
-                      {navigation.currentIndex + 1}/{navigation.total}
-                    </span>
-                    <button
-                      type="button"
-                      aria-label="Next story"
-                      aria-disabled={!navigation.hasNext}
-                      onClick={() => handleStoryNavigation("next")}
-                      className={cn(
-                        "grid h-7 w-7 place-items-center rounded-full text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]",
-                        !navigation.hasNext && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-[var(--ink-2)]",
-                      )}
-                    >
-                      <ChevronRight className="h-4 w-4" aria-hidden="true" />
-                    </button>
+              <div className="flex w-full min-w-0 flex-col gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <SheetTitle className="min-w-0 font-[var(--font-display)] text-2xl font-extrabold leading-tight tracking-tight text-[var(--ink-1)]">
+                    {displayEvent.title ?? (isNarrative ? "Story" : "Check In")}
+                  </SheetTitle>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {navigation && navigation.total > 1 ? (
+                      <div className="flex items-center gap-1 rounded-full border border-[var(--line-soft)] bg-[var(--bg-card)] px-1 py-0.5 shadow-sm">
+                        <button
+                          type="button"
+                          aria-label="Previous story"
+                          aria-disabled={!navigation.hasPrevious}
+                          onClick={() => handleStoryNavigation("previous")}
+                          className={cn(
+                            "grid h-7 w-7 place-items-center rounded-full text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]",
+                            !navigation.hasPrevious && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-[var(--ink-2)]",
+                          )}
+                        >
+                          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        <span className="min-w-8 text-center font-[var(--font-mono)] text-[10px] font-semibold text-[var(--ink-3)]">
+                          {navigation.currentIndex + 1}/{navigation.total}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Next story"
+                          aria-disabled={!navigation.hasNext}
+                          onClick={() => handleStoryNavigation("next")}
+                          className={cn(
+                            "grid h-7 w-7 place-items-center rounded-full text-[var(--ink-2)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]",
+                            !navigation.hasNext && "cursor-not-allowed opacity-45 hover:bg-transparent hover:text-[var(--ink-2)]",
+                          )}
+                        >
+                          <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                    ) : null}
+                    {canEdit && !isEditing ? (
+                      <button type="button" className="text-xs text-[var(--flag)] underline hover:text-[var(--ink-1)]" onClick={openEditMode}>
+                        Edit
+                      </button>
+                    ) : null}
+                    <SheetCloseButton aria-label="Close" />
                   </div>
-                ) : null}
-                {canEdit && !isEditing ? (
-                  <button type="button" className="text-xs text-[var(--flag)] underline hover:text-[var(--ink-1)]" onClick={openEditMode}>
-                    Edit
-                  </button>
-                ) : null}
-                <SheetCloseButton aria-label="Close" />
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+                    {formatDate(displayEvent.occurredAt)} · {formatTime(displayEvent.occurredAt)}
+                    {Math.abs(displayEvent.occurredAt - displayEvent.createdAt) > MANUAL_TIME_THRESHOLD_MS ? (
+                      <span className="ml-2 normal-case tracking-normal text-[var(--amber)]">(Edited)</span>
+                    ) : null}
+                  </p>
+                  {displayEvent.locationLabel ? (
+                    <p className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
+                      {displayEvent.locationLabel}
+                    </p>
+                  ) : null}
+                  <ReactionSection
+                    targetId={displayEvent.checkpointId || displayEvent._id}
+                    targetType="checkpoint"
+                    reactions={displayEvent.reactions}
+                    token={token}
+                    className="ml-auto flex justify-end"
+                  />
+                </div>
               </div>
             </SheetGradientHeader>
 
@@ -922,6 +934,7 @@ function ActivityContent({ event }: { event: JournalEvent }) {
           {event.statusNote && <p className="text-xs italic text-[var(--ink-2)]">&ldquo;{event.statusNote}&rdquo;</p>}
         </div>
       )}
+
     </div>
   );
 }
