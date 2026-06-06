@@ -61,7 +61,7 @@ type TransactionFormProps = {
 };
 
 function defaultCategory(): TransactionCategory {
-  return "other";
+  return CATEGORY_OPTIONS[0].value;
 }
 
 function formatDateTimeInput(timestamp: number) {
