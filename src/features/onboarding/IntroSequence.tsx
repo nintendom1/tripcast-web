@@ -10,6 +10,7 @@ import {
   Moon,
   Sparkles,
   Sun,
+  SunMoon,
   Trophy,
   Vote,
   X,
@@ -88,7 +89,7 @@ const BEATS: Beat[] = [
     title: "Light, dark, or auto?",
     body: "Pick how TripCast should look before the map opens.",
     cta: "Open the map",
-    Icon: Sun,
+    Icon: SunMoon,
   },
 ];
 const LAST_BEAT_INDEX = BEATS.length - 1;
@@ -656,7 +657,7 @@ function ThemeChoicePanel({
   const choices: Array<{ mode: ThemeMode; label: string; Icon: LucideIcon }> = [
     { mode: "meadow", label: "Light", Icon: Sun },
     { mode: "constellation", label: "Dark", Icon: Moon },
-    { mode: "auto", label: "Auto", Icon: Sparkles },
+    { mode: "auto", label: "Auto", Icon: SunMoon },
   ];
 
   function buttonClass(mode: ThemeMode, active: boolean): string {

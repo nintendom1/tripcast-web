@@ -30,6 +30,7 @@ import {
   Trophy,
   Moon,
   Sun,
+  SunMoon,
   User,
   UserRoundPen,
   UserPlus,
@@ -896,22 +897,18 @@ function TravelerTimezoneSection({ token }: { token: string }) {
 function AppearanceSection() {
   const theme = useTheme();
   const { mode, setMode, resolvedTheme } = theme;
-  const autoEnabled = mode === "auto";
-
-  function handleAutoChange(enabled: boolean) {
-    setMode(enabled ? "auto" : resolvedTheme);
-  }
 
   return (
     <OptionsSection label="Appearance">
       <OptionsGroup>
         <div className="grid gap-3 p-4 sm:p-5">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => setMode("meadow")}
+              aria-pressed={mode === "meadow"}
               className={cn(
-                "flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                "flex min-h-11 flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all",
                 mode === "meadow"
                   ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
                   : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)]",
@@ -923,8 +920,9 @@ function AppearanceSection() {
             <button
               type="button"
               onClick={() => setMode("constellation")}
+              aria-pressed={mode === "constellation"}
               className={cn(
-                "flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all",
+                "flex min-h-11 flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all",
                 mode === "constellation"
                   ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
                   : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)]",
@@ -933,15 +931,27 @@ function AppearanceSection() {
               <Moon className="h-4 w-4" aria-hidden />
               Dark
             </button>
+            <button
+              type="button"
+              onClick={() => setMode("auto")}
+              aria-pressed={mode === "auto"}
+              className={cn(
+                "flex min-h-11 flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-2.5 text-sm font-semibold transition-all",
+                mode === "auto"
+                  ? "bg-[var(--ink-1)] text-[var(--bg-paper)] shadow-sm"
+                  : "bg-[var(--meter-track)] text-[var(--ink-2)] hover:bg-[var(--bg-card)]",
+              )}
+            >
+              <SunMoon className="h-4 w-4" aria-hidden />
+              Auto
+            </button>
           </div>
+          {mode === "auto" ? (
+            <p className="text-center text-xs font-medium text-[var(--ink-3)]">
+              Using {resolvedTheme === "meadow" ? "Light" : "Dark"} mode based on the Traveler's local day/night time.
+            </p>
+          ) : null}
         </div>
-        <OptionsSwitchRow
-          icon={Clock}
-          title="Automatic theme"
-          detail={`Currently using ${resolvedTheme === "meadow" ? "Light" : "Dark"} based on your local time.`}
-          checked={autoEnabled}
-          onChange={handleAutoChange}
-        />
       </OptionsGroup>
     </OptionsSection>
   );
