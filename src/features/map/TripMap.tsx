@@ -1732,11 +1732,20 @@ export default function TripMap({
     // beats use the base duration. Both scale by replaySpeed.
     const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
     const kindMultiplier = pin?.kind === "breadcrumb" ? 0.5 : 1;
-    const beatMs = Math.max(60, Math.round((REPLAY_BASE_BEAT_MS * kindMultiplier) / replaySpeed));
+    const isAtEnd = replayPlayheadIndex >= replayEndIndex;
+    const beatMs = isAtEnd
+      ? 5000 // Pause for 5 seconds at the end before looping
+      : Math.max(60, Math.round((REPLAY_BASE_BEAT_MS * kindMultiplier) / replaySpeed));
+
     const timeout = window.setTimeout(() => {
       setReplayPlayheadIndex((current) => {
         if (current === null) return current;
-        return Math.min(replayEndIndex, current + 1);
+        if (current >= replayEndIndex) {
+          // Loop back to start
+          snappedReplayEventRef.current = null;
+          return 0;
+        }
+        return current + 1;
       });
     }, beatMs);
     return () => window.clearTimeout(timeout);

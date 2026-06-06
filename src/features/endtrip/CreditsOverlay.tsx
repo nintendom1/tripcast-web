@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "convex/react";
-import { Archive, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import { tripcastApi, type Role } from "../../convex/tripcastApi";
 import { useDebugLogger } from "../../debug/useDebugLogger";
@@ -106,8 +106,7 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
   }, [log, stats.routeSteps]);
 
   function handleClose() {
-    log.logUi("finale:archive-navigation", {
-      destination: "map-archive",
+    log.logUi("finale:close", {
       ended: credits?.ended ?? false,
     });
     onClose();
@@ -126,15 +125,12 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
       {/* Top bar */}
       <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4">
         <div>
-          <div className="font-[var(--meadow-font-display)] text-[10px] uppercase tracking-[0.18em] text-white/50">
-            {credits?.ended ? "Trip Complete" : "Finale preview"}
-          </div>
           <div className="font-[var(--font-display)] text-lg font-extrabold text-white">TripCast finale</div>
         </div>
         <button
           type="button"
           onClick={handleClose}
-          aria-label="Close to map archive"
+          aria-label="Close finale"
           className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
         >
           <X className="h-4 w-4" />
@@ -142,7 +138,7 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
       </div>
 
       <motion.div
-        className="pointer-events-none absolute inset-y-6 left-[-18vw] right-[-18vw] rotate-[-8deg] bg-[linear-gradient(135deg,rgba(255,139,74,0.94),rgba(28,31,58,0.96))] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
+        className="pointer-events-none absolute bottom-6 left-[-18vw] right-[-18vw] top-[60%] rotate-[-8deg] bg-[linear-gradient(135deg,rgba(255,139,74,0.94),rgba(28,31,58,0.96))] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
         initial={{ x: "-110%" }}
         animate={{ x: 0 }}
         transition={{ duration: 0.75, ease: [0.22, 0.9, 0.3, 1] }}
@@ -159,15 +155,14 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
       >
         <motion.div
           className="px-8 text-center"
-          initial={{ y: "100%" }}
+          initial={{ y: "15vh" }}
           animate={{ y: "-100%" }}
           transition={{ duration: 22, ease: "linear", repeat: Infinity }}
         >
           <div className="py-10" />
           <div className="mb-10">
-            <div className="text-[10px] uppercase tracking-[0.3em] text-white/60">Trip Complete</div>
             <h1 className="mt-2 font-[var(--font-display)] text-4xl font-black text-white">
-              The route made it.
+              Trip Complete
             </h1>
           </div>
           {credits?.thankYouNote ? (
@@ -205,18 +200,8 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
           </div>
           <div className="mt-1 text-xs text-white/60">Rendered with MapLibre GL</div>
 
-          <div className="mt-12 font-[var(--font-display)] text-base font-extrabold text-white">
+          <div className="mt-12 pb-20 font-[var(--font-display)] text-base font-extrabold text-white">
             TripCast
-          </div>
-          <div className="flex justify-center py-10">
-            <button
-              type="button"
-              onClick={handleClose}
-              className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-white/14 px-4 py-2 text-xs font-semibold text-white hover:bg-white/24"
-            >
-              <Archive className="h-4 w-4" />
-              Map archive
-            </button>
           </div>
         </motion.div>
       </div>
