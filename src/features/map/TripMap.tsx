@@ -132,6 +132,7 @@ const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 1000;
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
+const FINALE_FIT_MAX_ZOOM = 18;
 // Discrete playback speeds offered in the Speed sheet. 20x/30x clamp at the
 // 60ms beat floor in the beat-scheduling effect, so they top out near 16x of
 // visible cadence — kept for parity with the design's fast-shuttle affordance.
@@ -1471,8 +1472,8 @@ export default function TripMap({
   }, []);
 
   const showPath = role === "traveler"
-    ? showTripPathLocal
-    : travelerAllowsFollowerPath && showTripPathLocal;
+    ? (finaleReplayActive || showTripPathLocal)
+    : travelerAllowsFollowerPath && (finaleReplayActive || showTripPathLocal);
   const replayTrailLoading = replayTrailLoad.status === "loading";
   const canAttemptReplay = showPath && !replayTrailLoading;
 
@@ -1779,17 +1780,25 @@ export default function TripMap({
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
-    if (replayPlayheadIndex >= replayEndIndex) return;
 
     // Variable beat: breadcrumb beats tick at 2x (half the duration); checkpoint
     // beats use the base duration. Both scale by replaySpeed.
     const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
     const kindMultiplier = pin?.kind === "breadcrumb" ? 0.5 : 1;
-    const beatMs = Math.max(60, Math.round((REPLAY_BASE_BEAT_MS * kindMultiplier) / replaySpeed));
+    const isAtEnd = replayPlayheadIndex >= replayEndIndex;
+    const beatMs = isAtEnd
+      ? 5000 // Pause for 5 seconds at the end before looping
+      : Math.max(60, Math.round((REPLAY_BASE_BEAT_MS * kindMultiplier) / replaySpeed));
+
     const timeout = window.setTimeout(() => {
       setReplayPlayheadIndex((current) => {
         if (current === null) return current;
-        return Math.min(replayEndIndex, current + 1);
+        if (current >= replayEndIndex) {
+          // Loop back to start
+          snappedReplayEventRef.current = null;
+          return 0;
+        }
+        return current + 1;
       });
     }, beatMs);
     return () => window.clearTimeout(timeout);
@@ -1828,12 +1837,14 @@ export default function TripMap({
       // The TripReplayHud is the bottom occluder during replay; treat it like a
       // sheet so fitBounds keeps the route above it.
       const padding = readOccluderPadding(map, {
-        topOccluderEl: cardsWrapperRef.current,
-        sheetSelector: "[data-replay-hud]",
+        topOccluderEl: finaleReplayActive
+          ? document.querySelector<HTMLElement>("[data-finale-header]")
+          : cardsWrapperRef.current,
+        sheetSelector: finaleReplayActive ? "[data-finale-banner]" : "[data-replay-hud]",
       });
       map.fitBounds(
         [[minLon, minLat], [maxLon, maxLat]],
-        { padding, duration: 800, maxZoom: 14 },
+        { padding, duration: 800, maxZoom: finaleReplayActive ? FINALE_FIT_MAX_ZOOM : 14 },
       );
       return;
     }
@@ -1868,9 +1879,15 @@ export default function TripMap({
     // because that closure is declared later in the component body.
     const coord = { lat: target.lat, lon: target.lon };
     const geometry = readFocusGeometry(map, {
-      topOccluderEl: cardsWrapperRef.current,
-      sheetSelector: null,
+      topOccluderEl: finaleReplayActive
+        ? document.querySelector<HTMLElement>("[data-finale-header]")
+        : cardsWrapperRef.current,
+      sheetSelector: finaleReplayActive ? "[data-finale-banner]" : null,
       minZoom: 13,
+      // Finale: drop the pin below band-center so it reads lower on screen.
+      // y is 0..1 of the band (header bottom -> banner top); 0.5 = center.
+      // Raise toward 0.8 for lower, lower toward 0.5 for centered.
+      anchor: finaleReplayActive ? { x: 0.5, y: 0.7 } : undefined,
     });
     log.logMap("map:camera:focus", {
       trigger: "replay:coordinate-snap",
@@ -1899,7 +1916,7 @@ export default function TripMap({
       duration: 550,
       padding: geometry.padding,
     });
-  }, [log, replayActive, replayPins, replayPlayheadIndex, token]);
+  }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1927,7 +1944,7 @@ export default function TripMap({
       if (!finaleReplayStartedRef.current) {
         snappedReplayEventRef.current = null;
         finaleReplayStartedRef.current = true;
-        setReplaySpeed((speed) => Math.max(speed, 2));
+        setReplaySpeed(0.5);
         log.logInteraction("finale:map-replay:start", {
           totalPins: pins.length,
           resumeIndex,
@@ -4657,6 +4674,7 @@ export default function TripMap({
         className={cn(
           "pointer-events-none absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame",
           coordinatePickMode && "invisible",
+          finaleReplayActive && "invisible",
         )}
       >
         {locationStale ? (
