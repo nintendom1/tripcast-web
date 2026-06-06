@@ -1,10 +1,10 @@
 import * as React from "react";
-import { Moon, Settings, Sun } from "lucide-react";
+import { Moon, Settings, Sun, SunMoon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import type { Role } from "@/convex/tripcastApi";
 import { TERMS } from "../../copy/terminology";
-import { useThemeMode, useResolvedTheme } from "../../providers/ThemeProvider";
+import { useThemeMode } from "../../providers/ThemeProvider";
 
 export interface TopBarProps {
   role: Role;
@@ -22,10 +22,16 @@ export interface TopBarProps {
 export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
   const isTraveler = role === "traveler";
   const roleLabel = isTraveler ? TERMS.traveler : TERMS.follower;
-  const { setMode } = useThemeMode();
-  const { resolvedTheme } = useResolvedTheme();
-  const nextTheme = resolvedTheme === "meadow" ? "constellation" : "meadow";
-  const NextThemeIcon = nextTheme === "meadow" ? Sun : Moon;
+  const { mode, setMode } = useThemeMode();
+
+  const cycleTheme = () => {
+    if (mode === "meadow") setMode("constellation");
+    else if (mode === "constellation") setMode("auto");
+    else setMode("meadow");
+  };
+
+  const ThemeIcon = mode === "meadow" ? Sun : mode === "constellation" ? Moon : SunMoon;
+  const themeLabel = mode === "meadow" ? "Light" : mode === "constellation" ? "Dark" : "Auto";
 
   return (
     <header
@@ -62,11 +68,11 @@ export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => setMode(nextTheme)}
-          aria-label={`Switch to ${nextTheme === "meadow" ? "light" : "dark"} theme`}
+          onClick={cycleTheme}
+          aria-label={`Current theme: ${themeLabel}. Tap to cycle.`}
           className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper-2)]"
         >
-          <NextThemeIcon className="h-[18px] w-[18px]" aria-hidden="true" />
+          <ThemeIcon className="h-[18px] w-[18px]" aria-hidden="true" />
         </button>
         <span
           className={cn(

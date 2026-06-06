@@ -720,18 +720,28 @@ describe("OptionsSheet developer scoring toggle", () => {
 });
 
 describe("OptionsSheet appearance", () => {
-  it("shows light/dark choices and automatic theme as a toggle", () => {
+  it("shows light, dark, and auto choices with accessible selection state", async () => {
     setupMocks();
     renderOptions();
 
     const appearanceSection = screen.getByText("Appearance").closest("section");
     expect(appearanceSection).not.toBeNull();
-    const labels = within(appearanceSection!).getAllByRole("button").map((button) =>
-      button.textContent?.trim(),
-    );
+    const appearance = within(appearanceSection!);
+    const buttons = appearance.getAllByRole("button");
+    const labels = buttons.map((button) => button.textContent?.trim());
 
-    expect(labels).toEqual(["Light", "Dark"]);
-    expect(within(appearanceSection!).getByRole("checkbox", { name: /automatic theme/i })).toBeChecked();
+    expect(labels).toEqual(["Light", "Dark", "Auto"]);
+    expect(appearance.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(appearance.getByRole("button", { name: "Dark" }));
+
+    expect(appearance.getByRole("button", { name: "Dark" })).toHaveAttribute("aria-pressed", "true");
+    expect(appearance.queryByText(/traveler's local day\/night time/i)).not.toBeInTheDocument();
+
+    await userEvent.click(appearance.getByRole("button", { name: "Auto" }));
+
+    expect(appearance.getByRole("button", { name: "Auto" })).toHaveAttribute("aria-pressed", "true");
+    expect(appearance.getByText(/traveler's local day\/night time/i)).toBeInTheDocument();
   });
 });
 
