@@ -24,6 +24,8 @@ import AddCheckpointSheet, {
   type CheckpointPrefill,
   type SelectedCoordinate,
 } from "./AddCheckpointSheet";
+import ReplaySpeedSheet from "./ReplaySpeedSheet";
+import ReplayDateRangeSheet from "./ReplayDateRangeSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import {
   MapPickerConfirmPanel,
@@ -131,6 +133,10 @@ const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 1000;
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
 const FINALE_FIT_MAX_ZOOM = 18;
+// Discrete playback speeds offered in the Speed sheet. 20x/30x clamp at the
+// 60ms beat floor in the beat-scheduling effect, so they top out near 16x of
+// visible cadence — kept for parity with the design's fast-shuttle affordance.
+const REPLAY_SPEED_OPTIONS = [0.5, 1, 2, 5, 10, 20, 30] as const;
 
 type ReplayResume = { eventId: string; index: number };
 
@@ -326,6 +332,13 @@ function formatReplayTime(timestamp: number) {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+  });
+}
+
+function formatReplayDate(timestamp: number) {
+  return new Date(timestamp).toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
   });
 }
 
@@ -677,13 +690,13 @@ function TripReplayHud({
   currentPinKind,
   currentPinTime,
   speed,
+  windowLabel,
   isPaused,
   onTogglePause,
   onRestart,
   onScrub,
-  onSpeedChange,
-  onShuttleStart,
-  onShuttleEnd,
+  onOpenSpeedSheet,
+  onOpenDateSheet,
   onClose,
 }: {
   playheadIndex: number;
@@ -691,18 +704,17 @@ function TripReplayHud({
   currentPinKind: "checkpoint" | "breadcrumb" | "end";
   currentPinTime: number | null;
   speed: number;
+  /** "Full trip" or a formatted start–end label for the active replay window. */
+  windowLabel: string;
   isPaused: boolean;
   onTogglePause: () => void;
   onRestart: () => void;
   onScrub: (index: number) => void;
-  onSpeedChange: (speed: number) => void;
-  onShuttleStart: () => void;
-  onShuttleEnd: () => void;
+  onOpenSpeedSheet: () => void;
+  onOpenDateSheet: () => void;
   onClose: () => void;
 }) {
-  const progress = endIndex > 0 ? Math.round((playheadIndex / endIndex) * 100) : 0;
   const isEnd = currentPinKind === "end";
-  const kindLabel = currentPinKind === "checkpoint" ? "Stop" : currentPinKind === "breadcrumb" ? "Breadcrumb" : "End";
 
   return (
     <motion.div
@@ -711,68 +723,73 @@ function TripReplayHud({
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: 16, opacity: 0 }}
       transition={{ duration: 0.18, ease: "easeOut" as const }}
-      className="pointer-events-auto absolute bottom-[88px] left-1/2 z-[21] w-[calc(100%-24px)] max-w-[390px] -translate-x-1/2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-3 text-[var(--ink-1)] shadow-[var(--shadow-card)]"
+      className="pointer-events-auto absolute bottom-[88px] left-1/2 z-[21] flex w-[calc(100%-24px)] max-w-[390px] -translate-x-1/2 flex-col gap-2.5 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]/80 p-3 text-[var(--ink-1)] shadow-[var(--shadow-card)] backdrop-blur-2xl"
       role="group"
       aria-label="Trip Replay"
       data-replay-hud=""
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-            Trip Replay · {kindLabel}
-          </p>
-          <p className="truncate text-xs font-semibold text-[var(--ink-1)]">
-            {isEnd ? "End" : currentPinTime !== null ? formatReplayTime(currentPinTime) : ""}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {isEnd ? (
-            <button
-              type="button"
-              onClick={onRestart}
-              aria-label="Replay from start"
-              className="inline-flex items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
-            >
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              Replay
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={onTogglePause}
-              aria-label={isPaused ? "Play replay" : "Pause replay"}
-              className="inline-flex items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
-            >
-              {isPaused ? (
-                <>
-                  <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                  Play
-                </>
-              ) : (
-                <>
-                  <Pause className="h-3.5 w-3.5" aria-hidden="true" />
-                  Pause
-                </>
-              )}
-            </button>
-          )}
+      {/* Top row: Speed pill · Play/Pause · Date Range pill */}
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onOpenSpeedSheet}
+          aria-label="Change replay speed"
+          className="flex min-w-[96px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-4 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+        >
+          <span className="text-sm font-semibold leading-tight">Speed</span>
+          <span className="text-xs text-[var(--ink-3)]">{speed}x</span>
+        </button>
+
+        {isEnd ? (
+          <button
+            type="button"
+            onClick={onRestart}
+            aria-label="Replay from start"
+            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
+          >
+            <RotateCcw className="h-6 w-6" aria-hidden="true" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onTogglePause}
+            aria-label={isPaused ? "Play replay" : "Pause replay"}
+            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
+          >
+            {isPaused ? (
+              <Play className="h-7 w-7" aria-hidden="true" style={{ marginLeft: 2 }} />
+            ) : (
+              <Pause className="h-7 w-7" aria-hidden="true" />
+            )}
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={onOpenDateSheet}
+          aria-label="Change replay date range"
+          className="flex min-w-[96px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-4 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+        >
+          <span className="text-sm font-semibold leading-tight">Date Range</span>
+          <span className="max-w-[110px] truncate text-xs text-[var(--ink-3)]">{windowLabel}</span>
+        </button>
+      </div>
+
+      {/* Bottom row: current beat time + timeline scrubber */}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-medium text-[var(--ink-1)]">
+            {isEnd ? "End of replay" : currentPinTime !== null ? formatReplayTime(currentPinTime) : ""}
+          </span>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close trip replay"
-            className="inline-flex items-center gap-1.5 rounded-full bg-[var(--meter-track)] px-3 py-1.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+            className="grid h-7 w-7 place-items-center rounded-full text-[var(--ink-3)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
           >
-            <X className="h-3.5 w-3.5" aria-hidden="true" />
-            Close
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-      </div>
-
-      <label className="mt-3 grid gap-1.5">
-        <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-          <span>Timeline</span>
-          <span>{progress}%</span>
-        </span>
         <input
           type="range"
           min={0}
@@ -783,26 +800,7 @@ function TripReplayHud({
           className="h-2 w-full accent-[var(--flag)]"
           aria-label="Replay timeline"
         />
-      </label>
-
-      <label className="mt-3 grid gap-1.5">
-        <span className="flex items-center justify-between font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-3)]">
-          <span>Shuttle</span>
-          <span>{speed}x</span>
-        </span>
-        <input
-          type="range"
-          min={1}
-          max={16}
-          step={1}
-          value={speed}
-          onPointerDown={onShuttleStart}
-          onPointerUp={onShuttleEnd}
-          onChange={(event) => onSpeedChange(Number(event.currentTarget.value))}
-          className="h-2 w-full accent-[var(--flag)]"
-          aria-label="Replay speed"
-        />
-      </label>
+      </div>
     </motion.div>
   );
 }
@@ -1357,6 +1355,13 @@ export default function TripMap({
     error?: string;
   }>({ status: "idle", pages: 0, samples: 0 });
   const replayTrailLoadSeqRef = useRef(0);
+  // Replay-only date window. Null = full trip (no narrowing). While active and
+  // set, it filters all timestamped map state (checkpoints, journal, breadcrumbs,
+  // missions, cloaking) and rebuilds the replay pins so the scrubber is bounded
+  // to the window. Reset to null on every replay-stop path.
+  const [replayWindow, setReplayWindow] = useState<{ startAt: number; endAt: number } | null>(null);
+  const [isReplaySpeedSheetOpen, setIsReplaySpeedSheetOpen] = useState(false);
+  const [isReplayDateSheetOpen, setIsReplayDateSheetOpen] = useState(false);
   const stopFollowing = useCallback(() => {
     setIsFollowing(false);
   }, []);
@@ -1396,12 +1401,20 @@ export default function TripMap({
   );
   const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token });
   const cutoffPreview = useFollowerCutoffPreview(role, token);
+  // True unless an active, narrowed replay window excludes the timestamp. Used to
+  // filter every timestamped map layer to the selected window during Replay.
+  const inReplayWindow = useCallback(
+    (ts: number) =>
+      !(replayActive && replayWindow) || (ts >= replayWindow.startAt && ts <= replayWindow.endAt),
+    [replayActive, replayWindow],
+  );
   const checkpoints = useMemo(() => {
     const all = rawCheckpoints ?? [];
-    return cutoffPreview.cutoffAt
+    const cutoffFiltered = cutoffPreview.cutoffAt
       ? all.filter((cp) => (cp.happenedAt ?? cp.createdAt) >= (cutoffPreview.cutoffAt as number))
       : all;
-  }, [rawCheckpoints, cutoffPreview.cutoffAt]);
+    return cutoffFiltered.filter((cp) => inReplayWindow(cp.happenedAt ?? cp.createdAt));
+  }, [rawCheckpoints, cutoffPreview.cutoffAt, inReplayWindow]);
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
   });
@@ -1428,13 +1441,20 @@ export default function TripMap({
       role === "traveler"
         ? (travelerLiveTrailStatus?.samples ?? [])
         : (followerLiveTrail?.visible ? followerLiveTrail.samples : []);
-    return cutoffPreview.cutoffAt
+    const cutoffFiltered = cutoffPreview.cutoffAt
       ? all.filter((s) => s.sampledAt >= (cutoffPreview.cutoffAt as number))
       : all;
-  }, [role, travelerLiveTrailStatus, followerLiveTrail, cutoffPreview.cutoffAt]);
+    return cutoffFiltered.filter((s) => inReplayWindow(s.sampledAt));
+  }, [role, travelerLiveTrailStatus, followerLiveTrail, cutoffPreview.cutoffAt, inReplayWindow]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
   const replaySourceTrailSamples = replayTrailSamples ?? liveTrailSamples;
-  const pathTrailSamples = replayActive && replayTrailSamples ? replayTrailSamples : liveTrailSamples;
+  // The path follows the replay-loaded sample set during replay; window it so the
+  // drawn trail matches the selected slice (both sources are already cutoff-filtered:
+  // liveTrailSamples client-side, replayTrailSamples via loadReplayTrailSamples).
+  const pathTrailSamples = useMemo(() => {
+    const base = replayActive && replayTrailSamples ? replayTrailSamples : liveTrailSamples;
+    return base.filter((s) => inReplayWindow(s.sampledAt));
+  }, [replayActive, replayTrailSamples, liveTrailSamples, inReplayWindow]);
   const pathTrailVisible = pathTrailSamples.length >= 1;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
@@ -1473,11 +1493,15 @@ export default function TripMap({
     [music, mapInstance, stopFollowing],
   );
 
-  useCloakingZones(
-    mapInstance,
-    role === "traveler" ? (cloakingPinsData ?? []) : [],
-    handleCloakingPinClick,
+  const cloakingPinsForMap = useMemo(
+    () =>
+      role === "traveler"
+        ? (cloakingPinsData ?? []).filter((p) => inReplayWindow(p.createdAt))
+        : [],
+    [role, cloakingPinsData, inReplayWindow],
   );
+
+  useCloakingZones(mapInstance, cloakingPinsForMap, handleCloakingPinClick);
 
   useEffect(() => {
     logMapEvent("map:trip-path:gating", {
@@ -1500,15 +1524,36 @@ export default function TripMap({
       ? all.filter((e) => e.occurredAt >= (cutoffPreview.cutoffAt as number))
       : all;
   }, [queriedJournalEvents, cutoffPreview.cutoffAt]);
-  const replayJournalEvents = useMemo(
-    () => (role === "traveler" ? (queriedJournalEvents ?? []) : journalEvents),
-    [journalEvents, queriedJournalEvents, role],
-  );
+  // Replay traverses the same cutoff-filtered set the map shows, so the Traveler's
+  // replay never visits pins hidden by the Follower content cutoff. "Show all"
+  // nulls the cutoff (in useFollowerCutoffPreview), restoring the full trip for
+  // both the map and replay. Followers are already filtered server-side.
+  const replayJournalEvents = journalEvents;
+  // Full (pre-window) time span of the trip's timestamped data — the domain for
+  // the date-range slider. Built from un-windowed sources so the slider keeps its
+  // full range even while a window narrows the map.
+  const tripTimeBounds = useMemo<{ min: number; max: number } | null>(() => {
+    let min = Number.POSITIVE_INFINITY;
+    let max = Number.NEGATIVE_INFINITY;
+    const consider = (t?: number) => {
+      if (typeof t === "number" && Number.isFinite(t)) {
+        if (t < min) min = t;
+        if (t > max) max = t;
+      }
+    };
+    for (const cp of rawCheckpoints ?? []) consider(cp.happenedAt ?? cp.createdAt);
+    for (const e of queriedJournalEvents ?? []) consider(e.occurredAt);
+    for (const s of replaySourceTrailSamples) consider(s.sampledAt);
+    return min <= max ? { min, max } : null;
+  }, [rawCheckpoints, queriedJournalEvents, replaySourceTrailSamples]);
   const loadReplayTrailSamples = useCallback(async () => {
     if (replayTrailSamples) return replayTrailSamples;
     const seq = ++replayTrailLoadSeqRef.current;
     const startedAt = performance.now();
-    const cutoffAt = role === "follower" ? (cutoffPreview.cutoffAt ?? undefined) : undefined;
+    // Apply the cutoff for both roles so the Traveler's replay trail matches the
+    // map. For Followers the server enforces its own cutoff regardless; for the
+    // Traveler this is null unless a content cutoff is set and "Show all" is off.
+    const cutoffAt = cutoffPreview.cutoffAt ?? undefined;
     let cursor: string | null = null;
     let pages = 0;
     const samples: LiveTrailSample[] = [];
@@ -1572,11 +1617,19 @@ export default function TripMap({
     }
   }, [convex, cutoffPreview.cutoffAt, log, replayTrailSamples, role, token]);
   const replayPins = useMemo<ReplayPin[]>(
-    () => buildReplayPins(replayJournalEvents, replaySourceTrailSamples),
-    [replayJournalEvents, replaySourceTrailSamples],
+    () =>
+      buildReplayPins(
+        replayJournalEvents.filter((e) => inReplayWindow(e.occurredAt)),
+        replaySourceTrailSamples.filter((s) => inReplayWindow(s.sampledAt)),
+      ),
+    [replayJournalEvents, replaySourceTrailSamples, inReplayWindow],
   );
   const replayEndIndex = replayPins.length;
   const canReplayTrip = replayPins.length > 1;
+  const isReplayWindowActive = replayActive && replayWindow !== null;
+  const replayWindowLabel = replayWindow
+    ? `${formatReplayDate(replayWindow.startAt)} – ${formatReplayDate(replayWindow.endAt)}`
+    : "Full trip";
   // Categorize the current beat. End = synthetic terminal beat at index === length.
   const currentReplayPin = replayPlayheadIndex !== null && replayPlayheadIndex < replayPins.length
     ? replayPins[replayPlayheadIndex]
@@ -1874,6 +1927,9 @@ export default function TripMap({
         setReplayActive(false);
         setReplayPlayheadIndex(null);
         setReplayPaused(false);
+        setReplayWindow(null);
+        setIsReplaySpeedSheetOpen(false);
+        setIsReplayDateSheetOpen(false);
         log.logInteraction("finale:map-replay:stop");
       }
       return;
@@ -1926,6 +1982,9 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
+    setReplayWindow(null);
+    setIsReplaySpeedSheetOpen(false);
+    setIsReplayDateSheetOpen(false);
     log.logInteraction("replay:close", { reason: "ui-opened", speed: replaySpeed });
   }, [
     replayActive,
@@ -3367,6 +3426,9 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
+    setReplayWindow(null);
+    setIsReplaySpeedSheetOpen(false);
+    setIsReplayDateSheetOpen(false);
     clearReplayResume(token);
     lastLiveTrailSampleRef.current = null;
   }, [tripDataResetNonce, stopFollowing, token]);
@@ -3538,7 +3600,10 @@ export default function TripMap({
   }
 
   function handleReplaySpeedChange(speed: number) {
-    const nextSpeed = Math.min(16, Math.max(1, Math.round(speed)));
+    // Snap to the nearest offered discrete speed so callers can't desync the HUD.
+    const nextSpeed = REPLAY_SPEED_OPTIONS.reduce((closest, option) =>
+      Math.abs(option - speed) < Math.abs(closest - speed) ? option : closest,
+    );
     setReplaySpeed((currentSpeed) => {
       if (currentSpeed !== nextSpeed) {
         log.logInteraction("replay:speed-shift", {
@@ -3548,14 +3613,27 @@ export default function TripMap({
       }
       return nextSpeed;
     });
+    setIsReplaySpeedSheetOpen(false);
   }
 
-  function handleReplayShuttleStart() {
-    log.logInteraction("replay:shuttle:drag-start", { speed: replaySpeed });
+  function handleApplyReplayWindow(startAt: number, endAt: number) {
+    setReplayWindow({ startAt, endAt });
+    setReplayPlayheadIndex(0);
+    snappedReplayEventRef.current = null;
+    setIsReplayDateSheetOpen(false);
+    log.logInteraction("replay:window:apply", {
+      startAt,
+      endAt,
+      spanMs: endAt - startAt,
+    });
   }
 
-  function handleReplayShuttleEnd() {
-    log.logInteraction("replay:shuttle:drag-end", { speed: replaySpeed });
+  function handleResetReplayWindow() {
+    setReplayWindow(null);
+    setReplayPlayheadIndex(0);
+    snappedReplayEventRef.current = null;
+    setIsReplayDateSheetOpen(false);
+    log.logInteraction("replay:window:reset");
   }
 
   function handleCloseReplay() {
@@ -3564,6 +3642,9 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
+    setReplayWindow(null);
+    setIsReplaySpeedSheetOpen(false);
+    setIsReplayDateSheetOpen(false);
     log.logInteraction("replay:close", { speed: replaySpeed });
   }
 
@@ -4144,25 +4225,32 @@ export default function TripMap({
       <RouteVoteMapOverlay
         key={tripDataResetNonce}
         map={mapInstance}
-        overlay={isVotePanelOpen ? voteMapOverlay : null}
+        overlay={isVotePanelOpen && !isReplayWindowActive ? voteMapOverlay : null}
         fallbackOrigin={routeVoteFallbackOrigin}
         optionNumberById={voteOptionNumberById}
       />
-      <MysteryMissionMarkers
-        map={mapInstance}
-        token={token}
-        debugShowAll={debugShowAllMysteryPins}
-        onMysteryMissionClick={handleNavigateToMysteryMissionDetail}
-        onMysterySignalAppeared={handleMysterySignalAppeared}
-        onMysteryMissionReveal={() => {
-          music.sfx("success");
-          showToast("Mystery Mission revealed.", "mystery");
-        }}
-      />
+      {/* Mystery missions are a live signal/reveal mechanic with no stable
+          historical timestamp, so hide them entirely while a replay window is
+          active (mirrors the route-vote overlay). */}
+      {!isReplayWindowActive ? (
+        <MysteryMissionMarkers
+          map={mapInstance}
+          token={token}
+          debugShowAll={debugShowAllMysteryPins}
+          onMysteryMissionClick={handleNavigateToMysteryMissionDetail}
+          onMysterySignalAppeared={handleMysterySignalAppeared}
+          onMysteryMissionReveal={() => {
+            music.sfx("success");
+            showToast("Mystery Mission revealed.", "mystery");
+          }}
+        />
+      ) : null}
       <MissionMarkers
         map={mapInstance}
         token={token}
         role={role}
+        windowStartAt={isReplayWindowActive ? replayWindow!.startAt : null}
+        windowEndAt={isReplayWindowActive ? replayWindow!.endAt : null}
         onMissionClick={(id) => {
           music.sfx("open");
           setIsMissionsPanelOpen(true);
@@ -4256,17 +4344,45 @@ export default function TripMap({
             currentPinKind={replayPlayheadIndex >= replayPins.length ? "end" : currentReplayPinKind}
             currentPinTime={currentReplayPin?.occurredAt ?? null}
             speed={replaySpeed}
+            windowLabel={replayWindowLabel}
             isPaused={replayPaused}
             onTogglePause={handleToggleReplayPause}
             onRestart={handleRestartReplay}
             onScrub={handleReplayScrub}
-            onSpeedChange={handleReplaySpeedChange}
-            onShuttleStart={handleReplayShuttleStart}
-            onShuttleEnd={handleReplayShuttleEnd}
+            onOpenSpeedSheet={() => {
+              music.sfx("tap");
+              setReplayPaused(true);
+              setIsReplaySpeedSheetOpen(true);
+              log.logInteraction("replay:speed-sheet:open", { speed: replaySpeed });
+            }}
+            onOpenDateSheet={() => {
+              music.sfx("tap");
+              setReplayPaused(true);
+              setIsReplayDateSheetOpen(true);
+              log.logInteraction("replay:date-sheet:open", {
+                windowed: replayWindow !== null,
+              });
+            }}
             onClose={handleCloseReplay}
           />
         ) : null}
       </AnimatePresence>
+
+      <ReplaySpeedSheet
+        open={isReplaySpeedSheetOpen}
+        speed={replaySpeed}
+        options={REPLAY_SPEED_OPTIONS}
+        onSelect={handleReplaySpeedChange}
+        onClose={() => setIsReplaySpeedSheetOpen(false)}
+      />
+      <ReplayDateRangeSheet
+        open={isReplayDateSheetOpen}
+        bounds={tripTimeBounds}
+        window={replayWindow}
+        onApply={handleApplyReplayWindow}
+        onReset={handleResetReplayWindow}
+        onClose={() => setIsReplayDateSheetOpen(false)}
+      />
 
       <VoteTimeSplash
         token={token}

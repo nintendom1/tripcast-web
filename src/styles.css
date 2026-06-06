@@ -659,3 +659,53 @@ textarea {
     @apply font-sans;
   }
 }
+
+/*
+ * DualRangeSlider — two overlaid native range inputs share a custom track drawn
+ * by sibling divs. Tracks are transparent and non-interactive; only the thumbs
+ * receive pointer events so both handles stay independently draggable.
+ */
+.dual-range-thumb {
+  pointer-events: none;
+}
+.dual-range-thumb:focus-visible {
+  outline: none;
+}
+.dual-range-thumb::-webkit-slider-runnable-track {
+  background: transparent;
+  height: 100%;
+}
+.dual-range-thumb::-moz-range-track {
+  background: transparent;
+  height: 100%;
+}
+.dual-range-thumb::-webkit-slider-thumb {
+  pointer-events: auto;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  border-radius: 9999px;
+  background: var(--bg-card);
+  border: 2px solid var(--flag);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: ew-resize;
+}
+.dual-range-thumb::-moz-range-thumb {
+  pointer-events: auto;
+  height: 20px;
+  width: 20px;
+  border-radius: 9999px;
+  background: var(--bg-card);
+  border: 2px solid var(--flag);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: ew-resize;
+}
+.dual-range-thumb:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--flag);
+  outline-offset: 2px;
+}
+.dual-range-thumb:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--flag);
+  outline-offset: 2px;
+}
