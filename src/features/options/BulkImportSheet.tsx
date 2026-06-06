@@ -116,6 +116,105 @@ const SAMPLE_JSON = `{
       "visibility": "public",
       "countsTowardMeter": true,
       "linkedToRef": "story:king-street-station"
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:pioneer-square",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T08:30:00-07:00",
+      "lat": 47.6005,
+      "lon": -122.332,
+      "accuracy": 12
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:occidental-park",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T09:00:00-07:00",
+      "lat": 47.603,
+      "lon": -122.3345
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:first-ave",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T09:30:00-07:00",
+      "lat": 47.6052,
+      "lon": -122.3365
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:university-st",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T09:50:00-07:00",
+      "lat": 47.607,
+      "lon": -122.339
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:pike-st-approach",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T10:05:00-07:00",
+      "lat": 47.6085,
+      "lon": -122.341,
+      "accuracy": 8
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:market-front",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T10:12:00-07:00",
+      "lat": 47.6093,
+      "lon": -122.342
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:belltown",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T11:00:00-07:00",
+      "lat": 47.613,
+      "lon": -122.346
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:denny-way",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T12:30:00-07:00",
+      "lat": 47.617,
+      "lon": -122.35
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:lower-queen-anne",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-14T15:00:00-07:00",
+      "lat": 47.621,
+      "lon": -122.3535
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:queen-anne-ave",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-15T17:30:00-07:00",
+      "lat": 47.6245,
+      "lon": -122.356
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:highland-drive",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-15T18:40:00-07:00",
+      "lat": 47.627,
+      "lon": -122.358,
+      "accuracy": 9
+    },
+    {
+      "kind": "live_trail_sample",
+      "ref": "bc:kerry-park-approach",
+      "timeZone": "America/Los_Angeles",
+      "sampledAt": "2026-05-15T19:20:00-07:00",
+      "lat": 47.629,
+      "lon": -122.3595
     }
   ]
 }`;
@@ -152,7 +251,7 @@ const BULK_IMPORT_SCHEMA = {
       type: "object",
       required: ["kind"],
       properties: {
-        kind: { enum: ["checkin", "story", "transaction", "mission", "mystery_mission", "route_vote", "vote", "ticker_fact", "fact", "ticker_tip", "tip"] },
+        kind: { enum: ["checkin", "story", "transaction", "mission", "mystery_mission", "route_vote", "vote", "ticker_fact", "fact", "ticker_tip", "tip", "live_trail_sample"] },
         ref: { type: "string", maxLength: 80 },
         timeZone: { type: "string" },
         occurredAt: { $ref: "#/definitions/timestamp" },
@@ -280,6 +379,18 @@ const BULK_IMPORT_SCHEMA = {
               resultingMissionRef: { type: "string", maxLength: 80 },
             },
             required: ["title", "options"],
+          },
+        },
+        {
+          if: { properties: { kind: { const: "live_trail_sample" } } },
+          then: {
+            properties: {
+              lat: { type: "number", minimum: -90, maximum: 90 },
+              lon: { type: "number", minimum: -180, maximum: 180 },
+              sampledAt: { $ref: "#/definitions/timestamp" },
+              accuracy: { type: "number" },
+            },
+            required: ["lat", "lon", "sampledAt"],
           },
         },
       ],
@@ -436,7 +547,7 @@ export default function BulkImportSheet({
             <>
               <p className="text-sm leading-relaxed text-[var(--ink-2)]">
                 Paste a JSON array or {"{ timeZone, entries }"} object with up to 100 entries.
-                Supported kinds are checkin, story, transaction, mission, Mystery Mission, route vote, ticker fact, and ticker tip.
+                Supported kinds are checkin, story, transaction, mission, Mystery Mission, route vote, ticker fact, ticker tip, and live trail breadcrumb.
                 Timestamps can be epoch milliseconds, ISO strings with an offset, or YYYY-MM-DD dates.
               </p>
               <textarea
@@ -560,7 +671,7 @@ export default function BulkImportSheet({
                   {result.counts.checkins} check-ins, {result.counts.transactions} transactions,{" "}
                   {result.counts.missions} missions, {result.counts.mysteryMissions} mystery missions,{" "}
                   {result.counts.routeVotes} route votes, {result.counts.tickerFacts} ticker facts,{" "}
-                  {result.counts.tickerTips} ticker tips.
+                  {result.counts.tickerTips} ticker tips, {result.counts.liveTrailSamples} breadcrumbs.
                 </p>
               </div>
               <Button
@@ -613,6 +724,7 @@ function PreviewSummary({ preview }: { preview: BulkImportPreview | undefined })
         ["Votes", preview.counts.routeVotes],
         ["Facts", preview.counts.tickerFacts],
         ["Tips", preview.counts.tickerTips],
+        ["Trail", preview.counts.liveTrailSamples],
       ].map(([label, value]) => (
         <div key={label} className={cn("rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-center shadow-sm")}>
           <p className="font-[var(--font-display)] text-xl font-extrabold text-[var(--ink-1)]">{value}</p>

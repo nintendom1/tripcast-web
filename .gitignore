@@ -25,3 +25,6 @@ music-rework/
 
 # Local dev server log (accidentally committed)
 dev_server.log
+
+# Agent visual-testing scratch (screenshots, ad-hoc Playwright drivers)
+.visual-tmp/

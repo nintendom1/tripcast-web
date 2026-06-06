@@ -138,6 +138,14 @@ const REPLAY_CHECKPOINT_DWELL_MS = 3000;
 // Delay before the POI overlay appears on a checkpoint beat, so the card animates
 // in *after* the camera has eased onto the pin (ease duration is ~550ms).
 const REPLAY_OVERLAY_SETTLE_MS = 650;
+// Single source of truth for a replay pin's beat duration: breadcrumbs tick at the
+// base beat, checkpoints dwell longer; both scale by replaySpeed and never drop below
+// the 60ms floor. Used by the beat scheduler, the camera ease, and the marker glide so
+// the three can never drift out of sync.
+function replayBeatMs(kind: "checkpoint" | "breadcrumb", replaySpeed: number) {
+  const base = kind === "checkpoint" ? REPLAY_CHECKPOINT_DWELL_MS : REPLAY_BASE_BEAT_MS;
+  return Math.max(60, Math.round(base / replaySpeed));
+}
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
 const FINALE_FIT_MAX_ZOOM = 18;
 // Discrete playback speeds offered in the Speed sheet. 20x/30x clamp at the
@@ -648,48 +656,89 @@ function ReplayFocusMarker({
   map,
   position,
   duration = 0,
-  easing = "ease-out",
 }: {
   map: maplibregl.Map | null;
   position: { lat: number; lon: number } | null;
   duration?: number;
-  easing?: string;
 }) {
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const addedRef = useRef(false);
+  // The marker's currently displayed coordinate, so each new target tweens from where
+  // the dot actually is rather than snapping.
+  const displayedRef = useRef<{ lat: number; lon: number } | null>(null);
 
+  // Create the marker once per map and reuse it. (A fresh marker on every position
+  // change would teleport the dot and defeat the glide.)
   useEffect(() => {
     if (!map) return;
-
-    if (!position) {
+    const el = document.createElement("div");
+    el.className = "replay-focus-marker";
+    const ring = document.createElement("div");
+    ring.className = "replay-focus-ring";
+    const dot = document.createElement("div");
+    dot.className = "replay-focus-dot";
+    el.appendChild(ring);
+    el.appendChild(dot);
+    markerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
       markerRef.current?.remove();
       markerRef.current = null;
+      addedRef.current = false;
+      displayedRef.current = null;
+    };
+  }, [map]);
+
+  // Glide toward each new target. Keyed on the primitive lat/lon (not the object) so a
+  // re-render with the same pin doesn't restart the tween. duration <= 0 jumps instantly
+  // (checkpoints); breadcrumbs interpolate linearly over the beat so the dot slides.
+  const lat = position?.lat ?? null;
+  const lon = position?.lon ?? null;
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!map || !marker) return;
+
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    if (lat === null || lon === null) {
+      if (addedRef.current) {
+        marker.remove();
+        addedRef.current = false;
+      }
+      displayedRef.current = null;
       return;
     }
 
-    if (markerRef.current) {
-      const el = markerRef.current.getElement();
-      el.style.transition = duration > 0 ? `transform ${duration}ms ${easing}` : "none";
-      markerRef.current.setLngLat([position.lon, position.lat]);
-    } else {
-      const el = document.createElement("div");
-      el.className = "replay-focus-marker";
-      const ring = document.createElement("div");
-      ring.className = "replay-focus-ring";
-      const dot = document.createElement("div");
-      dot.className = "replay-focus-dot";
-      el.appendChild(ring);
-      el.appendChild(dot);
-
-      markerRef.current = new maplibregl.Marker({ element: el, anchor: "center" })
-        .setLngLat([position.lon, position.lat])
-        .addTo(map);
+    // First reveal (or after being hidden): place and add without a tween.
+    if (!addedRef.current || !displayedRef.current || duration <= 0) {
+      marker.setLngLat([lon, lat]);
+      if (!addedRef.current) {
+        marker.addTo(map);
+        addedRef.current = true;
+      }
+      displayedRef.current = { lat, lon };
+      return;
     }
 
-    return () => {
-      markerRef.current?.remove();
-      markerRef.current = null;
+    const start = performance.now();
+    const { lat: startLat, lon: startLon } = displayedRef.current;
+    const dLat = lat - startLat;
+    const dLon = lon - startLon;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const curLat = startLat + dLat * t;
+      const curLon = startLon + dLon * t;
+      marker.setLngLat([curLon, curLat]);
+      displayedRef.current = { lat: curLat, lon: curLon };
+      rafRef.current = t < 1 ? requestAnimationFrame(step) : null;
     };
-  }, [map, position]);
+    rafRef.current = requestAnimationFrame(step);
+  }, [map, lat, lon, duration]);
 
   return null;
 }
@@ -1480,6 +1529,9 @@ export default function TripMap({
   const [replayWindow, setReplayWindow] = useState<{ startAt: number; endAt: number } | null>(null);
   const [isReplaySpeedSheetOpen, setIsReplaySpeedSheetOpen] = useState(false);
   const [isReplayDateSheetOpen, setIsReplayDateSheetOpen] = useState(false);
+  // Opening a replay control (speed/date) pauses playback; if it was playing when the
+  // control opened, resume it once the control closes. Captured at open time.
+  const replayResumeAfterControlRef = useRef(false);
   const stopFollowing = useCallback(() => {
     setIsFollowing(false);
   }, []);
@@ -1895,13 +1947,10 @@ export default function TripMap({
     // Variable beat: breadcrumb beats tick at REPLAY_BASE_BEAT_MS; checkpoint
     // beats dwell longer so the POI overlay can breathe. Both scale by replaySpeed.
     const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
-    const baseBeat = pin?.kind === "checkpoint"
-      ? REPLAY_CHECKPOINT_DWELL_MS
-      : REPLAY_BASE_BEAT_MS;
     const isAtEnd = replayPlayheadIndex >= replayEndIndex;
     const beatMs = isAtEnd
       ? 5000 // Pause for 5 seconds at the end before looping
-      : Math.max(60, Math.round(baseBeat / replaySpeed));
+      : replayBeatMs(pin?.kind === "checkpoint" ? "checkpoint" : "breadcrumb", replaySpeed);
 
     const timeout = window.setTimeout(() => {
       setReplayPlayheadIndex((current) => {
@@ -2006,16 +2055,10 @@ export default function TripMap({
       anchor: (finaleReplayActive || target.kind === "checkpoint") ? { x: 0.5, y: 0.62 } : undefined,
     });
 
-    // Variable ease for breadcrumbs vs checkpoints. Breadcrumbs use linear easing
-    // and match the beat duration to slide smoothly between points. Checkpoints
-    // use a standard ease-out to settle on the pin.
-    const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
-    const baseBeat = pin?.kind === "checkpoint"
-      ? REPLAY_CHECKPOINT_DWELL_MS
-      : REPLAY_BASE_BEAT_MS;
-    const duration = isBreadcrumb
-      ? Math.max(60, Math.round(baseBeat / replaySpeed))
-      : 550;
+    // Variable ease for breadcrumbs vs checkpoints. Breadcrumbs use linear easing and
+    // match the beat duration so the camera slides smoothly between points (and the
+    // centered focus dot glides with it). Checkpoints use ease-out to settle on the pin.
+    const duration = isBreadcrumb ? replayBeatMs("breadcrumb", replaySpeed) : 550;
     const easing = isBreadcrumb ? (t: number) => t : (t: number) => t * (2 - t);
 
     log.logMap("map:camera:focus", {
@@ -2101,6 +2144,17 @@ export default function TripMap({
     const timeout = window.setTimeout(() => setCurrentOverlayPin(pin), REPLAY_OVERLAY_SETTLE_MS);
     return () => window.clearTimeout(timeout);
   }, [replayActive, currentReplayPin]);
+
+  // Resume playback when a replay control (speed/date) closes, but only if it was
+  // playing when the control opened. Covers every close path (dismiss, select speed,
+  // apply/reset window) since they all flip the open flag back to false.
+  useEffect(() => {
+    if (isReplaySpeedSheetOpen || isReplayDateSheetOpen) return;
+    if (replayResumeAfterControlRef.current) {
+      replayResumeAfterControlRef.current = false;
+      setReplayPaused(false);
+    }
+  }, [isReplaySpeedSheetOpen, isReplayDateSheetOpen]);
 
   // Close replay if any sheet/panel/menu opens. Pin taps, dock taps, and the
   // right-click context menu all funnel through these states, so a single effect
@@ -4355,10 +4409,9 @@ export default function TripMap({
           position={currentReplayPin ? { lat: currentReplayPin.lat, lon: currentReplayPin.lon } : null}
           duration={
             currentReplayPin?.kind === "breadcrumb"
-              ? Math.max(60, Math.round(REPLAY_BASE_BEAT_MS / replaySpeed))
+              ? replayBeatMs("breadcrumb", replaySpeed)
               : 0
           }
-          easing={currentReplayPin?.kind === "breadcrumb" ? "linear" : "ease-out"}
         />
       )}
       <AnimatePresence mode="wait">
@@ -4373,15 +4426,13 @@ export default function TripMap({
                 : undefined
             }
             onClick={() => {
-              if (currentOverlayPin.checkpointId) {
-                const event = journalEvents.find((e) => e.checkpointId === currentOverlayPin.checkpointId);
-                if (event) {
-                  setSelectedStoryDetail({
-                    eventId: event._id,
-                    checkpointId: event.checkpointId,
-                    fallbackEvent: event,
-                  });
-                }
+              const event = journalEvents.find((e) => e._id === currentOverlayPin.eventId);
+              if (event) {
+                setSelectedStoryDetail({
+                  eventId: event._id,
+                  checkpointId: event.checkpointId,
+                  fallbackEvent: event,
+                });
               }
             }}
             token={token}
@@ -4542,12 +4593,14 @@ export default function TripMap({
             onScrub={handleReplayScrub}
             onOpenSpeedSheet={() => {
               music.sfx("tap");
+              replayResumeAfterControlRef.current = !replayPaused;
               setReplayPaused(true);
               setIsReplaySpeedSheetOpen(true);
               log.logInteraction("replay:speed-sheet:open", { speed: replaySpeed });
             }}
             onOpenDateSheet={() => {
               music.sfx("tap");
+              replayResumeAfterControlRef.current = !replayPaused;
               setReplayPaused(true);
               setIsReplayDateSheetOpen(true);
               log.logInteraction("replay:date-sheet:open", {
@@ -4921,8 +4974,9 @@ export default function TripMap({
           <div className="flex flex-col items-end gap-2">
             <button
               type="button"
-              onClick={() => void handleStartReplay()}
-              disabled={!canAttemptReplay}
+              data-replay-toggle=""
+              onClick={() => (replayActive ? handleCloseReplay() : void handleStartReplay())}
+              disabled={!replayActive && !canAttemptReplay}
               aria-pressed={replayActive}
               className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
             >

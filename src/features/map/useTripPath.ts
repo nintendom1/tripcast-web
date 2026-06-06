@@ -199,30 +199,48 @@ export function useTripPath(
       logMapEvent("map:route-path:re-add", { layerId, lineColor });
     };
 
-    const sync = () => {
-      if (!map.isStyleLoaded()) return;
+    // Apply the latest pathData. Runs on every pathData change (effect body) — NOT on
+    // map style events, so it never redundantly re-parses unchanged data.
+    const apply = () => {
       if (!pathData) {
         if (map.getLayer(layerId)) map.removeLayer(layerId);
         if (map.getSource(sourceId)) map.removeSource(sourceId);
         return;
       }
-      if (!map.getSource(sourceId)) {
-        addLayer();
-      } else {
-        (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(pathData);
+      const existing = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+      if (existing) {
+        // Updating an existing source's data does NOT require the style to report
+        // fully loaded — only adding a new source/layer does. The old code gated
+        // setData on isStyleLoaded() (which is unreliable — it can read false even
+        // when the source is perfectly updatable) and deferred via a one-shot
+        // once("load") that never re-fires, silently dropping updates such as the
+        // full-trail restore on replay exit and freezing the trail at its last
+        // applied (partial) state.
+        existing.setData(pathData);
         map.setPaintProperty(layerId, "line-color", lineColor);
+        return;
+      }
+      // Source missing: create it. addSource/addLayer throw if the style isn't ready
+      // yet; if so, the style listeners below retry until it succeeds. Don't gate on
+      // isStyleLoaded() — it under-reports readiness in some environments.
+      try {
+        addLayer();
+      } catch {
+        /* style not ready; a style event will retry */
       }
     };
 
-    // Re-add when the layer is missing (e.g. setStyle wiped it). "style.load" /
-    // "load" fire when the style spec is parsed (MapLibre Style._loaded === true),
-    // which is all addSource/addLayer need — so treat those as "ready" WITHOUT the
-    // isStyleLoaded() gate. isStyleLoaded() only flips true once tiles/sources also
-    // load (≈ the "idle" event ~0.7s later); gating on it was the whole delay.
-    const ensureAfterStyle = (e?: { type?: string }) => {
-      if (map.getSource(sourceId)) return;
-      const styleReady = e?.type === "style.load" || e?.type === "load";
-      if ((styleReady || map.isStyleLoaded()) && pathData) addLayer();
+    // Recreate the layer when a style event fires and the source is missing (e.g.
+    // setStyle on a theme toggle wiped it, or the style wasn't ready on first apply).
+    // Only creates — updates to an existing source flow through `apply` on pathData
+    // change, so this never re-parses unchanged data on the frequent styledata/idle.
+    const ensureAfterStyle = () => {
+      if (!pathData || map.getSource(sourceId)) return;
+      try {
+        addLayer();
+      } catch {
+        /* style still not ready; a later style event will retry */
+      }
     };
 
     logMapEvent("map:route-path:effect", {
@@ -239,16 +257,16 @@ export function useTripPath(
       lastSampleTs: liveTrailSamples.length > 0 ? liveTrailSamples[liveTrailSamples.length - 1].sampledAt : null,
     });
 
-    if (map.isStyleLoaded()) {
-      sync();
-    } else {
-      map.once("load", sync);
-    }
+    // Apply immediately. setData on an existing source works regardless of whether
+    // the style reports fully loaded; if the source doesn't exist yet, the listeners
+    // below create it once the style is parsed.
+    apply();
+    map.on("load", ensureAfterStyle);
     map.on("style.load", ensureAfterStyle);
     map.on("styledata", ensureAfterStyle);
     map.on("idle", ensureAfterStyle);
     return () => {
-      map.off("load", sync);
+      map.off("load", ensureAfterStyle);
       map.off("style.load", ensureAfterStyle);
       map.off("styledata", ensureAfterStyle);
       map.off("idle", ensureAfterStyle);
