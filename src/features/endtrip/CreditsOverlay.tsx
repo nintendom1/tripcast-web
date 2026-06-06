@@ -119,9 +119,6 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
       role="dialog"
       aria-label="Trip Complete"
     >
-      <div className="pointer-events-none absolute -left-10 -top-16 h-44 w-44 rotate-12 border border-white/18 bg-black/15" />
-      <div className="pointer-events-none absolute -bottom-16 -right-10 h-52 w-52 rotate-12 border border-white/18 bg-black/15" />
-
       {/* Top bar */}
       <div
         data-finale-header=""
@@ -130,14 +127,6 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
         <div>
           <div className="font-[var(--font-display)] text-lg font-extrabold text-white">TripCast finale</div>
         </div>
-        <button
-          type="button"
-          onClick={handleClose}
-          aria-label="Close finale"
-          className="grid h-9 w-9 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
-        >
-          <X className="h-4 w-4" />
-        </button>
       </div>
 
       <motion.div
@@ -159,8 +148,8 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
           <motion.div
             className="px-[18vw] text-center"
             initial={{ y: "100%" }}
-            animate={{ y: ["100%", "-100%"] }}
-            transition={{ duration: 22, ease: "linear", repeat: Infinity }}
+            animate={{ y: ["40%", "-100%"] }}
+            transition={{ duration: 25, ease: "linear", repeat: Infinity }}
           >
             <div className="py-10" />
             <div className="mb-10">
@@ -209,6 +198,18 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
           </motion.div>
         </div>
       </motion.div>
+
+      {/* Close button anchored to the top of the banner: the screen corner is
+          low-contrast over the map (especially the light theme), while the
+          banner gradient gives the X a consistent dark backdrop. */}
+      <button
+        type="button"
+        onClick={handleClose}
+        aria-label="Close finale"
+        className="absolute right-5 top-[57%] z-20 grid h-9 w-9 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25 hover:bg-white/25"
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
   );
 }

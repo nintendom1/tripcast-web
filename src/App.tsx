@@ -533,6 +533,9 @@ function ConnectedApp() {
         resetKeys={[session.token, role, locationResetNonce, tripDataResetNonce]}
         onReset={disarmCrash}
         onError={(error, info) => {
+          // The finale overlay renders above this boundary; if the map fails it
+          // would block the fallback's buttons, so dismiss it on any map error.
+          setIsCreditsOpen(false);
           const err = error instanceof Error ? error : null;
           debugLog("error", "App", "react:map-boundary-error", "error", {
             message: err?.message ?? String(error),
