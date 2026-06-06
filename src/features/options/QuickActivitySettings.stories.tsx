@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { tripcastApi } from "../../convex/tripcastApi";
 import QuickActivitySettingsView from "./QuickActivitySettings";
 
 /** @tag ai-generated */
@@ -23,5 +24,35 @@ type Story = StoryObj<typeof QuickActivitySettingsView>;
 export const Default: Story = {
   args: {
     token: "mock-token",
+  },
+  parameters: {
+    convexMocks: {
+      queries: [
+        {
+          query: tripcastApi.currentActivity.travelerGetQuickActivitySettings,
+          result: {
+            activities: [
+              { label: "Walking", emoji: "🚶" },
+              { label: "Eating", emoji: "🍽️" },
+              { label: "Taking train", emoji: "🚆" },
+              { label: "Resting", emoji: "🪑" },
+              { label: "Exploring", emoji: "🧭" },
+              { label: "Shopping", emoji: "🛒" },
+              { label: "Errands", emoji: "💻" },
+              { label: "Sleeping", emoji: "🛏️" },
+            ],
+            displayCount: 6,
+            updatedAt: Date.now() - 60_000,
+            updatedBySessionId: "session-storybook",
+          },
+        },
+      ],
+      mutations: [
+        {
+          mutation: tripcastApi.currentActivity.travelerUpdateQuickActivitySettings,
+          result: null,
+        },
+      ],
+    },
   },
 };

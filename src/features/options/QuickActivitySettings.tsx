@@ -1,10 +1,16 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { useMutation, useQuery } from "convex/react";
-import { Plus, Trash2, ArrowDown, ArrowUp, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2, X } from "lucide-react";
+
+import { Button } from "../../components/ui/button";
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { QuickActivity, QuickActivitySettings } from "../../convex/tripcastApi";
-import { Button } from "../../components/ui/button";
-import { Dialog } from "@base-ui/react/dialog";
+
+const MAX_QUICK_ACTIVITIES = 10;
+const MAX_LABEL_LENGTH = 80;
+const MAX_EMOJI_LENGTH = 10;
+const LOCAL_STORAGE_KEY = "tripcast.quick_activities_settings";
 
 const DEFAULT_ACTIVITIES: QuickActivity[] = [
   { label: "Walking", emoji: "🚶" },
@@ -14,25 +20,114 @@ const DEFAULT_ACTIVITIES: QuickActivity[] = [
   { label: "Exploring", emoji: "🧭" },
   { label: "Shopping", emoji: "🛒" },
   { label: "Errands", emoji: "💻" },
-  { label: "Sleeping", emoji: "️🛏️" },
+  { label: "Sleeping", emoji: "🛏️" },
 ];
 
-const LOCAL_STORAGE_KEY = "tripcast.quick_activities_settings";
+type LocalQuickActivitySettings = Pick<QuickActivitySettings, "activities" | "displayCount">;
+type DraftActivity = QuickActivity & { id: string };
+type StatusMessage = { kind: "error" | "success"; text: string } | null;
 
-export function getQuickActivitySettings() {
-  try {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
+let draftIdCounter = 0;
+
+function nextDraftId() {
+  draftIdCounter += 1;
+  return `quick-activity-${draftIdCounter}`;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function defaultSettings(): LocalQuickActivitySettings {
+  return {
+    activities: DEFAULT_ACTIVITIES.map((activity) => ({ ...activity })),
+    displayCount: Math.min(8, DEFAULT_ACTIVITIES.length),
+  };
+}
+
+function normalizeActivities(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((activity) => {
+      if (!activity || typeof activity !== "object") return null;
+      const raw = activity as Partial<QuickActivity>;
+      if (typeof raw.label !== "string" || typeof raw.emoji !== "string") return null;
+      const label = raw.label.trim().slice(0, MAX_LABEL_LENGTH);
+      if (!label) return null;
       return {
-        activities: parsed.activities || DEFAULT_ACTIVITIES,
-        displayCount: parsed.displayCount || 8,
+        label,
+        emoji: raw.emoji.trim().slice(0, MAX_EMOJI_LENGTH),
       };
-    }
-  } catch (e) {
-    console.error("Failed to load quick activities from localStorage", e);
+    })
+    .filter((activity): activity is QuickActivity => activity !== null)
+    .slice(0, MAX_QUICK_ACTIVITIES);
+}
+
+function normalizeSettings(value: unknown): LocalQuickActivitySettings {
+  if (!value || typeof value !== "object") return defaultSettings();
+  const candidate = value as Partial<LocalQuickActivitySettings>;
+  const activities = normalizeActivities(candidate.activities);
+  const safeActivities = activities.length > 0 ? activities : defaultSettings().activities;
+  const rawDisplayCount =
+    typeof candidate.displayCount === "number" && Number.isFinite(candidate.displayCount)
+      ? Math.trunc(candidate.displayCount)
+      : Math.min(8, safeActivities.length);
+
+  return {
+    activities: safeActivities,
+    displayCount: clamp(rawDisplayCount, 1, safeActivities.length),
+  };
+}
+
+function draftActivitiesFrom(settings: LocalQuickActivitySettings): DraftActivity[] {
+  return settings.activities.map((activity) => ({
+    ...activity,
+    id: nextDraftId(),
+  }));
+}
+
+function settingsFromDraft(
+  activities: DraftActivity[],
+  displayCount: number,
+): LocalQuickActivitySettings | null {
+  const normalizedActivities = normalizeActivities(activities);
+  if (normalizedActivities.length === 0) return null;
+  return {
+    activities: normalizedActivities,
+    displayCount: clamp(displayCount, 1, normalizedActivities.length),
+  };
+}
+
+function getStorage() {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
   }
-  return { activities: DEFAULT_ACTIVITIES, displayCount: 8 };
+}
+
+function dispatchQuickActivityUpdate() {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("tripcast.quick_activities_updated"));
+  }
+}
+
+export function getQuickActivitySettings(): LocalQuickActivitySettings {
+  const storage = getStorage();
+  if (!storage) return defaultSettings();
+
+  try {
+    const saved = storage.getItem(LOCAL_STORAGE_KEY);
+    return saved ? normalizeSettings(JSON.parse(saved)) : defaultSettings();
+  } catch (error) {
+    console.error("Failed to load quick activities from localStorage", error);
+    return defaultSettings();
+  }
+}
+
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function DiffModal({
@@ -45,6 +140,7 @@ function DiffModal({
   localDisplayCount,
   remoteActivities,
   remoteDisplayCount,
+  busy,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -55,13 +151,14 @@ function DiffModal({
   localDisplayCount: number;
   remoteActivities: QuickActivity[];
   remoteDisplayCount: number;
+  busy?: boolean;
 }) {
   return (
     <Dialog.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-[110] bg-black/50 backdrop-blur-sm transition-all" />
-        <Dialog.Popup className="fixed left-1/2 top-1/2 z-[120] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-[var(--bg-paper)] p-6 shadow-2xl outline-none transition-all focus-visible:ring-2 focus-visible:ring-[var(--flag)]">
-          <div className="flex items-center justify-between mb-4">
+        <Dialog.Popup className="fixed left-1/2 top-1/2 z-[120] w-[calc(100vw-2rem)] max-w-2xl -translate-x-1/2 -translate-y-1/2 rounded-lg bg-[var(--bg-paper)] p-6 shadow-2xl outline-none transition-all focus-visible:ring-2 focus-visible:ring-[var(--flag)]">
+          <div className="mb-4 flex items-center justify-between">
             <Dialog.Title className="font-[var(--font-display)] text-xl font-bold text-[var(--ink-1)]">
               {title}
             </Dialog.Title>
@@ -70,50 +167,27 @@ function DiffModal({
             </Dialog.Close>
           </div>
 
-          <div className="max-h-[60vh] overflow-y-auto mb-6">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div>
-                <h4 className="text-xs font-bold mb-2 uppercase tracking-wider text-[var(--ink-3)]">Current Local</h4>
-                <div className="space-y-1.5">
-                  <div className="px-2 py-1 rounded bg-[var(--meter-track)] text-xs font-medium text-[var(--ink-2)]">
-                    Display count: {localDisplayCount}
-                  </div>
-                  {localActivities.map((a, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm p-2 rounded border border-[var(--line-soft)] bg-[var(--bg-card)]">
-                      <span className="text-base">{a.emoji}</span>
-                      <span className="truncate font-medium text-[var(--ink-1)]">{a.label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="text-xs font-bold mb-2 uppercase tracking-wider text-[var(--ink-3)]">Incoming / Remote</h4>
-                <div className="space-y-1.5">
-                  <div className="px-2 py-1 rounded bg-[var(--meter-track)] text-xs font-medium text-[var(--ink-2)]">
-                    Display count: {remoteDisplayCount}
-                  </div>
-                  {remoteActivities.map((a, i) => (
-                    <div key={i} className="flex items-center gap-2 text-sm p-2 rounded border border-[var(--line-soft)] bg-[var(--bg-card)]">
-                      <span className="text-base">{a.emoji}</span>
-                      <span className="truncate font-medium text-[var(--ink-1)]">{a.label}</span>
-                    </div>
-                  ))}
-                  {remoteActivities.length === 0 && (
-                    <div className="p-4 text-center text-xs text-[var(--ink-3)] italic">
-                      No remote settings found.
-                    </div>
-                  )}
-                </div>
-              </div>
+          <div className="mb-6 max-h-[60vh] overflow-y-auto">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <SettingsPreview
+                title="Current Local"
+                activities={localActivities}
+                displayCount={localDisplayCount}
+              />
+              <SettingsPreview
+                title="Remote"
+                activities={remoteActivities}
+                displayCount={remoteDisplayCount}
+              />
             </div>
           </div>
 
-          <div className="flex gap-3 justify-end">
-            <Button variant="outline" onClick={onClose}>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={onClose} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={onConfirm}>
-              {confirmLabel}
+            <Button onClick={onConfirm} disabled={busy}>
+              {busy ? "Saving..." : confirmLabel}
             </Button>
           </div>
         </Dialog.Popup>
@@ -122,107 +196,227 @@ function DiffModal({
   );
 }
 
+function SettingsPreview({
+  title,
+  activities,
+  displayCount,
+}: {
+  title: string;
+  activities: QuickActivity[];
+  displayCount: number;
+}) {
+  return (
+    <div>
+      <h4 className="mb-2 text-xs font-bold uppercase tracking-wider text-[var(--ink-3)]">{title}</h4>
+      <div className="space-y-1.5">
+        <div className="rounded bg-[var(--meter-track)] px-2 py-1 text-xs font-medium text-[var(--ink-2)]">
+          Display count: {displayCount}
+        </div>
+        {activities.map((activity, index) => (
+          <div
+            key={`${activity.label}-${index}`}
+            className="flex items-center gap-2 rounded border border-[var(--line-soft)] bg-[var(--bg-card)] p-2 text-sm"
+          >
+            <span className="text-base">{activity.emoji}</span>
+            <span className="truncate font-medium text-[var(--ink-1)]">{activity.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function QuickActivitySettingsView({ token }: { token: string }) {
-  const [activities, setActivities] = useState<QuickActivity[]>([]);
-  const [displayCount, setDisplayCount] = useState(8);
+  const [draft, setDraft] = useState(() => {
+    const initialSettings = getQuickActivitySettings();
+    return {
+      activities: draftActivitiesFrom(initialSettings),
+      displayCount: initialSettings.displayCount,
+    };
+  });
   const [isPullModalOpen, setIsPullModalOpen] = useState(false);
   const [isPushModalOpen, setIsPushModalOpen] = useState(false);
   const [remoteSettings, setRemoteSettings] = useState<QuickActivitySettings | null>(null);
+  const [status, setStatus] = useState<StatusMessage>(null);
+  const [saving, setSaving] = useState(false);
 
   const updateMutation = useMutation(tripcastApi.currentActivity.travelerUpdateQuickActivitySettings);
   const remoteQueryData = useQuery(tripcastApi.currentActivity.travelerGetQuickActivitySettings, { token });
+  const { activities, displayCount } = draft;
 
-  useEffect(() => {
-    const settings = getQuickActivitySettings();
-    setActivities(settings.activities);
-    setDisplayCount(settings.displayCount);
-  }, []);
+  const saveToLocal = (nextDraftActivities: DraftActivity[], nextDisplayCount: number) => {
+    const next = settingsFromDraft(nextDraftActivities, nextDisplayCount);
+    if (!next) {
+      setStatus({ kind: "error", text: "At least one quick activity needs a label." });
+      return false;
+    }
 
-  const saveToLocal = (newActivities: QuickActivity[], newCount: number) => {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ activities: newActivities, displayCount: newCount }));
-    window.dispatchEvent(new Event("tripcast.quick_activities_updated"));
+    const storage = getStorage();
+    if (!storage) {
+      setStatus({ kind: "error", text: "Local storage is unavailable in this browser." });
+      return false;
+    }
+
+    try {
+      storage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next));
+      dispatchQuickActivityUpdate();
+      setStatus(null);
+      return true;
+    } catch (error) {
+      setStatus({ kind: "error", text: `Could not save locally. ${formatError(error)}` });
+      return false;
+    }
+  };
+
+  const commitDraft = (nextDraftActivities: DraftActivity[], rawDisplayCount: number) => {
+    const nextDisplayCount = clamp(rawDisplayCount, 1, nextDraftActivities.length);
+    setDraft({ activities: nextDraftActivities, displayCount: nextDisplayCount });
+    return saveToLocal(nextDraftActivities, nextDisplayCount);
   };
 
   const handleAdd = () => {
-    if (activities.length >= 10) return;
-    const next = [...activities, { label: "New Activity", emoji: "❓" }];
-    setActivities(next);
-    const nextCount = displayCount;
-    saveToLocal(next, nextCount);
+    if (activities.length >= MAX_QUICK_ACTIVITIES) return;
+    commitDraft(
+      [...activities, { id: nextDraftId(), label: "New Activity", emoji: "?" }],
+      displayCount,
+    );
   };
 
-  const handleRemove = (index: number) => {
-    const next = activities.filter((_, i) => i !== index);
-    setActivities(next);
-    const nextCount = Math.min(displayCount, next.length);
-    setDisplayCount(nextCount);
-    saveToLocal(next, nextCount);
+  const handleRemove = (id: string) => {
+    if (activities.length <= 1) return;
+    const next = activities.filter((activity) => activity.id !== id);
+    commitDraft(next, Math.min(displayCount, next.length));
   };
 
-  const handleUpdate = (index: number, patch: Partial<QuickActivity>) => {
-    const next = activities.map((a, i) => i === index ? { ...a, ...patch } : a);
-    setActivities(next);
-    saveToLocal(next, displayCount);
+  const handleUpdate = (id: string, patch: Partial<QuickActivity>) => {
+    const next = activities.map((activity) =>
+      activity.id === id ? { ...activity, ...patch } : activity,
+    );
+    commitDraft(next, displayCount);
   };
 
-  const handleDisplayCountChange = (val: number) => {
-    setDisplayCount(val);
-    saveToLocal(activities, val);
+  const handleDisplayCountChange = (value: number) => {
+    commitDraft(activities, value);
   };
 
-  const onPullClick = () => {
-    if (remoteQueryData) {
-      setRemoteSettings(remoteQueryData);
-      setIsPullModalOpen(true);
-    } else {
-      alert("Remote settings not loaded yet. Please wait a moment.");
+  const handleResetDefaults = () => {
+    const defaults = defaultSettings();
+    if (commitDraft(draftActivitiesFrom(defaults), defaults.displayCount)) {
+      setStatus({ kind: "success", text: "Quick activities reset to defaults locally." });
     }
   };
 
-  const onPushClick = () => {
-    if (remoteQueryData) {
-      setRemoteSettings(remoteQueryData);
+  const openPull = () => {
+    if (!remoteQueryData) {
+      setStatus({ kind: "error", text: "Remote settings are still loading." });
+      return;
     }
+    setRemoteSettings(remoteQueryData);
+    setIsPullModalOpen(true);
+  };
+
+  const openPush = () => {
+    if (!remoteQueryData) {
+      setStatus({ kind: "error", text: "Remote settings are still loading." });
+      return;
+    }
+    setRemoteSettings(remoteQueryData);
     setIsPushModalOpen(true);
   };
 
   const confirmPull = () => {
-    if (remoteSettings) {
-      setActivities(remoteSettings.activities);
-      setDisplayCount(remoteSettings.displayCount);
-      saveToLocal(remoteSettings.activities, remoteSettings.displayCount);
+    if (!remoteSettings) return;
+    const pulled = normalizeSettings(remoteSettings);
+    if (commitDraft(draftActivitiesFrom(pulled), pulled.displayCount)) {
+      setStatus({ kind: "success", text: "Remote quick activities applied locally." });
     }
     setIsPullModalOpen(false);
   };
 
   const confirmPush = async () => {
-    try {
-      await updateMutation({ token, activities, displayCount });
-      setIsPushModalOpen(false);
-    } catch (e) {
-      alert("Failed to push settings: " + (e instanceof Error ? e.message : String(e)));
+    const next = settingsFromDraft(activities, displayCount);
+    if (!next) {
+      setStatus({ kind: "error", text: "At least one quick activity needs a label." });
+      return;
     }
+    if (activities.some((activity) => !activity.label.trim())) {
+      setStatus({ kind: "error", text: "Fill in every activity label before pushing." });
+      return;
+    }
+
+    setSaving(true);
+    setStatus(null);
+    try {
+      await updateMutation({ token, activities: next.activities, displayCount: next.displayCount });
+      setDraft({ activities: draftActivitiesFrom(next), displayCount: next.displayCount });
+      setIsPushModalOpen(false);
+      setStatus({ kind: "success", text: "Backend quick activities updated." });
+    } catch (error) {
+      setStatus({ kind: "error", text: `Could not push settings. ${formatError(error)}` });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const localPreview = settingsFromDraft(activities, displayCount) ?? defaultSettings();
+  const modalRemote = remoteSettings ?? remoteQueryData ?? {
+    ...defaultSettings(),
+    updatedAt: null,
+    updatedBySessionId: null,
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-[var(--font-mono)] text-[11px] font-semibold uppercase text-[var(--ink-3)]">
           Quick Activities
         </h3>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={onPullClick} className="h-8 gap-1.5 text-xs font-bold uppercase tracking-tight">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleResetDefaults}
+            className="h-8 gap-1.5 text-xs font-bold uppercase tracking-tight"
+          >
+            <RotateCcw className="h-3 w-3" /> Reset
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openPull}
+            className="h-8 gap-1.5 text-xs font-bold uppercase tracking-tight"
+            disabled={!remoteQueryData}
+          >
             <ArrowDown className="h-3 w-3" /> Pull
           </Button>
-          <Button variant="outline" size="sm" onClick={onPushClick} className="h-8 gap-1.5 text-xs font-bold uppercase tracking-tight">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openPush}
+            className="h-8 gap-1.5 text-xs font-bold uppercase tracking-tight"
+            disabled={!remoteQueryData}
+          >
             <ArrowUp className="h-3 w-3" /> Push
           </Button>
         </div>
       </div>
 
-      <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 space-y-4 shadow-sm">
+      {status ? (
+        <p
+          role={status.kind === "error" ? "alert" : "status"}
+          className={`rounded-md border px-3 py-2 text-sm ${
+            status.kind === "error"
+              ? "border-[var(--ink-danger)] bg-[var(--bg-danger)] text-[var(--ink-danger)]"
+              : "border-[var(--line-soft)] bg-[var(--meter-track)] text-[var(--teal)]"
+          }`}
+        >
+          {status.text}
+        </p>
+      ) : null}
+
+      <div className="space-y-4 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 shadow-sm">
         <div className="flex items-center justify-between">
-          <label className="text-sm font-semibold text-[var(--ink-1)]">
+          <label className="text-sm font-semibold text-[var(--ink-1)]" htmlFor="quick-activity-display-count">
             Display Count
           </label>
           <span className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-paper)] px-2 py-0.5 font-[var(--font-mono)] text-xs font-bold text-[var(--ink-2)]">
@@ -230,55 +424,66 @@ export default function QuickActivitySettingsView({ token }: { token: string }) 
           </span>
         </div>
         <input
+          id="quick-activity-display-count"
           type="range"
           min={1}
-          max={Math.max(1, activities.length)}
+          max={activities.length}
           value={displayCount}
-          onChange={(e) => handleDisplayCountChange(Number(e.target.value))}
-          className="w-full accent-[var(--flag)] h-6"
+          onChange={(event) => handleDisplayCountChange(Number(event.target.value))}
+          className="h-6 w-full accent-[var(--flag)]"
         />
-        <p className="text-xs text-[var(--ink-3)] leading-relaxed">
-          How many activities to show in the Status panel. You can define up to 10 activities below.
-        </p>
       </div>
 
       <div className="space-y-2">
         {activities.map((activity, index) => (
-          <div key={index} className="flex gap-2 items-center rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 shadow-sm">
+          <div
+            key={activity.id}
+            className="flex items-center gap-2 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 shadow-sm"
+          >
             <input
               type="text"
               value={activity.emoji}
-              onChange={(e) => handleUpdate(index, { emoji: e.target.value.slice(0, 10) })}
-              className="w-10 h-10 text-center rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] text-lg"
+              onChange={(event) =>
+                handleUpdate(activity.id, { emoji: event.target.value.slice(0, MAX_EMOJI_LENGTH) })
+              }
+              className="h-10 w-10 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] text-center text-lg"
               placeholder="🚶"
+              maxLength={MAX_EMOJI_LENGTH}
+              aria-label={`Quick activity ${index + 1} emoji`}
             />
             <input
               type="text"
               value={activity.label}
-              onChange={(e) => handleUpdate(index, { label: e.target.value })}
-              className="flex-1 h-10 px-3 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] text-sm font-medium text-[var(--ink-1)] focus:border-[var(--flag)] focus:outline-none"
+              onChange={(event) =>
+                handleUpdate(activity.id, { label: event.target.value.slice(0, MAX_LABEL_LENGTH) })
+              }
+              className="h-10 min-w-0 flex-1 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 text-sm font-medium text-[var(--ink-1)] focus:border-[var(--flag)] focus:outline-none"
               placeholder="Activity label"
+              maxLength={MAX_LABEL_LENGTH}
+              aria-label={`Quick activity ${index + 1} label`}
             />
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => handleRemove(index)}
-              className="h-10 w-10 text-[var(--ink-3)] hover:bg-[var(--bg-danger)] hover:text-[var(--ink-danger)] transition-colors"
+              onClick={() => handleRemove(activity.id)}
+              className="h-10 w-10 text-[var(--ink-3)] transition-colors hover:bg-[var(--bg-danger)] hover:text-[var(--ink-danger)]"
+              disabled={activities.length <= 1}
+              aria-label={`Remove quick activity ${index + 1}`}
             >
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         ))}
 
-        {activities.length < 10 && (
+        {activities.length < MAX_QUICK_ACTIVITIES ? (
           <Button
             variant="outline"
-            className="w-full h-11 border-dashed border-2 hover:bg-[var(--bg-card)] text-[var(--ink-2)]"
+            className="h-11 w-full border-2 border-dashed text-[var(--ink-2)] hover:bg-[var(--bg-card)]"
             onClick={handleAdd}
           >
-            <Plus className="h-4 w-4 mr-2" /> Add Activity
+            <Plus className="mr-2 h-4 w-4" /> Add Activity
           </Button>
-        )}
+        ) : null}
       </div>
 
       <DiffModal
@@ -287,22 +492,23 @@ export default function QuickActivitySettingsView({ token }: { token: string }) 
         onConfirm={confirmPull}
         title="Pull from Backend"
         confirmLabel="Apply Remote Settings"
-        localActivities={activities}
-        localDisplayCount={displayCount}
-        remoteActivities={remoteQueryData?.activities || []}
-        remoteDisplayCount={remoteQueryData?.displayCount || 0}
+        localActivities={localPreview.activities}
+        localDisplayCount={localPreview.displayCount}
+        remoteActivities={modalRemote.activities}
+        remoteDisplayCount={modalRemote.displayCount}
       />
 
       <DiffModal
         isOpen={isPushModalOpen}
         onClose={() => setIsPushModalOpen(false)}
-        onConfirm={confirmPush}
+        onConfirm={() => { void confirmPush(); }}
         title="Push to Backend"
         confirmLabel="Overwrite Backend"
-        localActivities={activities}
-        localDisplayCount={displayCount}
-        remoteActivities={remoteQueryData?.activities || []}
-        remoteDisplayCount={remoteQueryData?.displayCount || 0}
+        localActivities={localPreview.activities}
+        localDisplayCount={localPreview.displayCount}
+        remoteActivities={modalRemote.activities}
+        remoteDisplayCount={modalRemote.displayCount}
+        busy={saving}
       />
     </div>
   );

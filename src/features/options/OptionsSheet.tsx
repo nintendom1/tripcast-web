@@ -31,6 +31,7 @@ import {
   Moon,
   Sun,
   User,
+  UserRoundPen,
   UserPlus,
   Users,
   Volume2,
@@ -2007,7 +2008,7 @@ function OptionsHome({
             ) : null}
             {role === "traveler" ? (
               <OptionsRow
-                icon={RadioTower}
+                icon={UserRoundPen}
                 title="Quick Activities"
                 detail="Customize the activity buttons in the status panel"
                 onClick={() => {
