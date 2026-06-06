@@ -638,9 +638,9 @@ describe("TripMap location marker", () => {
     expect(replayHud).toBeInTheDocument();
     expect(replayHud).toHaveClass("bottom-[88px]");
     await waitFor(() => {
-      // Look-ahead: trail reveals through the next checkpoint (3000), not just the
-      // current one (1000), so the user sees the upcoming segment.
-      expect(vi.mocked(useTripPath).mock.calls.some((call) => call[4] === 3000)).toBe(true);
+      // No more look-ahead: trail reveals point-by-point (1000) as the replay
+      // progresses, so the focus marker and the path end stay in sync.
+      expect(vi.mocked(useTripPath).mock.calls.some((call) => call[4] === 1000)).toBe(true);
       expect(mapEaseTo).toHaveBeenLastCalledWith(
         expect.objectContaining({ center: [-122.31, 47.61] }),
       );

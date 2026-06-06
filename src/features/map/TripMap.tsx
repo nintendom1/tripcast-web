@@ -131,7 +131,7 @@ const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
 const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
-const REPLAY_BASE_BEAT_MS = 1000;
+const REPLAY_BASE_BEAT_MS = 200;
 // Checkpoint pins dwell longer than the base beat so the POI overlay has room to
 // slide in, be read, and slide out. Scales with replaySpeed like the base beat.
 const REPLAY_CHECKPOINT_DWELL_MS = 3000;
@@ -308,6 +308,7 @@ function buildReplayPins(
 ) {
   const checkpointPins: ReplayPin[] = journalEvents
     .filter(isFiniteReplayCoordinate)
+    .filter((e) => e.type === "story" || e.type === "mission_completed")
     .map((event) => ({
       eventId: event._id,
       occurredAt: event.occurredAt,
@@ -319,7 +320,7 @@ function buildReplayPins(
       checkpointId: event.checkpointId,
     }));
 
-  const MIN_REPLAY_BC_INTERVAL_MS = 60_000;
+  const MIN_REPLAY_BC_INTERVAL_MS = 5_000;
   let lastKeptAt = -Infinity;
   const breadcrumbPins: ReplayPin[] = [];
   for (const s of [...liveTrailSamples].sort((a, b) => a.sampledAt - b.sampledAt)) {
@@ -646,9 +647,13 @@ function PreviewPinMarker({
 function ReplayFocusMarker({
   map,
   position,
+  duration = 0,
+  easing = "ease-out",
 }: {
   map: maplibregl.Map | null;
   position: { lat: number; lon: number } | null;
+  duration?: number;
+  easing?: string;
 }) {
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
@@ -662,6 +667,8 @@ function ReplayFocusMarker({
     }
 
     if (markerRef.current) {
+      const el = markerRef.current.getElement();
+      el.style.transition = duration > 0 ? `transform ${duration}ms ${easing}` : "none";
       markerRef.current.setLngLat([position.lon, position.lat]);
     } else {
       const el = document.createElement("div");
@@ -1746,19 +1753,12 @@ export default function TripMap({
     ? replayPins[replayPlayheadIndex]
     : null;
   const currentReplayPinKind: "checkpoint" | "breadcrumb" = currentReplayPin?.kind ?? "checkpoint";
-  // Reveal-to timestamp = next checkpoint at-or-after current index (so the trail
-  // extends ahead to the next stop on breadcrumb beats, no further).
+  // Reveal-to timestamp = current pin's time, so the trail grows point-by-point
+  // as the replay progresses (instead of jumping ahead to the next checkpoint).
   const replayRevealUpTo = useMemo(() => {
     if (!replayActive || replayPlayheadIndex === null) return null;
     if (replayPlayheadIndex >= replayPins.length) return Number.POSITIVE_INFINITY;
-    // Start strictly AFTER the current index so a checkpoint beat extends the trail
-    // forward to the next checkpoint (the segment the camera is about to traverse),
-    // not just up to the pin under the cursor.
-    for (let i = replayPlayheadIndex + 1; i < replayPins.length; i += 1) {
-      const pin = replayPins[i];
-      if (pin.kind === "checkpoint") return pin.occurredAt;
-    }
-    return replayPins[replayPins.length - 1]?.occurredAt ?? null;
+    return replayPins[replayPlayheadIndex].occurredAt;
   }, [replayActive, replayPlayheadIndex, replayPins]);
 
   useTripPath(
@@ -1892,12 +1892,12 @@ export default function TripMap({
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
 
-    // Variable beat: breadcrumb beats tick at 2x (half the duration); checkpoint
+    // Variable beat: breadcrumb beats tick at REPLAY_BASE_BEAT_MS; checkpoint
     // beats dwell longer so the POI overlay can breathe. Both scale by replaySpeed.
     const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
     const baseBeat = pin?.kind === "checkpoint"
       ? REPLAY_CHECKPOINT_DWELL_MS
-      : REPLAY_BASE_BEAT_MS * 0.5;
+      : REPLAY_BASE_BEAT_MS;
     const isAtEnd = replayPlayheadIndex >= replayEndIndex;
     const beatMs = isAtEnd
       ? 5000 // Pause for 5 seconds at the end before looping
@@ -1991,6 +1991,7 @@ export default function TripMap({
     // focusCoordinate() so the observability triad still fires; defined inline
     // because that closure is declared later in the component body.
     const coord = { lat: target.lat, lon: target.lon };
+    const isBreadcrumb = target.kind === "breadcrumb";
     const geometry = readFocusGeometry(map, {
       topOccluderEl: finaleReplayActive
         ? document.querySelector<HTMLElement>("[data-finale-header]")
@@ -2004,6 +2005,19 @@ export default function TripMap({
       // (header bottom -> HUD top); 0.5 = center, higher = lower on screen.
       anchor: (finaleReplayActive || target.kind === "checkpoint") ? { x: 0.5, y: 0.62 } : undefined,
     });
+
+    // Variable ease for breadcrumbs vs checkpoints. Breadcrumbs use linear easing
+    // and match the beat duration to slide smoothly between points. Checkpoints
+    // use a standard ease-out to settle on the pin.
+    const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
+    const baseBeat = pin?.kind === "checkpoint"
+      ? REPLAY_CHECKPOINT_DWELL_MS
+      : REPLAY_BASE_BEAT_MS;
+    const duration = isBreadcrumb
+      ? Math.max(60, Math.round(baseBeat / replaySpeed))
+      : 550;
+    const easing = isBreadcrumb ? (t: number) => t : (t: number) => t * (2 - t);
+
     log.logMap("map:camera:focus", {
       trigger: "replay:coordinate-snap",
       lat: coord.lat,
@@ -2016,6 +2030,8 @@ export default function TripMap({
       anchor: geometry.anchor,
       padding: geometry.padding,
       zoom: geometry.zoom,
+      isBreadcrumb,
+      duration,
     });
     pendingFocusRef.current = {
       coord,
@@ -2028,7 +2044,8 @@ export default function TripMap({
     map.easeTo({
       center: [coord.lon, coord.lat],
       zoom: geometry.zoom,
-      duration: 550,
+      duration,
+      easing,
       padding: geometry.padding,
     });
   }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, token]);
@@ -4336,6 +4353,12 @@ export default function TripMap({
         <ReplayFocusMarker
           map={mapInstance}
           position={currentReplayPin ? { lat: currentReplayPin.lat, lon: currentReplayPin.lon } : null}
+          duration={
+            currentReplayPin?.kind === "breadcrumb"
+              ? Math.max(60, Math.round(REPLAY_BASE_BEAT_MS / replaySpeed))
+              : 0
+          }
+          easing={currentReplayPin?.kind === "breadcrumb" ? "linear" : "ease-out"}
         />
       )}
       <AnimatePresence mode="wait">
@@ -4345,8 +4368,8 @@ export default function TripMap({
             finale={finaleReplayActive}
             pin={currentOverlayPin}
             note={
-              currentOverlayPin.checkpointId
-                ? journalEvents.find((e) => e.checkpointId === currentOverlayPin.checkpointId)?.body
+              currentOverlayPin.eventId
+                ? journalEvents.find((e) => e._id === currentOverlayPin.eventId)?.body
                 : undefined
             }
             onClick={() => {
