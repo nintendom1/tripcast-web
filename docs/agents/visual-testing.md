@@ -29,9 +29,17 @@ iterate against measurements rather than vibes.
   `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/tripcast-web/`.
 - Auth: sign in as **Traveler**. From the default Follower screen, click **"Sign in as Traveler"**,
   type the traveler code into the **"Enter code"** field, click **"Sign in"**. The code lives in
-  `.local.auth.md` (gitignored) — ask the human if it's a placeholder.
-- Launch Chromium headless with software WebGL so MapLibre renders:
-  `args: ["--use-gl=angle", "--use-angle=swiftshader", "--ignore-gpu-blocklist"]`.
+  **`.local.auth.md` at the workspace root** (`c:\repos\tripcast\.local.auth.md`, gitignored) — note
+  this is one level **above** `tripcast-web/`. If the value reads like a placeholder, ask the human.
+  A saved Playwright session may exist at `tripcast-web/.playwright-session.json`, but it has been a
+  **Follower** token — re-auth as Traveler for replay/trail flows.
+- **Rendering — pick the GL backend by mode:**
+  - **Headed (human supervising):** launch `headless: false` with **no** `--use-gl` args so Chrome uses
+    the **real GPU**. The swiftshader args below force software WebGL and render the map as a **grey
+    canvas** in a visible window — fine for headless screenshots, useless for a human to watch.
+  - **Headless (CI/unattended):** `args: ["--use-gl=angle", "--use-angle=swiftshader", "--ignore-gpu-blocklist"]`
+    so MapLibre still rasterizes offscreen.
+  - Gate it: `const HEADLESS = process.env.HEADLESS === "1";` → `headless: HEADLESS`, `args: HEADLESS ? [swiftshader…] : []`.
 
 ## Caveat: ended trips auto-open the finale
 
@@ -74,6 +82,31 @@ const waitFor = async (page, sel, ms = 12000) => {
   return false;
 };
 ```
+
+### 3. Map-layer application probe (did the layer actually update?)
+
+Screenshots can't always tell whether a MapLibre vector layer (trail line, etc.) reflects the
+current React state — the canvas may show **stale** data. When debugging "the map doesn't update,"
+temporarily expose what the layer-sync code actually did via a `window.__*` hook, then read it with
+`page.evaluate`:
+
+```js
+// in the source, temporarily: (window).__tripPathSync = { result: "setData"|"addLayer"|"removed"|..., feats };
+const sync = await page.evaluate(() => window.__tripPathSync ?? null);
+// "setData"/"addLayer" with the expected feature count = applied; "deferred"/"skip" = dropped.
+```
+
+This pinned the replay-exit trail bug in one run: post-exit the layer reported `deferred:once-load`
+(update dropped) even though React had recomputed the full trail. Lesson: **MapLibre's
+`map.isStyleLoaded()` is unreliable** (can read `false` on a perfectly updatable map), and
+`map.once("load", …)` only fires once — don't gate source `setData` on either. Remove the `__*` hook
+when done.
+
+## Durable hooks already in place
+
+`data-replay-hud`, `data-replay-poi`, `data-finale-banner`, `data-finale-header`, and
+`data-replay-toggle` (the top-right Replay on/off pill) are stable selectors — prefer them over
+Tailwind-class matching.
 
 ## Boot/login snippet (Traveler)
 

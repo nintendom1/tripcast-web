@@ -11,12 +11,14 @@ export type ReplayPoiCardProps = {
   tilt?: number;
   onClick?: () => void;
   className?: string;
+  /**
+   * Multiplier (0..1) applied to the slide in/out durations so the card can play
+   * fully inside the shorter checkpoint dwell at high replay speeds. 1 = normal.
+   */
+  transitionScale?: number;
 };
 
 const EASE = [0.25, 0.46, 0.45, 0.94] as const;
-// Slide in slower (settle), out faster (clear) — mirrors the design and keeps the
-// card from lingering over the end-of-replay fit.
-const EXIT_TRANSITION = { duration: 0.3, ease: "easeIn" } as const;
 
 /**
  * Presentational POI card shown during trip replay: a scrapbook photo that
@@ -24,8 +26,16 @@ const EXIT_TRANSITION = { duration: 0.3, ease: "easeIn" } as const;
  * (staggered). On exit they slide back out in opposite directions. Map- and
  * Convex-free so it can be exercised in Storybook.
  */
-export function ReplayPoiCard({ imageUrl, title, note, tilt = 0, onClick, className }: ReplayPoiCardProps) {
+export function ReplayPoiCard({ imageUrl, title, note, tilt = 0, onClick, className, transitionScale = 1 }: ReplayPoiCardProps) {
   const reduce = useReducedMotion();
+
+  // Scale the slide timings so the card fits the dwell at speed (clamped so it stays
+  // perceptible). Slide in slower (settle), out faster (clear) — keeps the card from
+  // lingering over the end-of-replay fit.
+  const scale = Math.max(0.2, Math.min(1, transitionScale));
+  const inDuration = 0.45 * scale;
+  const textDelay = 0.15 * scale;
+  const exitTransition = { duration: 0.3 * scale, ease: "easeIn" } as const;
 
   const photoMotion = reduce
     ? {
@@ -37,8 +47,8 @@ export function ReplayPoiCard({ imageUrl, title, note, tilt = 0, onClick, classN
     : {
         initial: { opacity: 0, x: -40, rotate: tilt },
         animate: { opacity: 1, x: 0, rotate: tilt },
-        exit: { opacity: 0, x: -20, rotate: tilt, transition: EXIT_TRANSITION },
-        transition: { duration: 0.45, ease: EASE },
+        exit: { opacity: 0, x: -20, rotate: tilt, transition: exitTransition },
+        transition: { duration: inDuration, ease: EASE },
       };
 
   const textMotion = reduce
@@ -51,8 +61,8 @@ export function ReplayPoiCard({ imageUrl, title, note, tilt = 0, onClick, classN
     : {
         initial: { opacity: 0, x: 40 },
         animate: { opacity: 1, x: 0 },
-        exit: { opacity: 0, x: 20, transition: EXIT_TRANSITION },
-        transition: { duration: 0.45, ease: EASE, delay: 0.15 },
+        exit: { opacity: 0, x: 20, transition: exitTransition },
+        transition: { duration: inDuration, ease: EASE, delay: textDelay },
       };
 
   return (

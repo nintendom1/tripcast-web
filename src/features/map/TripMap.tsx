@@ -131,13 +131,50 @@ const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
 const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
-const REPLAY_BASE_BEAT_MS = 1000;
+const REPLAY_BASE_BEAT_MS = 200;
 // Checkpoint pins dwell longer than the base beat so the POI overlay has room to
-// slide in, be read, and slide out. Scales with replaySpeed like the base beat.
+// slide in, be read, and slide out. Scales with replaySpeed like the base beat, but
+// never below the floor so the card still plays its slide-in/out even at high speed.
 const REPLAY_CHECKPOINT_DWELL_MS = 3000;
-// Delay before the POI overlay appears on a checkpoint beat, so the card animates
-// in *after* the camera has eased onto the pin (ease duration is ~550ms).
+const REPLAY_CHECKPOINT_DWELL_FLOOR_MS = 700;
+// The finale credits play the map replay at a fixed cinematic 0.5x. Scoped to the
+// finale via effectiveReplaySpeed so it never persists to the user's normal replay.
+const FINALE_REPLAY_SPEED = 0.5;
+// Cap for the delay before the POI overlay appears on a checkpoint beat (so the card
+// animates in after the camera eases onto the pin). The actual delay scales down with
+// the checkpoint dwell at higher speeds — see the overlay effect.
 const REPLAY_OVERLAY_SETTLE_MS = 650;
+// Single source of truth for a replay pin's beat duration: breadcrumbs tick at the
+// base beat (60ms floor), checkpoints dwell longer (REPLAY_CHECKPOINT_DWELL_FLOOR_MS
+// floor); both scale by replaySpeed. Used by the beat scheduler, the camera ease, and
+// the marker glide so the three can never drift out of sync.
+export function replayBeatMs(kind: "checkpoint" | "breadcrumb", replaySpeed: number) {
+  const base = kind === "checkpoint" ? REPLAY_CHECKPOINT_DWELL_MS : REPLAY_BASE_BEAT_MS;
+  const floor = kind === "checkpoint" ? REPLAY_CHECKPOINT_DWELL_FLOOR_MS : 60;
+  return Math.max(floor, Math.round(base / replaySpeed));
+}
+// Above the ~3.3x beat floor, ticking faster than 60ms just floods the render loop, so
+// higher speeds stop covering more ground. Instead, advance multiple breadcrumbs per
+// floored beat = how many breadcrumbs *would* have elapsed in one floored beat at this
+// speed. So 30x genuinely traverses ~6x faster than 5x without a faster tick rate.
+export function replayPinStep(replaySpeed: number) {
+  const idealBeatMs = REPLAY_BASE_BEAT_MS / replaySpeed;
+  return Math.max(1, Math.round(replayBeatMs("breadcrumb", replaySpeed) / idealBeatMs));
+}
+// Advance the playhead by up to `step` pins, but never skip past a checkpoint (story) —
+// stop on the first one in range so every story still gets its dwell and card.
+export function advanceReplayIndex(
+  current: number,
+  pins: readonly { kind: "checkpoint" | "breadcrumb" }[],
+  endIndex: number,
+  step: number,
+) {
+  const target = Math.min(current + Math.max(1, step), endIndex);
+  for (let i = current + 1; i <= target && i < endIndex; i += 1) {
+    if (pins[i]?.kind === "checkpoint") return i;
+  }
+  return target;
+}
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
 const FINALE_FIT_MAX_ZOOM = 18;
 // Discrete playback speeds offered in the Speed sheet. 20x/30x clamp at the
@@ -308,6 +345,7 @@ function buildReplayPins(
 ) {
   const checkpointPins: ReplayPin[] = journalEvents
     .filter(isFiniteReplayCoordinate)
+    .filter((e) => e.type === "story")
     .map((event) => ({
       eventId: event._id,
       occurredAt: event.occurredAt,
@@ -319,7 +357,7 @@ function buildReplayPins(
       checkpointId: event.checkpointId,
     }));
 
-  const MIN_REPLAY_BC_INTERVAL_MS = 60_000;
+  const MIN_REPLAY_BC_INTERVAL_MS = 5_000;
   let lastKeptAt = -Infinity;
   const breadcrumbPins: ReplayPin[] = [];
   for (const s of [...liveTrailSamples].sort((a, b) => a.sampledAt - b.sampledAt)) {
@@ -646,43 +684,90 @@ function PreviewPinMarker({
 function ReplayFocusMarker({
   map,
   position,
+  duration = 0,
 }: {
   map: maplibregl.Map | null;
   position: { lat: number; lon: number } | null;
+  duration?: number;
 }) {
   const markerRef = useRef<maplibregl.Marker | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const addedRef = useRef(false);
+  // The marker's currently displayed coordinate, so each new target tweens from where
+  // the dot actually is rather than snapping.
+  const displayedRef = useRef<{ lat: number; lon: number } | null>(null);
 
+  // Create the marker once per map and reuse it. (A fresh marker on every position
+  // change would teleport the dot and defeat the glide.)
   useEffect(() => {
     if (!map) return;
-
-    if (!position) {
+    const el = document.createElement("div");
+    el.className = "replay-focus-marker";
+    const ring = document.createElement("div");
+    ring.className = "replay-focus-ring";
+    const dot = document.createElement("div");
+    dot.className = "replay-focus-dot";
+    el.appendChild(ring);
+    el.appendChild(dot);
+    markerRef.current = new maplibregl.Marker({ element: el, anchor: "center" });
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
       markerRef.current?.remove();
       markerRef.current = null;
+      addedRef.current = false;
+      displayedRef.current = null;
+    };
+  }, [map]);
+
+  // Glide toward each new target. Keyed on the primitive lat/lon (not the object) so a
+  // re-render with the same pin doesn't restart the tween. duration <= 0 jumps instantly
+  // (checkpoints); breadcrumbs interpolate linearly over the beat so the dot slides.
+  const lat = position?.lat ?? null;
+  const lon = position?.lon ?? null;
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!map || !marker) return;
+
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
+    if (lat === null || lon === null) {
+      if (addedRef.current) {
+        marker.remove();
+        addedRef.current = false;
+      }
+      displayedRef.current = null;
       return;
     }
 
-    if (markerRef.current) {
-      markerRef.current.setLngLat([position.lon, position.lat]);
-    } else {
-      const el = document.createElement("div");
-      el.className = "replay-focus-marker";
-      const ring = document.createElement("div");
-      ring.className = "replay-focus-ring";
-      const dot = document.createElement("div");
-      dot.className = "replay-focus-dot";
-      el.appendChild(ring);
-      el.appendChild(dot);
-
-      markerRef.current = new maplibregl.Marker({ element: el, anchor: "center" })
-        .setLngLat([position.lon, position.lat])
-        .addTo(map);
+    // First reveal (or after being hidden): place and add without a tween.
+    if (!addedRef.current || !displayedRef.current || duration <= 0) {
+      marker.setLngLat([lon, lat]);
+      if (!addedRef.current) {
+        marker.addTo(map);
+        addedRef.current = true;
+      }
+      displayedRef.current = { lat, lon };
+      return;
     }
 
-    return () => {
-      markerRef.current?.remove();
-      markerRef.current = null;
+    const start = performance.now();
+    const { lat: startLat, lon: startLon } = displayedRef.current;
+    const dLat = lat - startLat;
+    const dLon = lon - startLon;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const curLat = startLat + dLat * t;
+      const curLon = startLon + dLon * t;
+      marker.setLngLat([curLon, curLat]);
+      displayedRef.current = { lat: curLat, lon: curLon };
+      rafRef.current = t < 1 ? requestAnimationFrame(step) : null;
     };
-  }, [map, position]);
+    rafRef.current = requestAnimationFrame(step);
+  }, [map, lat, lon, duration]);
 
   return null;
 }
@@ -693,12 +778,14 @@ function ReplayCheckpointOverlay({
   onClick,
   token,
   finale = false,
+  transitionScale = 1,
 }: {
   pin: ReplayPin;
   note?: string;
   onClick: () => void;
   token: string;
   finale?: boolean;
+  transitionScale?: number;
 }) {
   const imageUrl = useQuery(
     tripcastApi.checkpoints.getStoryImageUrl,
@@ -735,6 +822,7 @@ function ReplayCheckpointOverlay({
         note={note}
         tilt={tilt}
         onClick={onClick}
+        transitionScale={transitionScale}
       />
     </div>
   );
@@ -1455,6 +1543,9 @@ export default function TripMap({
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
+  // Speed that actually drives playback timing. The finale forces a cinematic 0.5x
+  // without mutating the user's chosen replaySpeed, so 0.5x never persists past it.
+  const effectiveReplaySpeed = finaleReplayActive ? FINALE_REPLAY_SPEED : replaySpeed;
   const [replayPaused, setReplayPaused] = useState(false);
   const [currentOverlayPin, setCurrentOverlayPin] = useState<ReplayPin | null>(null);
   const [replayTrailSamples, setReplayTrailSamples] = useState<LiveTrailSample[] | null>(null);
@@ -1473,6 +1564,9 @@ export default function TripMap({
   const [replayWindow, setReplayWindow] = useState<{ startAt: number; endAt: number } | null>(null);
   const [isReplaySpeedSheetOpen, setIsReplaySpeedSheetOpen] = useState(false);
   const [isReplayDateSheetOpen, setIsReplayDateSheetOpen] = useState(false);
+  // Opening a replay control (speed/date) pauses playback; if it was playing when the
+  // control opened, resume it once the control closes. Captured at open time.
+  const replayResumeAfterControlRef = useRef(false);
   const stopFollowing = useCallback(() => {
     setIsFollowing(false);
   }, []);
@@ -1746,19 +1840,12 @@ export default function TripMap({
     ? replayPins[replayPlayheadIndex]
     : null;
   const currentReplayPinKind: "checkpoint" | "breadcrumb" = currentReplayPin?.kind ?? "checkpoint";
-  // Reveal-to timestamp = next checkpoint at-or-after current index (so the trail
-  // extends ahead to the next stop on breadcrumb beats, no further).
+  // Reveal-to timestamp = current pin's time, so the trail grows point-by-point
+  // as the replay progresses (instead of jumping ahead to the next checkpoint).
   const replayRevealUpTo = useMemo(() => {
     if (!replayActive || replayPlayheadIndex === null) return null;
     if (replayPlayheadIndex >= replayPins.length) return Number.POSITIVE_INFINITY;
-    // Start strictly AFTER the current index so a checkpoint beat extends the trail
-    // forward to the next checkpoint (the segment the camera is about to traverse),
-    // not just up to the pin under the cursor.
-    for (let i = replayPlayheadIndex + 1; i < replayPins.length; i += 1) {
-      const pin = replayPins[i];
-      if (pin.kind === "checkpoint") return pin.occurredAt;
-    }
-    return replayPins[replayPins.length - 1]?.occurredAt ?? null;
+    return replayPins[replayPlayheadIndex].occurredAt;
   }, [replayActive, replayPlayheadIndex, replayPins]);
 
   useTripPath(
@@ -1892,17 +1979,17 @@ export default function TripMap({
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
 
-    // Variable beat: breadcrumb beats tick at 2x (half the duration); checkpoint
+    // Variable beat: breadcrumb beats tick at REPLAY_BASE_BEAT_MS; checkpoint
     // beats dwell longer so the POI overlay can breathe. Both scale by replaySpeed.
     const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
-    const baseBeat = pin?.kind === "checkpoint"
-      ? REPLAY_CHECKPOINT_DWELL_MS
-      : REPLAY_BASE_BEAT_MS * 0.5;
     const isAtEnd = replayPlayheadIndex >= replayEndIndex;
     const beatMs = isAtEnd
       ? 5000 // Pause for 5 seconds at the end before looping
-      : Math.max(60, Math.round(baseBeat / replaySpeed));
+      : replayBeatMs(pin?.kind === "checkpoint" ? "checkpoint" : "breadcrumb", effectiveReplaySpeed);
 
+    // At high speed the beat floors at 60ms, so advance several breadcrumbs per beat
+    // (without skipping stories) to make higher multipliers genuinely traverse faster.
+    const step = replayPinStep(effectiveReplaySpeed);
     const timeout = window.setTimeout(() => {
       setReplayPlayheadIndex((current) => {
         if (current === null) return current;
@@ -1911,11 +1998,11 @@ export default function TripMap({
           snappedReplayEventRef.current = null;
           return 0;
         }
-        return current + 1;
+        return advanceReplayIndex(current, replayPins, replayEndIndex, step);
       });
     }, beatMs);
     return () => window.clearTimeout(timeout);
-  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, replaySpeed, replayPaused]);
+  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, effectiveReplaySpeed, replayPaused]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPins.length === 0) return;
@@ -1991,6 +2078,7 @@ export default function TripMap({
     // focusCoordinate() so the observability triad still fires; defined inline
     // because that closure is declared later in the component body.
     const coord = { lat: target.lat, lon: target.lon };
+    const isBreadcrumb = target.kind === "breadcrumb";
     const geometry = readFocusGeometry(map, {
       topOccluderEl: finaleReplayActive
         ? document.querySelector<HTMLElement>("[data-finale-header]")
@@ -2004,6 +2092,17 @@ export default function TripMap({
       // (header bottom -> HUD top); 0.5 = center, higher = lower on screen.
       anchor: (finaleReplayActive || target.kind === "checkpoint") ? { x: 0.5, y: 0.62 } : undefined,
     });
+
+    // Variable ease for breadcrumbs vs checkpoints. Breadcrumbs use linear easing and
+    // match the beat duration so the camera slides smoothly between points (and the
+    // centered focus dot glides with it). Checkpoints use ease-out to settle on the pin.
+    // Checkpoint ease is capped at 550ms but shrinks to fit a short high-speed dwell so
+    // the camera settles before the beat advances. Breadcrumbs match their beat exactly.
+    const duration = isBreadcrumb
+      ? replayBeatMs("breadcrumb", effectiveReplaySpeed)
+      : Math.min(550, Math.round(replayBeatMs("checkpoint", effectiveReplaySpeed) * 0.6));
+    const easing = isBreadcrumb ? (t: number) => t : (t: number) => t * (2 - t);
+
     log.logMap("map:camera:focus", {
       trigger: "replay:coordinate-snap",
       lat: coord.lat,
@@ -2016,6 +2115,8 @@ export default function TripMap({
       anchor: geometry.anchor,
       padding: geometry.padding,
       zoom: geometry.zoom,
+      isBreadcrumb,
+      duration,
     });
     pendingFocusRef.current = {
       coord,
@@ -2028,10 +2129,11 @@ export default function TripMap({
     map.easeTo({
       center: [coord.lon, coord.lat],
       zoom: geometry.zoom,
-      duration: 550,
+      duration,
+      easing,
       padding: geometry.padding,
     });
-  }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, token]);
+  }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, token, effectiveReplaySpeed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2059,7 +2161,8 @@ export default function TripMap({
       if (!finaleReplayStartedRef.current) {
         snappedReplayEventRef.current = null;
         finaleReplayStartedRef.current = true;
-        setReplaySpeed(0.5);
+        // Finale plays at FINALE_REPLAY_SPEED via effectiveReplaySpeed; we no longer
+        // mutate replaySpeed here so the 0.5x doesn't persist after the finale.
         log.logInteraction("finale:map-replay:start", {
           totalPins: pins.length,
           resumeIndex,
@@ -2075,15 +2178,29 @@ export default function TripMap({
 
   // Drive the POI overlay off the playhead. Every beat change first clears the
   // current card so it animates *out* (during the camera ease and before the
-  // end-of-replay fit). On checkpoint beats, the new card then animates *in* once
-  // the camera has settled on the pin (REPLAY_OVERLAY_SETTLE_MS > ease duration).
+  // end-of-replay fit). On checkpoint beats, the new card then animates *in* after a
+  // settle delay that scales down with the (high-speed-floored) checkpoint dwell, so
+  // the card still appears and plays its transition even at fast speeds.
   useEffect(() => {
     setCurrentOverlayPin(null);
     if (!replayActive || !currentReplayPin || currentReplayPin.kind !== "checkpoint") return;
     const pin = currentReplayPin;
-    const timeout = window.setTimeout(() => setCurrentOverlayPin(pin), REPLAY_OVERLAY_SETTLE_MS);
+    const dwell = replayBeatMs("checkpoint", effectiveReplaySpeed);
+    const settleMs = Math.min(REPLAY_OVERLAY_SETTLE_MS, Math.max(120, Math.round(dwell * 0.3)));
+    const timeout = window.setTimeout(() => setCurrentOverlayPin(pin), settleMs);
     return () => window.clearTimeout(timeout);
-  }, [replayActive, currentReplayPin]);
+  }, [replayActive, currentReplayPin, effectiveReplaySpeed]);
+
+  // Resume playback when a replay control (speed/date) closes, but only if it was
+  // playing when the control opened. Covers every close path (dismiss, select speed,
+  // apply/reset window) since they all flip the open flag back to false.
+  useEffect(() => {
+    if (isReplaySpeedSheetOpen || isReplayDateSheetOpen) return;
+    if (replayResumeAfterControlRef.current) {
+      replayResumeAfterControlRef.current = false;
+      setReplayPaused(false);
+    }
+  }, [isReplaySpeedSheetOpen, isReplayDateSheetOpen]);
 
   // Close replay if any sheet/panel/menu opens. Pin taps, dock taps, and the
   // right-click context menu all funnel through these states, so a single effect
@@ -4336,6 +4453,11 @@ export default function TripMap({
         <ReplayFocusMarker
           map={mapInstance}
           position={currentReplayPin ? { lat: currentReplayPin.lat, lon: currentReplayPin.lon } : null}
+          duration={
+            currentReplayPin?.kind === "breadcrumb"
+              ? replayBeatMs("breadcrumb", effectiveReplaySpeed)
+              : 0
+          }
         />
       )}
       <AnimatePresence mode="wait">
@@ -4345,23 +4467,25 @@ export default function TripMap({
             finale={finaleReplayActive}
             pin={currentOverlayPin}
             note={
-              currentOverlayPin.checkpointId
-                ? journalEvents.find((e) => e.checkpointId === currentOverlayPin.checkpointId)?.body
+              currentOverlayPin.eventId
+                ? journalEvents.find((e) => e._id === currentOverlayPin.eventId)?.body
                 : undefined
             }
             onClick={() => {
-              if (currentOverlayPin.checkpointId) {
-                const event = journalEvents.find((e) => e.checkpointId === currentOverlayPin.checkpointId);
-                if (event) {
-                  setSelectedStoryDetail({
-                    eventId: event._id,
-                    checkpointId: event.checkpointId,
-                    fallbackEvent: event,
-                  });
-                }
+              const event = journalEvents.find((e) => e._id === currentOverlayPin.eventId);
+              if (event) {
+                setSelectedStoryDetail({
+                  eventId: event._id,
+                  checkpointId: event.checkpointId,
+                  fallbackEvent: event,
+                });
               }
             }}
             token={token}
+            transitionScale={Math.max(
+              0.25,
+              Math.min(1, replayBeatMs("checkpoint", effectiveReplaySpeed) / REPLAY_CHECKPOINT_DWELL_MS),
+            )}
           />
         )}
       </AnimatePresence>
@@ -4519,12 +4643,14 @@ export default function TripMap({
             onScrub={handleReplayScrub}
             onOpenSpeedSheet={() => {
               music.sfx("tap");
+              replayResumeAfterControlRef.current = !replayPaused;
               setReplayPaused(true);
               setIsReplaySpeedSheetOpen(true);
               log.logInteraction("replay:speed-sheet:open", { speed: replaySpeed });
             }}
             onOpenDateSheet={() => {
               music.sfx("tap");
+              replayResumeAfterControlRef.current = !replayPaused;
               setReplayPaused(true);
               setIsReplayDateSheetOpen(true);
               log.logInteraction("replay:date-sheet:open", {
@@ -4898,8 +5024,9 @@ export default function TripMap({
           <div className="flex flex-col items-end gap-2">
             <button
               type="button"
-              onClick={() => void handleStartReplay()}
-              disabled={!canAttemptReplay}
+              data-replay-toggle=""
+              onClick={() => (replayActive ? handleCloseReplay() : void handleStartReplay())}
+              disabled={!replayActive && !canAttemptReplay}
               aria-pressed={replayActive}
               className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
             >
