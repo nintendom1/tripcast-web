@@ -115,7 +115,7 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
   return (
     <div
       ref={ref}
-      className="fixed inset-0 z-[2000] overflow-hidden bg-black/45"
+      className="fixed inset-0 z-[2000] overflow-hidden"
       role="dialog"
       aria-label="Trip Complete"
     >
@@ -123,7 +123,10 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
       <div className="pointer-events-none absolute -bottom-16 -right-10 h-52 w-52 rotate-12 border border-white/18 bg-black/15" />
 
       {/* Top bar */}
-      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4">
+      <div
+        data-finale-header=""
+        className="absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4"
+      >
         <div>
           <div className="font-[var(--font-display)] text-lg font-extrabold text-white">TripCast finale</div>
         </div>
@@ -138,6 +141,7 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
       </div>
 
       <motion.div
+        data-finale-banner=""
         className="pointer-events-none absolute bottom-6 left-[-18vw] right-[-18vw] top-[60%] rotate-[-8deg] overflow-hidden bg-[linear-gradient(135deg,rgba(255,139,74,0.94),rgba(28,31,58,0.96))] shadow-[0_30px_90px_rgba(0,0,0,0.45)]"
         initial={{ x: "-110%" }}
         animate={{ x: 0 }}
@@ -154,8 +158,8 @@ export default function CreditsOverlay({ token, role, onClose }: Props) {
         >
           <motion.div
             className="px-[18vw] text-center"
-            initial={{ y: "15vh" }}
-            animate={{ y: "-100%" }}
+            initial={{ y: "100%" }}
+            animate={{ y: ["100%", "-100%"] }}
             transition={{ duration: 22, ease: "linear", repeat: Infinity }}
           >
             <div className="py-10" />

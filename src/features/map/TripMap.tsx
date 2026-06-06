@@ -1451,8 +1451,8 @@ export default function TripMap({
   }, []);
 
   const showPath = role === "traveler"
-    ? showTripPathLocal
-    : travelerAllowsFollowerPath && showTripPathLocal;
+    ? (finaleReplayActive || showTripPathLocal)
+    : travelerAllowsFollowerPath && (finaleReplayActive || showTripPathLocal);
   const replayTrailLoading = replayTrailLoad.status === "loading";
   const canAttemptReplay = showPath && !replayTrailLoading;
 
@@ -1726,7 +1726,6 @@ export default function TripMap({
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
-    if (replayPlayheadIndex >= replayEndIndex) return;
 
     // Variable beat: breadcrumb beats tick at 2x (half the duration); checkpoint
     // beats use the base duration. Both scale by replaySpeed.
@@ -1784,8 +1783,10 @@ export default function TripMap({
       // The TripReplayHud is the bottom occluder during replay; treat it like a
       // sheet so fitBounds keeps the route above it.
       const padding = readOccluderPadding(map, {
-        topOccluderEl: cardsWrapperRef.current,
-        sheetSelector: "[data-replay-hud]",
+        topOccluderEl: finaleReplayActive
+          ? document.querySelector<HTMLElement>("[data-finale-header]")
+          : cardsWrapperRef.current,
+        sheetSelector: finaleReplayActive ? "[data-finale-banner]" : "[data-replay-hud]",
       });
       map.fitBounds(
         [[minLon, minLat], [maxLon, maxLat]],
@@ -1824,8 +1825,10 @@ export default function TripMap({
     // because that closure is declared later in the component body.
     const coord = { lat: target.lat, lon: target.lon };
     const geometry = readFocusGeometry(map, {
-      topOccluderEl: cardsWrapperRef.current,
-      sheetSelector: null,
+      topOccluderEl: finaleReplayActive
+        ? document.querySelector<HTMLElement>("[data-finale-header]")
+        : cardsWrapperRef.current,
+      sheetSelector: finaleReplayActive ? "[data-finale-banner]" : null,
       minZoom: 13,
     });
     log.logMap("map:camera:focus", {
@@ -1855,7 +1858,7 @@ export default function TripMap({
       duration: 550,
       padding: geometry.padding,
     });
-  }, [log, replayActive, replayPins, replayPlayheadIndex, token]);
+  }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, token]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1880,7 +1883,7 @@ export default function TripMap({
       if (!finaleReplayStartedRef.current) {
         snappedReplayEventRef.current = null;
         finaleReplayStartedRef.current = true;
-        setReplaySpeed((speed) => Math.max(speed, 2));
+        setReplaySpeed(0.5);
         log.logInteraction("finale:map-replay:start", {
           totalPins: pins.length,
           resumeIndex,
@@ -4550,6 +4553,7 @@ export default function TripMap({
         className={cn(
           "pointer-events-none absolute inset-x-3 top-3 z-[2] flex flex-col gap-2 tripcast-frame",
           coordinatePickMode && "invisible",
+          finaleReplayActive && "invisible",
         )}
       >
         {locationStale ? (

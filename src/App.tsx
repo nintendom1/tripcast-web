@@ -474,11 +474,13 @@ function ConnectedApp() {
           }}
         />
 
-        <TripTicker
-          message={currentMessage}
-          isPriority={isPriority}
-          onComplete={onFunFactComplete}
-        />
+        {!isCreditsOpen && (
+          <TripTicker
+            message={currentMessage}
+            isPriority={isPriority}
+            onComplete={onFunFactComplete}
+          />
+        )}
       </div>
 
       <OptionsSheet
