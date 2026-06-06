@@ -31,6 +31,7 @@ import {
   Moon,
   Sun,
   User,
+  UserRoundPen,
   UserPlus,
   Users,
   Volume2,
@@ -73,6 +74,7 @@ import BulkImportSheet from "./BulkImportSheet";
 import { useFollowerCutoffPreview } from "./followerCutoffPreview";
 import BulkExportSheet from "./BulkExportSheet";
 import MysteryMissionsSheet from "./MysteryMissionsSheet";
+import QuickActivitySettingsView from "./QuickActivitySettings";
 import { TERMS } from "../../copy/terminology";
 import { useTicker, TripTicker } from "../hud";
 import { triggerMapCooldown } from "../map/mapService";
@@ -100,7 +102,7 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker" | "quick-activities";
 type LiveTrailDeleteMode = "range" | "every_other" | "individual";
 
 const TICKER_PREVIEW_MESSAGE = {
@@ -1729,6 +1731,11 @@ export default function OptionsSheet({
               title="Follower content cutoff"
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "quick-activities" ? (
+            <SubViewHeader
+              title="Quick Activities"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
           ) : view === "emergency-reset" ? (
             <EmergencyResetContent
               token={session.token}
@@ -1781,6 +1788,12 @@ export default function OptionsSheet({
                 <FollowerCutoffSection token={session.token} log={log} />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "quick-activities" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <QuickActivitySettingsView token={session.token} />
+              </OptionsContentFrame>
+            </SheetBody>
           ) : view === "options" ? (
             <OptionsHome
               role={role}
@@ -1797,6 +1810,7 @@ export default function OptionsSheet({
               onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
               onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
               onFollowerCutoff={() => { music.sfx("page"); navigateTo("follower-cutoff"); }}
+              onQuickActivities={() => { music.sfx("page"); navigateTo("quick-activities"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
               onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
               onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
@@ -1907,6 +1921,7 @@ function OptionsHome({
   onBulkExport,
   onEmergencyReset,
   onFollowerCutoff,
+  onQuickActivities,
   onDebugLogs,
   onEndTrip,
   onViewCredits,
@@ -1926,6 +1941,7 @@ function OptionsHome({
   onBulkExport: () => void;
   onEmergencyReset: () => void;
   onFollowerCutoff: () => void;
+  onQuickActivities: () => void;
   onEndTrip?: () => void;
   onViewCredits?: () => void;
 }) {
@@ -1987,6 +2003,17 @@ function OptionsHome({
                 onClick={() => {
                   log.logUi("action:live-trail-settings");
                   onLiveTrail();
+                }}
+              />
+            ) : null}
+            {role === "traveler" ? (
+              <OptionsRow
+                icon={UserRoundPen}
+                title="Quick Activities"
+                detail="Customize the activity buttons in the status panel"
+                onClick={() => {
+                  log.logUi("action:quick-activities-settings");
+                  onQuickActivities();
                 }}
               />
             ) : null}
