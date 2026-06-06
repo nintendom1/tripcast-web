@@ -17,16 +17,20 @@ import { log as debugLog } from "@/debug/debugLogger";
 
 export type ThemeMode = "meadow" | "constellation" | "auto";
 
-interface ThemeContextType {
+interface ThemeModeContextType {
   mode: ThemeMode;
-  resolvedTheme: "meadow" | "constellation";
-  resolvedMapBase: "bright" | "fiord";
   setMode: (mode: ThemeMode) => void;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+interface ResolvedThemeContextType {
+  resolvedTheme: "meadow" | "constellation";
+  resolvedMapBase: "bright" | "fiord";
+}
+
+const ThemeModeContext = createContext<ThemeModeContextType | undefined>(undefined);
+const ResolvedThemeContext = createContext<ResolvedThemeContextType | undefined>(undefined);
 const THEME_TRANSITION_CLASS = "theme-transitioning";
-const THEME_TRANSITION_MS = 480;
+const THEME_TRANSITION_MS = 150;
 let themeTransitionTimeout: number | undefined;
 
 const TRAVELER_TZ_CACHE_KEY = "tripcast.theme.last_traveler_timezone";
@@ -36,114 +40,8 @@ const TRAVELER_TZ_CACHE_KEY = "tripcast.theme.last_traveler_timezone";
 const FALLBACK_DAY_START_MINUTES = 6 * 60; // 06:00
 const FALLBACK_NIGHT_START_MINUTES = 21 * 60; // 21:00
 
-const THEMES = {
-  meadow: {
-    "--bg-paper": "#fdf6e3",
-    "--bg-paper-2": "#f0e6c8",
-    "--bg-card": "#fffdf4",
-    "--ink-1": "#3a2e1f",
-    "--ink-2": "#7a6849",
-    "--ink-3": "#b8a578",
-    "--flag": "#ff8b4a",
-    "--flag-2": "#b43f1a",
-    "--green": "#2f7d4f",
-    "--green-2": "#1f5a37",
-    "--amber": "#ffb84a",
-    "--amber-2": "#b47e1f",
-    "--plum": "#f06f7e",
-    "--teal": "#7a9cdc",
-    "--teal-2": "#1e5c6b",
-    "--danger": "#c2392a",
-    "--bg-danger": "#fff1f2", // rose-50
-    "--ink-danger": "#450a0a", // rose-950
-    "--shadow-sheet": "0 -12px 40px rgba(0,0,0,0.12)",
-    "--header-gradient": "linear-gradient(to bottom, var(--bg-paper), transparent)",
-    "--ink-on-dark": "#ffffff",
-    "--ink-on-brand": "#ffffff",
-    "--map-land": "#f4f0dc",
-    "--map-water": "#b3def0",
-    "--map-park": "#daedba",
-    "--map-forest": "#bcd58a",
-    "--line-soft": "rgba(0,0,0,0.06)",
-    "--meter-track": "rgba(0,0,0,0.05)",
-    "--background": "#fdf6e3",
-    "--foreground": "#3a2e1f",
-    "--card": "#fffdf4",
-    "--card-foreground": "#3a2e1f",
-    "--popover": "#fffdf4",
-    "--popover-foreground": "#3a2e1f",
-    "--primary": "#3a2e1f",
-    "--primary-foreground": "#fffdf4",
-    "--secondary": "#fff0dc",
-    "--secondary-foreground": "#3a2e1f",
-    "--muted": "#f0e6c8",
-    "--muted-foreground": "#7a6849",
-    "--accent": "#fff0dc",
-    "--accent-foreground": "#3a2e1f",
-    "--destructive": "#d92332",
-    "--destructive-foreground": "#ffffff",
-    "--border": "rgba(0,0,0,0.08)",
-    "--input": "rgba(0,0,0,0.14)",
-    "--ring": "#ff8b4a",
-    "--font-display": '"Fredoka", "Quicksand", sans-serif',
-    "--radius-sheet": "26px",
-  },
-  constellation: {
-    "--bg-paper": "#1c1f3a",
-    "--bg-paper-2": "#242746",
-    "--bg-card": "#2c2f4f",
-    "--ink-1": "#f0eaff",
-    "--ink-2": "#c2bdee",
-    "--ink-3": "#9a95d2", // Bumped for better contrast on dark navy
-    "--flag": "#ffb24a",
-    "--flag-2": "#d99432",
-    "--green": "#8be0a4",
-    "--green-2": "#5bbf82",
-    "--amber": "#ffd86a",
-    "--amber-2": "#ffd86a",
-    "--plum": "#ff8aae",
-    "--teal": "#7a9aff",
-    "--teal-2": "#9fb2ff",
-    "--danger": "#ff8aae",
-    "--bg-danger": "rgba(244, 63, 94, 0.2)",
-    "--ink-danger": "#ff8aae",
-    "--shadow-sheet": "none",
-    "--header-gradient": "none", // Removed for Constellation per request
-    "--ink-on-dark": "#1c1f3a",
-    "--ink-on-brand": "#1c1f3a",
-    "--map-land": "#2a2e4a",
-    "--map-water": "#1e2440",
-    "--map-park": "#324a48",
-    "--map-forest": "#3a5256",
-    "--line-soft": "rgba(255,255,255,0.1)",
-    "--meter-track": "rgba(255,255,255,0.08)",
-    "--background": "#1c1f3a",
-    "--foreground": "#f0eaff",
-    "--card": "#2c2f4f",
-    "--card-foreground": "#f0eaff",
-    "--popover": "#2c2f4f",
-    "--popover-foreground": "#f0eaff",
-    "--primary": "#f0eaff",
-    "--primary-foreground": "#1c1f3a",
-    "--secondary": "#242746",
-    "--secondary-foreground": "#f0eaff",
-    "--muted": "#242746",
-    "--muted-foreground": "#c2bdee",
-    "--accent": "#34385a",
-    "--accent-foreground": "#f0eaff",
-    "--destructive": "#ff8aae",
-    "--destructive-foreground": "#1c1f3a",
-    "--border": "rgba(255,255,255,0.12)",
-    "--input": "rgba(255,255,255,0.18)",
-    "--ring": "#7a9aff",
-    "--font-display": '"Fredoka", "Quicksand", sans-serif',
-    "--radius-sheet": "18px",
-  },
-};
-
 function applyThemeVariables(theme: "meadow" | "constellation", animate = false) {
   const root = document.documentElement;
-  const mapping = THEMES[theme];
   const reduceMotion =
     typeof window.matchMedia === "function" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -153,9 +51,7 @@ function applyThemeVariables(theme: "meadow" | "constellation", animate = false)
     window.clearTimeout(themeTransitionTimeout);
   }
 
-  Object.entries(mapping).forEach(([key, value]) => {
-    root.style.setProperty(key, value);
-  });
+  root.setAttribute("data-theme", theme);
 
   if (theme === "constellation") {
     root.classList.add("theme-dark");
@@ -403,6 +299,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     () => readCachedTravelerTimeZone(),
   );
   const [now, setNow] = useState(() => Date.now());
+  const [deferredMapBase, setDeferredMapBase] = useState<"bright" | "fiord">(
+    () => (localStorage.getItem("tripcast.theme_mode") === "constellation" ? "fiord" : "bright")
+  );
 
   // Phase boundaries depend on `now`, so a 1-minute tick is required regardless
   // of source. Manual modes don't need it.
@@ -444,6 +343,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     applyThemeVariables(resolvedTheme, hasAppliedThemeRef.current);
     hasAppliedThemeRef.current = true;
+
+    // Defer map base update to avoid blocking the initial theme transition paint
+    const nextMapBase = resolvedTheme === "meadow" ? "bright" : "fiord";
+    const timer = setTimeout(() => {
+      setDeferredMapBase(nextMapBase);
+    }, 100);
+    return () => clearTimeout(timer);
   }, [resolvedTheme, mode]);
 
   // Surface which arm of the resolution chain fired and what inputs it saw.
@@ -511,14 +417,20 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setCachedTimeZoneState((prev) => (prev === timeZone ? prev : timeZone));
   }, []);
 
-  const themeValue = useMemo<ThemeContextType>(
+  const modeValue = useMemo<ThemeModeContextType>(
     () => ({
       mode,
-      resolvedTheme,
-      resolvedMapBase: resolvedTheme === "meadow" ? "bright" : "fiord",
       setMode,
     }),
-    [mode, resolvedTheme, setMode],
+    [mode, setMode],
+  );
+
+  const themeValue = useMemo<ResolvedThemeContextType>(
+    () => ({
+      resolvedTheme,
+      resolvedMapBase: deferredMapBase,
+    }),
+    [resolvedTheme, deferredMapBase],
   );
 
   const bridgeValue = useMemo<ThemeBridgeContextValue>(
@@ -530,24 +442,50 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <ThemeContext.Provider value={themeValue}>
-      <ThemeBridgeContext.Provider value={bridgeValue}>
-        {children}
-      </ThemeBridgeContext.Provider>
-    </ThemeContext.Provider>
+    <ThemeModeContext.Provider value={modeValue}>
+      <ResolvedThemeContext.Provider value={themeValue}>
+        <ThemeBridgeContext.Provider value={bridgeValue}>
+          {children}
+        </ThemeBridgeContext.Provider>
+      </ResolvedThemeContext.Provider>
+    </ThemeModeContext.Provider>
   );
 }
 
-const FALLBACK_THEME: ThemeContextType = {
+const FALLBACK_MODE: ThemeModeContextType = {
   mode: "meadow",
-  resolvedTheme: "meadow",
-  resolvedMapBase: "bright",
-  setMode: () => console.warn("ThemeProvider missing: theme selection will not persist. Ensure <ThemeProvider> wraps the app root."),
+  setMode: () =>
+    console.warn(
+      "ThemeProvider missing: theme selection will not persist. Ensure <ThemeProvider> wraps the app root.",
+    ),
 };
 
-export function useTheme() {
-  const context = useContext(ThemeContext);
+const FALLBACK_THEME: ResolvedThemeContextType = {
+  resolvedTheme: "meadow",
+  resolvedMapBase: "bright",
+};
+
+export function useThemeMode() {
+  const context = useContext(ThemeModeContext);
+  return context ?? FALLBACK_MODE;
+}
+
+export function useResolvedTheme() {
+  const context = useContext(ResolvedThemeContext);
   return context ?? FALLBACK_THEME;
+}
+
+// Keep useTheme for backward compatibility
+export function useTheme() {
+  const modeCtx = useThemeMode();
+  const themeCtx = useResolvedTheme();
+  return useMemo(
+    () => ({
+      ...modeCtx,
+      ...themeCtx,
+    }),
+    [modeCtx, themeCtx],
+  );
 }
 
 type PrefsThemeSnapshot = {
