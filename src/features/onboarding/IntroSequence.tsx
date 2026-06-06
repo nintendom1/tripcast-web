@@ -6,6 +6,7 @@ import {
   BookOpen,
   ChevronLeft,
   Flag,
+  Heart,
   MapPin,
   Moon,
   Sparkles,
@@ -40,7 +41,10 @@ type IntroSequenceProps = {
   onDone: (reason: IntroDoneReason) => void;
 };
 
+type BeatId = "welcome" | "journal" | "vitals" | "missions" | "votes" | "badges" | "theme";
+
 type Beat = {
+  id: BeatId;
   kicker: string;
   title: string;
   body: string;
@@ -48,51 +52,74 @@ type Beat = {
   Icon: LucideIcon;
 };
 
-const BEATS: Beat[] = [
-  {
-    kicker: "Welcome",
-    title: "Watch, shape, and share the trip.",
-    body: "You are invited into the road journal, the decisions, and the little wins along the way.",
-    cta: "Next",
-    Icon: Sparkles,
-  },
-  {
-    kicker: "Stories",
-    title: "Read the postcards from the road.",
-    body: "Stories collect the moments worth keeping, with pins and notes you can revisit later.",
-    cta: "Next",
-    Icon: BookOpen,
-  },
-  {
-    kicker: "Missions",
-    title: "Suggest places, food, and detours.",
-    body: "Drop an idea for the Traveler to accept, start, complete, or save for later.",
-    cta: "Next",
-    Icon: MapPin,
-  },
-  {
-    kicker: "Votes",
-    title: "Help choose when the road forks.",
-    body: "A quick tap can push a plan forward when there are a few good options.",
-    cta: "Next",
-    Icon: Vote,
-  },
-  {
-    kicker: "Badges",
-    title: "Earn credit when your ideas land.",
-    body: "Attribution, points, and Badges remember who helped shape the trip.",
-    cta: "Next",
-    Icon: Trophy,
-  },
-  {
-    kicker: "Theme",
-    title: "Light, dark, or auto?",
-    body: "Pick how TripCast should look before the map opens.",
-    cta: "Open the map",
-    Icon: SunMoon,
-  },
-];
-const LAST_BEAT_INDEX = BEATS.length - 1;
+function getBeats(role: Role): Beat[] {
+  const beats: Beat[] = [
+    {
+      id: "welcome",
+      kicker: "Welcome",
+      title: "Watch, shape, and share the trip.",
+      body: "You are invited into the road journal, the decisions, and the little wins along the way.",
+      cta: "Next",
+      Icon: Sparkles,
+    },
+    {
+      id: "journal",
+      kicker: "Journal",
+      title: "Read the postcards from the road.",
+      body: "The Journal collects the moments worth keeping, with pins and notes you can revisit later.",
+      cta: "Next",
+      Icon: BookOpen,
+    },
+  ];
+
+  if (role === "follower") {
+    beats.push({
+      id: "vitals",
+      kicker: "Vitals",
+      title: "Check the Traveler's status.",
+      body: "See how the Traveler is doing in real-time — their mood, energy, and if they've eaten recently.",
+      cta: "Next",
+      Icon: Heart,
+    });
+  }
+
+  beats.push(
+    {
+      id: "missions",
+      kicker: "Missions",
+      title: "Suggest places, food, and detours.",
+      body: "Drop an idea for the Traveler to accept, start, complete, or save for later.",
+      cta: "Next",
+      Icon: MapPin,
+    },
+    {
+      id: "votes",
+      kicker: "Votes",
+      title: "Help choose when the road forks.",
+      body: "A quick tap can push a plan forward when there are a few good options.",
+      cta: "Next",
+      Icon: Vote,
+    },
+    {
+      id: "badges",
+      kicker: "Badges",
+      title: "Earn credit when your ideas land.",
+      body: "Attribution, points, and Badges remember who helped shape the trip.",
+      cta: "Next",
+      Icon: Trophy,
+    },
+    {
+      id: "theme",
+      kicker: "Theme",
+      title: "Light, dark, or auto?",
+      body: "Pick how TripCast should look before the map opens.",
+      cta: "Open the map",
+      Icon: SunMoon,
+    },
+  );
+
+  return beats;
+}
 
 type IntroAdvanceTrigger = "surface-click" | "cta" | "keyboard";
 type IntroBackTrigger = "back-button" | "keyboard";
@@ -143,9 +170,11 @@ export function IntroSequence({
     music.setOverride("intro", "song9_intro");
     return () => music.setOverride("intro", null);
   }, [music]);
-  const safeBeat = Math.min(Math.max(beat, 0), LAST_BEAT_INDEX);
-  const current = BEATS[safeBeat];
-  const isThemeBeat = safeBeat === LAST_BEAT_INDEX;
+  const beats = React.useMemo(() => getBeats(role), [role]);
+  const lastBeatIndex = beats.length - 1;
+  const safeBeat = Math.min(Math.max(beat, 0), lastBeatIndex);
+  const current = beats[safeBeat];
+  const isThemeBeat = current.id === "theme";
   const isDarkPreview = resolvedTheme === "constellation";
 
   useActiveUiContext(true, {
@@ -209,21 +238,21 @@ export function IntroSequence({
   }, [log, onDone]);
 
   const advance = React.useCallback((trigger: IntroAdvanceTrigger) => {
-    const currentBeat = Math.min(Math.max(beatRef.current, 0), LAST_BEAT_INDEX);
+    const currentBeat = Math.min(Math.max(beatRef.current, 0), lastBeatIndex);
     if (finishedRef.current) {
       log.logUi("intro:advance:ignored", { trigger, beat: currentBeat, reason: "finished" });
       return;
     }
-    if (currentBeat >= LAST_BEAT_INDEX) {
+    if (currentBeat >= lastBeatIndex) {
       finish("done", trigger);
       return;
     }
 
-    const nextBeat = Math.min(currentBeat + 1, LAST_BEAT_INDEX);
+    const nextBeat = Math.min(currentBeat + 1, lastBeatIndex);
     beatRef.current = nextBeat;
     log.logUi("intro:advance", { trigger, from: currentBeat, to: nextBeat });
     setBeat(nextBeat);
-  }, [finish, log]);
+  }, [finish, log, lastBeatIndex]);
 
   const chooseTheme = React.useCallback((nextMode: ThemeMode) => {
     setThemeChoice(nextMode);
@@ -236,7 +265,7 @@ export function IntroSequence({
   }, [log, resolvedTheme, setMode, source]);
 
   const previous = React.useCallback((trigger: IntroBackTrigger) => {
-    const currentBeat = Math.min(Math.max(beatRef.current, 0), LAST_BEAT_INDEX);
+    const currentBeat = Math.min(Math.max(beatRef.current, 0), lastBeatIndex);
     if (finishedRef.current) {
       log.logUi("intro:back:ignored", { trigger, beat: currentBeat, reason: "finished" });
       return;
@@ -288,7 +317,7 @@ export function IntroSequence({
         }
       }}
     >
-      <IntroBackdrop beat={safeBeat} isDark={isDarkPreview} />
+      <IntroBackdrop beat={safeBeat} isThemeBeat={isThemeBeat} isDark={isDarkPreview} />
 
       {safeBeat > 0 ? (
         <button
@@ -327,7 +356,7 @@ export function IntroSequence({
       <MusicMuteIndicator className="absolute right-4 top-16 z-10" />
 
       <div className="absolute left-1/2 top-6 z-10 flex -translate-x-1/2 gap-1.5" aria-hidden="true">
-        {BEATS.map((_, i) => (
+        {beats.map((_, i) => (
           <span
             key={i}
             className={cn("h-1.5 rounded-full transition-all duration-300", i === safeBeat ? "w-6" : "w-1.5")}
@@ -349,7 +378,7 @@ export function IntroSequence({
           transition={{ duration: 0.42, ease: "easeOut" }}
           className="relative z-[1] flex h-full flex-col items-center justify-center px-5 pb-12 pt-16"
         >
-          <BeatScene beat={safeBeat} current={current} userHandle={userHandle} travelerName={travelerName} isDark={isDarkPreview} />
+          <BeatScene current={current} userHandle={userHandle} travelerName={travelerName} isDark={isDarkPreview} />
           {isThemeBeat ? (
             <ThemeChoicePanel
               value={themeChoice}
@@ -523,7 +552,7 @@ export function CreateAccountIntroFlow({
     >
       {/* Subtle mute toggle — top-right corner is otherwise empty here. */}
       <MusicMuteIndicator className="absolute right-4 top-4 z-10" />
-      <IntroBackdrop beat={0} isDark={isDark} />
+      <IntroBackdrop beat={0} isThemeBeat={false} isDark={isDark} />
       <AnimatePresence mode="wait">
         {stage === "welcome" || stage === "welcome-out" ? (
           <motion.h1
@@ -577,25 +606,23 @@ function BrandCrest({ className, isDark }: { className?: string; isDark?: boolea
 }
 
 function BeatScene({
-  beat,
   current,
   userHandle,
   travelerName,
   isDark,
 }: {
-  beat: number;
   current: Beat;
   userHandle: string;
   travelerName: string;
   isDark?: boolean;
 }) {
   const Icon = current.Icon;
-  const pose = beat === 0 ? "wave" : beat === 4 ? "cheer" : beat === 5 ? "idle" : "point";
+  const pose = current.id === "welcome" ? "wave" : current.id === "badges" ? "cheer" : current.id === "theme" ? "idle" : "point";
 
   return (
     <div className="grid w-full max-w-sm translate-y-3 justify-items-center text-center">
       <div className="mb-5 h-32 w-full">
-        <SceneCard beat={beat} isDark={isDark} />
+        <SceneCard current={current} isDark={isDark} />
       </div>
       <div className="mb-8 grid w-full grid-cols-[82px_minmax(0,1fr)] items-end gap-3">
         <IntroMascot pose={pose} size={3.4} />
@@ -607,9 +634,9 @@ function BeatScene({
               : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink)]"
           )}
         >
-          {beat === 0
+          {current.id === "welcome"
             ? `Hi @${userHandle}. ${current.body}`
-            : beat === 1
+            : current.id === "journal"
               ? `${travelerName} posts the moments. You get the thread.`
               : current.body}
         </div>
@@ -719,8 +746,8 @@ function ThemeChoicePanel({
   );
 }
 
-function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
-  if (beat === 1) {
+function SceneCard({ current, isDark }: { current: Beat; isDark?: boolean }) {
+  if (current.id === "journal") {
     return (
       <div className="grid h-full grid-cols-3 items-center gap-2">
         {["-rotate-3", "rotate-1", "rotate-3"].map((classes, index) => (
@@ -746,7 +773,20 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
     );
   }
 
-  if (beat === 2) {
+  if (current.id === "vitals") {
+    return (
+      <div className={cn(
+        "flex h-full flex-col justify-center gap-2 rounded-[26px] border px-5 shadow-[var(--shadow-card)] transition-colors duration-500",
+        isDark ? "border-[#2d314d] bg-[#1c1f3a]" : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]"
+      )}>
+        <PreviewBar label="Energy" value={85} color={isDark ? "var(--flag)" : "var(--meadow-primary)"} delay={0.1} isDark={isDark} />
+        <PreviewBar label="Stomach" value={45} color={isDark ? "var(--amber)" : "var(--meadow-gold)"} delay={0.3} isDark={isDark} />
+        <PreviewBar label="Calm" value={70} color={isDark ? "var(--teal)" : "var(--meadow-royal)"} delay={0.5} isDark={isDark} />
+      </div>
+    );
+  }
+
+  if (current.id === "missions") {
     return (
       <div
         className={cn(
@@ -774,7 +814,7 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
     );
   }
 
-  if (beat === 3) {
+  if (current.id === "votes") {
     return (
       <div className="grid h-full grid-cols-2 items-center gap-3">
         {["Food crawl", "Ferry ride"].map((label, index) => (
@@ -800,7 +840,7 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
     );
   }
 
-  if (beat === 4) {
+  if (current.id === "badges") {
     return (
       <motion.div
         initial={{ rotateY: 180, scale: 0.4, opacity: 0 }}
@@ -818,7 +858,7 @@ function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
     );
   }
 
-  if (beat === LAST_BEAT_INDEX) {
+  if (current.id === "theme") {
     return <MapPreviewCard isDark={isDark} />;
   }
 
@@ -928,9 +968,37 @@ function MapPreviewCard({ isDark }: { isDark?: boolean }) {
   );
 }
 
-function IntroBackdrop({ beat, isDark }: { beat: number; isDark?: boolean }) {
-  const isThemeBeat = beat === LAST_BEAT_INDEX;
+function PreviewBar({ label, value, color, delay }: { label: string; value: number; color: string; delay: number }) {
+  return (
+    <div className="grid gap-1 text-left">
+      <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider opacity-60">
+        <span>{label}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-[var(--meter-track)]">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${value}%` }}
+          transition={{ delay, duration: 1.2, ease: "easeOut" }}
+          className="relative h-full rounded-full"
+          style={{ background: color }}
+        >
+          <motion.div
+            className="absolute inset-0 rounded-full bg-white/30"
+            animate={{ opacity: [0, 1, 0], x: ["-100%", "100%"] }}
+            transition={{
+              duration: 2,
+              repeat: Infinity,
+              repeatDelay: 1 + delay,
+              ease: "easeInOut",
+            }}
+          />
+        </motion.div>
+      </div>
+    </div>
+  );
+}
 
+function IntroBackdrop({ beat, isThemeBeat, isDark }: { beat: number; isThemeBeat: boolean; isDark?: boolean }) {
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
       {/* Light radial — fades out when isDark */}

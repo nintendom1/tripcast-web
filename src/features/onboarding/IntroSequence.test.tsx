@@ -115,7 +115,8 @@ describe("IntroSequence", () => {
     );
 
     act(() => {
-      for (let i = 0; i < 5; i += 1) {
+      // role=follower has 7 beats. To get from 0 to 6, we need 6 clicks.
+      for (let i = 0; i < 6; i++) {
         fireEvent.click(screen.getByRole("button", { name: /next/i }));
       }
     });
@@ -133,7 +134,8 @@ describe("IntroSequence", () => {
 describe("IntroSequence — dark preview", () => {
   function navigateToThemeBeat() {
     act(() => {
-      for (let i = 0; i < 5; i += 1) {
+      // role=follower has 7 beats. To get from 0 to 6, we need 6 clicks.
+      for (let i = 0; i < 6; i++) {
         fireEvent.click(screen.getByRole("button", { name: /next/i }));
       }
     });
