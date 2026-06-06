@@ -41,9 +41,7 @@ describe("ThemeProvider", () => {
       expect(document.documentElement).toHaveClass("dark");
       expect(document.documentElement).toHaveClass("theme-dark");
       expect(document.documentElement).toHaveClass("theme-transitioning");
-      expect(document.documentElement.style.getPropertyValue("--bg-paper")).toBe("#1c1f3a");
-      expect(document.documentElement.style.getPropertyValue("--ink-danger")).toBe("#ff8aae");
-      expect(document.documentElement.style.getPropertyValue("--danger")).toBe("#ff8aae");
+      expect(document.documentElement).toHaveAttribute("data-theme", "constellation");
     });
   });
 });

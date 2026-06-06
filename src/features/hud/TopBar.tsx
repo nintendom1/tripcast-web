@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 
 import type { Role } from "@/convex/tripcastApi";
 import { TERMS } from "../../copy/terminology";
-import { useTheme } from "../../providers/ThemeProvider";
+import { useThemeMode } from "../../providers/ThemeProvider";
 
 export interface TopBarProps {
   role: Role;
@@ -22,7 +22,7 @@ export interface TopBarProps {
 export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
   const isTraveler = role === "traveler";
   const roleLabel = isTraveler ? TERMS.traveler : TERMS.follower;
-  const { mode, setMode } = useTheme();
+  const { mode, setMode } = useThemeMode();
 
   const cycleTheme = () => {
     if (mode === "meadow") setMode("constellation");
