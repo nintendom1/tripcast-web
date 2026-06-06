@@ -646,14 +646,13 @@ describe("TripMap location marker", () => {
       );
     });
 
-    const speedSlider = screen.getByLabelText("Replay speed");
-    fireEvent.pointerDown(speedSlider);
-    expect(speedSlider).toHaveAttribute("max", "16");
-    fireEvent.change(speedSlider, { target: { value: "16" } });
-    fireEvent.pointerUp(speedSlider);
+    // Speed now lives in a dedicated bottom sheet opened from the HUD pill.
+    fireEvent.click(screen.getByRole("button", { name: /change replay speed/i }));
+    const speedOption = await screen.findByRole("button", { name: "10x" });
+    fireEvent.click(speedOption);
 
     await waitFor(() => {
-      expect(getLogs().some((entry) => entry.action === "replay:shuttle:drag-start")).toBe(true);
+      expect(getLogs().some((entry) => entry.action === "replay:speed-sheet:open")).toBe(true);
       expect(getLogs().some((entry) => entry.action === "replay:speed-shift")).toBe(true);
       expect(getLogs().some((entry) => entry.action === "replay:coordinate-snap")).toBe(true);
     });
@@ -676,6 +675,66 @@ describe("TripMap location marker", () => {
       expect(mapEaseTo).toHaveBeenCalledTimes(callsBeforeClose);
       expect(getLogs().some((entry) => entry.action === "replay:close")).toBe(true);
     });
+  });
+
+  it("excludes pre-cutoff pins from Traveler replay so it matches the Follower content cutoff", async () => {
+    setEnabled(true);
+    setupQueries({
+      travelerPreferences: {
+        travelerTimeZone: "UTC",
+        followerContentCutoffEnabled: true,
+        followerContentCutoffAt: 2000,
+      },
+      journalEvents: [
+        makeJournalEvent({
+          _id: "event-old",
+          checkpointId: "checkpoint-old",
+          title: "Hidden story",
+          occurredAt: 1000, // before the cutoff — must not be replayed
+          lat: 47.5,
+          lon: -122.5,
+        }),
+        makeJournalEvent({
+          _id: "event-mid",
+          checkpointId: "checkpoint-mid",
+          title: "First visible story",
+          occurredAt: 3000,
+          lat: 47.6,
+          lon: -122.6,
+        }),
+        makeJournalEvent({
+          _id: "event-new",
+          checkpointId: "checkpoint-new",
+          title: "Second visible story",
+          occurredAt: 4000,
+          lat: 47.7,
+          lon: -122.7,
+        }),
+      ],
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+
+    // The replay trail fetch carries the Traveler's cutoff so the server filters
+    // breadcrumbs the same way the map does.
+    await waitFor(() => {
+      expect(convexQuery).toHaveBeenCalledWith(
+        tripcastApi.liveTrail.listReplayLiveTrailSamples,
+        expect.objectContaining({ token: "test-token", cutoffAt: 2000 }),
+      );
+    });
+
+    // Replay starts at the first visible pin, never the cutoff-hidden one.
+    await waitFor(() => {
+      expect(mapEaseTo).toHaveBeenCalledWith(
+        expect.objectContaining({ center: [-122.6, 47.6] }),
+      );
+    });
+    expect(mapEaseTo).not.toHaveBeenCalledWith(
+      expect.objectContaining({ center: [-122.5, 47.5] }),
+    );
   });
 
   it("keeps Funds off the Dock but closes its sheet when another Dock sheet opens", async () => {

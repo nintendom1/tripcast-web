@@ -29,6 +29,10 @@ type Props = {
   token: string;
   role: Role;
   onMissionClick?: (missionId: string) => void;
+  /** Active replay date window (inclusive, by Mission `createdAt`). Null = no
+   * narrowing. Layers on top of the follower content cutoff. */
+  windowStartAt?: number | null;
+  windowEndAt?: number | null;
 };
 
 function createPopupContent(Mission: Mission) {
@@ -81,7 +85,14 @@ function createPopupContent(Mission: Mission) {
   return wrapper;
 }
 
-export default function MissionMarkers({ map, token, role, onMissionClick }: Props) {
+export default function MissionMarkers({
+  map,
+  token,
+  role,
+  onMissionClick,
+  windowStartAt = null,
+  windowEndAt = null,
+}: Props) {
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
 
   const pins = useQuery(tripcastApi.missions.listMissionMapPins, { token });
@@ -99,6 +110,8 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
     markersRef.current = pins
       .filter((c) => c.lat !== undefined && c.lon !== undefined)
       .filter((c) => preview.cutoffAt === null || c.createdAt >= preview.cutoffAt)
+      .filter((c) => windowStartAt === null || c.createdAt >= windowStartAt)
+      .filter((c) => windowEndAt === null || c.createdAt <= windowEndAt)
       .map((Mission) => {
         const color = Mission.source === "mystery"
           ? MYSTERY_STATUS_COLORS[Mission.status] ?? "#09090b"
@@ -125,7 +138,7 @@ export default function MissionMarkers({ map, token, role, onMissionClick }: Pro
       markersRef.current.forEach(({ marker }) => marker.remove());
       markersRef.current = [];
     };
-  }, [map, pins, onMissionClick, preview.cutoffAt]);
+  }, [map, pins, onMissionClick, preview.cutoffAt, windowStartAt, windowEndAt]);
 
   return null;
 }
