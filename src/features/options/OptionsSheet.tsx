@@ -1113,8 +1113,8 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
     rangeIsValid ? { token, startDate: combinedStart, endDate: combinedEnd, timeZone } : "skip",
   );
 
-  const enabled = status?.enabled ?? false;
-  const visibleToFollowers = status?.visibleToFollowers ?? false;
+  const enabled = status?.enabled ?? true;
+  const visibleToFollowers = status?.visibleToFollowers ?? true;
   const previewCount = preview?.count ?? 0;
   const previewSamples = useMemo(
     () => [...(preview?.samples ?? [])].sort((a, b) => a.sampledAt - b.sampledAt),
@@ -1884,8 +1884,8 @@ function MapSettingsSection({ token, role }: { token: string; role: "traveler" |
   };
 
   const allowFollowers = role === "traveler"
-    ? (preferences?.allowFollowersTripPath ?? false)
-    : (followerPreferences?.visible ? followerPreferences.allowFollowersTripPath : false);
+    ? (preferences?.allowFollowersTripPath ?? true)
+    : (followerPreferences?.visible ? (followerPreferences.allowFollowersTripPath ?? true) : true);
 
   const toggleAllowFollowers = async (checked: boolean) => {
     await updatePreferences({ token, allowFollowersTripPath: checked });

@@ -1412,15 +1412,15 @@ export default function TripMap({
     tripcastApi.liveTrail.followerListLiveTrailSamples,
     role === "follower" ? { token } : "skip",
   );
-  const liveTrailEnabled = role === "traveler" && travelerLiveTrailStatus?.enabled === true;
+  const liveTrailEnabled = role === "traveler" && (travelerLiveTrailStatus?.enabled ?? true);
   const followerPreferences = useQuery(
     tripcastApi.travelerPreferences.followerGetPreferences,
     role === "follower" ? { token } : "skip",
   );
 
   const travelerAllowsFollowerPath = followerPreferences?.visible
-    ? (followerPreferences.allowFollowersTripPath ?? false)
-    : false;
+    ? (followerPreferences.allowFollowersTripPath ?? true)
+    : true;
 
   const liveTrailSamples = useMemo(() => {
     const all =
