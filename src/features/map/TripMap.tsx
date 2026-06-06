@@ -130,6 +130,7 @@ const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 1000;
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
+const FINALE_FIT_MAX_ZOOM = 18;
 
 type ReplayResume = { eventId: string; index: number };
 
@@ -1790,7 +1791,7 @@ export default function TripMap({
       });
       map.fitBounds(
         [[minLon, minLat], [maxLon, maxLat]],
-        { padding, duration: 800, maxZoom: 14 },
+        { padding, duration: 800, maxZoom: finaleReplayActive ? FINALE_FIT_MAX_ZOOM : 14 },
       );
       return;
     }

@@ -86,11 +86,27 @@ describe("CreditsOverlay", () => {
     expect(screen.getByText(/2 Stories · 1 completed Missions · 1 mapped stops/)).toBeInTheDocument();
   });
 
+  it("exposes the finale banner measurement on the unrotated layout wrapper", () => {
+    const { container } = render(<CreditsOverlay token="t" role="traveler" onClose={vi.fn()} />);
+    const banner = container.querySelector("[data-finale-banner]");
+
+    expect(banner).toBeInTheDocument();
+    expect(banner).toHaveClass("absolute", "inset-x-0", "bottom-6", "top-[60%]");
+    expect(banner).not.toHaveClass("rotate-[-8deg]");
+    expect(banner?.querySelector(".rotate-\\[-8deg\\]")).toBeInTheDocument();
+  });
+
   it("closes when the X is clicked", async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
     render(<CreditsOverlay token="t" role="follower" onClose={onClose} />);
-    await user.click(screen.getByRole("button", { name: "Close to map archive" }));
+    const dialog = screen.getByRole("dialog", { name: "Trip Complete" });
+    const closeButton = screen.getByRole("button", { name: "Close to map archive" });
+
+    expect(dialog).toHaveClass("pointer-events-none");
+    expect(closeButton).toHaveClass("pointer-events-auto");
+
+    await user.click(closeButton);
     expect(onClose).toHaveBeenCalled();
   });
 
