@@ -261,10 +261,34 @@ textarea {
 }
 
 /* Traveler live location marker */
-.traveler-location-marker {
+.traveler-location-marker,
+.replay-focus-marker {
   position: relative;
   width: 20px;
   height: 20px;
+}
+
+.replay-focus-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--flag);
+  animation: traveler-location-ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.replay-focus-dot {
+  position: absolute;
+  inset: 5px;
+  border-radius: 50%;
+  background: var(--flag);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  animation: replay-dot-blink 1s ease-in-out infinite;
+}
+
+@keyframes replay-dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .traveler-location-ring {

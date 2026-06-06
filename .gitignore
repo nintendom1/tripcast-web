@@ -22,3 +22,6 @@ storybook-static
 scripts/picker-smoke-screenshots/
 
 music-rework/
+
+# Local dev server log (accidentally committed)
+dev_server.log
