@@ -24,6 +24,7 @@ import AddCheckpointSheet, {
   type CheckpointPrefill,
   type SelectedCoordinate,
 } from "./AddCheckpointSheet";
+import ReplayPoiCard from "./ReplayPoiCard";
 import ReplaySpeedSheet from "./ReplaySpeedSheet";
 import ReplayDateRangeSheet from "./ReplayDateRangeSheet";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
@@ -131,6 +132,12 @@ const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
 const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 1000;
+// Checkpoint pins dwell longer than the base beat so the POI overlay has room to
+// slide in, be read, and slide out. Scales with replaySpeed like the base beat.
+const REPLAY_CHECKPOINT_DWELL_MS = 3000;
+// Delay before the POI overlay appears on a checkpoint beat, so the card animates
+// in *after* the camera has eased onto the pin (ease duration is ~550ms).
+const REPLAY_OVERLAY_SETTLE_MS = 650;
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
 const FINALE_FIT_MAX_ZOOM = 18;
 // Discrete playback speeds offered in the Speed sheet. 20x/30x clamp at the
@@ -681,80 +688,55 @@ function ReplayFocusMarker({
 }
 
 function ReplayCheckpointOverlay({
-  map,
   pin,
-  onClose,
+  note,
   onClick,
   token,
+  finale = false,
 }: {
-  map: maplibregl.Map | null;
   pin: ReplayPin;
-  onClose: () => void;
+  note?: string;
   onClick: () => void;
   token: string;
+  finale?: boolean;
 }) {
   const imageUrl = useQuery(
     tripcastApi.checkpoints.getStoryImageUrl,
     pin.imageId ? { token, imageId: pin.imageId } : "skip",
   );
 
-  const [pixelPos, setPixelPos] = useState<{ x: number; y: number } | null>(null);
+  // Stable scrapbook tilt in [-2, 2] degrees, seeded by the pin so it doesn't
+  // jitter as the card re-renders.
+  const tilt = useMemo(() => {
+    let hash = 0;
+    for (let i = 0; i < pin.eventId.length; i++) {
+      hash = (hash * 31 + pin.eventId.charCodeAt(i)) | 0;
+    }
+    return ((Math.abs(hash) % 41) - 20) / 10;
+  }, [pin.eventId]);
 
-  useEffect(() => {
-    if (!map) return;
-    const update = () => {
-      const pos = map.project([pin.lon, pin.lat]);
-      setPixelPos({ x: pos.x, y: pos.y });
-    };
-    update();
-    map.on("move", update);
-    map.on("zoom", update);
-    return () => {
-      if (typeof (map as any).off === "function") {
-        map.off("move", update);
-        map.off("zoom", update);
-      }
-    };
-  }, [map, pin.lat, pin.lon]);
-
-  if (!pixelPos) return null;
-
+  // Fixed band, decoupled from the pin's screen position so it never drifts when
+  // the user pans and never collides with the chrome. z below the dock/HUD so
+  // they always win if they ever overlap. The card is anchored by its bottom
+  // edge so it grows upward (away from the pin) when a photo is present, sitting
+  // just above the camera-centered pin:
+  // - Normal replay: pin centers ~0.62 of the band above the HUD.
+  // - Finale: pin centers in the band between the finale header and the credits
+  //   banner, so the card tucks into the open space above it.
+  const bandClass = finale ? "bottom-[68%]" : "bottom-[52%]";
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.8, y: -20 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.8, y: -20 }}
-      transition={{ duration: 0.25, ease: "easeOut" }}
-      className="pointer-events-auto absolute z-[30] flex flex-col items-center gap-2"
-      style={{
-        left: pixelPos.x,
-        top: pixelPos.y,
-        transform: "translate(-50%, -100%)",
-        marginTop: -24,
-      }}
+    <div
+      data-replay-poi=""
+      className={cn("pointer-events-none absolute inset-x-0 z-[19] flex justify-center px-4", bandClass)}
     >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onClick();
-        }}
-        className="flex max-w-[180px] flex-col overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]/90 shadow-xl backdrop-blur-md transition-transform active:scale-95"
-      >
-        {imageUrl && (
-          <div className="aspect-[4/3] w-full overflow-hidden bg-muted">
-            <img src={imageUrl} alt="" className="h-full w-full object-cover" />
-          </div>
-        )}
-        <div className="px-3 py-2">
-          <p className="text-center text-xs font-bold leading-tight text-[var(--ink-1)]">
-            {pin.title || "Checkpoint"}
-          </p>
-        </div>
-      </button>
-      {/* Connector triangle */}
-      <div className="h-2 w-3 [clip-path:polygon(50%_100%,0_0,100%_0)] bg-[var(--bg-card)]/90" />
-    </motion.div>
+      <ReplayPoiCard
+        imageUrl={imageUrl}
+        title={pin.title || "Checkpoint"}
+        note={note}
+        tilt={tilt}
+        onClick={onClick}
+      />
+    </div>
   );
 }
 
@@ -1474,7 +1456,6 @@ export default function TripMap({
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
   const [replayPaused, setReplayPaused] = useState(false);
-  const [replayOverlayQueue, setReplayOverlayQueue] = useState<ReplayPin[]>([]);
   const [currentOverlayPin, setCurrentOverlayPin] = useState<ReplayPin | null>(null);
   const [replayTrailSamples, setReplayTrailSamples] = useState<LiveTrailSample[] | null>(null);
   const [replayTrailLoad, setReplayTrailLoad] = useState<{
@@ -1912,13 +1893,15 @@ export default function TripMap({
     if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
 
     // Variable beat: breadcrumb beats tick at 2x (half the duration); checkpoint
-    // beats use the base duration. Both scale by replaySpeed.
+    // beats dwell longer so the POI overlay can breathe. Both scale by replaySpeed.
     const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
-    const kindMultiplier = pin?.kind === "breadcrumb" ? 0.5 : 1;
+    const baseBeat = pin?.kind === "checkpoint"
+      ? REPLAY_CHECKPOINT_DWELL_MS
+      : REPLAY_BASE_BEAT_MS * 0.5;
     const isAtEnd = replayPlayheadIndex >= replayEndIndex;
     const beatMs = isAtEnd
       ? 5000 // Pause for 5 seconds at the end before looping
-      : Math.max(60, Math.round((REPLAY_BASE_BEAT_MS * kindMultiplier) / replaySpeed));
+      : Math.max(60, Math.round(baseBeat / replaySpeed));
 
     const timeout = window.setTimeout(() => {
       setReplayPlayheadIndex((current) => {
@@ -1988,13 +1971,6 @@ export default function TripMap({
     // Persist the resume point on every successful pin transition (not End).
     writeReplayResume(token, { eventId: target.eventId, index: replayPlayheadIndex });
 
-    if (target.kind === "checkpoint") {
-      setReplayOverlayQueue((q) => {
-        if (q.some((p) => p.eventId === target.eventId)) return q;
-        return [...q, target];
-      });
-    }
-
     if (!map || mapServiceUnavailableRef.current) {
       log.logInteraction("replay:coordinate-snap:blocked", {
         eventId: target.eventId,
@@ -2019,12 +1995,14 @@ export default function TripMap({
       topOccluderEl: finaleReplayActive
         ? document.querySelector<HTMLElement>("[data-finale-header]")
         : cardsWrapperRef.current,
-      sheetSelector: finaleReplayActive ? "[data-finale-banner]" : null,
+      // Reserve the replay HUD (and finale banner) as the bottom occluder so the
+      // pin centers in the band *above* the controls, never under them.
+      sheetSelector: finaleReplayActive ? "[data-finale-banner]" : "[data-replay-hud]",
       minZoom: 13,
-      // Finale: drop the pin below band-center so it reads lower on screen.
-      // y is 0..1 of the band (header bottom -> banner top); 0.5 = center.
-      // Raise toward 0.8 for lower, lower toward 0.5 for centered.
-      anchor: finaleReplayActive ? { x: 0.5, y: 0.7 } : undefined,
+      // On checkpoint beats, drop the pin into the lower part of the band so the
+      // fixed POI card (which sits above it) has headroom. y is 0..1 of the band
+      // (header bottom -> HUD top); 0.5 = center, higher = lower on screen.
+      anchor: (finaleReplayActive || target.kind === "checkpoint") ? { x: 0.5, y: 0.62 } : undefined,
     });
     log.logMap("map:camera:focus", {
       trigger: "replay:coordinate-snap",
@@ -2095,25 +2073,22 @@ export default function TripMap({
     };
   }, [canAttemptReplay, finaleReplayActive, loadReplayTrailSamples, log, replayJournalEvents, token]);
 
+  // Drive the POI overlay off the playhead. Every beat change first clears the
+  // current card so it animates *out* (during the camera ease and before the
+  // end-of-replay fit). On checkpoint beats, the new card then animates *in* once
+  // the camera has settled on the pin (REPLAY_OVERLAY_SETTLE_MS > ease duration).
+  useEffect(() => {
+    setCurrentOverlayPin(null);
+    if (!replayActive || !currentReplayPin || currentReplayPin.kind !== "checkpoint") return;
+    const pin = currentReplayPin;
+    const timeout = window.setTimeout(() => setCurrentOverlayPin(pin), REPLAY_OVERLAY_SETTLE_MS);
+    return () => window.clearTimeout(timeout);
+  }, [replayActive, currentReplayPin]);
+
   // Close replay if any sheet/panel/menu opens. Pin taps, dock taps, and the
   // right-click context menu all funnel through these states, so a single effect
   // catches everything the user might do that isn't map panning/zooming. Finale
   // replays are not interactive — let them play through.
-  useEffect(() => {
-    if (currentOverlayPin || replayOverlayQueue.length === 0) return;
-
-    const next = replayOverlayQueue[0];
-    setCurrentOverlayPin(next);
-    setReplayOverlayQueue((q) => q.slice(1));
-
-    const OVERLAY_DURATION_MS = 3000;
-    const timeout = setTimeout(() => {
-      setCurrentOverlayPin(null);
-    }, OVERLAY_DURATION_MS);
-
-    return () => clearTimeout(timeout);
-  }, [currentOverlayPin, replayOverlayQueue]);
-
   useEffect(() => {
     if (!replayActive || finaleReplayActive) return;
     const anyUiOpen =
@@ -2134,7 +2109,6 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
-    setReplayOverlayQueue([]);
     setCurrentOverlayPin(null);
     setReplayWindow(null);
     setIsReplaySpeedSheetOpen(false);
@@ -3580,7 +3554,6 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
-    setReplayOverlayQueue([]);
     setCurrentOverlayPin(null);
     setReplayWindow(null);
     setIsReplaySpeedSheetOpen(false);
@@ -3735,7 +3708,6 @@ export default function TripMap({
     const resumeIndex = resolveReplayResumeIndex(token, nextReplayPins);
     setReplayActive(true);
     setReplayPlayheadIndex(resumeIndex);
-    setReplayOverlayQueue([]);
     setCurrentOverlayPin(null);
     log.logInteraction("replay:start", {
       totalPins: nextReplayPins.length,
@@ -3748,7 +3720,6 @@ export default function TripMap({
   function handleReplayScrub(index: number) {
     const nextIndex = Math.min(replayEndIndex, Math.max(0, Math.round(index)));
     if (nextIndex !== replayPlayheadIndex) {
-      setReplayOverlayQueue([]);
       setCurrentOverlayPin(null);
     }
     setReplayPlayheadIndex(nextIndex);
@@ -3804,7 +3775,6 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
-    setReplayOverlayQueue([]);
     setCurrentOverlayPin(null);
     setReplayWindow(null);
     setIsReplaySpeedSheetOpen(false);
@@ -3826,7 +3796,6 @@ export default function TripMap({
     snappedReplayEventRef.current = null;
     setReplayPlayheadIndex(0);
     setReplayPaused(false);
-    setReplayOverlayQueue([]);
     setCurrentOverlayPin(null);
     log.logInteraction("replay:restart", { speed: replaySpeed });
   }
@@ -4369,12 +4338,17 @@ export default function TripMap({
           position={currentReplayPin ? { lat: currentReplayPin.lat, lon: currentReplayPin.lon } : null}
         />
       )}
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {replayActive && currentOverlayPin && (
           <ReplayCheckpointOverlay
-            map={mapInstance}
+            key={currentOverlayPin.eventId}
+            finale={finaleReplayActive}
             pin={currentOverlayPin}
-            onClose={() => setCurrentOverlayPin(null)}
+            note={
+              currentOverlayPin.checkpointId
+                ? journalEvents.find((e) => e.checkpointId === currentOverlayPin.checkpointId)?.body
+                : undefined
+            }
             onClick={() => {
               if (currentOverlayPin.checkpointId) {
                 const event = journalEvents.find((e) => e.checkpointId === currentOverlayPin.checkpointId);
