@@ -133,18 +133,47 @@ const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 200;
 // Checkpoint pins dwell longer than the base beat so the POI overlay has room to
-// slide in, be read, and slide out. Scales with replaySpeed like the base beat.
+// slide in, be read, and slide out. Scales with replaySpeed like the base beat, but
+// never below the floor so the card still plays its slide-in/out even at high speed.
 const REPLAY_CHECKPOINT_DWELL_MS = 3000;
-// Delay before the POI overlay appears on a checkpoint beat, so the card animates
-// in *after* the camera has eased onto the pin (ease duration is ~550ms).
+const REPLAY_CHECKPOINT_DWELL_FLOOR_MS = 700;
+// The finale credits play the map replay at a fixed cinematic 0.5x. Scoped to the
+// finale via effectiveReplaySpeed so it never persists to the user's normal replay.
+const FINALE_REPLAY_SPEED = 0.5;
+// Cap for the delay before the POI overlay appears on a checkpoint beat (so the card
+// animates in after the camera eases onto the pin). The actual delay scales down with
+// the checkpoint dwell at higher speeds — see the overlay effect.
 const REPLAY_OVERLAY_SETTLE_MS = 650;
 // Single source of truth for a replay pin's beat duration: breadcrumbs tick at the
-// base beat, checkpoints dwell longer; both scale by replaySpeed and never drop below
-// the 60ms floor. Used by the beat scheduler, the camera ease, and the marker glide so
-// the three can never drift out of sync.
-function replayBeatMs(kind: "checkpoint" | "breadcrumb", replaySpeed: number) {
+// base beat (60ms floor), checkpoints dwell longer (REPLAY_CHECKPOINT_DWELL_FLOOR_MS
+// floor); both scale by replaySpeed. Used by the beat scheduler, the camera ease, and
+// the marker glide so the three can never drift out of sync.
+export function replayBeatMs(kind: "checkpoint" | "breadcrumb", replaySpeed: number) {
   const base = kind === "checkpoint" ? REPLAY_CHECKPOINT_DWELL_MS : REPLAY_BASE_BEAT_MS;
-  return Math.max(60, Math.round(base / replaySpeed));
+  const floor = kind === "checkpoint" ? REPLAY_CHECKPOINT_DWELL_FLOOR_MS : 60;
+  return Math.max(floor, Math.round(base / replaySpeed));
+}
+// Above the ~3.3x beat floor, ticking faster than 60ms just floods the render loop, so
+// higher speeds stop covering more ground. Instead, advance multiple breadcrumbs per
+// floored beat = how many breadcrumbs *would* have elapsed in one floored beat at this
+// speed. So 30x genuinely traverses ~6x faster than 5x without a faster tick rate.
+export function replayPinStep(replaySpeed: number) {
+  const idealBeatMs = REPLAY_BASE_BEAT_MS / replaySpeed;
+  return Math.max(1, Math.round(replayBeatMs("breadcrumb", replaySpeed) / idealBeatMs));
+}
+// Advance the playhead by up to `step` pins, but never skip past a checkpoint (story) —
+// stop on the first one in range so every story still gets its dwell and card.
+export function advanceReplayIndex(
+  current: number,
+  pins: readonly { kind: "checkpoint" | "breadcrumb" }[],
+  endIndex: number,
+  step: number,
+) {
+  const target = Math.min(current + Math.max(1, step), endIndex);
+  for (let i = current + 1; i <= target && i < endIndex; i += 1) {
+    if (pins[i]?.kind === "checkpoint") return i;
+  }
+  return target;
 }
 const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
 const FINALE_FIT_MAX_ZOOM = 18;
@@ -749,12 +778,14 @@ function ReplayCheckpointOverlay({
   onClick,
   token,
   finale = false,
+  transitionScale = 1,
 }: {
   pin: ReplayPin;
   note?: string;
   onClick: () => void;
   token: string;
   finale?: boolean;
+  transitionScale?: number;
 }) {
   const imageUrl = useQuery(
     tripcastApi.checkpoints.getStoryImageUrl,
@@ -791,6 +822,7 @@ function ReplayCheckpointOverlay({
         note={note}
         tilt={tilt}
         onClick={onClick}
+        transitionScale={transitionScale}
       />
     </div>
   );
@@ -1511,6 +1543,9 @@ export default function TripMap({
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
+  // Speed that actually drives playback timing. The finale forces a cinematic 0.5x
+  // without mutating the user's chosen replaySpeed, so 0.5x never persists past it.
+  const effectiveReplaySpeed = finaleReplayActive ? FINALE_REPLAY_SPEED : replaySpeed;
   const [replayPaused, setReplayPaused] = useState(false);
   const [currentOverlayPin, setCurrentOverlayPin] = useState<ReplayPin | null>(null);
   const [replayTrailSamples, setReplayTrailSamples] = useState<LiveTrailSample[] | null>(null);
@@ -1950,8 +1985,11 @@ export default function TripMap({
     const isAtEnd = replayPlayheadIndex >= replayEndIndex;
     const beatMs = isAtEnd
       ? 5000 // Pause for 5 seconds at the end before looping
-      : replayBeatMs(pin?.kind === "checkpoint" ? "checkpoint" : "breadcrumb", replaySpeed);
+      : replayBeatMs(pin?.kind === "checkpoint" ? "checkpoint" : "breadcrumb", effectiveReplaySpeed);
 
+    // At high speed the beat floors at 60ms, so advance several breadcrumbs per beat
+    // (without skipping stories) to make higher multipliers genuinely traverse faster.
+    const step = replayPinStep(effectiveReplaySpeed);
     const timeout = window.setTimeout(() => {
       setReplayPlayheadIndex((current) => {
         if (current === null) return current;
@@ -1960,11 +1998,11 @@ export default function TripMap({
           snappedReplayEventRef.current = null;
           return 0;
         }
-        return current + 1;
+        return advanceReplayIndex(current, replayPins, replayEndIndex, step);
       });
     }, beatMs);
     return () => window.clearTimeout(timeout);
-  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, replaySpeed, replayPaused]);
+  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, effectiveReplaySpeed, replayPaused]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPins.length === 0) return;
@@ -2058,7 +2096,11 @@ export default function TripMap({
     // Variable ease for breadcrumbs vs checkpoints. Breadcrumbs use linear easing and
     // match the beat duration so the camera slides smoothly between points (and the
     // centered focus dot glides with it). Checkpoints use ease-out to settle on the pin.
-    const duration = isBreadcrumb ? replayBeatMs("breadcrumb", replaySpeed) : 550;
+    // Checkpoint ease is capped at 550ms but shrinks to fit a short high-speed dwell so
+    // the camera settles before the beat advances. Breadcrumbs match their beat exactly.
+    const duration = isBreadcrumb
+      ? replayBeatMs("breadcrumb", effectiveReplaySpeed)
+      : Math.min(550, Math.round(replayBeatMs("checkpoint", effectiveReplaySpeed) * 0.6));
     const easing = isBreadcrumb ? (t: number) => t : (t: number) => t * (2 - t);
 
     log.logMap("map:camera:focus", {
@@ -2091,7 +2133,7 @@ export default function TripMap({
       easing,
       padding: geometry.padding,
     });
-  }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, token]);
+  }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, token, effectiveReplaySpeed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2119,7 +2161,8 @@ export default function TripMap({
       if (!finaleReplayStartedRef.current) {
         snappedReplayEventRef.current = null;
         finaleReplayStartedRef.current = true;
-        setReplaySpeed(0.5);
+        // Finale plays at FINALE_REPLAY_SPEED via effectiveReplaySpeed; we no longer
+        // mutate replaySpeed here so the 0.5x doesn't persist after the finale.
         log.logInteraction("finale:map-replay:start", {
           totalPins: pins.length,
           resumeIndex,
@@ -2135,15 +2178,18 @@ export default function TripMap({
 
   // Drive the POI overlay off the playhead. Every beat change first clears the
   // current card so it animates *out* (during the camera ease and before the
-  // end-of-replay fit). On checkpoint beats, the new card then animates *in* once
-  // the camera has settled on the pin (REPLAY_OVERLAY_SETTLE_MS > ease duration).
+  // end-of-replay fit). On checkpoint beats, the new card then animates *in* after a
+  // settle delay that scales down with the (high-speed-floored) checkpoint dwell, so
+  // the card still appears and plays its transition even at fast speeds.
   useEffect(() => {
     setCurrentOverlayPin(null);
     if (!replayActive || !currentReplayPin || currentReplayPin.kind !== "checkpoint") return;
     const pin = currentReplayPin;
-    const timeout = window.setTimeout(() => setCurrentOverlayPin(pin), REPLAY_OVERLAY_SETTLE_MS);
+    const dwell = replayBeatMs("checkpoint", effectiveReplaySpeed);
+    const settleMs = Math.min(REPLAY_OVERLAY_SETTLE_MS, Math.max(120, Math.round(dwell * 0.3)));
+    const timeout = window.setTimeout(() => setCurrentOverlayPin(pin), settleMs);
     return () => window.clearTimeout(timeout);
-  }, [replayActive, currentReplayPin]);
+  }, [replayActive, currentReplayPin, effectiveReplaySpeed]);
 
   // Resume playback when a replay control (speed/date) closes, but only if it was
   // playing when the control opened. Covers every close path (dismiss, select speed,
@@ -4409,7 +4455,7 @@ export default function TripMap({
           position={currentReplayPin ? { lat: currentReplayPin.lat, lon: currentReplayPin.lon } : null}
           duration={
             currentReplayPin?.kind === "breadcrumb"
-              ? replayBeatMs("breadcrumb", replaySpeed)
+              ? replayBeatMs("breadcrumb", effectiveReplaySpeed)
               : 0
           }
         />
@@ -4436,6 +4482,10 @@ export default function TripMap({
               }
             }}
             token={token}
+            transitionScale={Math.max(
+              0.25,
+              Math.min(1, replayBeatMs("checkpoint", effectiveReplaySpeed) / REPLAY_CHECKPOINT_DWELL_MS),
+            )}
           />
         )}
       </AnimatePresence>

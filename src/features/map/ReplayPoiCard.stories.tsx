@@ -56,3 +56,19 @@ export const LongNoteClamped: StoryObj<typeof meta> = {
     tilt: 2,
   },
 };
+
+/**
+ * High replay speed: slide in/out durations are scaled down (via `transitionScale`)
+ * so the card still plays fully inside the shorter checkpoint dwell. Re-mount the
+ * story (Storybook's remount) to see the faster slide-in.
+ * @tag ai-generated
+ */
+export const FastTransition: StoryObj<typeof meta> = {
+  args: {
+    imageUrl: SAMPLE_IMAGE,
+    title: "Kerry Park (10x)",
+    note: "Snappy slide-in/out tuned for fast replay.",
+    tilt: -1,
+    transitionScale: 0.25,
+  },
+};
