@@ -62,6 +62,8 @@ import {
 import { computeAutoState } from "./autoStateCalc";
 import { TERMS } from "../../copy/terminology";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
+import { getQuickActivitySettings } from "../options/QuickActivitySettings";
+import type { QuickActivity } from "../../convex/tripcastApi";
 
 type TravelerStateSheetProps = {
   token: string;
@@ -71,17 +73,6 @@ type TravelerStateSheetProps = {
 };
 
 type TabView = "state" | "visibility" | "auto";
-
-const QUICK_ACTIVITIES = [
-  { label: "Walking", emoji: "🚶" },
-  { label: "Eating", emoji: "🍽️" },
-  { label: "Taking train", emoji: "🚆" },
-  { label: "Resting", emoji: "🪑" },
-  { label: "Exploring", emoji: "🧭" },
-  { label: "Shopping", emoji: "🛒" },
-  { label: "Errands", emoji: "💻" },
-  { label: "Sleeping", emoji: "️🛏️" },
-] as const;
 
 const DEFAULT_STALENESS_RESET_AFTER_MS = 4 * 60 * 60 * 1000;
 const DEFAULT_STALENESS_SETTINGS = {
@@ -449,6 +440,17 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [showSchedulePressure, setShowSchedulePressure] = useState(DEFAULT_VISIBILITY.showSchedulePressure);
   const [showStatusNote, setShowStatusNote] = useState(DEFAULT_VISIBILITY.showStatusNote);
   const [showBiometrics, setShowBiometrics] = useState(DEFAULT_VISIBILITY.showBiometrics);
+
+  const [quickActivities, setQuickActivities] = useState(() => getQuickActivitySettings());
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setQuickActivities(getQuickActivitySettings());
+    };
+    window.addEventListener("tripcast.quick_activities_updated", handleUpdate);
+    return () => window.removeEventListener("tripcast.quick_activities_updated", handleUpdate);
+  }, []);
+
   useActiveUiContext(true, {
     sheetName: "TravelerStateSheet",
     label: "Update Status",
@@ -848,9 +850,9 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
             <StateSegment title="Current Activity" hint="what you're doing now">
               <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-1.5">
-                {QUICK_ACTIVITIES.map((activity) => (
+                {quickActivities.activities.slice(0, quickActivities.displayCount).map((activity: QuickActivity, idx: number) => (
                   <button
-                    key={activity.label}
+                    key={`${activity.label}-${idx}`}
                     type="button"
                     onClick={() => {
                       setActivityTitle(activity.label);
