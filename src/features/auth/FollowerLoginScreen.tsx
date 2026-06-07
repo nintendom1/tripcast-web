@@ -6,8 +6,6 @@ import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
-import AuthShell from "./AuthShell";
-
 type FollowerLoginScreenProps = {
   onSignIn: (session: StoredSession) => void;
   onShowTravelerLogin: () => void;
@@ -63,19 +61,16 @@ export default function FollowerLoginScreen({
   }
 
   return (
-    <AuthShell
-      kicker="Follower"
-      subtitle="Sign in to follow this trip."
-      footer={
-        <button
-          type="button"
-          className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)] underline-offset-4 hover:text-[var(--ink-1)] hover:underline"
-          onClick={onShowTravelerLogin}
-        >
-          Sign in as Traveler
-        </button>
-      }
-    >
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col items-center gap-1.5 text-center mb-2">
+        <span className="font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">
+          Follower
+        </span>
+        <h1 className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
+          Sign In
+        </h1>
+        <p className="text-sm text-[var(--ink-2)]">Sign in to follow this trip.</p>
+      </div>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
           Username
@@ -83,6 +78,8 @@ export default function FollowerLoginScreen({
             autoFocus
             autoComplete="username"
             disabled={isPending}
+            id="follower-username"
+            name="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="your-username"
@@ -94,6 +91,8 @@ export default function FollowerLoginScreen({
           <Input
             autoComplete="current-password"
             disabled={isPending}
+            id="follower-password"
+            name="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type="password"
@@ -129,6 +128,15 @@ export default function FollowerLoginScreen({
           {isPending ? "Signing in…" : "Sign in"}
         </Button>
       </form>
-    </AuthShell>
+      <div className="flex justify-center pt-2">
+        <button
+          type="button"
+          className="font-[var(--font-mono)] text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)] underline-offset-4 hover:text-[var(--ink-1)] hover:underline"
+          onClick={onShowTravelerLogin}
+        >
+          Sign in as Traveler
+        </button>
+      </div>
+    </div>
   );
 }

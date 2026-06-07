@@ -25,6 +25,25 @@ beforeEach(() => {
 });
 
 describe("ThemeProvider", () => {
+  it("starts in Constellation when that mode is stored", async () => {
+    localStorage.setItem("tripcast.theme_mode", "constellation");
+
+    render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByText("mode: constellation")).toBeInTheDocument();
+    expect(screen.getByText("resolved: constellation")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(document.documentElement).toHaveClass("dark");
+      expect(document.documentElement).toHaveClass("theme-dark");
+      expect(document.documentElement).toHaveAttribute("data-theme", "constellation");
+    });
+  });
+
   it("applies Constellation variables and dark classes when selected", async () => {
     render(
       <ThemeProvider>
