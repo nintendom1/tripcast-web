@@ -1,12 +1,18 @@
 import { FormEvent, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { motion, useReducedMotion } from "framer-motion";
+import { Flag } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
+import { cn } from "../../lib/utils";
+import { useTheme } from "../../providers/ThemeProvider";
+import { FeatureShowcase } from "./FeatureShowcase";
 import AuthShell from "./AuthShell";
+import { IntroBackdrop, SceneCard } from "../onboarding/IntroScenes";
 import termsCopy from "./legal/tos.txt?raw";
 import privacyCopy from "./legal/privacypolicy.txt?raw";
 
@@ -51,6 +57,9 @@ export default function InviteRedemptionScreen({
   onSignIn,
   onBack,
 }: InviteRedemptionScreenProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "constellation";
+  const reduceMotion = useReducedMotion();
   const inviteStatus = useQuery(tripcastApi.followers.getInviteStatus, { inviteToken });
   const redeemInvite = useMutation(tripcastApi.followers.redeemInvite);
   const [username, setUsername] = useState("");
@@ -134,130 +143,226 @@ export default function InviteRedemptionScreen({
   }
 
   return (
-    <AuthShell
-      kicker="Invite"
-      title="Create account"
-      subtitle="You've been invited to follow this trip."
+    <div
+      className={cn(
+        "min-h-dvh font-sans transition-colors duration-500",
+        isDark
+          ? "bg-[var(--bg-paper)] text-[var(--ink-1)]"
+          : "bg-[var(--meadow-bg)] text-[var(--meadow-ink)]",
+      )}
     >
-      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-        <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
-          Username
-          <Input
-            autoFocus
-            autoComplete="username"
-            disabled={isPending}
-            value={username}
-            onChange={(e) => setUsername(e.target.value.toLowerCase())}
-            placeholder="at least 3 characters"
-            required
-            minLength={3}
-            maxLength={30}
-            pattern="[a-z0-9_-]+"
-            aria-invalid={usernameValidationMessage ? true : undefined}
-            aria-describedby="username-help username-error"
-          />
-          <span id="username-help" className="text-xs text-[var(--ink-3)]">
-            Letters, numbers, - and _ only
-          </span>
-          {usernameValidationMessage ? (
-            <span id="username-error" className="text-xs" style={{ color: "var(--danger)" }}>
-              {usernameValidationMessage}
-            </span>
-          ) : null}
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
-          Password
-          <Input
-            autoComplete="new-password"
-            disabled={isPending}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            required
-            minLength={8}
-          />
-          <span className="text-xs text-[var(--ink-3)]">At least 8 characters</span>
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
-          Confirm password
-          <Input
-            autoComplete="new-password"
-            disabled={isPending}
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            type="password"
-            required
-          />
-          {passwordMismatch ? (
-            <span className="text-xs" style={{ color: "var(--danger)" }}>
-              Passwords do not match
-            </span>
-          ) : null}
-        </label>
-        <div className="flex items-start gap-2 text-sm text-[var(--ink-2)]">
-          <input
-            id="terms-accepted"
-            type="checkbox"
-            checked={termsAccepted}
-            onChange={(e) => setTermsAccepted(e.target.checked)}
-            disabled={isPending}
-            className="mt-0.5 h-4 w-4"
-            style={{ accentColor: "var(--flag)" }}
-            aria-label="I agree to the terms of service and privacy policy"
-            required
-          />
-          <span>
-            <label htmlFor="terms-accepted" className="cursor-pointer">
-              I agree to the
-            </label>{" "}
-            <button
-              type="button"
-              onClick={() => setOpenLegalDocument("terms")}
-              className="font-semibold underline decoration-[var(--flag)] underline-offset-2"
-            >
-              terms of service
-            </button>{" "}
-            <label htmlFor="terms-accepted" className="cursor-pointer">
-              and
-            </label>{" "}
-            <button
-              type="button"
-              onClick={() => setOpenLegalDocument("privacy")}
-              className="font-semibold underline decoration-[var(--flag)] underline-offset-2"
-            >
-              privacy policy
-            </button>
-          </span>
-        </div>
-        {error ? (
-          <p
-            role="alert"
-            className="rounded-md border px-3 py-2 text-sm"
-            style={{
-              borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
-              background: "color-mix(in oklab, var(--danger) 10%, transparent)",
-              color: "var(--danger)",
-            }}
+      <section className="relative overflow-hidden pb-10 pt-6">
+        <IntroBackdrop
+          beat={5}
+          isDark={isDark}
+          reduceMotion={Boolean(reduceMotion)}
+          showStars={isDark}
+        />
+        <div className="relative z-[1] mx-auto grid max-w-5xl gap-8 px-4 sm:px-6 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(320px,420px)_1fr] lg:items-center">
+          <motion.div
+            data-registration-form-panel
+            initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.45, ease: "easeOut" }}
+            className="w-full max-w-[420px] justify-self-center lg:justify-self-start"
           >
-            {error}
-          </p>
-        ) : null}
-        <PendingActionNotice isPending={isPending} actionLabel="account creation" />
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={isPending}
-            onClick={onBack}
-            className="flex-1"
+            <div className="mb-4 flex flex-col items-center gap-1.5 text-center">
+              <RegistrationBrandMark isDark={isDark} />
+              <span
+                className={cn(
+                  "font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.16em]",
+                  isDark ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]",
+                )}
+              >
+                Invite
+              </span>
+              <h1 className="font-[var(--meadow-font-display)] text-3xl font-extrabold leading-tight">
+                Create account
+              </h1>
+              <p
+                className={cn(
+                  "max-w-xs text-sm leading-6",
+                  isDark ? "text-[var(--ink-2)]" : "text-[var(--meadow-ink-soft)]",
+                )}
+              >
+                You've been invited to follow this trip.
+              </p>
+            </div>
+
+            <div
+              className={cn(
+                "rounded-2xl border p-5 shadow-[var(--shadow-card)]",
+                isDark
+                  ? "border-[var(--ink-3)] bg-[var(--bg-card)]"
+                  : "border-[var(--meadow-paper-edge)] bg-[var(--bg-card)]",
+              )}
+            >
+              <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+                <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+                  Username
+                  <Input
+                    autoFocus
+                    autoComplete="username"
+                    disabled={isPending}
+                    id="registration-username"
+                    name="username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                    placeholder="at least 3 characters"
+                    required
+                    minLength={3}
+                    maxLength={30}
+                    pattern="[a-z0-9_-]+"
+                    aria-invalid={usernameValidationMessage ? true : undefined}
+                    aria-describedby="username-help username-error"
+                  />
+                  <span id="username-help" className="text-xs text-[var(--ink-3)]">
+                    Letters, numbers, - and _ only
+                  </span>
+                  {usernameValidationMessage ? (
+                    <span id="username-error" className="text-xs" style={{ color: "var(--danger)" }}>
+                      {usernameValidationMessage}
+                    </span>
+                  ) : null}
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+                  Password
+                  <Input
+                    autoComplete="new-password"
+                    disabled={isPending}
+                    id="registration-password"
+                    name="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    type="password"
+                    required
+                    minLength={8}
+                  />
+                  <span className="text-xs text-[var(--ink-3)]">At least 8 characters</span>
+                </label>
+                <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
+                  Confirm password
+                  <Input
+                    autoComplete="new-password"
+                    disabled={isPending}
+                    id="registration-confirm-password"
+                    name="confirm-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    type="password"
+                    required
+                  />
+                  {passwordMismatch ? (
+                    <span className="text-xs" style={{ color: "var(--danger)" }}>
+                      Passwords do not match
+                    </span>
+                  ) : null}
+                </label>
+                <div className="flex items-start gap-2 text-sm text-[var(--ink-2)]">
+                  <input
+                    id="terms-accepted"
+                    type="checkbox"
+                    checked={termsAccepted}
+                    onChange={(e) => setTermsAccepted(e.target.checked)}
+                    disabled={isPending}
+                    className="mt-0.5 h-4 w-4"
+                    style={{ accentColor: "var(--flag)" }}
+                    aria-label="I agree to the terms of service and privacy policy"
+                    required
+                  />
+                  <span>
+                    <label htmlFor="terms-accepted" className="cursor-pointer">
+                      I agree to the
+                    </label>{" "}
+                    <button
+                      type="button"
+                      onClick={() => setOpenLegalDocument("terms")}
+                      className="font-semibold underline decoration-[var(--flag)] underline-offset-2"
+                    >
+                      terms of service
+                    </button>{" "}
+                    <label htmlFor="terms-accepted" className="cursor-pointer">
+                      and
+                    </label>{" "}
+                    <button
+                      type="button"
+                      onClick={() => setOpenLegalDocument("privacy")}
+                      className="font-semibold underline decoration-[var(--flag)] underline-offset-2"
+                    >
+                      privacy policy
+                    </button>
+                  </span>
+                </div>
+                {error ? (
+                  <p
+                    role="alert"
+                    className="rounded-md border px-3 py-2 text-sm"
+                    style={{
+                      borderColor: "color-mix(in oklab, var(--danger) 25%, transparent)",
+                      background: "color-mix(in oklab, var(--danger) 10%, transparent)",
+                      color: "var(--danger)",
+                    }}
+                  >
+                    {error}
+                  </p>
+                ) : null}
+                <PendingActionNotice isPending={isPending} actionLabel="account creation" />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isPending}
+                    onClick={onBack}
+                    className="flex-1"
+                  >
+                    Back
+                  </Button>
+                  <Button type="submit" disabled={!canSubmit} className="flex-1">
+                    {isPending ? "Creating…" : "Create account"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          </motion.div>
+
+          <motion.div
+            data-registration-intro-panel
+            initial={reduceMotion ? false : { opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: reduceMotion ? 0 : 0.12, duration: reduceMotion ? 0 : 0.5 }}
+            className="grid gap-5 text-center lg:text-left"
           >
-            Back
-          </Button>
-          <Button type="submit" disabled={!canSubmit} className="flex-1">
-            {isPending ? "Creating…" : "Create account"}
-          </Button>
+            <div className="grid gap-3">
+              <h2 className="font-[var(--meadow-font-display)] text-4xl font-extrabold leading-[1.08] sm:text-5xl">
+                Follow the{" "}
+                <span style={{ color: isDark ? "var(--flag)" : "var(--meadow-primary)" }}>
+                  Traveler
+                </span>
+              </h2>
+              <p
+                className={cn(
+                  "mx-auto max-w-xl text-base leading-7 lg:mx-0",
+                  isDark ? "text-[var(--ink-2)]" : "text-[var(--meadow-ink-soft)]",
+                )}
+              >
+                Once your account is ready, TripCast gives you the map, posts, suggestions,
+                votes, and badges for this traveler in one place.
+              </p>
+            </div>
+            <div className="mx-auto h-52 w-full max-w-lg sm:h-60 md:h-64 lg:mx-0">
+              <SceneCard beat={5} isDark={isDark} reduceMotion={Boolean(reduceMotion)} />
+            </div>
+          </motion.div>
         </div>
-      </form>
+      </section>
+
+      <main
+        data-registration-features
+        className="mx-auto max-w-4xl px-4 pb-12 pt-8 sm:px-6 md:pt-10"
+      >
+        <FeatureShowcase isDark={isDark} reduceMotion={reduceMotion} />
+      </main>
+
       {openLegalDocument ? (
         <LegalDocumentModal
           title={openLegalDocument === "terms" ? "Terms of Service" : "Privacy Policy"}
@@ -265,7 +370,19 @@ export default function InviteRedemptionScreen({
           onClose={() => setOpenLegalDocument(null)}
         />
       ) : null}
-    </AuthShell>
+    </div>
+  );
+}
+
+function RegistrationBrandMark({ isDark }: { isDark: boolean }) {
+  return (
+    <span
+      className="grid h-12 w-12 place-items-center rounded-2xl text-white shadow-[var(--shadow-card)]"
+      style={{ background: isDark ? "var(--flag)" : "var(--meadow-primary)" }}
+      aria-hidden="true"
+    >
+      <Flag className="h-6 w-6" strokeWidth={2.5} />
+    </span>
   );
 }
 

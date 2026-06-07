@@ -90,6 +90,15 @@ describe("InviteRedemptionScreen", () => {
     expect(screen.getByRole("button", { name: /create account/i })).toBeInTheDocument();
   });
 
+  it("shows the trip feature introduction alongside registration", () => {
+    renderScreen();
+    expect(screen.getByRole("heading", { name: /follow the traveler/i })).toBeInTheDocument();
+    expect(screen.getByText(/read what they post from each stop/i)).toBeInTheDocument();
+    expect(screen.getByText(/suggest something for the traveler to try/i)).toBeInTheDocument();
+    expect(screen.getByText(/help choose between good options/i)).toBeInTheDocument();
+    expect(screen.getByText(/see who helped shape the trip/i)).toBeInTheDocument();
+  });
+
   it("submit button is disabled when form is empty", () => {
     renderScreen();
     expect(screen.getByRole("button", { name: /create account/i })).toBeDisabled();

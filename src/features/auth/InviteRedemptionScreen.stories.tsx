@@ -7,6 +7,7 @@ import { useEffect } from "react";
 const meta: Meta<typeof InviteRedemptionScreen> = {
   title: "Auth/InviteRedemptionScreen",
   component: InviteRedemptionScreen,
+  parameters: { layout: "fullscreen" },
   decorators: [
     (Story) => (
       <StorybookConvexProvider>
@@ -43,10 +44,10 @@ export const Loading: Story = {
 
 export const Valid: Story = {
   render: (args) => (
-    <>
+    <div className="-m-4">
       <MockStatus status="valid" />
       <InviteRedemptionScreen {...args} />
-    </>
+    </div>
   ),
 };
 
