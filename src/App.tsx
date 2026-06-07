@@ -11,8 +11,8 @@ import {
   type StoredSession,
 } from "./lib/auth";
 import { Button } from "./components/ui/button";
-import AuthScreen from "./features/auth/AuthScreen";
-import FollowerLoginScreen from "./features/auth/FollowerLoginScreen";
+import LandingPage from "./features/auth/LandingPage";
+import LoginModal from "./features/auth/LoginModal";
 import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
 import PasswordResetScreen from "./features/auth/PasswordResetScreen";
 import OptionsSheet, { type OptionsView } from "./features/options/OptionsSheet";
@@ -114,7 +114,7 @@ export default function App({ convexReady }: AppProps) {
 function ConnectedApp() {
   const [inviteToken] = useState(() => new URLSearchParams(window.location.search).get("invite"));
   const [resetToken] = useState(() => new URLSearchParams(window.location.search).get("reset"));
-  const [showTravelerLogin, setShowTravelerLogin] = useState(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [pendingInviteToken, setPendingInviteToken] = useState(inviteToken);
   const [pendingResetToken, setPendingResetToken] = useState(resetToken);
 
@@ -360,29 +360,17 @@ function ConnectedApp() {
     );
   }
 
-  // No session: show login screen
+  // No session: show landing page
   if (!session) {
-    if (showTravelerLogin) {
-      return (
-        <AnimatePresence mode="wait">
-          <motion.div key="traveler-auth" {...PANEL_MOTION}>
-            <AuthScreen
-              onSignIn={(s) => handleSignIn({ ...s, sessionType: "legacy" })}
-              onBack={() => setShowTravelerLogin(false)}
-            />
-          </motion.div>
-        </AnimatePresence>
-      );
-    }
     return (
-      <AnimatePresence mode="wait">
-        <motion.div key="follower-login" {...PANEL_MOTION}>
-          <FollowerLoginScreen
-            onSignIn={handleSignIn}
-            onShowTravelerLogin={() => setShowTravelerLogin(true)}
-          />
-        </motion.div>
-      </AnimatePresence>
+      <>
+        <LandingPage onLoginClick={() => setIsLoginModalOpen(true)} />
+        <LoginModal
+          open={isLoginModalOpen}
+          onOpenChange={setIsLoginModalOpen}
+          onSignIn={handleSignIn}
+        />
+      </>
     );
   }
 
@@ -425,14 +413,14 @@ function ConnectedApp() {
   // Session invalidated on server
   if (activeSessionCheck === null) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div key="auth-fallback" {...PANEL_MOTION}>
-          <FollowerLoginScreen
-            onSignIn={handleSignIn}
-            onShowTravelerLogin={() => setShowTravelerLogin(true)}
-          />
-        </motion.div>
-      </AnimatePresence>
+      <>
+        <LandingPage onLoginClick={() => setIsLoginModalOpen(true)} />
+        <LoginModal
+          open={isLoginModalOpen}
+          onOpenChange={setIsLoginModalOpen}
+          onSignIn={handleSignIn}
+        />
+      </>
     );
   }
 

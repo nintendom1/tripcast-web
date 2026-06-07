@@ -7,8 +7,7 @@ import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
-import AuthShell from "./AuthShell";
-
+import { cn } from "../../lib/utils";
 type AuthScreenProps = {
   onSignIn: (session: Omit<StoredSession, "sessionType" | "displayName" | "username">) => void;
   onBack?: () => void;
@@ -57,13 +56,22 @@ export default function AuthScreen({ onSignIn, onBack }: AuthScreenProps) {
   }
 
   return (
-    <AuthShell kicker="Traveler" subtitle="Sign in with the code your trip uses.">
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col items-center gap-1.5 text-center mb-2">
+        <span className="font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--ink-3)]">
+          Traveler
+        </span>
+        <h1 className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
+          Sign In
+        </h1>
+        <p className="text-sm text-[var(--ink-2)]">Sign in with the code your trip uses.</p>
+      </div>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <label className="flex flex-col gap-1.5 text-sm font-semibold text-[var(--ink-1)]">
           Traveler code
           <Input
             autoFocus
-            autoComplete="off"
+            autoComplete="one-time-code"
             disabled={isPending}
             onChange={(e) => setCode(e.target.value)}
             placeholder="Enter code"
@@ -97,6 +105,6 @@ export default function AuthScreen({ onSignIn, onBack }: AuthScreenProps) {
           </Button>
         </div>
       </form>
-    </AuthShell>
+    </div>
   );
 }
