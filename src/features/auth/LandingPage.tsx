@@ -1,5 +1,5 @@
 import * as React from "react";
-import { motion, useScroll, useTransform, useSpring } from "framer-motion";
+import { motion, useScroll, useSpring } from "framer-motion";
 import {
   BookOpen,
   Flag,
@@ -13,57 +13,50 @@ import {
 import { Button } from "../../components/ui/button";
 import { cn } from "../../lib/utils";
 import { useTheme } from "../../providers/ThemeProvider";
-import { IntroMascot } from "../onboarding/IntroMascot";
 
 interface Feature {
   kicker: string;
   title: string;
   body: string;
   Icon: LucideIcon;
-  color: string;
-  pose: "idle" | "wave" | "point" | "cheer";
+  beat: number;
 }
 
 const FEATURES: Feature[] = [
   {
     kicker: "The Concept",
-    title: "The Road is Calling. Follow the Journey.",
-    body: "TripCast turns a traveler's path into a live, interactive story. No algorithms, no noise—just the open road and the people who share it.",
+    title: "Watch the Journey Unfold.",
+    body: "Follow the traveler's path in real-time. See where they are, where they've been, and what they're seeing right now.",
     Icon: Sparkles,
-    color: "var(--meadow-primary)",
-    pose: "wave",
+    beat: 0,
   },
   {
     kicker: "Stories",
-    title: "Moments Worth Keeping.",
-    body: "View the trip through the traveler's eyes. Every pin on the map is a postcard, a memory, and a piece of the journey you can revisit anytime.",
+    title: "Postcards from the Traveler.",
+    body: "Read the notes and see the photos pinned to the map. Every story is a window into the traveler's experience.",
     Icon: BookOpen,
-    color: "var(--meadow-royal)",
-    pose: "point",
+    beat: 1,
   },
   {
     kicker: "Missions",
-    title: "Don't Just Watch. Participate.",
-    body: "Suggest detours, food stops, or local gems. Your ideas become missions that the traveler can accept and complete in the real world.",
+    title: "Suggest a Path.",
+    body: "Drop an idea for the traveler to chase. Your suggestions become missions they can accept and complete.",
     Icon: MapPin,
-    color: "var(--teal)",
-    pose: "cheer",
+    beat: 2,
   },
   {
     kicker: "Votes",
-    title: "Decide Together.",
-    body: "When the road forks, the audience weighs in. Cast your vote to help the traveler choose the next chapter in real-time.",
+    title: "Help Them Choose.",
+    body: "When the traveler reaches a fork, weigh in. Your vote helps decide which way they go next.",
     Icon: Vote,
-    color: "var(--meadow-primary)",
-    pose: "point",
+    beat: 3,
   },
   {
-    kicker: "Legacy",
-    title: "Your Influence, Recorded.",
-    body: "Earn badges and recognition for your contributions. Be more than a follower; be a part of the journey's living history.",
+    kicker: "Badges",
+    title: "Be Part of the Story.",
+    body: "Earn credit and badges for your contributions. Your influence is recorded as part of the trip's history.",
     Icon: Trophy,
-    color: "var(--meadow-gold)",
-    pose: "cheer",
+    beat: 4,
   },
 ];
 
@@ -119,7 +112,7 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
       </header>
 
       {/* Hero Section */}
-      <section className="relative pt-32 pb-20 px-6 overflow-hidden flex flex-col items-center text-center">
+      <section className="relative pt-24 pb-12 px-6 overflow-hidden flex flex-col items-center text-center">
         <IntroBackdrop isDark={isDark} />
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -127,23 +120,15 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
           transition={{ duration: 0.6 }}
           className="relative z-10 max-w-2xl"
         >
-          <div className={cn(
-            "mb-4 inline-flex items-center gap-2 rounded-full border px-4 py-1.5 font-[var(--meadow-font-display)] text-xs font-extrabold uppercase tracking-widest",
-            isDark ? "border-[var(--ink-3)] bg-[var(--card)] text-[var(--ink-2)]" : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)] text-[var(--meadow-ink-soft)]"
-          )}>
-            <Sparkles className="h-3.5 w-3.5" style={{ color: isDark ? "var(--flag)" : "var(--meadow-primary)" }} />
-            The Future of Travel
-          </div>
           <h1 className="font-[var(--meadow-font-display)] text-5xl md:text-6xl font-extrabold leading-[1.1] mb-6">
-            Real Trips. <br />
-            <span style={{ color: isDark ? "var(--flag)" : "var(--meadow-primary)" }}>Real People.</span> <br />
-            Real Connection.
+            Follow the <br />
+            <span style={{ color: isDark ? "var(--flag)" : "var(--meadow-primary)" }}>Traveler.</span>
           </h1>
           <p className={cn(
-            "text-lg md:text-xl mb-10 leading-relaxed",
+            "text-lg md:text-xl mb-8 leading-relaxed max-w-lg mx-auto",
             isDark ? "text-[var(--ink-2)]" : "text-[var(--meadow-ink-soft)]"
           )}>
-            Follow the road as it happens. TripCast is a live narrative platform where the audience helps shape the journey.
+            See where they go, help them choose, and be part of every mile.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button
@@ -161,28 +146,17 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
         </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4, duration: 0.8 }}
-          className="mt-16 relative z-10"
+          className="mt-12 relative z-10 w-full max-w-sm h-48"
         >
-          <div className="relative group">
-            <div className={cn(
-              "absolute -inset-1 rounded-[32px] blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200",
-              isDark ? "bg-[var(--flag)]" : "bg-[var(--meadow-primary)]"
-            )} />
-            <div className={cn(
-              "relative h-64 w-64 md:h-80 md:w-80 rounded-[30px] border-4 flex items-center justify-center overflow-hidden shadow-2xl",
-              isDark ? "bg-[var(--card)] border-[var(--ink-3)]" : "bg-[var(--meadow-paper)] border-white"
-            )}>
-              <IntroMascot pose="wave" size={8} />
-            </div>
-          </div>
+          <SceneCard beat={5} isDark={isDark} />
         </motion.div>
       </section>
 
       {/* Feature Sections */}
-      <div className="max-w-5xl mx-auto px-6 py-20 space-y-40">
+      <div className="max-w-4xl mx-auto px-6 py-12 space-y-24">
         {FEATURES.map((feature, idx) => (
           <FeatureSection key={idx} feature={feature} index={idx} isDark={isDark} />
         ))}
@@ -190,19 +164,19 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
 
       {/* Footer */}
       <footer className={cn(
-        "py-20 px-6 text-center border-t transition-colors duration-500",
+        "py-16 px-6 text-center border-t transition-colors duration-500",
         isDark ? "bg-[var(--card)] border-[var(--ink-3)]" : "bg-[var(--meadow-paper)] border-[var(--meadow-paper-edge)]"
       )}>
         <div className="max-w-2xl mx-auto">
           <BrandCrest className="mx-auto mb-6" isDark={isDark} />
           <h2 className="font-[var(--meadow-font-display)] text-3xl font-extrabold mb-4">
-            Ready to hit the road?
+            Follow the journey
           </h2>
           <p className={cn(
             "mb-8",
             isDark ? "text-[var(--ink-2)]" : "text-[var(--meadow-ink-soft)]"
           )}>
-            Join the journey and see where the road leads today.
+            Sign in to see where the traveler is right now.
           </p>
           <Button
             size="lg"
@@ -216,7 +190,7 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
             Sign in to TripCast
           </Button>
           <div className="mt-16 text-[10px] font-mono uppercase tracking-[0.2em] opacity-40">
-            &copy; {new Date().getFullYear()} TripCast &bull; Built for the journey
+            &copy; {new Date().getFullYear()} TripCast
           </div>
         </div>
       </footer>
@@ -229,43 +203,35 @@ function FeatureSection({ feature, index, isDark }: { feature: Feature, index: n
 
   return (
     <motion.section
-      initial={{ opacity: 0, y: 50 }}
+      initial={{ opacity: 0, y: 30 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-100px" }}
-      transition={{ duration: 0.7, ease: "easeOut" }}
+      viewport={{ once: true, margin: "-50px" }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
       className={cn(
-        "flex flex-col md:flex-row items-center gap-12 md:gap-20",
+        "flex flex-col md:flex-row items-center gap-8 md:gap-16",
         isEven ? "md:flex-row" : "md:flex-row-reverse"
       )}
     >
       <div className="flex-1 text-center md:text-left">
         <div className={cn(
-          "mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-widest",
+          "mb-3 inline-flex items-center gap-2 rounded-full px-3 py-1 font-[var(--meadow-font-display)] text-[10px] font-extrabold uppercase tracking-widest",
           isDark ? "bg-[var(--ink-3)] text-[var(--ink-2)]" : "bg-[var(--meadow-paper-edge)] text-[var(--meadow-ink-soft)]"
         )}>
           <feature.Icon className="h-3 w-3" style={{ color: isDark ? "var(--flag)" : "var(--meadow-primary)" }} />
           {feature.kicker}
         </div>
-        <h3 className="font-[var(--meadow-font-display)] text-3xl md:text-4xl font-extrabold mb-4 leading-tight">
+        <h3 className="font-[var(--meadow-font-display)] text-2xl md:text-3xl font-extrabold mb-3 leading-tight">
           {feature.title}
         </h3>
         <p className={cn(
-          "text-lg leading-relaxed",
+          "text-base md:text-lg leading-relaxed",
           isDark ? "text-[var(--ink-2)]" : "text-[var(--meadow-ink-soft)]"
         )}>
           {feature.body}
         </p>
       </div>
-      <div className="flex-1 flex justify-center">
-        <motion.div
-          whileHover={{ scale: 1.05 }}
-          className={cn(
-            "h-64 w-64 md:h-72 md:w-72 rounded-[40px] shadow-2xl flex items-center justify-center relative transition-colors duration-500",
-            isDark ? "bg-[var(--card)] border border-[var(--ink-3)]" : "bg-[var(--meadow-paper)] border-4 border-white"
-          )}
-        >
-          <IntroMascot pose={feature.pose} size={6} />
-        </motion.div>
+      <div className="flex-1 w-full max-w-sm h-32">
+        <SceneCard beat={feature.beat} isDark={isDark} />
       </div>
     </motion.section>
   );
@@ -306,16 +272,196 @@ function IntroBackdrop({ isDark }: { isDark?: boolean }) {
         )}
         style={{ background: "radial-gradient(circle at 50% 35%, #242746 0%, #1c1f3a 66%)" }}
       />
+    </div>
+  );
+}
 
-      {/* Sun / Moon */}
-      <motion.div
+/* Duplicated SceneCard and MapPreviewCard logic from IntroSequence.tsx for zero-dependency consistency in LandingPage */
+
+function SceneCard({ beat, isDark }: { beat: number; isDark?: boolean }) {
+  if (beat === 1) {
+    return (
+      <div className="grid h-full grid-cols-3 items-center gap-2">
+        {["-rotate-3", "rotate-1", "rotate-3"].map((classes, index) => (
+          <motion.div
+            key={classes}
+            initial={{ opacity: 0, y: 24, rotate: 0 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: index * 0.14, duration: 0.45, ease: "easeOut" }}
+            className={cn(
+              "h-24 rounded-md border p-2 shadow-[var(--shadow-card)]",
+              isDark
+                ? "border-[var(--ink-3)] bg-[var(--card)]"
+                : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]",
+              classes,
+            )}
+          >
+            <div className={cn("h-10 rounded", isDark ? "bg-[var(--flag)]/20" : "bg-[var(--meadow-royal)]/20")} />
+            <div className={cn("mt-2 h-2 w-20 rounded", isDark ? "bg-[var(--flag)]/50" : "bg-[var(--meadow-primary)]/50")} />
+            <div className={cn("mt-1 h-2 w-14 rounded", isDark ? "bg-[var(--ink-3)]/40" : "bg-[var(--meadow-ink-very)]/40")} />
+          </motion.div>
+        ))}
+      </div>
+    );
+  }
+
+  if (beat === 2) {
+    return (
+      <div
         className={cn(
-          "absolute -right-20 -top-20 h-64 w-64 rounded-full transition-colors duration-1000 blur-3xl",
-          isDark ? "bg-slate-200/5" : "bg-[var(--meadow-gold)]/10"
+          "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)]",
+          isDark ? "border-[#2d314d] bg-[#1c1f3a]" : "border-[var(--meadow-paper-edge)] bg-[#eaf2da]",
         )}
-        animate={{ scale: [1, 1.1, 1], opacity: [0.3, 0.5, 0.3] }}
-        transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }}
-      />
+      >
+        <div
+          className="absolute inset-0 opacity-80"
+          style={{
+            backgroundImage: isDark
+              ? "linear-gradient(135deg, transparent 0 42%, #24273a 42% 50%, transparent 50%), linear-gradient(35deg, transparent 0 55%, #24273a 55% 68%, transparent 68%)"
+              : "linear-gradient(135deg, transparent 0 42%, #bcd58a 42% 50%, transparent 50%), linear-gradient(35deg, transparent 0 55%, #b3def0 55% 68%, transparent 68%)",
+          }}
+        />
+        <motion.div
+          initial={{ y: -80, opacity: 0 }}
+          whileInView={{ y: 0, opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.25, duration: 0.55, ease: "easeOut" }}
+          className="absolute left-[62%] top-[35%] text-[#e53935]"
+        >
+          <MapPin className="h-10 w-10 fill-current" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (beat === 3) {
+    return (
+      <div className="grid h-full grid-cols-2 items-center gap-3">
+        {["Food crawl", "Ferry ride"].map((label, index) => (
+          <motion.div
+            key={label}
+            initial={{ y: 16, opacity: 0 }}
+            whileInView={{ y: index === 1 ? -12 : 0, opacity: index === 0 ? 0.65 : 1 }}
+            viewport={{ once: true }}
+            transition={{ delay: 0.15 + index * 0.12, duration: 0.45, ease: "easeOut" }}
+            className={cn(
+              "rounded-2xl border p-3 text-left shadow-[var(--shadow-card)]",
+              isDark
+                ? cn("bg-[var(--card)]", index === 1 ? "border-[var(--teal)]" : "border-[var(--ink-3)]")
+                : cn("bg-[var(--meadow-paper)]", index === 1 ? "border-[var(--meadow-royal)]" : "border-[var(--meadow-paper-edge)]"),
+            )}
+          >
+            <div className={cn("font-[var(--meadow-font-display)] text-sm font-extrabold", isDark ? "text-[var(--ink-1)]" : "text-[var(--meadow-ink)]")}>{label}</div>
+            <div className={cn("mt-3 h-2 overflow-hidden rounded", isDark ? "bg-[var(--teal)]/20" : "bg-[var(--meadow-royal)]/20")}>
+              <div className={cn("h-full rounded", isDark ? "bg-[var(--teal)]" : "bg-[var(--meadow-royal)]")} style={{ width: index === 1 ? "68%" : "32%" }} />
+            </div>
+          </motion.div>
+        ))}
+      </div>
+    );
+  }
+
+  if (beat === 4) {
+    return (
+      <motion.div
+        initial={{ rotateY: 180, scale: 0.4, opacity: 0 }}
+        whileInView={{ rotateY: 0, scale: 1, opacity: 1 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.7, ease: "easeOut" }}
+        className={cn(
+          "mx-auto grid h-28 w-28 place-items-center rounded-full border-4 shadow-[0_14px_32px_rgba(255,184,74,0.45)]",
+          isDark
+            ? "border-[var(--card)] bg-[var(--amber)] text-[var(--ink-on-dark)]"
+            : "border-white bg-[var(--meadow-gold)] text-[var(--meadow-ink)]",
+        )}
+      >
+        <Trophy className="h-12 w-12" aria-hidden />
+      </motion.div>
+    );
+  }
+
+  if (beat === 5) {
+    return <MapPreviewCard isDark={isDark} />;
+  }
+
+  return (
+    <div className={cn("mx-auto w-fit rounded-full p-5 shadow-[var(--shadow-card)]", isDark ? "bg-[var(--card)]" : "bg-[var(--meadow-paper)]")}>
+      <Sparkles className={cn("h-16 w-16", isDark ? "text-[var(--flag)]" : "text-[var(--meadow-primary)]")} aria-hidden />
+    </div>
+  );
+}
+
+function MapPreviewCard({ isDark }: { isDark?: boolean }) {
+  const maskId = React.useId();
+  const roadMajor = isDark ? "#3c4060" : "#ffffff";
+  const roadMinor = isDark ? "#333758" : "#ede8d8";
+  const building = isDark ? "#35385a" : "#e0d8c4";
+  const pinFill = "#e53935";
+
+  return (
+    <div
+      className={cn(
+        "relative h-full overflow-hidden rounded-[26px] border shadow-[var(--shadow-card)] transition-colors duration-500",
+        isDark ? "border-[#2d314d]" : "border-[var(--meadow-paper-edge)]"
+      )}
+      style={{ background: "var(--map-water)" }}
+    >
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 25 100 50" preserveAspectRatio="xMidYMid meet">
+        <rect x="0" y="0" width="100" height="100" fill="var(--map-water)" />
+        <path
+          d="M 42 0 L 100 0 L 100 100 L 52 100 Q 36 95 28 80 Q 18 62 24 44 Q 30 26 38 12 Q 40 5 42 0 Z"
+          fill="var(--map-land)"
+        />
+        <path
+          d="M 26 46 Q 15 54 20 67 Q 24 76 30 81"
+          fill="none"
+          stroke="var(--map-water)"
+          strokeWidth="8"
+          strokeLinecap="round"
+        />
+        <path
+          d="M 40 66 Q 52 59 64 63 Q 74 67 70 81 Q 64 91 48 89 Q 36 86 38 75 Z"
+          fill="var(--map-park)"
+        />
+        <path d="M 100 40 Q 80 44 65 47 Q 48 51 34 49" fill="none" stroke={roadMinor} strokeWidth="1.2" />
+        <path d="M 66 0 Q 60 28 54 52 Q 50 68 52 100" fill="none" stroke={roadMajor} strokeWidth="2.5" />
+        <rect x="72" y="37" width="6" height="4" rx="0.5" fill={building} />
+        <rect x="80" y="34" width="5" height="6" rx="0.5" fill={building} />
+        <rect x="74" y="43" width="4" height="4" rx="0.5" fill={building} />
+        <rect x="80" y="43" width="6" height="3" rx="0.5" fill={building} />
+        <defs>
+          <mask id={maskId}>
+            <motion.path
+              d="M 38 64 L 75 40"
+              stroke="white"
+              strokeWidth="6"
+              fill="none"
+              initial={{ pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: 2, repeat: Infinity, repeatDelay: 0.8, ease: "easeOut" }}
+            />
+          </mask>
+        </defs>
+        <path
+          d="M 38 64 L 75 40"
+          fill="none"
+          stroke={isDark ? "#ffd86a" : "#444444"}
+          strokeWidth="2.5"
+          strokeDasharray="5 3"
+          mask={`url(#${maskId})`}
+        />
+        <g fill={pinFill}>
+          <circle cx="38" cy="57.5" r="4.5" />
+          <polygon points="38,64 34.5,59 41.5,59" />
+        </g>
+        <circle cx="38" cy="57.5" r="1.8" fill="white" />
+        <g fill={pinFill}>
+          <circle cx="75" cy="33.5" r="4.5" />
+          <polygon points="75,40 71.5,35 78.5,35" />
+        </g>
+        <circle cx="75" cy="33.5" r="1.8" fill="white" />
+      </svg>
     </div>
   );
 }
