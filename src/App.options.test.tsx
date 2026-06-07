@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
@@ -200,6 +200,33 @@ describe("App: Sign out from Options", () => {
     await userEvent.click(screen.getByRole("button", { name: /options/i }));
     await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
     expect(vi.mocked(authLib.clearStoredSession)).toHaveBeenCalled();
+  });
+
+  it("returns to the landing page with the login modal closed after signing in and out", async () => {
+    vi.mocked(authLib.getStoredSession).mockReturnValue(null);
+    vi.mocked(convexReact.useQuery).mockImplementation((_query, args?) => (
+      args === "skip" ? undefined : { role: "follower" }
+    ) as any);
+    vi.mocked(convexReact.useMutation).mockReturnValue(
+      vi.fn(async (args: any) => (args?.username ? { token: "follower-token" } : undefined)) as any,
+    );
+
+    render(<App convexReady={true} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /^login$/i }));
+    await userEvent.type(screen.getByLabelText(/^username$/i), "alice");
+    await userEvent.type(screen.getByLabelText(/^password$/i), "password123");
+    await userEvent.click(screen.getByRole("button", { name: /^sign in$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /options/i })).toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /options/i }));
+    await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: /follow the traveler/i })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /follower sign in/i })).not.toBeInTheDocument();
   });
 });
 

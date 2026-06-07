@@ -7,7 +7,6 @@ import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
-import { cn } from "../../lib/utils";
 type AuthScreenProps = {
   onSignIn: (session: Omit<StoredSession, "sessionType" | "displayName" | "username">) => void;
   onBack?: () => void;
@@ -73,6 +72,8 @@ export default function AuthScreen({ onSignIn, onBack }: AuthScreenProps) {
             autoFocus
             autoComplete="one-time-code"
             disabled={isPending}
+            id="traveler-code"
+            name="traveler-code"
             onChange={(e) => setCode(e.target.value)}
             placeholder="Enter code"
             required

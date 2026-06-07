@@ -6,7 +6,6 @@ import type { StoredSession } from "../../lib/auth";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { PendingActionNotice } from "../../components/resilience/PendingActionNotice";
-import { cn } from "../../lib/utils";
 type FollowerLoginScreenProps = {
   onSignIn: (session: StoredSession) => void;
   onShowTravelerLogin: () => void;
@@ -79,6 +78,8 @@ export default function FollowerLoginScreen({
             autoFocus
             autoComplete="username"
             disabled={isPending}
+            id="follower-username"
+            name="username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="your-username"
@@ -90,6 +91,8 @@ export default function FollowerLoginScreen({
           <Input
             autoComplete="current-password"
             disabled={isPending}
+            id="follower-password"
+            name="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type="password"

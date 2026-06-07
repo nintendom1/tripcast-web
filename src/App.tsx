@@ -207,6 +207,7 @@ function ConnectedApp() {
     if (session !== null && activeSessionCheck === null) {
       clearStoredSession();
       setSession(null);
+      setIsLoginModalOpen(false);
     }
   }, [session, activeSessionCheck]);
 
@@ -267,6 +268,7 @@ function ConnectedApp() {
   ) {
     setStoredSession(newSession);
     setSession(newSession);
+    setIsLoginModalOpen(false);
     setPendingInviteToken(null);
     setPendingResetToken(null);
     setIsCreateAccountIntroOpen(Boolean(options?.playCreateAccountIntro));
@@ -287,6 +289,7 @@ function ConnectedApp() {
     }
     clearStoredSession();
     setSession(null);
+    setIsLoginModalOpen(false);
     setIsCreateAccountIntroOpen(false);
     setIsIntroReplayOpen(false);
   }
@@ -294,6 +297,7 @@ function ConnectedApp() {
   function handleLocalSignOut() {
     clearStoredSession();
     setSession(null);
+    setIsLoginModalOpen(false);
     setIsOptionsOpen(false);
     setIsCreateAccountIntroOpen(false);
     setIsIntroReplayOpen(false);
@@ -310,6 +314,7 @@ function ConnectedApp() {
   function handleLoggedOut() {
     clearStoredSession();
     setSession(null);
+    setIsLoginModalOpen(false);
     setIsOptionsOpen(false);
     setIsCreateAccountIntroOpen(false);
     setIsIntroReplayOpen(false);

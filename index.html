@@ -27,6 +27,15 @@
             isNight = h >= 21 || h < 6;
           }
           var bg = isNight ? "#1c1f3a" : "#fdf6e3";
+          var theme = isNight ? "constellation" : "meadow";
+          document.documentElement.setAttribute("data-theme", theme);
+          if (isNight) {
+            document.documentElement.classList.add("theme-dark");
+            document.documentElement.classList.add("dark");
+          } else {
+            document.documentElement.classList.remove("theme-dark");
+            document.documentElement.classList.remove("dark");
+          }
           document.documentElement.style.backgroundColor = bg;
           document.documentElement.style.colorScheme = isNight ? "dark" : "light";
         } catch (e) { /* localStorage / Date can fail in odd embed envs */ }

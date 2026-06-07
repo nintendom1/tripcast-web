@@ -30,8 +30,28 @@ class ResizeObserverMock {
   disconnect() {}
 }
 
+class IntersectionObserverMock {
+  readonly root: Element | Document | null = null;
+  readonly rootMargin = "0px";
+  readonly scrollMargin = "0px";
+  readonly thresholds: ReadonlyArray<number> = [];
+
+  constructor(
+    _callback?: IntersectionObserverCallback,
+    _options?: IntersectionObserverInit,
+  ) {}
+
+  disconnect() {}
+  observe() {}
+  takeRecords() {
+    return [];
+  }
+  unobserve() {}
+}
+
 if (typeof window !== "undefined") {
   window.ResizeObserver = ResizeObserverMock;
+  window.IntersectionObserver = IntersectionObserverMock;
   const local = typeof window.localStorage?.clear === "function"
     ? window.localStorage
     : createMemoryStorage();
