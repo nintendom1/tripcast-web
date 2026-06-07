@@ -52,14 +52,14 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
         </Button>
       </header>
 
-      <section className="relative overflow-hidden px-4 pb-10 pt-20 sm:px-6">
+      <section className="relative overflow-hidden pb-10 pt-20">
         <IntroBackdrop
           beat={5}
           isDark={isDark}
           reduceMotion={Boolean(reduceMotion)}
           showStars={isDark}
         />
-        <div className="relative z-[1] mx-auto grid max-w-5xl items-center gap-8 md:grid-cols-[0.9fr_1.1fr]">
+        <div className="relative z-[1] mx-auto grid max-w-4xl items-center gap-8 px-4 sm:px-6 md:grid-cols-[0.9fr_1.1fr]">
           <motion.div
             initial={reduceMotion ? false : { opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
@@ -108,7 +108,7 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
         </div>
       </section>
 
-      <main className="mx-auto grid max-w-5xl gap-14 px-4 pb-12 pt-8 sm:px-6 md:gap-16 md:pt-10">
+      <main className="mx-auto grid max-w-4xl gap-14 px-4 pb-12 pt-8 sm:px-6 md:gap-16 md:pt-10">
         <FeatureShowcase isDark={isDark} reduceMotion={reduceMotion} />
       </main>
 

@@ -151,14 +151,14 @@ export default function InviteRedemptionScreen({
           : "bg-[var(--meadow-bg)] text-[var(--meadow-ink)]",
       )}
     >
-      <section className="relative overflow-hidden px-4 pb-10 pt-6 sm:px-6">
+      <section className="relative overflow-hidden pb-10 pt-6">
         <IntroBackdrop
           beat={5}
           isDark={isDark}
           reduceMotion={Boolean(reduceMotion)}
           showStars={isDark}
         />
-        <div className="relative z-[1] mx-auto grid max-w-6xl gap-8 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(320px,420px)_1fr] lg:items-center">
+        <div className="relative z-[1] mx-auto grid max-w-5xl gap-8 px-4 sm:px-6 lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[minmax(320px,420px)_1fr] lg:items-center">
           <motion.div
             data-registration-form-panel
             initial={reduceMotion ? false : { opacity: 0, y: 16 }}
@@ -358,7 +358,7 @@ export default function InviteRedemptionScreen({
 
       <main
         data-registration-features
-        className="mx-auto max-w-5xl px-4 pb-12 pt-8 sm:px-6 md:pt-10"
+        className="mx-auto max-w-4xl px-4 pb-12 pt-8 sm:px-6 md:pt-10"
       >
         <FeatureShowcase isDark={isDark} reduceMotion={reduceMotion} />
       </main>
