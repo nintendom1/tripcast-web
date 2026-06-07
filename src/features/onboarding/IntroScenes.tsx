@@ -1,6 +1,6 @@
 import * as React from "react";
 import { motion } from "framer-motion";
-import { MapPin, Sparkles, Trophy } from "lucide-react";
+import { Bed, Footprints, Hamburger, MapPin, Sparkles, Trophy } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -291,6 +291,80 @@ export function SceneCard({
 
   if (beat === 5) {
     return <MapPreviewCard isDark={isDark} isActive={active} reduceMotion={reduceMotion} />;
+  }
+
+  if (beat === 6) {
+    const meters = [
+      { label: "Energy", color: "var(--amber)", loop: ["62%", "84%", "62%"], still: "72%" },
+      { label: "Fullness", color: "var(--green)", loop: ["38%", "58%", "38%"], still: "45%" },
+      { label: "Calm", color: "var(--teal)", loop: ["70%", "90%", "70%"], still: "80%" },
+    ];
+    const looping = active && !reduceMotion;
+    return (
+      <div className="flex h-full flex-col justify-center gap-2.5">
+        {meters.map((meter, index) => (
+          <div key={meter.label} className="flex flex-col gap-1">
+            <span
+              className={cn(
+                "font-[var(--font-mono)] text-[9px] font-bold uppercase leading-none tracking-[0.08em]",
+                isDark ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]",
+              )}
+            >
+              {meter.label}
+            </span>
+            <div
+              className={cn(
+                "h-2 overflow-hidden rounded-full",
+                isDark ? "bg-[var(--ink-3)]/30" : "bg-[var(--meadow-paper-edge)]",
+              )}
+            >
+              <motion.span
+                className="block h-full rounded-full"
+                style={{ background: meter.color }}
+                initial={reduceMotion ? false : { width: meter.loop[0] }}
+                animate={looping ? { width: meter.loop } : { width: meter.still }}
+                transition={
+                  looping
+                    ? {
+                        duration: 3 + index * 0.6,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                        delay: index * 0.6,
+                      }
+                    : { duration: 0 }
+                }
+              />
+            </div>
+          </div>
+        ))}
+        <div className="mt-1.5 flex items-center justify-center gap-3">
+          {[Footprints, Hamburger, Footprints, Bed, Footprints].map((Icon, step) => (
+            <motion.span
+              key={step}
+              className={cn(
+                isDark ? "text-[var(--ink-3)]" : "text-[var(--meadow-ink-soft)]",
+                step % 2 === 1 && "translate-y-1",
+              )}
+              initial={reduceMotion ? false : { opacity: 0 }}
+              animate={looping ? { opacity: [0, 1, 1, 0] } : { opacity: 0.5 }}
+              transition={
+                looping
+                  ? {
+                      duration: 3.5,
+                      times: [0, 0.2, 0.7, 1],
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                      delay: step * 0.4,
+                    }
+                  : { duration: 0 }
+              }
+            >
+              <Icon className="h-4 w-4" aria-hidden />
+            </motion.span>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

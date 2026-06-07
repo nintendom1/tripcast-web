@@ -1,6 +1,6 @@
 import * as React from "react";
 import { motion, useInView } from "framer-motion";
-import { BookOpen, MapPin, Trophy, Vote, type LucideIcon } from "lucide-react";
+import { Activity, BookOpen, MapPin, Trophy, Vote, type LucideIcon } from "lucide-react";
 
 import { cn } from "../../lib/utils";
 import { SceneCard } from "../onboarding/IntroScenes";
@@ -17,7 +17,7 @@ export const TRIPCAST_FEATURES: Feature[] = [
   {
     kicker: "Stories",
     title: "Read what they post from each stop.",
-    body: "Notes and photos sit on the map so the trip is easy to follow as it unfolds.",
+    body: "Peruse through the journal or trace the route on the map as the journey unfolds.",
     Icon: BookOpen,
     beat: 1,
   },
@@ -27,6 +27,13 @@ export const TRIPCAST_FEATURES: Feature[] = [
     body: "Drop a food stop, place, or detour. The traveler can accept it when it fits the day.",
     Icon: MapPin,
     beat: 2,
+  },
+  {
+    kicker: "Pulse",
+    title: "Know how they're really doing.",
+    body: "Energy, fullness, and calm rise and fall through the day, so you can feel the Traveler's state at any moment.",
+    Icon: Activity,
+    beat: 6,
   },
   {
     kicker: "Votes",
