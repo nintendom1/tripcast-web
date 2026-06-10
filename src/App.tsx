@@ -137,7 +137,9 @@ function ConnectedApp() {
   const [tripDataResetNonce, setTripDataResetNonce] = useState(0);
   const [sessionRetryNonce, setSessionRetryNonce] = useState(0);
   const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
+  const [testToastMessage, setTestToastMessage] = useState<string | null>(null);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const testToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useInteractionLogger();
 
@@ -214,6 +216,9 @@ function ConnectedApp() {
     return () => {
       if (resetToastTimeoutRef.current !== null) {
         clearTimeout(resetToastTimeoutRef.current);
+      }
+      if (testToastTimeoutRef.current !== null) {
+        clearTimeout(testToastTimeoutRef.current);
       }
     };
   }, []);
@@ -324,6 +329,19 @@ function ConnectedApp() {
       setResetToastMessage(null);
       resetToastTimeoutRef.current = null;
     }, 3600);
+  }
+
+  function handleTriggerTestToast() {
+    if (testToastTimeoutRef.current !== null) {
+      clearTimeout(testToastTimeoutRef.current);
+    }
+    const message = "This is a test notification for UI verification.";
+    setTestToastMessage(message);
+    debugLog("info", "App", "action:trigger-test-toast", "ui", { message });
+    testToastTimeoutRef.current = setTimeout(() => {
+      setTestToastMessage(null);
+      testToastTimeoutRef.current = null;
+    }, 3200);
   }
 
   // URL-param screens (no session required)
@@ -512,6 +530,7 @@ function ConnectedApp() {
         onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
         onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
         onResetStarted={showResetToast}
+        onTriggerTestToast={handleTriggerTestToast}
         onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); setIsEndTripOpen(true); } : undefined}
         onViewCredits={() => { setIsOptionsOpen(false); setIsCreditsOpen(true); }}
       />
@@ -608,9 +627,23 @@ function ConnectedApp() {
             exit={{ y: -12, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="status"
-            className="fixed left-1/2 top-16 z-[60] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-950 shadow-lg dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
+            className="fixed left-1/2 top-[calc(4rem+env(safe-area-inset-top,0px))] z-[60] max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-950 shadow-lg dark:border-rose-800 dark:bg-rose-950 dark:text-rose-100"
           >
             {resetToastMessage}
+          </motion.div>
+        ) : null}
+
+        {testToastMessage ? (
+          <motion.div
+            key="test-toast"
+            initial={{ y: -12, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -12, opacity: 0 }}
+            transition={{ duration: 0.18, ease: "easeOut" as const }}
+            role="status"
+            className="fixed left-1/2 top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-[60] flex max-w-[calc(100%-8rem)] -translate-x-1/2 items-center gap-2.5 rounded-md bg-[var(--ink-1)] px-4 py-2.5 text-[var(--ink-on-dark)] shadow-lg"
+          >
+            <div className="text-sm font-semibold">{testToastMessage}</div>
           </motion.div>
         ) : null}
       </AnimatePresence>

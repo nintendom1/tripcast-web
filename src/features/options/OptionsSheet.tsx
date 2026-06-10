@@ -96,6 +96,7 @@ type OptionsSheetProps = {
   onLocationDataCleared: () => void;
   onTripDataDeleted: () => void;
   onResetStarted: (message: string) => void;
+  onTriggerTestToast?: () => void;
   /** Traveler-only: open the End Trip flow (handled on the map). */
   onEndTrip?: () => void;
   /** Either role: open the full-screen trip credits. */
@@ -1646,6 +1647,7 @@ export default function OptionsSheet({
   onLocationDataCleared,
   onTripDataDeleted,
   onResetStarted,
+  onTriggerTestToast,
   onEndTrip,
   onViewCredits,
   preserveDebugContext = false,
@@ -1822,6 +1824,7 @@ export default function OptionsSheet({
               onFollowerCutoff={() => { music.sfx("page"); navigateTo("follower-cutoff"); }}
               onQuickActivities={() => { music.sfx("page"); navigateTo("quick-activities"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
+              onTriggerTestToast={onTriggerTestToast}
               onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
               onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
             />
@@ -1933,6 +1936,7 @@ function OptionsHome({
   onFollowerCutoff,
   onQuickActivities,
   onDebugLogs,
+  onTriggerTestToast,
   onEndTrip,
   onViewCredits,
 }: {
@@ -1952,6 +1956,7 @@ function OptionsHome({
   onEmergencyReset: () => void;
   onFollowerCutoff: () => void;
   onQuickActivities: () => void;
+  onTriggerTestToast?: () => void;
   onEndTrip?: () => void;
   onViewCredits?: () => void;
 }) {
@@ -1986,6 +1991,17 @@ function OptionsHome({
             onClick={() => {
               log.logUi("action:crash-app");
               triggerCrash();
+            }}
+          />
+        ) : null}
+        {role === "traveler" ? (
+          <OptionsRow
+            icon={Bell}
+            title="Trigger Test Toast"
+            detail="Show a generic notification to verify UI positioning"
+            onClick={() => {
+              log.logUi("action:options:trigger-test-toast");
+              onTriggerTestToast?.();
             }}
           />
         ) : null}

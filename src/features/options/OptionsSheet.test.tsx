@@ -708,6 +708,16 @@ describe("OptionsSheet developer scoring toggle", () => {
     expect(labels.indexOf("Developer")).toBeLessThan(labels.indexOf("Appearance"));
   });
 
+  it("shows 'Trigger Test Toast' in Developer options for Traveler", async () => {
+    setupMocks();
+    const onTriggerTestToast = vi.fn();
+    renderOptions({ onTriggerTestToast });
+
+    expect(screen.getByText("Trigger Test Toast")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /trigger test toast/i }));
+    expect(onTriggerTestToast).toHaveBeenCalled();
+  });
+
   it("moves Developer options to the bottom for a Follower", () => {
     setupMocks();
     renderOptions({ session: followerSession, role: "follower" });
