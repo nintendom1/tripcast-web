@@ -718,6 +718,13 @@ describe("OptionsSheet developer scoring toggle", () => {
     expect(onTriggerTestToast).toHaveBeenCalled();
   });
 
+  it("hides 'Trigger Test Toast' when no handler is provided", () => {
+    setupMocks();
+    renderOptions();
+
+    expect(screen.queryByText("Trigger Test Toast")).not.toBeInTheDocument();
+  });
+
   it("moves Developer options to the bottom for a Follower", () => {
     setupMocks();
     renderOptions({ session: followerSession, role: "follower" });

@@ -1994,14 +1994,14 @@ function OptionsHome({
             }}
           />
         ) : null}
-        {role === "traveler" ? (
+        {role === "traveler" && onTriggerTestToast ? (
           <OptionsRow
             icon={Bell}
             title="Trigger Test Toast"
             detail="Show a generic notification to verify UI positioning"
             onClick={() => {
               log.logUi("action:options:trigger-test-toast");
-              onTriggerTestToast?.();
+              onTriggerTestToast();
             }}
           />
         ) : null}
