@@ -1449,6 +1449,7 @@ export default function TripMap({
   const mapFailureStatsRef = useRef(createMapFailureStats());
   const mapLoadedRef = useRef(false);
   const didInitialCenterRef = useRef(false);
+  const didLaunchFixRef = useRef(false);
   // Ref-pattern for onMapLoaded: the map-init effect must NOT re-run when the
   // parent passes a fresh callback identity (would tear down + rebuild the
   // entire MapLibre instance). We capture the latest callback here so the
@@ -3243,6 +3244,27 @@ export default function TripMap({
       centerMapOnCoordinate(currentLocation);
     }
   }, [centerMapOnCoordinate, isFollowing, livePosition, storedTravelerLocation, role]);
+
+  // One-shot getCurrentPosition at launch so Travelers see their own location
+  // even when Live is off (the watcher only runs while sharing on native, and
+  // the launch-center effect needs livePosition populated to fire).
+  useEffect(() => {
+    if (didLaunchFixRef.current) return;
+    if (role !== "traveler") return;
+    if (typeof navigator === "undefined" || !navigator.geolocation) return;
+    didLaunchFixRef.current = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const accuracy = pos.coords.accuracy ?? undefined;
+        const next = { lat: pos.coords.latitude, lon: pos.coords.longitude, accuracy };
+        livePositionRef.current = next;
+        lastLocationFixAtRef.current = Date.now();
+        setLivePosition(next);
+      },
+      () => { /* silent: launch-center will fall through to pin/Seattle */ },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60_000 },
+    );
+  }, [role]);
 
   // One-shot launch centering: live GPS → most recent pin → no-op (stays at
   // SEATTLE_CENTER from map constructor). Re-runs as async inputs resolve but

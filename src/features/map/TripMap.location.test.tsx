@@ -14,6 +14,7 @@ const mapFitBounds = vi.fn();
 const markerElements: HTMLElement[] = [];
 const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
+const geolocationGetCurrentPosition = vi.fn();
 const updateTravelerLocation = vi.fn();
 const stopTravelerLocationSharing = vi.fn();
 const setLiveTrailEnabled = vi.fn();
@@ -419,6 +420,7 @@ beforeEach(() => {
     value: {
       watchPosition: geolocationWatchPosition,
       clearWatch: geolocationClearWatch,
+      getCurrentPosition: geolocationGetCurrentPosition,
     },
   });
 });
