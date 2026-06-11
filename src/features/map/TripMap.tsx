@@ -126,6 +126,23 @@ import {
 } from "./mapService";
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
+
+function pickLatestCheckpointCenter(
+  checkpoints: Checkpoint[] | undefined,
+): [number, number] | null {
+  if (!checkpoints?.length) return null;
+  let best: Checkpoint | null = null;
+  let bestTs = -Infinity;
+  for (const c of checkpoints) {
+    if (!Number.isFinite(c.lat) || !Number.isFinite(c.lon)) continue;
+    const ts = c.happenedAt ?? c.createdAt;
+    if (ts > bestTs) {
+      best = c;
+      bestTs = ts;
+    }
+  }
+  return best ? [best.lon as number, best.lat as number] : null;
+}
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
@@ -1431,6 +1448,7 @@ export default function TripMap({
   const mapDiagnosticFetchUrlRef = useRef<string | null>(null);
   const mapFailureStatsRef = useRef(createMapFailureStats());
   const mapLoadedRef = useRef(false);
+  const didInitialCenterRef = useRef(false);
   // Ref-pattern for onMapLoaded: the map-init effect must NOT re-run when the
   // parent passes a fresh callback identity (would tear down + rebuild the
   // entire MapLibre instance). We capture the latest callback here so the
@@ -3225,6 +3243,25 @@ export default function TripMap({
       centerMapOnCoordinate(currentLocation);
     }
   }, [centerMapOnCoordinate, isFollowing, livePosition, storedTravelerLocation, role]);
+
+  // One-shot launch centering: live GPS → most recent pin → no-op (stays at
+  // SEATTLE_CENTER from map constructor). Re-runs as async inputs resolve but
+  // commits exactly once via didInitialCenterRef.
+  useEffect(() => {
+    if (didInitialCenterRef.current) return;
+    if (!mapInstance) return;
+    let center: [number, number] | null = null;
+    if (role === "traveler" && livePosition) {
+      center = [livePosition.lon, livePosition.lat];
+    } else if (role === "follower" && isFiniteRouteCoordinate(storedTravelerLocation)) {
+      center = [storedTravelerLocation.lon, storedTravelerLocation.lat];
+    } else {
+      center = pickLatestCheckpointCenter(rawCheckpoints);
+    }
+    if (!center) return;
+    mapInstance.jumpTo({ center, zoom: 11 });
+    didInitialCenterRef.current = true;
+  }, [mapInstance, livePosition, storedTravelerLocation, rawCheckpoints, role]);
 
   // Browser-watcher gate. True whenever the foreground browser watch is the
   // *active* path — i.e. LIVE is off (display-only GPS dot) OR LIVE is on

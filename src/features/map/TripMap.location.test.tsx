@@ -121,6 +121,7 @@ vi.mock("maplibre-gl", () => {
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }),
     }));
     easeTo = mapEaseTo;
+    jumpTo = vi.fn();
   }
 
   class MockMarker {
