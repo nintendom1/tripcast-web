@@ -4560,7 +4560,7 @@ export default function TripMap({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -20, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
-            className="absolute left-1/2 top-4 z-[5] flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-3 rounded-md bg-[var(--bg-card)] px-3 py-2.5 text-[var(--ink-1)] shadow-lg"
+            className="absolute left-1/2 top-[calc(1rem+env(safe-area-inset-top,0px))] z-[5] flex max-w-[calc(100%-24px)] -translate-x-1/2 items-center gap-3 rounded-md bg-[var(--bg-card)] px-3 py-2.5 text-[var(--ink-1)] shadow-lg"
           >
             <span className="text-sm">Tap the map to place a pin.</span>
             <button
@@ -4580,7 +4580,7 @@ export default function TripMap({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -20, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
-            className="absolute left-1/2 top-4 z-[6] flex max-w-[calc(100%-24px)] -translate-x-1/2"
+            className="absolute left-1/2 top-[calc(1rem+env(safe-area-inset-top,0px))] z-[6] flex max-w-[calc(100%-24px)] -translate-x-1/2"
           >
             <MapPickerHelperBanner
               label={coordinatePickMode.label}
@@ -4693,7 +4693,7 @@ export default function TripMap({
             exit={{ y: -16, opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeOut" as const }}
             role="alert"
-            className="absolute left-1/2 top-4 z-[7] flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-col rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] py-2.5 pl-4 pr-9 text-sm font-medium text-[var(--ink-danger)] shadow-lg"
+            className="absolute left-1/2 top-[calc(1rem+env(safe-area-inset-top,0px))] z-[7] flex max-w-[calc(100%-24px)] -translate-x-1/2 flex-col rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] py-2.5 pl-4 pr-9 text-sm font-medium text-[var(--ink-danger)] shadow-lg"
           >
             <button
               type="button"

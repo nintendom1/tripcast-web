@@ -201,7 +201,7 @@ function AchievementToast({
       sub: toast.sub,
       points: toast.points,
       count: toast.count,
-      placement: "fixed top-center (top-2, -translate-x-1/2)",
+      placement: "fixed top-center (top-[calc(0.5rem+env(safe-area-inset-top,0px))], -translate-x-1/2)",
       dims: {
         width: Math.round(r.width),
         height: Math.round(r.height),
@@ -224,7 +224,7 @@ function AchievementToast({
           exit={{ y: -12, opacity: 0 }}
           transition={{ duration: 0.18, ease: "easeOut" as const }}
           role="status"
-          className="fixed left-1/2 top-2 z-[60] flex max-w-[calc(100%-8rem)] -translate-x-1/2 items-center gap-2.5 rounded-md bg-[var(--ink-1)] px-4 py-2.5 text-[var(--ink-on-dark)] shadow-lg"
+          className="fixed left-1/2 top-[calc(0.5rem+env(safe-area-inset-top,0px))] z-[60] flex max-w-[calc(100%-8rem)] -translate-x-1/2 items-center gap-2.5 rounded-md bg-[var(--ink-1)] px-4 py-2.5 text-[var(--ink-on-dark)] shadow-lg"
         >
           <Trophy className="h-5 w-5 shrink-0 text-[var(--flag)]" aria-hidden />
           <div className="min-w-0 leading-tight">

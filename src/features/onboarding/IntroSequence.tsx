@@ -299,7 +299,7 @@ export function IntroSequence({
             previous("back-button");
           }}
           className={cn(
-            "absolute left-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[var(--shadow-card)] backdrop-blur transition-all",
+            "absolute left-4 top-[calc(1rem+env(safe-area-inset-top,0px))] z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[var(--shadow-card)] backdrop-blur transition-all",
             isDarkPreview
               ? "border-[var(--ink-3)] bg-[var(--card)]/70 text-[var(--ink-2)]"
               : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/70 text-[var(--meadow-ink-soft)]"
@@ -314,7 +314,7 @@ export function IntroSequence({
         type="button"
         onClick={skip}
         className={cn(
-          "absolute right-4 top-4 z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[var(--shadow-card)] backdrop-blur transition-all",
+          "absolute right-4 top-[calc(1rem+env(safe-area-inset-top,0px))] z-10 grid h-10 w-10 place-items-center rounded-full border shadow-[var(--shadow-card)] backdrop-blur transition-all",
           isDarkPreview
             ? "border-[var(--ink-3)] bg-[var(--card)]/80 text-[var(--ink-2)]"
             : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-paper)]/80 text-[var(--meadow-ink-soft)]"
@@ -325,9 +325,9 @@ export function IntroSequence({
       </button>
 
       {/* Mute toggle on the right rail, directly below Skip — parity with the map control. */}
-      <MusicMuteIndicator className="absolute right-4 top-16 z-10" />
+      <MusicMuteIndicator className="absolute right-4 top-[calc(4rem+env(safe-area-inset-top,0px))] z-10" />
 
-      <div className="absolute left-1/2 top-6 z-10 flex -translate-x-1/2 gap-1.5" aria-hidden="true">
+      <div className="absolute left-1/2 top-[calc(1.5rem+env(safe-area-inset-top,0px))] z-10 flex -translate-x-1/2 gap-1.5" aria-hidden="true">
         {BEATS.map((_, i) => (
           <span
             key={i}
@@ -523,7 +523,7 @@ export function CreateAccountIntroFlow({
       )}
     >
       {/* Subtle mute toggle — top-right corner is otherwise empty here. */}
-      <MusicMuteIndicator className="absolute right-4 top-4 z-10" />
+      <MusicMuteIndicator className="absolute right-4 top-[calc(1rem+env(safe-area-inset-top,0px))] z-10" />
       <IntroBackdrop beat={0} isDark={isDark} />
       <AnimatePresence mode="wait">
         {stage === "welcome" || stage === "welcome-out" ? (
