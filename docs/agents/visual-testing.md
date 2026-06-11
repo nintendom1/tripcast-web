@@ -27,12 +27,18 @@ iterate against measurements rather than vibes.
   it and confirm the URL. Default is `http://localhost:5173/tripcast-web/` (note the
   `/tripcast-web/` base from `vite.config.ts`). Probe before driving:
   `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/tripcast-web/`.
-- Auth: sign in as **Traveler**. From the default Follower screen, click **"Sign in as Traveler"**,
-  type the traveler code into the **"Enter code"** field, click **"Sign in"**. The code lives in
-  **`.local.auth.md` at the workspace root** (`c:\repos\tripcast\.local.auth.md`, gitignored) — note
-  this is one level **above** `tripcast-web/`. If the value reads like a placeholder, ask the human.
-  A saved Playwright session may exist at `tripcast-web/.playwright-session.json`, but it has been a
-  **Follower** token — re-auth as Traveler for replay/trail flows.
+- Auth: sign in as **Traveler**. The default landing screen is a marketing page — the path is
+  **"Sign in to TripCast"** (`.first()` — it appears in both header and footer) → **"Sign in as
+  Traveler"** → fill **"Enter code"** → **"Sign in"**. The code lives in **`.local.auth.md` at the
+  workspace root**, one level **above** `tripcast-web/`:
+  - **macOS:** `/Users/<you>/repos/tripcast/.local.auth.md`
+  - **Windows:** `c:\repos\tripcast\.local.auth.md`
+
+  The file sits outside the `tripcast-web` git repo (toplevel is `tripcast-web/`), so git literally
+  cannot stage it — no `.gitignore` entry needed. If it's missing, ask the human to create it. If
+  the value reads like a placeholder, ask before using it. A saved Playwright session may exist at
+  `tripcast-web/.playwright-session.json`, but it has been a **Follower** token — re-auth as
+  Traveler for replay/trail flows.
 - **Rendering — pick the GL backend by mode:**
   - **Headed (human supervising):** launch `headless: false` with **no** `--use-gl` args so Chrome uses
     the **real GPU**. The swiftshader args below force software WebGL and render the map as a **grey
@@ -49,7 +55,7 @@ anchor/occluders) — not the normal replay. To test **normal** replay, close th
 click **"Close to map archive"**, then click **Replay**. To test the **finale** path, just let
 the credits play. Detect mode via `[data-finale-banner]` presence.
 
-## The two patterns
+## The four patterns
 
 ### 1. Screenshot series (composition over time)
 
@@ -83,7 +89,44 @@ const waitFor = async (page, sel, ms = 12000) => {
 };
 ```
 
-### 3. Map-layer application probe (did the layer actually update?)
+### 3. Camera-state probe (where did the map actually center?)
+
+Screenshots can't reliably tell you the exact `LngLat` MapLibre is showing — tile rasterization is
+async and the canvas may be blank for the first frame. For verifying camera moves (launch
+centering, `jumpTo`/`easeTo` flows), temporarily expose the map instance from the source and read
+its state directly:
+
+```ts
+// in TripMap.tsx map-init effect, immediately after setMapInstance(map):
+(globalThis as { __map?: maplibregl.Map }).__map = map; // VISUAL-VERIFY: remove after run
+```
+
+```js
+// in the Playwright driver:
+await page.waitForFunction(() => !!globalThis.__map, null, { timeout: 15000 });
+const cam = await page.evaluate(() => {
+  const m = globalThis.__map;
+  const c = m?.getCenter?.();
+  return c ? { lng: c.lng, lat: c.lat, zoom: m.getZoom?.() } : null;
+});
+// then assert e.g. Math.abs(cam.lng - LISBON.lng) < 0.5 && Math.abs(cam.lat - LISBON.lat) < 0.5
+```
+
+For GPS-dependent flows, fake the device location via the browser context, not page-level:
+
+```js
+const ctx = await browser.newContext({
+  viewport: { width: 390, height: 844 },
+  geolocation: { latitude: 38.7223, longitude: -9.1393 }, // Lisbon
+  permissions: ["geolocation"],
+});
+```
+
+To verify the denied-permission fall-through, just **omit** both `geolocation` and `permissions`;
+`getCurrentPosition` will call the error callback. **Remove the `__map` hook before committing**;
+it's verification-only scaffolding.
+
+### 4. Map-layer application probe (did the layer actually update?)
 
 Screenshots can't always tell whether a MapLibre vector layer (trail line, etc.) reflects the
 current React state — the canvas may show **stale** data. When debugging "the map doesn't update,"
@@ -112,13 +155,18 @@ Tailwind-class matching.
 
 ```js
 import { chromium } from "playwright";
+import { readFileSync } from "node:fs";
 const BASE = process.env.TC_URL ?? "http://localhost:5173/tripcast-web/";
-const CODE = process.env.TC_CODE ?? "<traveler-code>";
+// macOS: ../.local.auth.md is the parent dir (workspace root).
+const CODE = (process.env.TC_CODE ?? readFileSync("../.local.auth.md", "utf8")).trim();
 const browser = await chromium.launch({ headless: true,
   args: ["--use-gl=angle", "--use-angle=swiftshader", "--ignore-gpu-blocklist"] });
-const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
+const page = await ctx.newPage();
 await page.goto(BASE, { waitUntil: "domcontentloaded" });
-await page.getByRole("button", { name: "Sign in as Traveler" }).click({ timeout: 30000 });
+// Landing → modal → traveler form.
+await page.getByRole("button", { name: "Sign in to TripCast" }).first().click({ timeout: 30000 });
+await page.getByRole("button", { name: "Sign in as Traveler" }).click({ timeout: 15000 });
 await page.getByPlaceholder("Enter code").fill(CODE);
 await page.getByRole("button", { name: "Sign in" }).click();
 await page.getByRole("button", { name: "Replay" }).waitFor({ state: "visible", timeout: 45000 });
