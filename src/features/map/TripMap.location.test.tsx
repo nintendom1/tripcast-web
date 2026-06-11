@@ -14,6 +14,7 @@ const mapFitBounds = vi.fn();
 const markerElements: HTMLElement[] = [];
 const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
+const geolocationGetCurrentPosition = vi.fn();
 const updateTravelerLocation = vi.fn();
 const stopTravelerLocationSharing = vi.fn();
 const setLiveTrailEnabled = vi.fn();
@@ -121,6 +122,7 @@ vi.mock("maplibre-gl", () => {
       getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600 }),
     }));
     easeTo = mapEaseTo;
+    jumpTo = vi.fn();
   }
 
   class MockMarker {
@@ -418,6 +420,7 @@ beforeEach(() => {
     value: {
       watchPosition: geolocationWatchPosition,
       clearWatch: geolocationClearWatch,
+      getCurrentPosition: geolocationGetCurrentPosition,
     },
   });
 });
