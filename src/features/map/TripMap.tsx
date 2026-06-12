@@ -2679,11 +2679,33 @@ export default function TripMap({
     setFanOpen(false);
     switch (action) {
       case "checkin":
-        log.logInteraction("placement:enter", { trigger: "fan:checkin" });
-        performance.mark("tripcast:debug:placement:enter");
-        setCheckInDebugSource({ source: "fan-menu:checkin", sourceLabel: "FanMenu -> Check In" });
-        setSelectedCoordinate(null);
-        setIsPlacementMode(true);
+        if (livePosition) {
+          log.logInteraction("coordinate:picked", {
+            lat: livePosition.lat,
+            lon: livePosition.lon,
+            source: "fan_menu",
+          });
+          performance.mark("tripcast:debug:placement:enter");
+          setCheckInDebugSource({ source: "fan-menu:checkin", sourceLabel: "FanMenu -> Check In" });
+          setSelectedCoordinate({
+            lat: livePosition.lat,
+            lon: livePosition.lon,
+            source: "fan_menu",
+          });
+          // Immediate center so the map moves even before the sheet is measured,
+          // then focusCoordinate will correct for the sheet height once it settles.
+          centerMapOnCoordinate(livePosition);
+          focusCoordinate(livePosition, {
+            trigger: "fan-menu:checkin",
+            sheetSelector: "[data-role='add-checkpoint-sheet']",
+          });
+        } else {
+          log.logInteraction("placement:enter", { trigger: "fan:checkin" });
+          performance.mark("tripcast:debug:placement:enter");
+          setCheckInDebugSource({ source: "fan-menu:checkin", sourceLabel: "FanMenu -> Check In" });
+          setSelectedCoordinate(null);
+          setIsPlacementMode(true);
+        }
         break;
       case "transaction":
         openFunds({ source: "fan-menu:transaction", sourceLabel: "FanMenu -> Add Transaction" });

@@ -1338,6 +1338,64 @@ describe("TripMap location marker", () => {
     expect(await screen.findByTestId("checkpoint-sheet")).toBeInTheDocument();
   });
 
+  it("automatically fills out the story form with current GPS location if available", async () => {
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({
+        coords: {
+          latitude: 47.62,
+          longitude: -122.34,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    // Wait for GPS fix
+    await waitFor(() => {
+      expect(getTravelerMarker()).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /check in/i }));
+
+    // Should immediately show the sheet without needing a map click
+    expect(await screen.findByTestId("checkpoint-sheet")).toBeInTheDocument();
+
+    // Verify map centered on the location
+    // Note: focusCoordinate uses querySelector("[data-role='add-checkpoint-sheet']")
+    // and falls back to measuring the band if it's missing or hasn't updated its visibility.
+    // In this test, we need to provide a mock element for the sheet since the mock component
+    // won't be easily measurable by focusCoordinate's logic.
+    const mockSheet = document.createElement("div");
+    mockSheet.setAttribute("data-role", "add-checkpoint-sheet");
+    // Mock getBoundingClientRect for the sheet so focusCoordinate can measure it
+    mockSheet.getBoundingClientRect = () => ({
+      top: 500,
+      left: 0,
+      width: 800,
+      height: 300,
+      bottom: 800,
+      right: 800,
+      x: 0,
+      y: 500,
+      toJSON: () => {},
+    });
+    document.body.appendChild(mockSheet);
+
+    try {
+      await waitFor(() => {
+        expect(mapEaseTo).toHaveBeenCalledWith(
+          expect.objectContaining({ center: [-122.34, 47.62] }),
+        );
+      });
+    } finally {
+      document.body.removeChild(mockSheet);
+    }
+  });
+
   it("does not show a map retry button to followers", async () => {
     setupQueries();
     render(<TripMap token="test-token" role="follower" />);
