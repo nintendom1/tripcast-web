@@ -2666,6 +2666,7 @@ export default function TripMap({
             lon: livePosition.lon,
             source: "fan_menu",
           });
+          performance.mark("tripcast:debug:placement:enter");
           setCheckInDebugSource({ source: "fan-menu:checkin", sourceLabel: "FanMenu -> Check In" });
           setSelectedCoordinate({
             lat: livePosition.lat,
