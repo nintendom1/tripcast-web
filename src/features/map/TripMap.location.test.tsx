@@ -159,7 +159,7 @@ vi.mock("maplibre-gl", () => {
 
 vi.mock("./AddCheckpointSheet", () => ({
   default: (props: { selectedCoordinate?: { lat: number; lon: number } | null }) =>
-    props.selectedCoordinate ? <div data-testid="checkpoint-sheet" className="add-checkpoint-sheet" /> : null,
+    props.selectedCoordinate ? <div data-testid="checkpoint-sheet" /> : null,
 }));
 
 vi.mock("./RouteVoteMapOverlay", () => ({
