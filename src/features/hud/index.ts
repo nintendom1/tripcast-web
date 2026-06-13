@@ -10,3 +10,5 @@ export { StatusCardConnected, type StatusCardConnectedProps } from "./StatusCard
 export { TopBar, type TopBarProps } from "./TopBar";
 export { TripTicker, type TripTickerProps } from "./TripTicker";
 export { useTicker } from "./useTicker";
+export { BackgroundUploadBar } from "./BackgroundUploadBar";
+export { BackgroundSaveRetryToast } from "./BackgroundSaveRetryToast";
