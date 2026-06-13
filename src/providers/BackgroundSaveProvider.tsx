@@ -39,31 +39,32 @@ export function useBackgroundSave() {
 export function BackgroundSaveProvider({ children, token }: { children: React.ReactNode, token: string }) {
   const [saves, setSaves] = useState<PendingSave[]>([]);
   const completionCallbacks = useRef<Record<string, (id: string, prefill?: any) => void>>({});
+  const retryingIds = useRef<Set<string>>(new Set());
+  const savesRef = useRef<PendingSave[]>([]);
+
   const generateUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const completeMissionAsStory = useMutation(tripcastApi.missions.travelerCompleteMissionAsStory);
   const updateTransaction = useMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
 
-  // Load pending saves from IndexedDB on mount
+  // Keep savesRef in sync for the auto-retry interval
+  useEffect(() => { savesRef.current = saves; }, [saves]);
+
+  // Load pending saves from IndexedDB on mount and auto-resume interrupted ones.
   useEffect(() => {
     getAllPendingSaves().then(loadedSaves => {
-      // Filter out saves that might have completed but weren't deleted
-      // or are very old. For now just load all.
       setSaves(loadedSaves);
-
-      // Automatically retry any that were "uploading" or "saving" when app closed
       loadedSaves.forEach(save => {
         if (save.status === "uploading" || save.status === "saving") {
           performSave(save);
         }
       });
     });
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const performSave = useCallback(async (save: PendingSave) => {
     let activityId: string | undefined;
     try {
-      // Start iOS Live Activity if supported
       try {
         const { value: available } = await LiveActivity.isAvailable();
         if (available) {
@@ -74,113 +75,177 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
           activityId = id;
         }
       } catch (e) {
-        // Plugin not registered or other error, ignore
-      }
-
-      let imageId: string | undefined;
-
-      if (save.imageBlob) {
-        setSaves(prev => prev.map(s => s.id === save.id ? { ...s, status: "uploading", progress: 10 } : s));
-        await savePendingSave({ ...save, status: "uploading", progress: 10 });
-
-        const file = new File([save.imageBlob], "image.jpg", { type: save.imageType });
-
-        // Mock progress since uploadStoryImage doesn't support it yet
-        // In a real scenario, we'd use XMLHttpRequest for progress
-        imageId = await uploadStoryImage(file, () => generateUploadUrl({ token }));
-
-        setSaves(prev => prev.map(s => s.id === save.id ? { ...s, progress: 50 } : s));
-        await savePendingSave({ ...save, status: "uploading", progress: 50 });
-
-        if (activityId) {
-          await LiveActivity.updateUploadActivity({
-            id: activityId,
-            status: "Photo uploaded",
-            progress: 0.5,
-          }).catch(() => {});
-        }
-      }
-
-      setSaves(prev => prev.map(s => s.id === save.id ? { ...s, status: "saving", progress: 70 } : s));
-      await savePendingSave({ ...save, status: "saving", progress: 70 });
-
-      if (activityId) {
-        await LiveActivity.updateUploadActivity({
-          id: activityId,
-          status: "Saving pin...",
-          progress: 0.8,
-        }).catch(() => {});
+        // Plugin not registered — ignore
       }
 
       let checkpointId: string;
-      if (save.data.missionId && save.data.prefill?.completeMission !== false) {
-        checkpointId = await completeMissionAsStory({
-          token,
-          missionId: save.data.missionId,
-          title: save.data.title,
-          note: save.data.note,
-          locationLabel: save.data.locationLabel,
-          lat: save.data.lat,
-          lon: save.data.lon,
-          source: save.data.source as any,
-          imageId,
-          awardBadgeType: save.data.awardBadgeType as any,
-        });
+
+      if (save.checkpointId) {
+        // Link-failed retry: checkpoint already created, skip straight to transaction linking
+        checkpointId = save.checkpointId;
+        setSaves(prev => prev.map(s => s.id === save.id ? { ...s, status: "saving", progress: 80 } : s));
+        await savePendingSave({ ...save, status: "saving", progress: 80 });
       } else {
-        checkpointId = await addCheckpoint({
-          ...save.data,
-          token,
-          imageId,
-          source: save.data.source as any,
-        } as any);
+        // Full path: upload image → create checkpoint
+        let imageId: string | undefined;
+
+        if (save.imageBlob) {
+          setSaves(prev => prev.map(s => s.id === save.id ? { ...s, status: "uploading", progress: 10 } : s));
+          await savePendingSave({ ...save, status: "uploading", progress: 10 });
+
+          const file = new File([save.imageBlob], "image.jpg", { type: save.imageType });
+          imageId = await uploadStoryImage(file, () => generateUploadUrl({ token }));
+
+          setSaves(prev => prev.map(s => s.id === save.id ? { ...s, progress: 50 } : s));
+          await savePendingSave({ ...save, status: "uploading", progress: 50 });
+
+          if (activityId) {
+            await LiveActivity.updateUploadActivity({ id: activityId, status: "Photo uploaded", progress: 0.5 }).catch(() => {});
+          }
+        }
+
+        setSaves(prev => prev.map(s => s.id === save.id ? { ...s, status: "saving", progress: 70 } : s));
+        await savePendingSave({ ...save, status: "saving", progress: 70 });
+
+        if (activityId) {
+          await LiveActivity.updateUploadActivity({ id: activityId, status: "Saving pin...", progress: 0.8 }).catch(() => {});
+        }
+
+        if (save.data.missionId && save.data.prefill?.completeMission !== false) {
+          checkpointId = await completeMissionAsStory({
+            token,
+            missionId: save.data.missionId,
+            title: save.data.title,
+            note: save.data.note,
+            locationLabel: save.data.locationLabel,
+            lat: save.data.lat,
+            lon: save.data.lon,
+            source: save.data.source as any,
+            imageId,
+            awardBadgeType: save.data.awardBadgeType as any,
+          });
+        } else {
+          // Explicitly pass only the fields the Convex validator accepts.
+          // save.data also holds IDB-only fields (stagedTransactionIds, prefill,
+          // awardBadgeType) that must not be spread into the mutation.
+          checkpointId = await addCheckpoint({
+            token,
+            source: save.data.source as any,
+            lat: save.data.lat,
+            lon: save.data.lon,
+            title: save.data.title,
+            note: save.data.note,
+            locationLabel: save.data.locationLabel,
+            showInStory: save.data.showInStory,
+            imageSize: save.data.imageSize,
+            imageId,
+            happenedAt: save.data.happenedAt,
+            missionId: save.data.missionId as any,
+            moodValue: save.data.moodValue as any,
+            energyLevel: save.data.energyLevel as any,
+            stomachLevel: save.data.stomachLevel as any,
+            stressLevel: save.data.stressLevel as any,
+            schedulePressureLevel: save.data.schedulePressureLevel as any,
+            statusNote: save.data.statusNote,
+          } as any);
+        }
+
+        // Persist checkpointId before linking — crash-safe two-phase commit
+        const withCheckpoint = { ...save, checkpointId, linkStatus: "pending" as const, progress: 80 };
+        setSaves(prev => prev.map(s => s.id === save.id ? withCheckpoint : s));
+        await savePendingSave(withCheckpoint);
       }
 
-      // Link transactions if any
-      if (save.data.stagedTransactionIds) {
+      // Link staged transactions
+      let linkFailed = false;
+      if (save.data.stagedTransactionIds?.length) {
         for (const txId of save.data.stagedTransactionIds) {
           try {
-            await updateTransaction({
-              token,
-              transactionId: txId as any,
-              linkedCheckpointId: checkpointId,
-            });
+            await updateTransaction({ token, transactionId: txId as any, linkedCheckpointId: checkpointId });
           } catch (e) {
             console.error("Failed to link transaction in background:", e);
+            linkFailed = true;
           }
         }
       }
 
-      // Success!
+      if (linkFailed) {
+        const retryCount = (save.retryCount ?? 0) + 1;
+        const nextRetryAt = Date.now() + Math.min(Math.pow(2, retryCount) * 2000, 30000);
+        const linkFailedSave: PendingSave = {
+          ...save,
+          checkpointId,
+          linkStatus: "failed",
+          status: "link-failed",
+          error: "Pin saved, but spend tracking failed — tap Retry to relink.",
+          progress: 0,
+          retryCount,
+          nextRetryAt,
+        };
+        setSaves(prev => prev.map(s => s.id === save.id ? linkFailedSave : s));
+        await savePendingSave(linkFailedSave);
+        // Checkpoint created successfully — fire callback and event for mission completion UX
+        const hasCallback = Boolean(completionCallbacks.current[save.id]);
+        completionCallbacks.current[save.id]?.(checkpointId, save.data.prefill);
+        delete completionCallbacks.current[save.id];
+        window.dispatchEvent(new CustomEvent("tripcast:bg-save-complete", {
+          detail: { id: save.id, checkpointId, missionId: save.data.missionId, prefill: save.data.prefill, wasRestoredFromIDB: !hasCallback },
+        }));
+        if (activityId) await LiveActivity.endUploadActivity({ id: activityId }).catch(() => {});
+        return;
+      }
+
+      // Full success
       setSaves(prev => prev.filter(s => s.id !== save.id));
       await deletePendingSave(save.id);
 
-      // Call completion callback if it exists in the current session
+      const hasCallback = Boolean(completionCallbacks.current[save.id]);
       completionCallbacks.current[save.id]?.(checkpointId, save.data.prefill);
       delete completionCallbacks.current[save.id];
 
-      // Success!
-      if (activityId) {
-        await LiveActivity.endUploadActivity({ id: activityId }).catch(() => {});
-      }
+      if (activityId) await LiveActivity.endUploadActivity({ id: activityId }).catch(() => {});
 
-      // Dispatch a custom event to notify components that a save finished
-      window.dispatchEvent(new CustomEvent("tripcast:bg-save-complete", { detail: { id: save.id, checkpointId } }));
+      window.dispatchEvent(new CustomEvent("tripcast:bg-save-complete", {
+        detail: { id: save.id, checkpointId, missionId: save.data.missionId, prefill: save.data.prefill, wasRestoredFromIDB: !hasCallback },
+      }));
 
     } catch (error) {
       if (activityId) {
-        await LiveActivity.updateUploadActivity({
-          id: activityId,
-          status: "Save failed",
-          progress: 0,
-        }).catch(() => {});
-        // Optionally end it after a delay or let the user see the failure
+        await LiveActivity.updateUploadActivity({ id: activityId, status: "Save failed", progress: 0 }).catch(() => {});
       }
       console.error("Background save failed:", error);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      setSaves(prev => prev.map(s => s.id === save.id ? { ...s, status: "failed", error: errorMessage, progress: 0 } : s));
-      await savePendingSave({ ...save, status: "failed", error: errorMessage, progress: 0 });
+      const retryCount = (save.retryCount ?? 0) + 1;
+      const nextRetryAt = Date.now() + Math.min(Math.pow(2, retryCount) * 2000, 30000);
+      const failedSave: PendingSave = { ...save, status: "failed", error: errorMessage, progress: 0, retryCount, nextRetryAt };
+      setSaves(prev => prev.map(s => s.id === save.id ? failedSave : s));
+      await savePendingSave(failedSave);
     }
-  }, [token, generateUploadUrl, addCheckpoint, completeMissionAsStory]);
+  }, [token, generateUploadUrl, addCheckpoint, completeMissionAsStory, updateTransaction]);
+
+  // Auto-retry saves whose backoff timer has expired
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      savesRef.current.forEach(save => {
+        if (
+          (save.status === "failed" || save.status === "link-failed") &&
+          save.nextRetryAt !== undefined &&
+          save.nextRetryAt <= now &&
+          !retryingIds.current.has(save.id)
+        ) {
+          retryingIds.current.add(save.id);
+          const saveToRetry = { ...save, nextRetryAt: undefined };
+          savePendingSave(saveToRetry).catch(console.error);
+          setSaves(prev => prev.map(s => s.id === save.id ? saveToRetry : s));
+          performSave(saveToRetry).finally(() => {
+            retryingIds.current.delete(save.id);
+          });
+        }
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [performSave]);
 
   const startSave = useCallback(async (data: PendingSave["data"], file?: File, onComplete?: (id: string, prefill?: any) => void) => {
     const id = crypto.randomUUID();
@@ -195,23 +260,28 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
       status: "uploading",
       progress: 0,
       createdAt: Date.now(),
+      retryCount: 0,
     };
 
     setSaves(prev => [...prev, newSave]);
     await savePendingSave(newSave);
 
-    // Don't await performSave here, let it run in background
     performSave(newSave);
 
     return id;
   }, [performSave]);
 
   const retrySave = useCallback(async (id: string) => {
-    const save = saves.find(s => s.id === id);
-    if (save) {
-      performSave(save);
-    }
-  }, [saves, performSave]);
+    const save = savesRef.current.find(s => s.id === id);
+    if (!save || retryingIds.current.has(id)) return;
+    retryingIds.current.add(id);
+    const saveToRetry = { ...save, nextRetryAt: undefined };
+    setSaves(prev => prev.map(s => s.id === id ? saveToRetry : s));
+    await savePendingSave(saveToRetry);
+    performSave(saveToRetry).finally(() => {
+      retryingIds.current.delete(id);
+    });
+  }, [performSave]);
 
   const dismissSave = useCallback(async (id: string) => {
     setSaves(prev => prev.filter(s => s.id !== id));

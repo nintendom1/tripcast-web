@@ -28,10 +28,16 @@ export interface PendingSave {
   };
   imageBlob?: Blob;
   imageType?: string;
-  status: "uploading" | "saving" | "failed";
+  status: "uploading" | "saving" | "failed" | "link-failed";
   progress: number; // 0 to 100
   error?: string;
   createdAt: number;
+  // Crash recovery: persisted after checkpoint creation, before transaction linking
+  checkpointId?: string;
+  linkStatus?: "pending" | "failed" | "ok";
+  // Exponential backoff
+  retryCount: number;
+  nextRetryAt?: number; // epoch ms; when set, auto-retry fires after this time
 }
 
 const DB_NAME = "tripcast_bg_saves";

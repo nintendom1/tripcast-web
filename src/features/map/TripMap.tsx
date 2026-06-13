@@ -4343,6 +4343,26 @@ export default function TripMap({
     }
   }
 
+  // Recovery path: fires the mission completion UX for saves that completed
+  // after the in-memory callback was lost (e.g. app closed mid-upload).
+  useEffect(() => {
+    function onBgSaveComplete(e: Event) {
+      const detail = (e as CustomEvent).detail as { wasRestoredFromIDB?: boolean; prefill?: CheckpointPrefill };
+      if (!detail?.wasRestoredFromIDB) return;
+      setStoryPrefill(null);
+      setPendingOpenDetailMissionId(null);
+      if (detail.prefill?.completeMission) {
+        music.sfx("success");
+        showToast(detail.prefill.mysteryReveal ? "Mystery Mission revealed." : "Mission completed.", detail.prefill.mysteryReveal ? "mystery" : "default");
+      } else if (detail.prefill?.missionId) {
+        music.sfx("success");
+        showToast("Story added to mission.");
+      }
+    }
+    window.addEventListener("tripcast:bg-save-complete", onBgSaveComplete);
+    return () => window.removeEventListener("tripcast:bg-save-complete", onBgSaveComplete);
+  }, [music, showToast]);
+
   function handleRetrySave(save: any) {
     // Re-populate the form with the failed save's data
     setStoryPrefill({
