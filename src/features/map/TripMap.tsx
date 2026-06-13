@@ -144,8 +144,8 @@ function pickLatestCheckpointCenter(
   return best ? [best.lon as number, best.lat as number] : null;
 }
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
-const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
-const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
+const LIVE_TRAIL_MIN_DISTANCE_METERS = 50;
+const LIVE_TRAIL_MIN_INTERVAL_MS = 120_000;
 const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 200;
@@ -425,6 +425,24 @@ function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: 
     Math.sin(deltaLat / 2) ** 2 +
     Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
   return 2 * radiusMeters * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
+}
+
+function calculateBearing(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+  const toRadians = (v: number) => (v * Math.PI) / 180;
+  const toDegrees = (v: number) => (v * 180) / Math.PI;
+  const lat1 = toRadians(a.lat);
+  const lon1 = toRadians(a.lon);
+  const lat2 = toRadians(b.lat);
+  const lon2 = toRadians(b.lon);
+  const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1);
+  return (toDegrees(Math.atan2(y, x)) + 360) % 360;
+}
+
+function getAngleDifference(a: number, b: number) {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
 }
 
 function mapLibreErrorDetails(event: unknown) {
@@ -1372,7 +1390,12 @@ function ConvexCheckpointSheet({
 // ---------------------------------------------------------------------------
 
 type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
-type LastLiveTrailSample = { lat: number; lon: number; sentAt: number } | null;
+type LastLiveTrailSample = {
+  lat: number;
+  lon: number;
+  sentAt: number;
+  bearing?: number;
+} | null;
 
 // Names which watcher (if any) currently owns GPS. `live-pill` is the only
 // background-allowed reason. `map-foreground` is the foreground browser
@@ -1441,6 +1464,8 @@ export default function TripMap({
   const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const lastLiveTrailSampleRef = useRef<LastLiveTrailSample>(null);
+  // Tracks the immediate previous fix to calculate current heading
+  const lastFixRef = useRef<{ lat: number; lon: number } | null>(null);
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
@@ -3789,20 +3814,69 @@ export default function TripMap({
   function publishLiveTrailSample(
     position: { lat: number; lon: number },
     accuracy?: number,
+    force = false,
   ) {
     const last = lastLiveTrailSampleRef.current;
     const now = Date.now();
     const elapsed = last ? now - last.sentAt : Number.POSITIVE_INFINITY;
     const movedMeters = last ? distanceMeters(last, position) : Number.POSITIVE_INFINITY;
-    if (last && movedMeters < LIVE_TRAIL_MIN_DISTANCE_METERS && elapsed < LIVE_TRAIL_MIN_INTERVAL_MS) {
+
+    let isRelevant = force || !last;
+    let currentBearing: number | undefined;
+
+    if (!isRelevant && last) {
+      // 1. Time-based heartbeat (e.g. 2 minutes)
+      if (elapsed >= LIVE_TRAIL_MIN_INTERVAL_MS) {
+        isRelevant = true;
+      }
+      // 2. Distance-based threshold (e.g. 50 meters)
+      else if (movedMeters >= LIVE_TRAIL_MIN_DISTANCE_METERS) {
+        isRelevant = true;
+      }
+      // 3. Turn detection (22.5 degrees or more)
+      // To catch both sharp turns and gradual curves, we compare the current
+      // bearing (from last emitted point to here) against the bearing that
+      // led into the last emitted point.
+      else if (movedMeters >= 10) {
+        currentBearing = calculateBearing(last, position);
+        if (last.bearing !== undefined) {
+          const turnAngle = getAngleDifference(last.bearing, currentBearing);
+          if (turnAngle >= 22.5) {
+            isRelevant = true;
+            log.logInteraction("live-trail:sample:relevant-turn", {
+              turnAngle: Math.round(turnAngle),
+              movedMeters: Math.round(movedMeters),
+            });
+          }
+        }
+      }
+    }
+
+    if (!isRelevant) {
+      // Even if we're not emitting, we update lastFixRef to keep track of our
+      // immediate entry bearing for the NEXT point we might emit.
+      lastFixRef.current = { lat: position.lat, lon: position.lon };
       return;
     }
+
+    // When we DO emit, we determine the "entry bearing" for this new point.
+    // If we have a very recent previous fix (from lastFixRef), use that to
+    // get a high-resolution heading. Otherwise fallback to bearing from last emit.
+    const entryBase = lastFixRef.current;
+    const entryDist = entryBase ? distanceMeters(entryBase, position) : 0;
+    const finalizedBearing = (entryBase && entryDist >= 5)
+      ? calculateBearing(entryBase, position)
+      : currentBearing;
 
     lastLiveTrailSampleRef.current = {
       lat: position.lat,
       lon: position.lon,
       sentAt: now,
+      bearing: finalizedBearing,
     };
+    // Reset trackers for the next point
+    lastFixRef.current = { lat: position.lat, lon: position.lon };
+
     recordLiveTrailSample({
       token,
       lat: position.lat,
@@ -3864,6 +3938,9 @@ export default function TripMap({
       setIsLocationSharing(true);
       if (livePosition) {
         publishTravelerLocation(livePosition, livePosition.accuracy);
+        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+          publishLiveTrailSample(livePosition, livePosition.accuracy, true);
+        }
       }
     }
   }
