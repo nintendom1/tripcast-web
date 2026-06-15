@@ -90,6 +90,12 @@ import {
 } from "./focusCoordinate";
 import { circlePolygon } from "./circlePolygon";
 import { useTripPath } from "./useTripPath";
+import {
+  evaluateBreadcrumbSample,
+  type BreadcrumbSamplerState,
+  type GeoFix,
+} from "../../lib/breadcrumbSampler";
+import { distanceMeters } from "../../lib/geoUtils";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
@@ -414,36 +420,6 @@ function roundedCoordinate(value: number) {
   return Number(value.toFixed(4));
 }
 
-function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
-  const radiusMeters = 6_371_000;
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const lat1 = toRadians(a.lat);
-  const lat2 = toRadians(b.lat);
-  const deltaLat = toRadians(b.lat - a.lat);
-  const deltaLon = toRadians(b.lon - a.lon);
-  const hav =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
-  return 2 * radiusMeters * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
-}
-
-function calculateBearing(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
-  const toRadians = (v: number) => (v * Math.PI) / 180;
-  const toDegrees = (v: number) => (v * 180) / Math.PI;
-  const lat1 = toRadians(a.lat);
-  const lon1 = toRadians(a.lon);
-  const lat2 = toRadians(b.lat);
-  const lon2 = toRadians(b.lon);
-  const y = Math.sin(lon2 - lon1) * Math.cos(lat2);
-  const x =
-    Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1);
-  return (toDegrees(Math.atan2(y, x)) + 360) % 360;
-}
-
-function getAngleDifference(a: number, b: number) {
-  const diff = Math.abs(a - b) % 360;
-  return diff > 180 ? 360 - diff : diff;
-}
 
 function mapLibreErrorDetails(event: unknown) {
   const eventRecord = asRecord(event);
@@ -1390,12 +1366,6 @@ function ConvexCheckpointSheet({
 // ---------------------------------------------------------------------------
 
 type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
-type LastLiveTrailSample = {
-  lat: number;
-  lon: number;
-  sentAt: number;
-  bearing?: number;
-} | null;
 
 // Names which watcher (if any) currently owns GPS. `live-pill` is the only
 // background-allowed reason. `map-foreground` is the foreground browser
@@ -1463,9 +1433,7 @@ export default function TripMap({
   const lastLocationFixAtRef = useRef<number | null>(null);
   const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
-  const lastLiveTrailSampleRef = useRef<LastLiveTrailSample>(null);
-  // Tracks the immediate previous fix to calculate current heading
-  const lastFixRef = useRef<{ lat: number; lon: number } | null>(null);
+  const breadcrumbSamplerStateRef = useRef<BreadcrumbSamplerState>({});
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
@@ -3209,13 +3177,18 @@ export default function TripMap({
     if (!travelerLiveTrailStatus) return;
     const latestSample = travelerLiveTrailStatus.samples.at(-1);
     if (latestSample) {
-      lastLiveTrailSampleRef.current = {
-        lat: latestSample.lat,
-        lon: latestSample.lon,
-        sentAt: latestSample.sampledAt,
+      breadcrumbSamplerStateRef.current = {
+        ...breadcrumbSamplerStateRef.current,
+        lastEmitted: {
+          lat: latestSample.lat,
+          lon: latestSample.lon,
+          sampledAt: latestSample.sampledAt,
+          // Note: bearing is lost on refresh since the backend doesn't store it,
+          // which is acceptable; the next segment will re-establish it.
+        },
       };
     } else {
-      lastLiveTrailSampleRef.current = null;
+      breadcrumbSamplerStateRef.current = {};
     }
   }, [liveTrailEnabled, travelerLiveTrailStatus]);
 
@@ -3782,7 +3755,7 @@ export default function TripMap({
     setIsReplaySpeedSheetOpen(false);
     setIsReplayDateSheetOpen(false);
     clearReplayResume(token);
-    lastLiveTrailSampleRef.current = null;
+    breadcrumbSamplerStateRef.current = {};
   }, [tripDataResetNonce, stopFollowing, token]);
 
   function publishTravelerLocation(
@@ -3816,73 +3789,30 @@ export default function TripMap({
     accuracy?: number,
     force = false,
   ) {
-    const last = lastLiveTrailSampleRef.current;
-    const now = Date.now();
-    const elapsed = last ? now - last.sentAt : Number.POSITIVE_INFINITY;
-    const movedMeters = last ? distanceMeters(last, position) : Number.POSITIVE_INFINITY;
+    const fix: GeoFix = { ...position, accuracy, sampledAt: Date.now() };
+    const { shouldEmit, reason, nextState } = evaluateBreadcrumbSample(
+      breadcrumbSamplerStateRef.current,
+      fix,
+      undefined,
+      force,
+    );
 
-    let isRelevant = force || !last;
-    let currentBearing: number | undefined;
+    breadcrumbSamplerStateRef.current = nextState;
 
-    if (!isRelevant && last) {
-      // 1. Time-based heartbeat (e.g. 2 minutes)
-      if (elapsed >= LIVE_TRAIL_MIN_INTERVAL_MS) {
-        isRelevant = true;
-      }
-      // 2. Distance-based threshold (e.g. 50 meters)
-      else if (movedMeters >= LIVE_TRAIL_MIN_DISTANCE_METERS) {
-        isRelevant = true;
-      }
-      // 3. Turn detection (22.5 degrees or more)
-      // To catch both sharp turns and gradual curves, we compare the current
-      // bearing (from last emitted point to here) against the bearing that
-      // led into the last emitted point.
-      else if (movedMeters >= 10) {
-        currentBearing = calculateBearing(last, position);
-        if (last.bearing !== undefined) {
-          const turnAngle = getAngleDifference(last.bearing, currentBearing);
-          if (turnAngle >= 22.5) {
-            isRelevant = true;
-            log.logInteraction("live-trail:sample:relevant-turn", {
-              turnAngle: Math.round(turnAngle),
-              movedMeters: Math.round(movedMeters),
-            });
-          }
-        }
-      }
+    if (!shouldEmit) return;
+
+    if (reason === "turn" && nextState.lastEmitted?.bearing !== undefined) {
+      log.logInteraction("live-trail:sample:relevant-turn", {
+        bearing: Math.round(nextState.lastEmitted.bearing),
+      });
     }
-
-    if (!isRelevant) {
-      // Even if we're not emitting, we update lastFixRef to keep track of our
-      // immediate entry bearing for the NEXT point we might emit.
-      lastFixRef.current = { lat: position.lat, lon: position.lon };
-      return;
-    }
-
-    // When we DO emit, we determine the "entry bearing" for this new point.
-    // If we have a very recent previous fix (from lastFixRef), use that to
-    // get a high-resolution heading. Otherwise fallback to bearing from last emit.
-    const entryBase = lastFixRef.current;
-    const entryDist = entryBase ? distanceMeters(entryBase, position) : 0;
-    const finalizedBearing = (entryBase && entryDist >= 5)
-      ? calculateBearing(entryBase, position)
-      : currentBearing;
-
-    lastLiveTrailSampleRef.current = {
-      lat: position.lat,
-      lon: position.lon,
-      sentAt: now,
-      bearing: finalizedBearing,
-    };
-    // Reset trackers for the next point
-    lastFixRef.current = { lat: position.lat, lon: position.lon };
 
     recordLiveTrailSample({
       token,
       lat: position.lat,
       lon: position.lon,
       accuracy,
-      sampledAt: now,
+      sampledAt: fix.sampledAt,
     }).catch((error) => {
       log.error("live-trail:sample:error", "mutation", {
         message: error instanceof Error ? error.message : String(error),
@@ -3893,6 +3823,7 @@ export default function TripMap({
   function stopLocationSharing() {
     isLocationSharingRef.current = false;
     lastSentLocationRef.current = null;
+    breadcrumbSamplerStateRef.current = {};
     setIsLocationSharing(false);
     stopFollowing();
     stopTravelerLocationSharing({ token }).catch(() => {});
