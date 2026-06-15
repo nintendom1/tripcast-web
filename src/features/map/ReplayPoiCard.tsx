@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "../../lib/utils";
 
@@ -16,6 +17,9 @@ export type ReplayPoiCardProps = {
    * fully inside the shorter checkpoint dwell at high replay speeds. 1 = normal.
    */
   transitionScale?: number;
+  /** Performance metrics from parent. */
+  metrics?: { startAt: number; urlReadyAt?: number } | null;
+  onImageLoad?: (naturalWidth: number, naturalHeight: number) => void;
 };
 
 const EASE = [0.25, 0.46, 0.45, 0.94] as const;
@@ -26,7 +30,17 @@ const EASE = [0.25, 0.46, 0.45, 0.94] as const;
  * (staggered). On exit they slide back out in opposite directions. Map- and
  * Convex-free so it can be exercised in Storybook.
  */
-export function ReplayPoiCard({ imageUrl, title, note, tilt = 0, onClick, className, transitionScale = 1 }: ReplayPoiCardProps) {
+export function ReplayPoiCard({
+  imageUrl,
+  title,
+  note,
+  tilt = 0,
+  onClick,
+  className,
+  transitionScale = 1,
+  metrics,
+  onImageLoad,
+}: ReplayPoiCardProps) {
   const reduce = useReducedMotion();
 
   // Scale the slide timings so the card fits the dwell at speed (clamped so it stays
@@ -81,14 +95,20 @@ export function ReplayPoiCard({ imageUrl, title, note, tilt = 0, onClick, classN
       {imageUrl ? (
         <motion.div
           {...photoMotion}
-          className="shrink-0 bg-white p-1.5 shadow-[2px_2px_0_var(--line-strong)]"
+          className="shrink-0 bg-white p-1.5 shadow-[2px_2px_0_var(--line-strong)] relative"
           style={{ border: "1.5px solid var(--flag)" }}
         >
           <img
             src={imageUrl}
             alt=""
             className="h-28 w-40 rounded-sm object-cover sm:h-32 sm:w-44"
+            onLoad={(e) => onImageLoad?.(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
           />
+          {metrics?.urlReadyAt && (
+            <div className="absolute bottom-2 right-2 bg-black/60 px-1 py-0.5 text-[8px] font-mono text-white rounded pointer-events-none">
+              {Math.round(metrics.urlReadyAt - metrics.startAt)}ms
+            </div>
+          )}
         </motion.div>
       ) : null}
       <motion.div

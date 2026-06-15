@@ -208,6 +208,12 @@ export default function StoryDetailSheet({
   const [isDeleting, setIsDeleting] = useState(false);
   const [optimisticEvent, setOptimisticEvent] = useState<JournalEvent | null>(null);
 
+  const [imageLoadMetrics, setImageLoadMetrics] = useState<{
+    startAt: number;
+    urlReadyAt?: number;
+    imageId?: string;
+  } | null>(null);
+
   const preferences = useQuery(
     tripcastApi.travelerPreferences.followerGetPreferences,
     role === "follower" && token ? { token } : "skip",
@@ -246,6 +252,7 @@ export default function StoryDetailSheet({
     setEditImageFile(null);
     setEditImagePreviewUrl(null);
     setEditClearImage(false);
+    setImageLoadMetrics(null);
   }, [event?._id]);
 
   useEffect(() => {
@@ -255,13 +262,29 @@ export default function StoryDetailSheet({
   }, [editImagePreviewUrl]);
 
   useEffect(() => {
-    if (displayEvent?.imageId && currentImageUrl === null) {
+    if (!displayEvent?.imageId) {
+      setImageLoadMetrics(null);
+      return;
+    }
+
+    if (imageLoadMetrics?.imageId !== displayEvent.imageId) {
+      setImageLoadMetrics({
+        startAt: performance.now(),
+        imageId: displayEvent.imageId,
+      });
+    }
+
+    if (currentImageUrl && imageLoadMetrics && !imageLoadMetrics.urlReadyAt) {
+      setImageLoadMetrics((prev) => prev ? { ...prev, urlReadyAt: performance.now() } : null);
+    }
+
+    if (displayEvent?.imageId && currentImageUrl === null && !isWorking) {
       log.error("story-image:render:error", "query", {
         hasImage: true,
         reason: "url-unavailable",
       });
     }
-  }, [currentImageUrl, displayEvent?.imageId, log]);
+  }, [currentImageUrl, displayEvent?.imageId, imageLoadMetrics, log, isWorking]);
 
   useEffect(() => {
     if (!event) {
@@ -370,6 +393,7 @@ export default function StoryDetailSheet({
     if (!token || !event?.checkpointId || isWorking) return;
     setIsWorking(true);
     setActionError(null);
+    setImageLoadMetrics(null);
     log.logInteraction("form:submit", { checkpointId: event.checkpointId });
     try {
       const imageId = editImageFile
@@ -748,9 +772,24 @@ export default function StoryDetailSheet({
                   missionId={missionId}
                   onNavigateToMission={onNavigateToMission}
                   imageUrl={currentImageUrl ?? undefined}
-                  onImageLoad={() => log.logInteraction("story-image:render", { source: "stored" })}
+                  onImageLoad={(e) => {
+                    const now = performance.now();
+                    const totalMs = imageLoadMetrics ? Math.round(now - imageLoadMetrics.startAt) : undefined;
+                    const urlMs = imageLoadMetrics?.urlReadyAt ? Math.round(imageLoadMetrics.urlReadyAt - imageLoadMetrics.startAt) : undefined;
+                    const downloadMs = imageLoadMetrics?.urlReadyAt ? Math.round(now - imageLoadMetrics.urlReadyAt) : undefined;
+
+                    log.logInteraction("story-image:render", {
+                      source: "stored",
+                      totalMs,
+                      urlFetchMs: urlMs,
+                      downloadMs,
+                      naturalWidth: e.currentTarget.naturalWidth,
+                      naturalHeight: e.currentTarget.naturalHeight,
+                    });
+                  }}
                   onImageError={() => log.error("story-image:render:error", "ui", { source: "stored" })}
                   isTraveler={isTraveler}
+                  metrics={imageLoadMetrics}
                 />
               ) : (
                 <ActivityContent event={displayEvent} />
@@ -797,6 +836,7 @@ function NarrativeContent({
   onImageLoad,
   onImageError,
   isTraveler,
+  metrics,
 }: {
   event: JournalEvent;
   token?: string;
@@ -805,9 +845,10 @@ function NarrativeContent({
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
   imageUrl?: string;
-  onImageLoad?: () => void;
+  onImageLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
   onImageError?: () => void;
   isTraveler: boolean;
+  metrics?: { startAt: number; urlReadyAt?: number } | null;
 }) {
   const imageSize = event.imageSize ?? "medium";
 
@@ -818,7 +859,7 @@ function NarrativeContent({
           <div
             data-testid="story-image-container"
             className={cn(
-              "mb-3 rounded-md shadow-sm overflow-hidden",
+              "mb-3 rounded-md shadow-sm overflow-hidden relative",
               imageSize === "compact" && "float-right ml-3 w-32 sm:ml-4 sm:w-40",
               imageSize === "medium" && "w-full sm:float-right sm:ml-4 sm:w-64",
               imageSize === "large" && "w-full mb-4"
@@ -836,6 +877,11 @@ function NarrativeContent({
                 onError={onImageError}
               />
             </Zoom>
+            {metrics?.urlReadyAt && (
+              <div className="absolute bottom-1 right-1 bg-black/60 px-1.5 py-0.5 text-[9px] font-mono text-white rounded pointer-events-none">
+                URL: {Math.round(metrics.urlReadyAt - metrics.startAt)}ms
+              </div>
+            )}
           </div>
         ) : null}
         {event.body ? (
