@@ -6,7 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useConvex, useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { Crosshair, DollarSign, EyeOff, Pause, Play, RotateCcw, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crosshair, DollarSign, EyeOff, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -899,7 +899,7 @@ function TravelerLocationMarker({
   return null;
 }
 
-function TripReplayHud({
+export function TripReplayHud({
   playheadIndex,
   endIndex,
   currentPinKind,
@@ -909,6 +909,8 @@ function TripReplayHud({
   isPaused,
   onTogglePause,
   onRestart,
+  onNext,
+  onPrevious,
   onScrub,
   onOpenSpeedSheet,
   onOpenDateSheet,
@@ -924,6 +926,8 @@ function TripReplayHud({
   isPaused: boolean;
   onTogglePause: () => void;
   onRestart: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
   onScrub: (index: number) => void;
   onOpenSpeedSheet: () => void;
   onOpenDateSheet: () => void;
@@ -949,44 +953,66 @@ function TripReplayHud({
           type="button"
           onClick={onOpenSpeedSheet}
           aria-label="Change replay speed"
-          className="flex min-w-[96px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-4 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+          className="flex min-w-[72px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-3 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
         >
-          <span className="text-sm font-semibold leading-tight">Speed</span>
-          <span className="text-xs text-[var(--ink-3)]">{speed}x</span>
+          <span className="text-[11px] font-semibold leading-tight">Speed</span>
+          <span className="text-[10px] text-[var(--ink-3)]">{speed}x</span>
         </button>
 
-        {isEnd ? (
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={onRestart}
-            aria-label="Replay from start"
-            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
+            onClick={onPrevious}
+            disabled={playheadIndex <= 0}
+            aria-label="Previous pin"
+            className="grid h-10 w-10 place-items-center rounded-full bg-[var(--bg-card)] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95 disabled:opacity-40"
           >
-            <RotateCcw className="h-6 w-6" aria-hidden="true" />
+            <ChevronLeft className="h-5 w-5" aria-hidden="true" />
           </button>
-        ) : (
+
+          {isEnd ? (
+            <button
+              type="button"
+              onClick={onRestart}
+              aria-label="Replay from start"
+              className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
+            >
+              <RotateCcw className="h-6 w-6" aria-hidden="true" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onTogglePause}
+              aria-label={isPaused ? "Play replay" : "Pause replay"}
+              className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
+            >
+              {isPaused ? (
+                <Play className="h-7 w-7" aria-hidden="true" style={{ marginLeft: 2 }} />
+              ) : (
+                <Pause className="h-7 w-7" aria-hidden="true" />
+              )}
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={onTogglePause}
-            aria-label={isPaused ? "Play replay" : "Pause replay"}
-            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
+            onClick={onNext}
+            disabled={isEnd}
+            aria-label="Next pin"
+            className="grid h-10 w-10 place-items-center rounded-full bg-[var(--bg-card)] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95 disabled:opacity-40"
           >
-            {isPaused ? (
-              <Play className="h-7 w-7" aria-hidden="true" style={{ marginLeft: 2 }} />
-            ) : (
-              <Pause className="h-7 w-7" aria-hidden="true" />
-            )}
+            <ChevronRight className="h-5 w-5" aria-hidden="true" />
           </button>
-        )}
+        </div>
 
         <button
           type="button"
           onClick={onOpenDateSheet}
           aria-label="Change replay date range"
-          className="flex min-w-[96px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-4 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
+          className="flex min-w-[72px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-3 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
         >
-          <span className="text-sm font-semibold leading-tight">Date Range</span>
-          <span className="max-w-[110px] truncate text-xs text-[var(--ink-3)]">{windowLabel}</span>
+          <span className="text-[11px] font-semibold leading-tight">Date Range</span>
+          <span className="max-w-[80px] truncate text-[10px] text-[var(--ink-3)]">{windowLabel}</span>
         </button>
       </div>
 
@@ -4232,6 +4258,20 @@ export default function TripMap({
     handleNavigateToMissionDetail(missionId, { source: "story-detail:mission", sourceLabel: "Story detail -> Mission" });
   }
 
+  const handleBreadcrumbCheckIn = useCallback(() => {
+    if (!currentReplayPin || currentReplayPin.kind !== "breadcrumb") return;
+    music.sfx("tap");
+    setCheckInDebugSource({ source: "replay:breadcrumb", sourceLabel: "Replay Breadcrumb -> Check In" });
+    setSelectedCoordinate({
+      lat: currentReplayPin.lat,
+      lon: currentReplayPin.lon,
+      source: "fan_menu",
+    });
+    setStoryPrefill({
+      happenedAt: currentReplayPin.occurredAt,
+    });
+  }, [currentReplayPin, music]);
+
   function handleNavigateStoryDetail(direction: StoryNavigationDirection) {
     if (!storyNavigation) {
       log.logInteraction("story:navigate:boundary", { direction, reason: "navigation-unavailable" });
@@ -4569,6 +4609,25 @@ export default function TripMap({
             )}
           />
         )}
+        {replayActive && replayPaused && currentReplayPin?.kind === "breadcrumb" && (
+          <motion.div
+            key="breadcrumb-checkin"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="pointer-events-none absolute inset-x-0 bottom-[56%] z-[19] flex justify-center px-4"
+          >
+            <button
+              type="button"
+              onClick={handleBreadcrumbCheckIn}
+              className="pointer-events-auto flex items-center gap-2 rounded-full bg-[var(--flag)] px-4 py-2 text-sm font-bold text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] hover:scale-105 active:scale-95"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Check In
+            </button>
+          </motion.div>
+        )}
       </AnimatePresence>
       <AccuracyCircle
         map={mapInstance}
@@ -4721,6 +4780,8 @@ export default function TripMap({
             isPaused={replayPaused}
             onTogglePause={handleToggleReplayPause}
             onRestart={handleRestartReplay}
+            onNext={() => handleReplayScrub((replayPlayheadIndex ?? 0) + 1)}
+            onPrevious={() => handleReplayScrub((replayPlayheadIndex ?? 0) - 1)}
             onScrub={handleReplayScrub}
             onOpenSpeedSheet={() => {
               music.sfx("tap");

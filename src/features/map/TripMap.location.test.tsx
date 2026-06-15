@@ -1946,6 +1946,49 @@ describe("TripMap location marker", () => {
     });
   });
 
+  it("turns a breadcrumb into a story during paused replay", async () => {
+    setEnabled(true);
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({
+      journalEvents: [], // No stories, only breadcrumbs
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    // Start Replay
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+
+    // Replay HUD should appear
+    const replayHud = await screen.findByRole("group", { name: "Trip Replay" });
+    expect(replayHud).toBeInTheDocument();
+
+    // Pause replay to show Check In button
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // Verify Check In button appears near the breadcrumb
+    const checkInBtn = await screen.findByRole("button", { name: "Check In" });
+    expect(checkInBtn).toBeInTheDocument();
+
+    // Fine-tune with "Next pin" button
+    const nextBtn = screen.getByRole("button", { name: "Next pin" });
+    fireEvent.click(nextBtn);
+
+    // Click Check In
+    fireEvent.click(checkInBtn);
+
+    // Checkpoint sheet should open (mocked to data-testid="checkpoint-sheet")
+    expect(await screen.findByTestId("checkpoint-sheet")).toBeInTheDocument();
+  });
+
   it("does not connect path to livePosition when GPS sharing is off", async () => {
     setupQueries();
 
