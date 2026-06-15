@@ -1,10 +1,5 @@
 import type { TransactionCategory, TransactionVisibility } from "../../convex/tripcastApi";
 
-export const LS_LAST_CURRENCY = "tripcast_last_currency";
-export const LS_CURRENCY_RATES = "tripcast_currency_rates";
-
-export type CurrencyRates = Record<string, number>;
-
 export const COMMON_CURRENCIES: { code: string; label: string }[] = [
   { code: "USD", label: "USD — US Dollar" },
   { code: "EUR", label: "EUR — Euro" },

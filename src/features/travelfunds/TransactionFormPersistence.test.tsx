@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/re
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import * as convexReact from "convex/react";
 import TransactionForm from "./TransactionForm";
-import { LS_CURRENCY_RATES, LS_LAST_CURRENCY } from "./currency";
+import { LS_CURRENCY_RATES, LS_LAST_CURRENCY } from "./currencyPrefs";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -81,6 +81,35 @@ describe("TransactionForm Persistence", () => {
     // Change to AUD (not stored, should be 1 because we reset it when selecting USD)
     fireEvent.change(currencySelect, { target: { value: "AUD" } });
     expect(screen.getByLabelText(/Exchange rate/)).toHaveValue("1");
+  });
+
+  it("preserves unsaved per-currency rates while switching currencies before submit", () => {
+    localStorage.setItem(LS_CURRENCY_RATES, JSON.stringify({ JPY: 150, EUR: 0.9 }));
+
+    render(
+      <TransactionForm
+        token="test-token"
+        mode="add"
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const currencySelect = screen.getByLabelText("Currency") as HTMLSelectElement;
+
+    // Switch to JPY and type a new rate 155
+    fireEvent.change(currencySelect, { target: { value: "JPY" } });
+    const rateInput = screen.getByLabelText(/Exchange rate/) as HTMLInputElement;
+    fireEvent.change(rateInput, { target: { value: "155" } });
+    expect(rateInput.value).toBe("155");
+
+    // Switch to EUR (should show 0.9)
+    fireEvent.change(currencySelect, { target: { value: "EUR" } });
+    expect(screen.getByLabelText(/Exchange rate/)).toHaveValue("0.9");
+
+    // Switch back to JPY (should still show unsaved 155, NOT reset to 150)
+    fireEvent.change(currencySelect, { target: { value: "JPY" } });
+    expect(screen.getByLabelText(/Exchange rate/)).toHaveValue("155");
   });
 
   it("saves currency and rate to localStorage on successful submit in add mode", async () => {
