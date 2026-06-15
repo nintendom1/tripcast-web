@@ -15,6 +15,9 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import {
   CATEGORY_OPTIONS,
   COMMON_CURRENCIES,
+  CurrencyRates,
+  LS_CURRENCY_RATES,
+  LS_LAST_CURRENCY,
   VISIBILITY_OPTIONS,
   formatUsd,
   isValidCurrencyCode,
@@ -79,6 +82,22 @@ function parseDateTimeInput(value: string) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+function getStoredRates(): CurrencyRates {
+  try {
+    const raw = localStorage.getItem(LS_CURRENCY_RATES);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveRate(code: string, rate: number) {
+  const rates = getStoredRates();
+  rates[code] = rate;
+  localStorage.setItem(LS_CURRENCY_RATES, JSON.stringify(rates));
+  localStorage.setItem(LS_LAST_CURRENCY, code);
+}
+
 export default function TransactionForm({
   token,
   mode,
@@ -97,20 +116,36 @@ export default function TransactionForm({
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
   const [category, setCategory] = useState<TransactionCategory>(initial?.category ?? defaultCategory());
-  const initialCurrency = initial?.currencyCode ?? "USD";
-  const isInitialCustom = initial && !COMMON_CURRENCIES.some((c) => c.code === initial.currencyCode);
+
+  const lastUsedCurrency = useMemo(() => {
+    if (mode === "add" && !initial) {
+      return localStorage.getItem(LS_LAST_CURRENCY) ?? "USD";
+    }
+    return initial?.currencyCode ?? "USD";
+  }, [mode, initial]);
+
+  const isInitialCustom = !COMMON_CURRENCIES.some((c) => c.code === lastUsedCurrency);
+
   const [currencySelect, setCurrencySelect] = useState<string>(
-    isInitialCustom ? "OTHER" : initialCurrency,
+    isInitialCustom ? "OTHER" : lastUsedCurrency,
   );
   const [customCurrency, setCustomCurrency] = useState<string>(
-    isInitialCustom ? initialCurrency : "",
+    isInitialCustom ? lastUsedCurrency : "",
   );
   const [localAmount, setLocalAmount] = useState<string>(
     initial?.localAmount !== undefined ? String(initial.localAmount) : "",
   );
-  const [rate, setRate] = useState<string>(
-    initial?.localCurrencyPerUsd !== undefined ? String(initial.localCurrencyPerUsd) : "1",
-  );
+
+  const initialRateValue = useMemo(() => {
+    if (initial?.localCurrencyPerUsd !== undefined) return String(initial.localCurrencyPerUsd);
+    if (mode === "add") {
+      const stored = getStoredRates();
+      return String(stored[lastUsedCurrency] ?? "1");
+    }
+    return "1";
+  }, [initial, mode, lastUsedCurrency]);
+
+  const [rate, setRate] = useState<string>(initialRateValue);
   const [countsTowardMeter, setCountsTowardMeter] = useState<boolean>(
     initial?.countsTowardMeter ?? true,
   );
@@ -170,6 +205,33 @@ export default function TransactionForm({
     }
     setError(null);
     setCountsTowardMeter(next);
+  }
+
+  function handleCurrencySelectChange(val: string) {
+    setCurrencySelect(val);
+    if (val === "USD") {
+      setRate("1");
+    } else if (val !== "OTHER") {
+      const stored = getStoredRates();
+      setRate(String(stored[val] ?? "1"));
+    } else {
+      const code = customCurrency.trim().toUpperCase();
+      if (isValidCurrencyCode(code)) {
+        const stored = getStoredRates();
+        setRate(String(stored[code] ?? "1"));
+      } else {
+        setRate("1");
+      }
+    }
+  }
+
+  function handleCustomCurrencyChange(val: string) {
+    const code = val.toUpperCase();
+    setCustomCurrency(code);
+    if (isValidCurrencyCode(code)) {
+      const stored = getStoredRates();
+      setRate(String(stored[code] ?? "1"));
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -245,6 +307,9 @@ export default function TransactionForm({
       try {
         await onSubmit(values);
         log.logFunds("transaction:submit:success", { mode });
+        if (mode === "add") {
+          saveRate(values.currencyCode, values.localCurrencyPerUsd);
+        }
       } catch (submitError) {
         log.error("transaction:submit:error", "funds", {
           mode,
@@ -322,7 +387,7 @@ export default function TransactionForm({
           <select
             id="tx-currency"
             value={currencySelect}
-            onChange={(e) => setCurrencySelect(e.target.value)}
+            onChange={(e) => handleCurrencySelectChange(e.target.value)}
             className={selectClass}
           >
             {COMMON_CURRENCIES.map((c) => (
@@ -339,7 +404,7 @@ export default function TransactionForm({
           <Input
             id="tx-custom-currency"
             value={customCurrency}
-            onChange={(e) => setCustomCurrency(e.target.value.toUpperCase())}
+            onChange={(e) => handleCustomCurrencyChange(e.target.value)}
             maxLength={3}
             placeholder="e.g. THB"
             className="font-mono"
