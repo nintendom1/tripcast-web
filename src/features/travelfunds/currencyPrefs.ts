@@ -1,3 +1,5 @@
+import { isValidCurrencyCode } from "./currency";
+
 export const LS_LAST_CURRENCY = "tripcast_last_currency";
 export const LS_CURRENCY_RATES = "tripcast_currency_rates";
 
@@ -10,20 +12,26 @@ export type CurrencyPrefs = {
 
 export function loadCurrencyPrefs(): CurrencyPrefs {
   try {
-    let lastCurrency = localStorage.getItem(LS_LAST_CURRENCY) ?? "USD";
-    if (typeof lastCurrency !== "string" || !/^[A-Z]{3}$/.test(lastCurrency)) {
-      lastCurrency = "USD";
-    }
+    const rawLast = localStorage.getItem(LS_LAST_CURRENCY) ?? "USD";
+    const lastCurrency = isValidCurrencyCode(rawLast)
+      ? rawLast.trim().toUpperCase()
+      : "USD";
 
     const rawRates = localStorage.getItem(LS_CURRENCY_RATES);
-    let rates: CurrencyRates = {};
+    const rates: CurrencyRates = {};
     if (rawRates) {
       try {
         const parsed = JSON.parse(rawRates);
         if (parsed && typeof parsed === "object") {
           for (const [code, rate] of Object.entries(parsed)) {
-            if (/^[A-Z]{3}$/.test(code) && typeof rate === "number" && rate > 0) {
-              rates[code] = rate;
+            const normalized =
+              typeof code === "string" ? code.trim().toUpperCase() : "";
+            if (
+              isValidCurrencyCode(normalized) &&
+              typeof rate === "number" &&
+              rate > 0
+            ) {
+              rates[normalized] = rate;
             }
           }
         }
