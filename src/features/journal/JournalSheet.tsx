@@ -293,19 +293,20 @@ export default function JournalSheet({
     setIsCreating(true);
     setCreateError(null);
     try {
-      const imageId = storyImageFile
+      const uploadResult = storyImageFile
         ? await (async () => {
             log.logInteraction("story-image:upload:start", {
               bytes: storyImageFile.size,
               contentType: storyImageFile.type || "unknown",
             });
-            const uploadedImageId = await uploadStoryImage(storyImageFile, () =>
+            const result = await uploadStoryImage(storyImageFile, () =>
               generateStoryImageUploadUrl({ token }),
             );
             log.logInteraction("story-image:upload:success", { hasImage: true });
-            return uploadedImageId;
+            return result;
           })()
         : undefined;
+      const imageId = uploadResult?.storageId;
       await addCheckpoint({
         token,
         title: storyTitle.trim() || undefined,
@@ -314,6 +315,8 @@ export default function JournalSheet({
         lat: storyLat,
         lon: storyLon,
         imageId,
+        imageWidth: uploadResult?.width,
+        imageHeight: uploadResult?.height,
         imageSize: storyImageSize,
         showInStory: true,
         source: "inline_form",
@@ -444,7 +447,7 @@ export default function JournalSheet({
                     alt=""
                     aspectRatio="4/3"
                     containerClassName="max-h-48 w-full rounded-md"
-                    className="object-cover"
+                    className="object-contain"
                     onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
                     onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
                   />

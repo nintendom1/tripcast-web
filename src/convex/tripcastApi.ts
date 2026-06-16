@@ -21,6 +21,8 @@ export type Checkpoint = {
   lat?: number;
   lon?: number;
   imageId?: string;
+  imageWidth?: number;
+  imageHeight?: number;
   imageSize?: StoryImageSize;
   source: CheckpointSource;
   /** Optional link to the mission a Story narrates (Complete-as-story flow). */
@@ -41,6 +43,8 @@ export type AddCheckpointArgs = {
   lat?: number;
   lon?: number;
   imageId?: string;
+  imageWidth?: number;
+  imageHeight?: number;
   imageSize?: StoryImageSize;
   source: CheckpointSource;
   // Optional link back to the mission a Story narrates. Persisted on
@@ -76,6 +80,8 @@ export type UpdateCheckpointArgs = {
   lat?: number;
   lon?: number;
   imageId?: string;
+  imageWidth?: number;
+  imageHeight?: number;
   imageSize?: StoryImageSize;
   clearImage?: boolean;
   /** Editable retroactive "Happened at" time. Patches the checkpoint and
@@ -910,6 +916,8 @@ export type JournalEvent = {
   lat?: number;
   lon?: number;
   imageId?: string;
+  imageWidth?: number;
+  imageHeight?: number;
   imageSize?: StoryImageSize;
   checkpointId?: string;
   routeVoteId?: string;
@@ -1793,6 +1801,8 @@ export const tripcastApi = {
         lon: number;
         source: CheckpointSource;
         imageId?: string;
+        imageWidth?: number;
+        imageHeight?: number;
         imageSize?: StoryImageSize;
         transaction?: TransactionInlineInput;
         awardBadgeType?: BadgeType;

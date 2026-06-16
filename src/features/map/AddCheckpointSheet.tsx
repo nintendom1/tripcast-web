@@ -57,7 +57,7 @@ type AddCheckpointSheetProps = {
    *  still flows through `onClose` and just closes the sheet without
   *  navigating back to the mission. */
   onBack?: () => void;
-  onUploadImage?: (file: File) => Promise<string>;
+  onUploadImage?: (file: File) => Promise<{ storageId: string; width?: number; height?: number }>;
   debugSource?: { source: string; sourceLabel: string };
 };
 
@@ -359,7 +359,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
                   alt=""
                   aspectRatio="4/3"
                   containerClassName="max-h-48 w-full rounded-md"
-                  className="object-cover"
+                  className="object-contain"
                   onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
                   onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
                 />

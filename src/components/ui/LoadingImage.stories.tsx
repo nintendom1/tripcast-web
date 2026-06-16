@@ -22,12 +22,25 @@ export const Default: Story = {
   },
 };
 
-export const SlowLoading: Story = {
+/**
+ * Deterministic loading state using the status prop override.
+ */
+export const Loading: Story = {
   args: {
-    // Adding a random query param to bypass cache and potentially slow it down
-    src: `https://picsum.photos/seed/slow/800/600?t=${Date.now()}`,
-    alt: "Slow loading image",
+    status: "loading",
+    alt: "Loading state",
     containerClassName: "w-80 rounded-lg shadow-md",
+  },
+};
+
+export const DynamicAspectRatio: Story = {
+  args: {
+    src: "https://picsum.photos/seed/portrait/600/800",
+    alt: "Portrait image",
+    imageWidth: 600,
+    imageHeight: 800,
+    containerClassName: "w-64 rounded-lg shadow-md",
+    className: "object-cover"
   },
 };
 
@@ -37,6 +50,7 @@ export const Square: Story = {
     alt: "Square image",
     aspectRatio: "1/1",
     containerClassName: "w-64 rounded-lg shadow-md",
+    className: "object-cover"
   },
 };
 
@@ -46,6 +60,7 @@ export const SixteenNine: Story = {
     alt: "Wide image",
     aspectRatio: "16/9",
     containerClassName: "w-96 rounded-lg shadow-md",
+    className: "object-cover"
   },
 };
 

@@ -114,7 +114,10 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
           simMaybeFail(SIM_FAIL_RATE, "[sim] Upload failed");
 
           const file = new File([save.imageBlob], "image.jpg", { type: save.imageType });
-          imageId = await uploadStoryImage(file, () => generateUploadUrl({ token }));
+          const uploadResult = await uploadStoryImage(file, () => generateUploadUrl({ token }));
+          imageId = uploadResult.storageId;
+          (save as any).imageWidth = uploadResult.width;
+          (save as any).imageHeight = uploadResult.height;
 
           setSaves(prev => prev.map(s => s.id === save.id ? { ...s, progress: 50 } : s));
           await savePendingSave({ ...save, status: "uploading", progress: 50 });
@@ -145,6 +148,8 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
             lon: save.data.lon,
             source: save.data.source as any,
             imageId,
+            imageWidth: (save as any).imageWidth,
+            imageHeight: (save as any).imageHeight,
             awardBadgeType: save.data.awardBadgeType as any,
           });
         } else {
@@ -162,6 +167,8 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
             showInStory: save.data.showInStory,
             imageSize: save.data.imageSize,
             imageId,
+            imageWidth: (save as any).imageWidth,
+            imageHeight: (save as any).imageHeight,
             happenedAt: save.data.happenedAt,
             missionId: save.data.missionId as any,
             moodValue: save.data.moodValue as any,

@@ -396,20 +396,21 @@ export default function StoryDetailSheet({
     imageLoadMetricsRef.current = null;
     log.logInteraction("form:submit", { checkpointId: event.checkpointId });
     try {
-      const imageId = editImageFile
+      const uploadResult = editImageFile
         ? await (async () => {
             log.logInteraction("story-image:upload:start", {
               source: "edit",
               bytes: editImageFile.size,
               contentType: editImageFile.type || "unknown",
             });
-            const uploadedImageId = await uploadStoryImage(editImageFile, () =>
+            const result = await uploadStoryImage(editImageFile, () =>
               generateStoryImageUploadUrl({ token }),
             );
             log.logInteraction("story-image:upload:success", { source: "edit", hasImage: true });
-            return uploadedImageId;
+            return result;
           })()
         : undefined;
+      const imageId = uploadResult?.storageId;
       const happenedAtMs = parseLocalDatetimeInputValue(editHappenedAt);
       const happenedAtChanged =
         editHappenedAt !== editHappenedAtInitial && happenedAtMs !== null;
@@ -422,6 +423,8 @@ export default function StoryDetailSheet({
         lat: editLat,
         lon: editLon,
         ...(imageId ? { imageId } : {}),
+        imageWidth: uploadResult?.width,
+        imageHeight: uploadResult?.height,
         imageSize: editImageSize,
         ...(!editImageFile && editClearImage ? { clearImage: true } : {}),
         showInStory: editShowInStory,
@@ -437,10 +440,12 @@ export default function StoryDetailSheet({
         lat: editLat,
         lon: editLon,
         imageId: imageId ?? (editClearImage ? undefined : event.imageId),
+        imageWidth: uploadResult?.width ?? (editClearImage ? undefined : (event as any).imageWidth),
+        imageHeight: uploadResult?.height ?? (editClearImage ? undefined : (event as any).imageHeight),
         imageSize: editImageSize,
         narrativeLevel: editShowInStory ? "narrative" : "activity",
         ...(happenedAtChanged ? { occurredAt: happenedAtMs } : {}),
-      });
+      } as any);
       setIsEditing(false);
       setEditImageFile(null);
       setEditImagePreviewUrl(null);
@@ -868,12 +873,17 @@ function NarrativeContent({
               <LoadingImage
                 src={imageUrl}
                 alt=""
-                aspectRatio={imageSize === "compact" ? "1/1" : "4/3"}
+                aspectRatio={imageSize === "compact" ? "1/1" : undefined}
+                imageWidth={(event as any).imageWidth}
+                imageHeight={(event as any).imageHeight}
                 containerClassName={cn(
                   "w-full rounded-md",
                   imageSize !== "compact" && "max-h-96"
                 )}
-                className="object-cover"
+                className={cn(
+                  "w-full rounded-md",
+                  imageSize === "compact" ? "object-cover" : "object-contain"
+                )}
                 onLoad={onImageLoad}
                 onError={onImageError}
               />
