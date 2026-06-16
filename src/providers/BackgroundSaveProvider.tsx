@@ -19,6 +19,23 @@ interface LiveActivityPlugin {
 
 const LiveActivity = registerPlugin<LiveActivityPlugin>("LiveActivity");
 
+// Local-dev latency / chaos simulation. All zero by default → no-op in prod
+// builds (Vite bakes env vars at build time; unset = 0). See
+// docs/background-uploads.md for usage.
+const SIM_SLOW_MS = Number(import.meta.env.VITE_BG_SAVE_SLOW_MS ?? 0);
+const SIM_FAIL_RATE = Number(import.meta.env.VITE_BG_SAVE_FAIL_RATE ?? 0);
+const SIM_LINK_FAIL_RATE = Number(import.meta.env.VITE_BG_SAVE_LINK_FAIL_RATE ?? 0);
+const simSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+function simMaybeFail(rate: number, message: string) {
+  if (rate > 0 && Math.random() < rate) throw new Error(message);
+}
+if (import.meta.env.DEV && (SIM_SLOW_MS || SIM_FAIL_RATE || SIM_LINK_FAIL_RATE)) {
+  // eslint-disable-next-line no-console
+  console.info(
+    `[BackgroundSave SIM] slow=${SIM_SLOW_MS}ms fail=${SIM_FAIL_RATE} linkFail=${SIM_LINK_FAIL_RATE}`,
+  );
+}
+
 interface BackgroundSaveContextType {
   saves: PendingSave[];
   startSave: (data: PendingSave["data"], file?: File, onComplete?: (id: string, prefill?: any) => void) => Promise<string>;
@@ -93,6 +110,9 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
           setSaves(prev => prev.map(s => s.id === save.id ? { ...s, status: "uploading", progress: 10 } : s));
           await savePendingSave({ ...save, status: "uploading", progress: 10 });
 
+          if (SIM_SLOW_MS > 0) await simSleep(SIM_SLOW_MS / 2);
+          simMaybeFail(SIM_FAIL_RATE, "[sim] Upload failed");
+
           const file = new File([save.imageBlob], "image.jpg", { type: save.imageType });
           imageId = await uploadStoryImage(file, () => generateUploadUrl({ token }));
 
@@ -110,6 +130,9 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
         if (activityId) {
           await LiveActivity.updateUploadActivity({ id: activityId, status: "Saving pin...", progress: 0.8 }).catch(() => {});
         }
+
+        if (SIM_SLOW_MS > 0) await simSleep(SIM_SLOW_MS / 2);
+        simMaybeFail(SIM_FAIL_RATE, "[sim] Checkpoint mutation failed");
 
         if (save.data.missionId && save.data.prefill?.completeMission !== false) {
           checkpointId = await completeMissionAsStory({
@@ -166,6 +189,9 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
             console.error("Failed to link transaction in background:", e);
             linkFailed = true;
           }
+        }
+        if (SIM_LINK_FAIL_RATE > 0 && Math.random() < SIM_LINK_FAIL_RATE) {
+          linkFailed = true;
         }
       }
 
