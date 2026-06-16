@@ -2003,6 +2003,80 @@ describe("TripMap location marker", () => {
     });
   });
 
+  it("hides Check In while replay is playing", async () => {
+    setEnabled(true);
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({ journalEvents: [] });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+
+    // Replay starts playing — Check In should NOT be visible.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
+  });
+
+  it("hides Check In for Follower role even when paused on a breadcrumb", async () => {
+    setEnabled(true);
+    // Two breadcrumbs so canReplayTrip (pins.length > 1) lets the HUD activate.
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({
+      journalEvents: [],
+      // Follower needs the Traveler to opt-in to live-trail visibility for replay to show breadcrumbs.
+      followerLiveTrail: { visible: true, samples: breadcrumbs },
+      allowFollowersTripPath: true,
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // Follower is paused on a breadcrumb — the role gate must still hide Check In.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
+  });
+
+  it("hides Check In when paused on a story (checkpoint) pin", async () => {
+    setEnabled(true);
+    convexQuery.mockResolvedValueOnce({ page: [], isDone: true, continueCursor: "" });
+    // Two story pins so canReplayTrip (pins.length > 1) lets the Replay HUD open;
+    // the playhead starts on a checkpoint, which is exactly what we want to assert against.
+    const storyEvents = [
+      makeJournalEvent({ _id: "story-1", occurredAt: 1000, lat: 47.61, lon: -122.31, title: "Pike Place" }),
+      makeJournalEvent({ _id: "story-2", occurredAt: 2000, lat: 47.62, lon: -122.32, title: "Pioneer Square" }),
+    ];
+    setupQueries({ journalEvents: storyEvents });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // The only pin in the replay is a story (checkpoint kind) — no Check In should appear.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
+  });
+
   it("does not connect path to livePosition when GPS sharing is off", async () => {
     setupQueries();
 

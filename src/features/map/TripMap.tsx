@@ -4463,7 +4463,7 @@ export default function TripMap({
             )}
           />
         )}
-        {replayActive && replayPaused && currentReplayPin?.kind === "breadcrumb" && (
+        {replayActive && replayPaused && role === "traveler" && currentReplayPin?.kind === "breadcrumb" && (
           <motion.div
             key="breadcrumb-checkin"
             initial={{ scale: 0.8, opacity: 0 }}
@@ -4634,8 +4634,14 @@ export default function TripMap({
             isPaused={replayPaused}
             onTogglePause={handleToggleReplayPause}
             onRestart={handleRestartReplay}
-            onNext={() => handleReplayScrub((replayPlayheadIndex ?? 0) + 1)}
-            onPrevious={() => handleReplayScrub((replayPlayheadIndex ?? 0) - 1)}
+            onNext={() => {
+              if (!replayPaused) setReplayPaused(true);
+              handleReplayScrub((replayPlayheadIndex ?? 0) + 1);
+            }}
+            onPrevious={() => {
+              if (!replayPaused) setReplayPaused(true);
+              handleReplayScrub((replayPlayheadIndex ?? 0) - 1);
+            }}
             onScrub={handleReplayScrub}
             onOpenSpeedSheet={() => {
               music.sfx("tap");

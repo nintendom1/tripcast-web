@@ -244,8 +244,10 @@ describe("AddCheckpointSheet", () => {
   });
 
   it("initializes Happened at input from prefill and submits it as happenedAt", async () => {
-    // 2026-05-20T10:30 (UTC) = 1779273000000
-    const happenedAt = 1779273000000;
+    // Construct in local time so the datetime-local string is timezone-agnostic:
+    // toLocalDatetimeInputValue reads getFullYear()/getMonth()/etc. (local-time
+    // accessors), and the input round-trips through the same constructor.
+    const happenedAt = new Date(2026, 4, 20, 10, 30).getTime();
     const prefill = { happenedAt };
     const onSave = vi.fn().mockResolvedValue("id");
     const user = userEvent.setup();
@@ -253,7 +255,6 @@ describe("AddCheckpointSheet", () => {
     render(<AddCheckpointSheet {...makeProps({ prefill, onSave })} />);
 
     const input = screen.getByLabelText(/Happened at/i) as HTMLInputElement;
-    // datetime-local format: YYYY-MM-DDTHH:mm
     expect(input.value).toBe("2026-05-20T10:30");
 
     await user.click(screen.getByRole("button", { name: "Save pin" }));
@@ -261,7 +262,7 @@ describe("AddCheckpointSheet", () => {
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith(
         expect.objectContaining({
-          happenedAt: 1779273000000,
+          happenedAt,
         }),
       );
     });
