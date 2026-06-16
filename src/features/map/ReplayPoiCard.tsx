@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "../../lib/utils";
+import { LoadingImage } from "../../components/ui/LoadingImage";
 
 export type ReplayPoiCardProps = {
   /** Resolved story image URL. When absent, the scrapbook photo is omitted. */
@@ -95,10 +96,12 @@ export function ReplayPoiCard({
           className="shrink-0 bg-white p-1.5 shadow-[2px_2px_0_var(--line-strong)]"
           style={{ border: "1.5px solid var(--flag)" }}
         >
-          <img
+          <LoadingImage
             src={imageUrl}
             alt=""
-            className="h-28 w-40 rounded-sm object-cover sm:h-32 sm:w-44"
+            aspectRatio="40/32"
+            containerClassName="h-28 w-40 rounded-sm sm:h-32 sm:w-44"
+            className="object-cover"
             onLoad={(e) => onImageLoad?.(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
           />
         </motion.div>

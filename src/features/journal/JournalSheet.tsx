@@ -40,6 +40,7 @@ import { ReactionSection } from "../../components/ui/ReactionSection";
 import { useSheetPersonalities, type SheetPersonality } from "../redesign/sheetPersonality";
 import { uploadStoryImage, validateStoryImageFile } from "./storyImageUpload";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
+import { LoadingImage } from "../../components/ui/LoadingImage";
 
 type FilterTab = "story" | "all" | "entries";
 
@@ -438,10 +439,12 @@ export default function JournalSheet({
                   ) : null}
                 </div>
                 {storyImagePreviewUrl ? (
-                  <img
+                  <LoadingImage
                     src={storyImagePreviewUrl}
                     alt=""
-                    className="max-h-48 w-full rounded-md object-cover"
+                    aspectRatio="4/3"
+                    containerClassName="max-h-48 w-full rounded-md"
+                    className="object-cover"
                     onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
                     onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
                   />

@@ -27,6 +27,7 @@ import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
 import { RevealText } from "../../components/ui/RevealText";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { ReactionSection } from "../../components/ui/ReactionSection";
+import { LoadingImage } from "../../components/ui/LoadingImage";
 import AttributionBlock from "../attributions/AttributionBlock";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
@@ -668,10 +669,12 @@ export default function StoryDetailSheet({
                       ) : null}
                     </div>
                     {editImagePreviewUrl || (!editClearImage && currentImageUrl) ? (
-                      <img
+                      <LoadingImage
                         src={editImagePreviewUrl ?? currentImageUrl ?? undefined}
                         alt=""
-                        className="max-h-48 w-full rounded-md object-cover"
+                        aspectRatio="4/3"
+                        containerClassName="max-h-48 w-full rounded-md"
+                        className="object-cover"
                         onLoad={() => log.logInteraction("story-image:render", { source: editImagePreviewUrl ? "draft" : "stored" })}
                         onError={() => log.error("story-image:render:error", "ui", { source: editImagePreviewUrl ? "draft" : "stored" })}
                       />
@@ -862,13 +865,15 @@ function NarrativeContent({
             )}
           >
             <Zoom>
-              <img
+              <LoadingImage
                 src={imageUrl}
                 alt=""
-                className={cn(
-                  "w-full rounded-md object-cover",
-                  imageSize === "compact" ? "aspect-square" : "max-h-96"
+                aspectRatio={imageSize === "compact" ? "1/1" : "4/3"}
+                containerClassName={cn(
+                  "w-full rounded-md",
+                  imageSize !== "compact" && "max-h-96"
                 )}
+                className="object-cover"
                 onLoad={onImageLoad}
                 onError={onImageError}
               />
