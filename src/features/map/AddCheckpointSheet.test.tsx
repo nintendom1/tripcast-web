@@ -243,6 +243,30 @@ describe("AddCheckpointSheet", () => {
     });
   });
 
+  it("initializes Happened at input from prefill and submits it as happenedAt", async () => {
+    // 2026-05-20T10:30 (UTC) = 1779273000000
+    const happenedAt = 1779273000000;
+    const prefill = { happenedAt };
+    const onSave = vi.fn().mockResolvedValue("id");
+    const user = userEvent.setup();
+
+    render(<AddCheckpointSheet {...makeProps({ prefill, onSave })} />);
+
+    const input = screen.getByLabelText(/Happened at/i) as HTMLInputElement;
+    // datetime-local format: YYYY-MM-DDTHH:mm
+    expect(input.value).toBe("2026-05-20T10:30");
+
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          happenedAt: 1779273000000,
+        }),
+      );
+    });
+  });
+
   it("does not call onCheckpointCreated when onSave throws", async () => {
     const onCheckpointCreated = vi.fn();
     const onSave = vi.fn().mockRejectedValue(new Error("Save failed"));

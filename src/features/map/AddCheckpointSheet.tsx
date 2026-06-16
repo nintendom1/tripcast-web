@@ -121,7 +121,8 @@ export default function AddCheckpointSheet({
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<StoryImageSize>(() => getDefaultStoryImageSize());
   const [happenedAtInput, setHappenedAtInput] = useState<string>(() => {
-    const initial = prefill?.happenedAt ? new Date(prefill.happenedAt) : new Date();
+    const initial =
+      prefill?.happenedAt !== undefined ? new Date(prefill.happenedAt) : new Date();
     return toLocalDatetimeInputValue(initial);
   });
   const music = useMusicSafe();
@@ -162,10 +163,10 @@ export default function AddCheckpointSheet({
     setImageFile(null);
     setImagePreviewUrl(null);
     setImageSize(getDefaultStoryImageSize());
-    const initialHappenedAt = prefill?.happenedAt ? new Date(prefill.happenedAt) : new Date();
+    const initialHappenedAt =
+      prefill?.happenedAt !== undefined ? new Date(prefill.happenedAt) : new Date();
     setHappenedAtInput(toLocalDatetimeInputValue(initialHappenedAt));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCoordinate, prefill]);
+  }, [selectedCoordinate, prefill, isFromMission, log]);
 
   useEffect(() => {
     return () => {

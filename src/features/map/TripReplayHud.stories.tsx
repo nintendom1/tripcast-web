@@ -1,5 +1,5 @@
-import type { Meta, StoryObj } from "@storybook/react";
-import { TripReplayHud } from "./TripMap";
+import type { Meta, StoryObj } from "@storybook/react-vite";
+import { TripReplayHud } from "./TripReplayHud";
 
 const meta: Meta<typeof TripReplayHud> = {
   title: "Features/Map/TripReplayHud",

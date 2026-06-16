@@ -55,6 +55,7 @@ const mapInstances: Array<{
 const routeVotePanelProps: Array<{
   fallbackOrigin: { lat: number; lon: number } | null;
 }> = [];
+let lastCheckpointSheetProps: any = null;
 
 vi.mock("convex/react", () => ({
   useConvex: vi.fn(() => ({ query: convexMocks.query })),
@@ -160,8 +161,10 @@ vi.mock("maplibre-gl", () => {
 });
 
 vi.mock("./AddCheckpointSheet", () => ({
-  default: (props: { selectedCoordinate?: { lat: number; lon: number } | null }) =>
-    props.selectedCoordinate ? <div data-testid="checkpoint-sheet" /> : null,
+  default: (props: any) => {
+    lastCheckpointSheetProps = props;
+    return props.selectedCoordinate ? <div data-testid="checkpoint-sheet" /> : null;
+  },
 }));
 
 vi.mock("./RouteVoteMapOverlay", () => ({
@@ -377,6 +380,7 @@ beforeEach(() => {
   mapConstructorOptions.length = 0;
   mapInstances.length = 0;
   routeVotePanelProps.length = 0;
+  lastCheckpointSheetProps = null;
   mapStyleLoaded = true;
   mapFitBounds.mockClear();
   updateTravelerLocation.mockResolvedValue(null);
@@ -1987,6 +1991,16 @@ describe("TripMap location marker", () => {
 
     // Checkpoint sheet should open (mocked to data-testid="checkpoint-sheet")
     expect(await screen.findByTestId("checkpoint-sheet")).toBeInTheDocument();
+
+    expect(lastCheckpointSheetProps.selectedCoordinate).toMatchObject({
+      lat: 47.62,
+      lon: -122.32,
+      source: "replay_breadcrumb",
+    });
+
+    expect(lastCheckpointSheetProps.prefill).toMatchObject({
+      happenedAt: 10000,
+    });
   });
 
   it("does not connect path to livePosition when GPS sharing is off", async () => {
