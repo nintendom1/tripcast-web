@@ -42,12 +42,13 @@ export type CheckpointPrefill = {
 
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
-  onSave: (args: Omit<AddCheckpointArgs, "token">) => Promise<string>;
+  onSave: (args: Omit<AddCheckpointArgs, "token">, file?: File) => void;
   onClose: () => void;
   saveUnavailableMessage?: string;
   stateSection?: React.ReactNode;
   prefill?: CheckpointPrefill;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
+  prefillFile?: File;
   /** When provided AND a story prefill is active (mission completion path),
    *  the action row swaps the "Cancel" button for a "← Back" button that the
    *  parent can wire to "reopen the mission detail" — matching the rest of the
@@ -98,24 +99,24 @@ function friendlyError(error: unknown) {
   return message || "Unable to save checkpoint.";
 }
 
-export default function AddCheckpointSheet({
-  selectedCoordinate,
-  onSave,
-  onClose,
-  saveUnavailableMessage,
-  stateSection,
-  prefill,
-  onCheckpointCreated,
-  onBack,
-  onUploadImage,
-  debugSource,
-}: AddCheckpointSheetProps) {
+export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
+  const {
+    selectedCoordinate,
+    onSave,
+    onClose,
+    saveUnavailableMessage,
+    stateSection,
+    prefill,
+    onCheckpointCreated,
+    onBack,
+    onUploadImage,
+    debugSource,
+  } = props;
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
   const [locationLabel, setLocationLabel] = useState("");
   const [showInStory, setShowInStory] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<StoryImageSize>(() => getDefaultStoryImageSize());
@@ -156,13 +157,19 @@ export default function AddCheckpointSheet({
     // "Complete as Story" branch is to land a narrative entry.
     setShowInStory(true);
     setError(null);
-    setIsSaving(false);
-    setImageFile(null);
-    setImagePreviewUrl(null);
+
+    if (props.prefillFile) {
+      setImageFile(props.prefillFile);
+      setImagePreviewUrl(URL.createObjectURL(props.prefillFile));
+    } else {
+      setImageFile(null);
+      setImagePreviewUrl(null);
+    }
+
     setImageSize(getDefaultStoryImageSize());
     setHappenedAtInput(toLocalDatetimeInputValue(new Date()));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCoordinate, prefill]);
+  }, [selectedCoordinate, prefill, props.prefillFile]);
 
   useEffect(() => {
     return () => {
@@ -203,7 +210,7 @@ export default function AddCheckpointSheet({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedCoordinate || isSaving) {
+    if (!selectedCoordinate) {
       return;
     }
 
@@ -219,7 +226,6 @@ export default function AddCheckpointSheet({
       return;
     }
 
-    setIsSaving(true);
     log.logInteraction("form:submit", {
       isFromMission,
       showInStory,
@@ -229,42 +235,20 @@ export default function AddCheckpointSheet({
         happenedAtMs !== null ? happenedAtMs - Date.now() : null,
     });
 
-    try {
-      const imageId = imageFile
-        ? await (async () => {
-            if (!onUploadImage) throw new Error("Image upload is unavailable.");
-            log.logInteraction("story-image:upload:start", {
-              bytes: imageFile.size,
-              contentType: imageFile.type || "unknown",
-            });
-            const uploadedImageId = await onUploadImage(imageFile);
-            log.logInteraction("story-image:upload:success", { hasImage: true });
-            return uploadedImageId;
-          })()
-        : undefined;
-      const checkpointId = await onSave({
-        title: title.trim() ? title : undefined,
-        note: note.trim() ? note : undefined,
-        locationLabel: locationLabel.trim() ? locationLabel : undefined,
-        showInStory,
-        lat: selectedCoordinate.lat,
-        lon: selectedCoordinate.lon,
-        imageId,
-        imageSize,
-        source: selectedCoordinate.source,
-        missionId: prefill?.missionId,
-        ...(happenedAtMs !== null ? { happenedAt: happenedAtMs } : {}),
-      });
-      log.logInteraction("submit:success", { checkpointId });
-      music.sfx("pin");
-      onCheckpointCreated?.(checkpointId, prefill);
-      onClose();
-    } catch (saveError) {
-      log.error("submit:error", "mutation", { message: saveError instanceof Error ? saveError.message : String(saveError) });
-      setError(friendlyError(saveError));
-    } finally {
-      setIsSaving(false);
-    }
+    onSave({
+      title: title.trim() ? title : undefined,
+      note: note.trim() ? note : undefined,
+      locationLabel: locationLabel.trim() ? locationLabel : undefined,
+      showInStory,
+      lat: selectedCoordinate.lat,
+      lon: selectedCoordinate.lon,
+      imageSize,
+      source: selectedCoordinate.source,
+      missionId: prefill?.missionId,
+      ...(happenedAtMs !== null ? { happenedAt: happenedAtMs } : {}),
+    }, imageFile ?? undefined);
+
+    onClose();
   }
 
   return (
@@ -450,7 +434,6 @@ export default function AddCheckpointSheet({
           >
             {showBackAffordance ? (
               <Button
-                disabled={isSaving}
                 type="button"
                 variant="outline"
                 onClick={onBack}
@@ -459,12 +442,12 @@ export default function AddCheckpointSheet({
                 Back
               </Button>
             ) : (
-              <Button disabled={isSaving} type="button" variant="outline" onClick={onClose}>
+              <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
             )}
-            <Button disabled={isSaving} type="submit">
-              {isSaving ? "Saving…" : isFromMission ? "Save story" : "Save pin"}
+            <Button type="submit">
+              {isFromMission ? "Save story" : "Save pin"}
             </Button>
           </div>
         </form>
