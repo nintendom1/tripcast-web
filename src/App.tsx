@@ -37,6 +37,7 @@ import DebugErrorBoundary from "./debug/DebugErrorBoundary";
 import { CrashOnDemand, disarmCrash } from "./debug/crashTrigger";
 import { log as debugLog } from "./debug/debugLogger";
 import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
+import { BackgroundSaveProvider } from "./providers/BackgroundSaveProvider";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 
@@ -472,6 +473,7 @@ function ConnectedApp() {
   }
 
   return (
+    <BackgroundSaveProvider token={session.token}>
     <div className="relative flex flex-col h-dvh">
       <TravelerThemeBridge token={session.token} role={role} />
       <div className={isPickerActive ? "invisible pointer-events-none h-0 overflow-hidden" : undefined}>
@@ -610,7 +612,14 @@ function ConnectedApp() {
           }}
         />
       ) : null}
+      <Toasts resetToastMessage={resetToastMessage} testToastMessage={testToastMessage} />
+    </div>
+    </BackgroundSaveProvider>
+  );
+}
 
+function Toasts({ resetToastMessage, testToastMessage }: { resetToastMessage: string | null, testToastMessage: string | null }) {
+  return (
       <AnimatePresence>
         {resetToastMessage ? (
           <motion.div
@@ -640,6 +649,5 @@ function ConnectedApp() {
           </motion.div>
         ) : null}
       </AnimatePresence>
-    </div>
   );
 }

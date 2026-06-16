@@ -1,3 +1,4 @@
+import React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -60,6 +61,11 @@ vi.mock("convex/react", () => ({
   useConvex: vi.fn(() => ({ query: convexMocks.query })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
+}));
+
+vi.mock("../../providers/BackgroundSaveProvider", () => ({
+  useBackgroundSave: () => ({ saves: [], startSave: vi.fn().mockResolvedValue("mock-id"), retrySave: vi.fn(), dismissSave: vi.fn() }),
+  BackgroundSaveProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("./useTripPath", () => ({
