@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { ChevronLeft, ChevronRight, ImagePlus, Trash2 } from "lucide-react";
 import Zoom from "react-medium-image-zoom";
@@ -208,6 +208,15 @@ export default function StoryDetailSheet({
   const [isDeleting, setIsDeleting] = useState(false);
   const [optimisticEvent, setOptimisticEvent] = useState<JournalEvent | null>(null);
 
+  // Performance instrumentation only — no UI badges, no re-renders. Tracks when
+  // we first saw an imageId vs. when its presigned URL resolved, so onImageLoad
+  // can break the total latency into URL-fetch and image-download phases.
+  const imageLoadMetricsRef = useRef<{
+    imageId: string;
+    startAt: number;
+    urlReadyAt?: number;
+  } | null>(null);
+
   const preferences = useQuery(
     tripcastApi.travelerPreferences.followerGetPreferences,
     role === "follower" && token ? { token } : "skip",
@@ -246,6 +255,7 @@ export default function StoryDetailSheet({
     setEditImageFile(null);
     setEditImagePreviewUrl(null);
     setEditClearImage(false);
+    imageLoadMetricsRef.current = null;
   }, [event?._id]);
 
   useEffect(() => {
@@ -255,13 +265,25 @@ export default function StoryDetailSheet({
   }, [editImagePreviewUrl]);
 
   useEffect(() => {
-    if (displayEvent?.imageId && currentImageUrl === null) {
+    const imageId = displayEvent?.imageId;
+    if (!imageId) {
+      imageLoadMetricsRef.current = null;
+      return;
+    }
+    const m = imageLoadMetricsRef.current;
+    if (!m || m.imageId !== imageId) {
+      imageLoadMetricsRef.current = { imageId, startAt: performance.now() };
+    } else if (currentImageUrl && !m.urlReadyAt) {
+      m.urlReadyAt = performance.now();
+    }
+
+    if (currentImageUrl === null && !isWorking) {
       log.error("story-image:render:error", "query", {
         hasImage: true,
         reason: "url-unavailable",
       });
     }
-  }, [currentImageUrl, displayEvent?.imageId, log]);
+  }, [currentImageUrl, displayEvent?.imageId, log, isWorking]);
 
   useEffect(() => {
     if (!event) {
@@ -370,6 +392,7 @@ export default function StoryDetailSheet({
     if (!token || !event?.checkpointId || isWorking) return;
     setIsWorking(true);
     setActionError(null);
+    imageLoadMetricsRef.current = null;
     log.logInteraction("form:submit", { checkpointId: event.checkpointId });
     try {
       const imageId = editImageFile
@@ -748,7 +771,21 @@ export default function StoryDetailSheet({
                   missionId={missionId}
                   onNavigateToMission={onNavigateToMission}
                   imageUrl={currentImageUrl ?? undefined}
-                  onImageLoad={() => log.logInteraction("story-image:render", { source: "stored" })}
+                  onImageLoad={(e) => {
+                    const m = imageLoadMetricsRef.current;
+                    const now = performance.now();
+                    const totalMs = m ? Math.round(now - m.startAt) : undefined;
+                    const urlFetchMs = m?.urlReadyAt ? Math.round(m.urlReadyAt - m.startAt) : undefined;
+                    const downloadMs = m?.urlReadyAt ? Math.round(now - m.urlReadyAt) : undefined;
+                    log.logPerformance("story-image:render", {
+                      source: "stored",
+                      totalMs,
+                      urlFetchMs,
+                      downloadMs,
+                      naturalWidth: e.currentTarget.naturalWidth,
+                      naturalHeight: e.currentTarget.naturalHeight,
+                    });
+                  }}
                   onImageError={() => log.error("story-image:render:error", "ui", { source: "stored" })}
                   isTraveler={isTraveler}
                 />
@@ -805,7 +842,7 @@ function NarrativeContent({
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
   imageUrl?: string;
-  onImageLoad?: () => void;
+  onImageLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
   onImageError?: () => void;
   isTraveler: boolean;
 }) {

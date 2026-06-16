@@ -49,6 +49,47 @@ class IntersectionObserverMock {
   unobserve() {}
 }
 
+// Minimal IndexedDB stub for jsdom (which has no native IDB).
+// Stores all data in a Map per database name so put/delete/getAll round-trip correctly.
+if (typeof globalThis.indexedDB === "undefined") {
+  const _stores: Record<string, Map<string, unknown>> = {};
+  const fakeRequest = <T>(resultFn: () => T) => {
+    const req: { onsuccess: ((e: any) => void) | null; onerror: ((e: any) => void) | null; result: T | undefined; error: null } =
+      { onsuccess: null, onerror: null, result: undefined, error: null };
+    Promise.resolve().then(() => {
+      req.result = resultFn();
+      req.onsuccess?.({ target: req });
+    });
+    return req;
+  };
+  const fakeDB = (name: string) => ({
+    transaction(_store: string, _mode: string) {
+      const map = _stores[name] ?? (_stores[name] = new Map());
+      return {
+        objectStore(_name: string) {
+          return {
+            put(value: any) { return fakeRequest(() => { map.set(String(value.id), value); }); },
+            delete(key: string) { return fakeRequest(() => { map.delete(key); }); },
+            getAll() { return fakeRequest(() => [...map.values()]); },
+          };
+        },
+      };
+    },
+    objectStoreNames: { contains: () => true },
+    createObjectStore() { return {}; },
+  });
+  Object.defineProperty(globalThis, "indexedDB", {
+    configurable: true,
+    value: {
+      open(name: string, _version?: number) {
+        const req: any = fakeRequest(() => fakeDB(name));
+        req.onupgradeneeded = null;
+        return req;
+      },
+    },
+  });
+}
+
 if (typeof window !== "undefined") {
   window.ResizeObserver = ResizeObserverMock;
   window.IntersectionObserver = IntersectionObserverMock;

@@ -52,6 +52,8 @@ import {
   MapCenterButton,
   MusicMuteIndicator,
   StatusCardConnected,
+  BackgroundUploadBar,
+  BackgroundSaveRetryToast,
 } from "../hud";
 import {
   isNativeLocationAvailable,
@@ -67,7 +69,9 @@ import {
 } from "../../components/ui/sheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
+import { useImagePrefetch } from "../journal/useImagePrefetch";
 import { uploadStoryImage } from "../journal/storyImageUpload";
+import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
 import AchievementsConnected from "../achievements/AchievementsConnected";
 import { MessagingSheet } from "../messaging/MessagingSheet";
 import { useMessagingUnread } from "../messaging/useMessagingUnread";
@@ -796,10 +800,23 @@ function ReplayCheckpointOverlay({
   finale?: boolean;
   transitionScale?: number;
 }) {
+  const log = useDebugLogger("ReplayCheckpointOverlay", "src/features/map/TripMap.tsx");
+  // Performance instrumentation only — refs so timing capture doesn't trigger renders.
+  const metricsRef = useRef<{ startAt: number; urlReadyAt?: number; imageId?: string } | null>(null);
+
+  useEffect(() => {
+    metricsRef.current = pin.imageId ? { startAt: performance.now(), imageId: pin.imageId } : null;
+  }, [pin.eventId, pin.imageId]);
+
   const imageUrl = useQuery(
     tripcastApi.checkpoints.getStoryImageUrl,
     pin.imageId ? { token, imageId: pin.imageId } : "skip",
   );
+
+  useEffect(() => {
+    const m = metricsRef.current;
+    if (imageUrl && m && !m.urlReadyAt) m.urlReadyAt = performance.now();
+  }, [imageUrl]);
 
   // Stable scrapbook tilt in [-2, 2] degrees, seeded by the pin so it doesn't
   // jitter as the card re-renders.
@@ -832,6 +849,22 @@ function ReplayCheckpointOverlay({
         tilt={tilt}
         onClick={onClick}
         transitionScale={transitionScale}
+        onImageLoad={(w, h) => {
+          const m = metricsRef.current;
+          const now = performance.now();
+          const totalMs = m ? Math.round(now - m.startAt) : undefined;
+          const urlFetchMs = m?.urlReadyAt ? Math.round(m.urlReadyAt - m.startAt) : undefined;
+          const downloadMs = m?.urlReadyAt ? Math.round(now - m.urlReadyAt) : undefined;
+          log.logPerformance("story-image:render", {
+            source: "replay",
+            totalMs,
+            urlFetchMs,
+            downloadMs,
+            naturalWidth: w,
+            naturalHeight: h,
+            eventId: pin.eventId,
+          });
+        }}
       />
     </div>
   );
@@ -1001,6 +1034,7 @@ function ConvexCheckpointSheet({
   token,
   onClose,
   prefill,
+  prefillFile,
   onCheckpointCreated,
   onBack,
   debugSource,
@@ -1009,17 +1043,14 @@ function ConvexCheckpointSheet({
   token: string;
   onClose: () => void;
   prefill?: CheckpointPrefill;
+  prefillFile?: File;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
   debugSource?: DebugOpenSource;
 }) {
   const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
-  const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
-  const completeMissionAsStory = useMutation(
-    tripcastApi.missions.travelerCompleteMissionAsStory,
-  );
-  const updateTransaction = useMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
+  const bgSave = useBackgroundSave();
+  const convex = useConvex();
   const isFromMission = Boolean(prefill?.missionId);
   const badgeDefinitions = useQuery(
     tripcastApi.badges.listBadgeDefinitions,
@@ -1054,61 +1085,23 @@ function ConvexCheckpointSheet({
     }
   }, [selectedCoordinate]);
 
-  async function handleSave(args: Omit<AddCheckpointArgs, "token">): Promise<string> {
-    let checkpointId: string;
-    if (prefill?.missionId && prefill.completeMission !== false) {
-      if (args.lat === undefined || args.lon === undefined) {
-        throw new Error("A map location is required to complete as story.");
-      }
-      checkpointId = await completeMissionAsStory({
-        token,
-        missionId: prefill.missionId,
-        title: args.title,
-        note: args.note,
-        locationLabel: args.locationLabel,
-        lat: args.lat,
-        lon: args.lon,
-        source: args.source,
-        imageId: args.imageId,
-        awardBadgeType: awardBadgeType ?? undefined,
-      });
-    } else {
-      checkpointId = await addCheckpoint({
-        ...args,
-        token,
-        moodValue,
-        energyLevel,
-        energyScore: energyLevel ? ENERGY_SCORE_FOR_LEVEL[energyLevel] : undefined,
-        stomachLevel,
-        stomachScore: stomachLevel ? STOMACH_SCORE_FOR_LEVEL[stomachLevel] : undefined,
-        stressLevel,
-        stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
-        schedulePressureLevel: scheduleLevel,
-        statusNote: quickNote.trim() || undefined,
-        imageId: args.imageId,
-      });
-    }
-    // Link each staged transaction to the new checkpoint. Per-tx try/catch so
-    // one failure doesn't strand the rest — the checkpoint exists either way.
-    for (const tx of stagedTransactions) {
-      try {
-        await updateTransaction({
-          token,
-          transactionId: tx._id,
-          linkedCheckpointId: checkpointId,
-        });
-        log.logFunds("transaction:link-after-save", {
-          transactionId: tx._id,
-          checkpointId,
-        });
-      } catch (linkError) {
-        log.error("transaction:link-after-save:error", "funds", {
-          transactionId: tx._id,
-          message: linkError instanceof Error ? linkError.message : String(linkError),
-        });
-      }
-    }
-    return checkpointId;
+  function handleSave(args: Omit<AddCheckpointArgs, "token">, file?: File) {
+    bgSave.startSave({
+      ...args,
+      showInStory: args.showInStory ?? true,
+      moodValue,
+      energyLevel,
+      stomachLevel,
+      stressLevel,
+      schedulePressureLevel: scheduleLevel,
+      statusNote: quickNote.trim() || undefined,
+      stagedTransactionIds: stagedTransactions.map(tx => tx._id),
+      awardBadgeType: awardBadgeType ?? undefined,
+      prefill: prefill ? {
+        completeMission: prefill.completeMission,
+        mysteryReveal: prefill.mysteryReveal,
+      } : undefined,
+    } as any, file, onCheckpointCreated);
   }
 
   function Chips<T extends string>({ values, labels, selected, onSelect }: { values: T[]; labels: Record<T, string>; selected: T | undefined; onSelect: (v: T) => void }) {
@@ -1233,7 +1226,7 @@ function ConvexCheckpointSheet({
       prefill={prefill}
       onCheckpointCreated={onCheckpointCreated}
       onBack={onBack}
-      onUploadImage={(file) => uploadStoryImage(file, () => generateStoryImageUploadUrl({ token }))}
+      onUploadImage={(file) => uploadStoryImage(file, () => convex.mutation(tripcastApi.checkpoints.generateStoryImageUploadUrl, { token }))}
       debugSource={debugSource}
     />
   );
@@ -1366,6 +1359,7 @@ export default function TripMap({
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [isVotePanelOpen, setIsVotePanelOpen] = useState(false);
   const [isTravelerStateOpen, setIsTravelerStateOpen] = useState(false);
+  const { dismissSave } = useBackgroundSave();
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(false);
@@ -1431,6 +1425,7 @@ export default function TripMap({
   // view (the four-button action set the Traveler expects to return to).
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
+  const [prefillFile, setPrefillFile] = useState<File | undefined>();
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
@@ -4272,6 +4267,55 @@ export default function TripMap({
     }
   }
 
+  // Recovery path: fires the mission completion UX for saves that completed
+  // after the in-memory callback was lost (e.g. app closed mid-upload).
+  useEffect(() => {
+    function onBgSaveComplete(e: Event) {
+      const detail = (e as CustomEvent).detail as { wasRestoredFromIDB?: boolean; prefill?: CheckpointPrefill };
+      if (!detail?.wasRestoredFromIDB) return;
+      setStoryPrefill(null);
+      setPendingOpenDetailMissionId(null);
+      if (detail.prefill?.completeMission) {
+        music.sfx("success");
+        showToast(detail.prefill.mysteryReveal ? "Mystery Mission revealed." : "Mission completed.", detail.prefill.mysteryReveal ? "mystery" : "default");
+      } else if (detail.prefill?.missionId) {
+        music.sfx("success");
+        showToast("Story added to mission.");
+      }
+    }
+    window.addEventListener("tripcast:bg-save-complete", onBgSaveComplete);
+    return () => window.removeEventListener("tripcast:bg-save-complete", onBgSaveComplete);
+  }, [music, showToast]);
+
+  function handleRetrySave(save: any) {
+    // Re-populate the form with the failed save's data
+    setStoryPrefill({
+      missionId: save.data.missionId,
+      completeMission: save.data.missionId ? true : false, // heuristic
+      title: save.data.title,
+      note: save.data.note,
+      locationLabel: save.data.locationLabel,
+    });
+
+    setSelectedCoordinate({
+      lat: save.data.lat,
+      lon: save.data.lon,
+      source: save.data.source as any,
+    });
+
+    // Restore the image file if available
+    if (save.imageBlob) {
+      setPrefillFile(new File([save.imageBlob], "image.jpg", { type: save.imageType }));
+    } else {
+      setPrefillFile(undefined);
+    }
+
+    // Dismiss the failed save from the background queue so it doesn't show the toast anymore
+    dismissSave(save.id);
+
+    music.sfx("open");
+  }
+
 
   function startFollowingTraveler(coordinate: { lat: number; lon: number }) {
     pendingFocusRef.current = null;
@@ -4381,6 +4425,28 @@ export default function TripMap({
     }
     return null;
   }, [latestCheckpointLat, latestCheckpointLon, livePosition, role]);
+
+  // Prefetch only the images the user is likely to see next: the one currently
+  // on screen, the one they just opened, and the next handful in replay. A full
+  // "every checkpoint" pass would fan out N parallel Convex queries on mount.
+  const imageIdsToPrefetch = useMemo(() => {
+    const ids = new Set<string>();
+    if (currentOverlayPin?.imageId) ids.add(currentOverlayPin.imageId);
+    if (selectedStoryEvent?.imageId) ids.add(selectedStoryEvent.imageId);
+    if (replayActive && replayPlayheadIndex !== null) {
+      let found = 0;
+      for (let i = replayPlayheadIndex + 1; i < replayPins.length && found < 3; i++) {
+        const pin = replayPins[i];
+        if (pin.kind === "checkpoint" && pin.imageId) {
+          ids.add(pin.imageId);
+          found++;
+        }
+      }
+    }
+    return Array.from(ids);
+  }, [currentOverlayPin?.imageId, replayActive, replayPins, replayPlayheadIndex, selectedStoryEvent?.imageId]);
+
+  useImagePrefetch(token, imageIdsToPrefetch);
 
   return (
     <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
@@ -4810,6 +4876,11 @@ export default function TripMap({
       ) : null}
 
       {/* Map utility — center on traveler (replaces the LocateFixed FAB) */}
+      <div className="absolute bottom-[118px] left-1/2 z-[2] -translate-x-1/2 flex flex-col items-center gap-2">
+        <BackgroundSaveRetryToast onRetry={handleRetrySave} />
+        <BackgroundUploadBar />
+      </div>
+
       <MapCenterButton
         className="absolute bottom-[118px] right-3 z-[2]"
         active={isFollowing}
@@ -4871,12 +4942,14 @@ export default function TripMap({
             music.sfx("close");
             setSelectedCoordinate(null);
             setStoryPrefill(null);
+          setPrefillFile(undefined);
             // Swipe-down / escape dismissal — drop the pending detail return
             // so a later unrelated open of the missions panel doesn't surprise
             // the Traveler by jumping to this mission's detail.
             setPendingOpenDetailMissionId(null);
           }}
           prefill={storyPrefill ?? undefined}
+        prefillFile={prefillFile}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
           debugSource={checkInDebugSource}

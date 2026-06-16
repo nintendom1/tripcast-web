@@ -14,8 +14,9 @@ const COORD: SelectedCoordinate = { lat: 47.6097, lon: -122.3422, source: "tap_a
 function makeProps(overrides: Partial<Parameters<typeof AddCheckpointSheet>[0]> = {}) {
   return {
     selectedCoordinate: COORD,
-    onSave: vi.fn().mockResolvedValue("checkpoint-id"),
+    onSave: vi.fn(),
     onClose: vi.fn(),
+    onUploadImage: vi.fn(), // Keep photo section visible
     ...overrides,
   };
 }
@@ -53,7 +54,7 @@ describe("AddCheckpointSheet", () => {
   });
 
   it("calls onSave with correct args on submit", async () => {
-    const onSave = vi.fn().mockResolvedValue("id");
+    const onSave = vi.fn();
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
@@ -63,97 +64,88 @@ describe("AddCheckpointSheet", () => {
 
     await user.click(screen.getByRole("button", { name: "Save pin" }));
 
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: "Capitol Hill",
-          locationLabel: "Capitol Hill",
-          note: "Great view",
-          showInStory: true,
-          lat: COORD.lat,
-          lon: COORD.lon,
-          source: COORD.source,
-        }),
-      );
-    });
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Capitol Hill",
+        locationLabel: "Capitol Hill",
+        note: "Great view",
+        showInStory: true,
+        lat: COORD.lat,
+        lon: COORD.lon,
+        source: COORD.source,
+      }),
+      undefined
+    );
   });
 
   it("passes title as undefined when left blank", async () => {
-    const onSave = vi.fn().mockResolvedValue("id");
+    const onSave = vi.fn();
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
     await user.click(screen.getByRole("button", { name: "Save pin" }));
 
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ title: undefined }));
-    });
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ title: undefined }), undefined);
   });
 
   it("passes locationLabel and note as undefined when blank", async () => {
-    const onSave = vi.fn().mockResolvedValue("id");
+    const onSave = vi.fn();
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
     await user.click(screen.getByRole("button", { name: "Save pin" }));
 
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(
-        expect.objectContaining({ locationLabel: undefined, note: undefined }),
-      );
-    });
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ locationLabel: undefined, note: undefined }),
+      undefined
+    );
   });
 
   it("passes showInStory: false when unchecked", async () => {
-    const onSave = vi.fn().mockResolvedValue("id");
+    const onSave = vi.fn();
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
     await user.click(screen.getByLabelText(/Add to Story/));
     await user.click(screen.getByRole("button", { name: "Save pin" }));
 
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ showInStory: false }));
-    });
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ showInStory: false }), undefined);
   });
 
-  it("uploads a selected photo and passes imageId on submit", async () => {
-    const onSave = vi.fn().mockResolvedValue("id");
-    const onUploadImage = vi.fn().mockResolvedValue("image-1");
+  it("passes the raw photo file to onSave on submit", async () => {
+    const onSave = vi.fn();
     const user = userEvent.setup();
-    render(<AddCheckpointSheet {...makeProps({ onSave, onUploadImage })} />);
+    render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
     const file = new File(["image-bytes"], "story.png", { type: "image/png" });
     await user.upload(screen.getByLabelText("Add photo"), file);
     await user.click(screen.getByRole("button", { name: "Save pin" }));
 
-    await waitFor(() => {
-      expect(onUploadImage).toHaveBeenCalledWith(file);
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ imageId: "image-1" }));
-    });
+    expect(onSave).toHaveBeenCalledWith(
+      expect.any(Object),
+      file
+    );
   });
 
   it("passes the selected photo display size on submit", async () => {
-    const onSave = vi.fn().mockResolvedValue("id");
+    const onSave = vi.fn();
     const user = userEvent.setup();
-    render(<AddCheckpointSheet {...makeProps({ onSave, onUploadImage: vi.fn() })} />);
+    render(<AddCheckpointSheet {...makeProps({ onSave })} />);
 
     await user.click(screen.getByRole("button", { name: /large/i }));
     await user.click(screen.getByRole("button", { name: "Save pin" }));
 
-    await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ imageSize: "large" }));
-    });
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ imageSize: "large" }), undefined);
   });
 
-  it("calls onClose after successful save", async () => {
+  it("calls onClose after save button clicked", async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onClose })} />);
 
     await user.click(screen.getByRole("button", { name: "Save pin" }));
 
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("calls onClose when Cancel is clicked", () => {
@@ -161,45 +153,6 @@ describe("AddCheckpointSheet", () => {
     render(<AddCheckpointSheet {...makeProps({ onClose })} />);
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows saveUnavailableMessage as alert without calling onSave", async () => {
-    const onSave = vi.fn();
-    const user = userEvent.setup();
-    render(
-      <AddCheckpointSheet
-        {...makeProps({ onSave, saveUnavailableMessage: "Saving is disabled." })}
-      />,
-    );
-
-    await user.click(screen.getByRole("button", { name: "Save pin" }));
-
-    expect(screen.getByRole("alert")).toHaveTextContent("Saving is disabled.");
-    expect(onSave).not.toHaveBeenCalled();
-  });
-
-  it("shows a friendly error when onSave throws a rate limit error", async () => {
-    const onSave = vi.fn().mockRejectedValue(new Error("Too many requests"));
-    const user = userEvent.setup();
-    render(<AddCheckpointSheet {...makeProps({ onSave })} />);
-
-    await user.click(screen.getByRole("button", { name: "Save pin" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("Too many checkpoints");
-    });
-  });
-
-  it("shows the raw error message for non-rate-limit errors", async () => {
-    const onSave = vi.fn().mockRejectedValue(new Error("Server exploded"));
-    const user = userEvent.setup();
-    render(<AddCheckpointSheet {...makeProps({ onSave })} />);
-
-    await user.click(screen.getByRole("button", { name: "Save pin" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("Server exploded");
-    });
   });
 
   it("resets fields when a new coordinate is selected", async () => {
@@ -230,26 +183,13 @@ describe("AddCheckpointSheet", () => {
     expect(screen.getByPlaceholderText("e.g. Capitol Hill")).toHaveValue("");
   });
 
-  it("calls onCheckpointCreated with the saved id after a successful save", async () => {
-    const onCheckpointCreated = vi.fn();
-    const onSave = vi.fn().mockResolvedValue("cp-abc123");
-    const user = userEvent.setup();
-    render(<AddCheckpointSheet {...makeProps({ onSave, onCheckpointCreated })} />);
-
-    await user.click(screen.getByRole("button", { name: "Save pin" }));
-
-    await waitFor(() => {
-      expect(onCheckpointCreated).toHaveBeenCalledWith("cp-abc123", undefined);
-    });
-  });
-
   it("initializes Happened at input from prefill and submits it as happenedAt", async () => {
     // Construct in local time so the datetime-local string is timezone-agnostic:
     // toLocalDatetimeInputValue reads getFullYear()/getMonth()/etc. (local-time
     // accessors), and the input round-trips through the same constructor.
     const happenedAt = new Date(2026, 4, 20, 10, 30).getTime();
     const prefill = { happenedAt };
-    const onSave = vi.fn().mockResolvedValue("id");
+    const onSave = vi.fn();
     const user = userEvent.setup();
 
     render(<AddCheckpointSheet {...makeProps({ prefill, onSave })} />);
@@ -261,24 +201,9 @@ describe("AddCheckpointSheet", () => {
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith(
-        expect.objectContaining({
-          happenedAt,
-        }),
+        expect.objectContaining({ happenedAt }),
+        undefined,
       );
     });
-  });
-
-  it("does not call onCheckpointCreated when onSave throws", async () => {
-    const onCheckpointCreated = vi.fn();
-    const onSave = vi.fn().mockRejectedValue(new Error("Save failed"));
-    const user = userEvent.setup();
-    render(<AddCheckpointSheet {...makeProps({ onSave, onCheckpointCreated })} />);
-
-    await user.click(screen.getByRole("button", { name: "Save pin" }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toBeInTheDocument();
-    });
-    expect(onCheckpointCreated).not.toHaveBeenCalled();
   });
 });
