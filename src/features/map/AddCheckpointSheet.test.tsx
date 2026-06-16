@@ -182,4 +182,28 @@ describe("AddCheckpointSheet", () => {
     expect(screen.getByRole("textbox", { name: /Title/i })).toHaveValue("Only title");
     expect(screen.getByPlaceholderText("e.g. Capitol Hill")).toHaveValue("");
   });
+
+  it("initializes Happened at input from prefill and submits it as happenedAt", async () => {
+    // Construct in local time so the datetime-local string is timezone-agnostic:
+    // toLocalDatetimeInputValue reads getFullYear()/getMonth()/etc. (local-time
+    // accessors), and the input round-trips through the same constructor.
+    const happenedAt = new Date(2026, 4, 20, 10, 30).getTime();
+    const prefill = { happenedAt };
+    const onSave = vi.fn();
+    const user = userEvent.setup();
+
+    render(<AddCheckpointSheet {...makeProps({ prefill, onSave })} />);
+
+    const input = screen.getByLabelText(/Happened at/i) as HTMLInputElement;
+    expect(input.value).toBe("2026-05-20T10:30");
+
+    await user.click(screen.getByRole("button", { name: "Save pin" }));
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ happenedAt }),
+        undefined,
+      );
+    });
+  });
 });
