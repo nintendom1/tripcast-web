@@ -5,18 +5,24 @@ import { PendingSave } from "../../lib/idb";
 import { AlertCircle, RotateCcw, X } from "lucide-react";
 import { Button } from "../../components/ui/button";
 
-export function BackgroundSaveRetryToast({ onRetry }: { onRetry: (save: PendingSave) => void }) {
-  const { saves, dismissSave, retrySave } = useBackgroundSave();
+export interface BackgroundSaveRetryToastViewProps {
+  save: PendingSave | null;
+  onRetry: (save: PendingSave) => void;
+  onDismiss: (id: string) => void;
+  onRetryLinkFailed: (id: string) => Promise<void> | void;
+}
 
-  const failedSaves = saves.filter(s => s.status === "failed" || s.status === "link-failed");
-
-  if (failedSaves.length === 0) return null;
-
-  const currentSave = failedSaves[failedSaves.length - 1];
+export function BackgroundSaveRetryToastView({
+  save,
+  onRetry,
+  onDismiss,
+  onRetryLinkFailed,
+}: BackgroundSaveRetryToastViewProps) {
+  if (!save) return null;
 
   return (
     <motion.div
-      key={currentSave.id}
+      key={save.id}
       data-bg-retry-toast
       initial={{ y: 20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
@@ -27,24 +33,25 @@ export function BackgroundSaveRetryToast({ onRetry }: { onRetry: (save: PendingS
 
       <div className="flex flex-col gap-0.5 min-w-0">
         <span className="text-sm font-bold text-[var(--ink-danger)]">
-          {currentSave.status === "link-failed" ? "Spend Tracking Failed" : "Save Failed"}
+          {save.status === "link-failed" ? "Spend Tracking Failed" : "Save Failed"}
         </span>
         <span className="text-xs text-[var(--ink-danger)] opacity-90 truncate">
-          {currentSave.status === "link-failed"
+          {save.status === "link-failed"
             ? "Pin saved, but spend tracking failed — tap Retry to relink."
-            : (currentSave.error || "Unable to save pin.")}
+            : (save.error || "Unable to save pin.")}
         </span>
       </div>
 
       <div className="flex items-center gap-2 ml-auto shrink-0">
         <RetryButton
-          save={currentSave}
+          save={save}
           onRetry={onRetry}
-          retrySave={retrySave}
+          onRetryLinkFailed={onRetryLinkFailed}
         />
         <button
-          onClick={() => dismissSave(currentSave.id)}
+          onClick={() => onDismiss(save.id)}
           className="p-1 text-[var(--ink-danger)] hover:bg-black/5 rounded-full"
+          aria-label="Dismiss"
         >
           <X className="h-4 w-4" />
         </button>
@@ -53,14 +60,29 @@ export function BackgroundSaveRetryToast({ onRetry }: { onRetry: (save: PendingS
   );
 }
 
+export function BackgroundSaveRetryToast({ onRetry }: { onRetry: (save: PendingSave) => void }) {
+  const { saves, dismissSave, retrySave } = useBackgroundSave();
+  const failedSaves = saves.filter(s => s.status === "failed" || s.status === "link-failed");
+  const currentSave = failedSaves[failedSaves.length - 1] ?? null;
+
+  return (
+    <BackgroundSaveRetryToastView
+      save={currentSave}
+      onRetry={onRetry}
+      onDismiss={dismissSave}
+      onRetryLinkFailed={retrySave}
+    />
+  );
+}
+
 function RetryButton({
   save,
   onRetry,
-  retrySave,
+  onRetryLinkFailed,
 }: {
   save: PendingSave;
   onRetry: (save: PendingSave) => void;
-  retrySave: (id: string) => Promise<void>;
+  onRetryLinkFailed: (id: string) => Promise<void> | void;
 }) {
   const [secondsLeft, setSecondsLeft] = useState(() =>
     save.nextRetryAt ? Math.max(0, Math.ceil((save.nextRetryAt - Date.now()) / 1000)) : 0,
@@ -79,7 +101,7 @@ function RetryButton({
 
   function handleClick() {
     if (save.status === "link-failed") {
-      retrySave(save.id);
+      onRetryLinkFailed(save.id);
     } else {
       onRetry(save);
     }

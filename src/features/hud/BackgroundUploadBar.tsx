@@ -1,19 +1,16 @@
 import React from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
-import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
-import { cn } from "../../lib/utils";
+import { Loader2, CheckCircle2 } from "lucide-react";
+import { PendingSave } from "../../lib/idb";
 
-export function BackgroundUploadBar() {
-  const { saves } = useBackgroundSave();
+export interface BackgroundUploadBarViewProps {
+  currentSave: PendingSave | null;
+  extraCount?: number;
+}
 
-  // Only show for uploading/saving states. Failed states are handled by the retry toast.
-  const activeSaves = saves.filter(s => s.status === "uploading" || s.status === "saving");
-
-  if (activeSaves.length === 0) return null;
-
-  // Show the most recent active save
-  const currentSave = activeSaves[activeSaves.length - 1];
+export function BackgroundUploadBarView({ currentSave, extraCount = 0 }: BackgroundUploadBarViewProps) {
+  if (!currentSave) return null;
 
   return (
     <motion.div
@@ -35,6 +32,7 @@ export function BackgroundUploadBar() {
         </span>
         <div className="h-1 w-32 overflow-hidden rounded-full bg-[var(--meter-track)]">
           <motion.div
+            data-bg-upload-bar-fill
             initial={{ width: 0 }}
             animate={{ width: `${currentSave.progress}%` }}
             className="h-full bg-[var(--flag)]"
@@ -42,11 +40,20 @@ export function BackgroundUploadBar() {
         </div>
       </div>
 
-      {activeSaves.length > 1 && (
+      {extraCount > 0 && (
         <span className="text-[10px] font-bold text-[var(--ink-3)]">
-          +{activeSaves.length - 1} more
+          +{extraCount} more
         </span>
       )}
     </motion.div>
   );
+}
+
+export function BackgroundUploadBar() {
+  const { saves } = useBackgroundSave();
+  const activeSaves = saves.filter(s => s.status === "uploading" || s.status === "saving");
+  const currentSave = activeSaves[activeSaves.length - 1] ?? null;
+  const extraCount = Math.max(0, activeSaves.length - 1);
+
+  return <BackgroundUploadBarView currentSave={currentSave} extraCount={extraCount} />;
 }
