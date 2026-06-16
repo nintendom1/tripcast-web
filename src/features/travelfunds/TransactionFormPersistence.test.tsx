@@ -176,6 +176,99 @@ describe("TransactionForm Persistence", () => {
     expect(rateInput.value).toBe("1.1");
   });
 
+  it("hides the rate input when USD is the persisted last currency", () => {
+    localStorage.setItem(LS_LAST_CURRENCY, "USD");
+    localStorage.setItem(LS_CURRENCY_RATES, JSON.stringify({ JPY: 150 }));
+
+    render(
+      <TransactionForm
+        token="test-token"
+        mode="add"
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const currencySelect = screen.getByLabelText("Currency") as HTMLSelectElement;
+    expect(currencySelect.value).toBe("USD");
+    expect(screen.queryByLabelText(/Exchange rate/)).toBeNull();
+  });
+
+  it("falls back to USD when stored last currency is malformed", () => {
+    localStorage.setItem(LS_LAST_CURRENCY, "JP");
+
+    render(
+      <TransactionForm
+        token="test-token"
+        mode="add"
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const currencySelect = screen.getByLabelText("Currency") as HTMLSelectElement;
+    expect(currencySelect.value).toBe("USD");
+  });
+
+  it("ignores non-JSON rates payload without crashing", () => {
+    localStorage.setItem(LS_LAST_CURRENCY, "JPY");
+    localStorage.setItem(LS_CURRENCY_RATES, "not-json");
+
+    render(
+      <TransactionForm
+        token="test-token"
+        mode="add"
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const currencySelect = screen.getByLabelText("Currency") as HTMLSelectElement;
+    expect(currencySelect.value).toBe("JPY");
+    expect(screen.getByLabelText(/Exchange rate/)).toHaveValue("1");
+  });
+
+  it("normalizes lowercase currency keys when loading rates", () => {
+    localStorage.setItem(LS_LAST_CURRENCY, "JPY");
+    localStorage.setItem(LS_CURRENCY_RATES, JSON.stringify({ jpy: 150 }));
+
+    render(
+      <TransactionForm
+        token="test-token"
+        mode="add"
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText(/Exchange rate/)).toHaveValue("150");
+  });
+
+  it("drops invalid rate entries but keeps valid ones", () => {
+    localStorage.setItem(LS_LAST_CURRENCY, "EUR");
+    localStorage.setItem(
+      LS_CURRENCY_RATES,
+      JSON.stringify({ JPY: -5, EUR: 0.9 })
+    );
+
+    render(
+      <TransactionForm
+        token="test-token"
+        mode="add"
+        onSubmit={vi.fn()}
+        onCancel={vi.fn()}
+      />
+    );
+
+    const currencySelect = screen.getByLabelText("Currency") as HTMLSelectElement;
+    expect(currencySelect.value).toBe("EUR");
+    expect(screen.getByLabelText(/Exchange rate/)).toHaveValue("0.9");
+
+    // JPY had a negative stored rate, so it should fall back to "1"
+    fireEvent.change(currencySelect, { target: { value: "JPY" } });
+    expect(screen.getByLabelText(/Exchange rate/)).toHaveValue("1");
+  });
+
   it("handles 'Other' currency code correctly", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     render(
