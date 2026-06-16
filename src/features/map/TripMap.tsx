@@ -68,6 +68,7 @@ import {
 } from "../../components/ui/sheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
+import { useImagePrefetch } from "../journal/useImagePrefetch";
 import { uploadStoryImage } from "../journal/storyImageUpload";
 import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
 import AchievementsConnected from "../achievements/AchievementsConnected";
@@ -807,10 +808,23 @@ function ReplayCheckpointOverlay({
   finale?: boolean;
   transitionScale?: number;
 }) {
+  const log = useDebugLogger("ReplayCheckpointOverlay", "src/features/map/TripMap.tsx");
+  // Performance instrumentation only — refs so timing capture doesn't trigger renders.
+  const metricsRef = useRef<{ startAt: number; urlReadyAt?: number; imageId?: string } | null>(null);
+
+  useEffect(() => {
+    metricsRef.current = pin.imageId ? { startAt: performance.now(), imageId: pin.imageId } : null;
+  }, [pin.eventId, pin.imageId]);
+
   const imageUrl = useQuery(
     tripcastApi.checkpoints.getStoryImageUrl,
     pin.imageId ? { token, imageId: pin.imageId } : "skip",
   );
+
+  useEffect(() => {
+    const m = metricsRef.current;
+    if (imageUrl && m && !m.urlReadyAt) m.urlReadyAt = performance.now();
+  }, [imageUrl]);
 
   // Stable scrapbook tilt in [-2, 2] degrees, seeded by the pin so it doesn't
   // jitter as the card re-renders.
@@ -843,6 +857,22 @@ function ReplayCheckpointOverlay({
         tilt={tilt}
         onClick={onClick}
         transitionScale={transitionScale}
+        onImageLoad={(w, h) => {
+          const m = metricsRef.current;
+          const now = performance.now();
+          const totalMs = m ? Math.round(now - m.startAt) : undefined;
+          const urlFetchMs = m?.urlReadyAt ? Math.round(m.urlReadyAt - m.startAt) : undefined;
+          const downloadMs = m?.urlReadyAt ? Math.round(now - m.urlReadyAt) : undefined;
+          log.logPerformance("story-image:render", {
+            source: "replay",
+            totalMs,
+            urlFetchMs,
+            downloadMs,
+            naturalWidth: w,
+            naturalHeight: h,
+            eventId: pin.eventId,
+          });
+        }}
       />
     </div>
   );
@@ -4501,6 +4531,28 @@ export default function TripMap({
     }
     return null;
   }, [latestCheckpointLat, latestCheckpointLon, livePosition, role]);
+
+  // Prefetch only the images the user is likely to see next: the one currently
+  // on screen, the one they just opened, and the next handful in replay. A full
+  // "every checkpoint" pass would fan out N parallel Convex queries on mount.
+  const imageIdsToPrefetch = useMemo(() => {
+    const ids = new Set<string>();
+    if (currentOverlayPin?.imageId) ids.add(currentOverlayPin.imageId);
+    if (selectedStoryEvent?.imageId) ids.add(selectedStoryEvent.imageId);
+    if (replayActive && replayPlayheadIndex !== null) {
+      let found = 0;
+      for (let i = replayPlayheadIndex + 1; i < replayPins.length && found < 3; i++) {
+        const pin = replayPins[i];
+        if (pin.kind === "checkpoint" && pin.imageId) {
+          ids.add(pin.imageId);
+          found++;
+        }
+      }
+    }
+    return Array.from(ids);
+  }, [currentOverlayPin?.imageId, replayActive, replayPins, replayPlayheadIndex, selectedStoryEvent?.imageId]);
+
+  useImagePrefetch(token, imageIdsToPrefetch);
 
   return (
     <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">

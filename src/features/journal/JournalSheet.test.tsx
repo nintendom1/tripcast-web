@@ -329,6 +329,14 @@ describe("JournalSheet", () => {
         ok: true,
         json: async () => ({ storageId: "image-1" }),
       }));
+      // jsdom has no real image decoder — make `new Image()` fire `error` so
+      // compression rejects and the upload falls back to the original blob.
+      class FakeImage {
+        onload?: () => void;
+        onerror?: () => void;
+        set src(_v: string) { queueMicrotask(() => this.onerror?.()); }
+      }
+      vi.stubGlobal("Image", FakeImage as unknown as typeof Image);
 
       render(<JournalSheet {...defaultProps} role="traveler" />);
       await user.click(screen.getByRole("button", { name: "New" }));
