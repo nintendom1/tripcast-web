@@ -17,8 +17,6 @@ export type ReplayPoiCardProps = {
    * fully inside the shorter checkpoint dwell at high replay speeds. 1 = normal.
    */
   transitionScale?: number;
-  /** Performance metrics from parent. */
-  metrics?: { startAt: number; urlReadyAt?: number } | null;
   onImageLoad?: (naturalWidth: number, naturalHeight: number) => void;
 };
 
@@ -38,7 +36,6 @@ export function ReplayPoiCard({
   onClick,
   className,
   transitionScale = 1,
-  metrics,
   onImageLoad,
 }: ReplayPoiCardProps) {
   const reduce = useReducedMotion();
@@ -95,7 +92,7 @@ export function ReplayPoiCard({
       {imageUrl ? (
         <motion.div
           {...photoMotion}
-          className="shrink-0 bg-white p-1.5 shadow-[2px_2px_0_var(--line-strong)] relative"
+          className="shrink-0 bg-white p-1.5 shadow-[2px_2px_0_var(--line-strong)]"
           style={{ border: "1.5px solid var(--flag)" }}
         >
           <img
@@ -104,11 +101,6 @@ export function ReplayPoiCard({
             className="h-28 w-40 rounded-sm object-cover sm:h-32 sm:w-44"
             onLoad={(e) => onImageLoad?.(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
           />
-          {metrics?.urlReadyAt && (
-            <div className="absolute bottom-2 right-2 bg-black/60 px-1 py-0.5 text-[8px] font-mono text-white rounded pointer-events-none">
-              {Math.round(metrics.urlReadyAt - metrics.startAt)}ms
-            </div>
-          )}
         </motion.div>
       ) : null}
       <motion.div
