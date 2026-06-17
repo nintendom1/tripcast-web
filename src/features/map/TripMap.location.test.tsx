@@ -56,6 +56,7 @@ const mapInstances: Array<{
 const routeVotePanelProps: Array<{
   fallbackOrigin: { lat: number; lon: number } | null;
 }> = [];
+let lastCheckpointSheetProps: any = null;
 
 vi.mock("convex/react", () => ({
   useConvex: vi.fn(() => ({ query: convexMocks.query })),
@@ -114,6 +115,14 @@ vi.mock("maplibre-gl", () => {
       this.handlers[event] = handler;
       return this;
     });
+    off = vi.fn((event: string) => {
+      delete this.handlers[event];
+      return this;
+    });
+    once = vi.fn((event: string, handler: (event: any) => void) => {
+      this.handlers[event] = handler;
+      return this;
+    });
     getLayer = vi.fn(() => false);
     removeLayer = vi.fn();
     getSource = vi.fn(() => false);
@@ -166,8 +175,10 @@ vi.mock("maplibre-gl", () => {
 });
 
 vi.mock("./AddCheckpointSheet", () => ({
-  default: (props: { selectedCoordinate?: { lat: number; lon: number } | null }) =>
-    props.selectedCoordinate ? <div data-testid="checkpoint-sheet" /> : null,
+  default: (props: any) => {
+    lastCheckpointSheetProps = props;
+    return props.selectedCoordinate ? <div data-testid="checkpoint-sheet" /> : null;
+  },
 }));
 
 vi.mock("./RouteVoteMapOverlay", () => ({
@@ -383,6 +394,7 @@ beforeEach(() => {
   mapConstructorOptions.length = 0;
   mapInstances.length = 0;
   routeVotePanelProps.length = 0;
+  lastCheckpointSheetProps = null;
   mapStyleLoaded = true;
   mapFitBounds.mockClear();
   updateTravelerLocation.mockResolvedValue(null);
@@ -1647,7 +1659,7 @@ describe("TripMap location marker", () => {
     expect(serializedLogs).not.toContain("accuracy");
   });
 
-  it("records Live Trail samples only after 200m movement or 60 seconds", async () => {
+  it("records Live Trail samples based on distance, time, and relevant turns", async () => {
     let nowMs = Date.UTC(2026, 0, 1, 0, 0, 0);
     const dateNow = vi.spyOn(Date, "now").mockImplementation(() => nowMs);
     let onGeolocationSuccess: ((position: GeolocationPosition) => void) = () => {};
@@ -1678,42 +1690,109 @@ describe("TripMap location marker", () => {
       expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
     });
 
-    nowMs += 30_000;
+    // 1. Distance-based (50m)
+    // 0.0005 deg lat is ~55m
+    nowMs += 10_000;
     act(() => {
       onGeolocationSuccess({
-        coords: {
-          latitude: 47.6201,
-          longitude: -122.3401,
-          accuracy: 8,
-        },
-      } as GeolocationPosition);
-    });
-    expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
-
-    nowMs += 30_000;
-    act(() => {
-      onGeolocationSuccess({
-        coords: {
-          latitude: 47.6201,
-          longitude: -122.3401,
-          accuracy: 8,
-        },
+        coords: { latitude: 47.6205, longitude: -122.34, accuracy: 8 },
       } as GeolocationPosition);
     });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
 
-    nowMs += 1_000;
+    // 2. Time-based (2 minutes / 120s)
+    nowMs += 121_000;
     act(() => {
       onGeolocationSuccess({
-        coords: {
-          latitude: 47.623,
-          longitude: -122.34,
-          accuracy: 8,
-        },
+        coords: { latitude: 47.6205, longitude: -122.34, accuracy: 8 },
       } as GeolocationPosition);
     });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(3);
+
+    // 3. Turn-based (22.5 deg)
+    // First, move in a straight line to establish bearing (North: 0 deg)
+    nowMs += 10_000;
+    act(() => {
+      onGeolocationSuccess({
+        coords: { latitude: 47.6210, longitude: -122.34, accuracy: 8 },
+      } as GeolocationPosition);
+    });
+    // This was only 55m since last emission (47.6205 -> 47.6210), so it emits via distance.
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(4);
+
+    // Now turn slightly (less than 22.5) - East-ish
+    // Moving 15m East (0.0002 deg lon) from 47.6210, -122.34
+    nowMs += 10_000;
+    act(() => {
+      onGeolocationSuccess({
+        coords: { latitude: 47.6210, longitude: -122.3401, accuracy: 8 },
+      } as GeolocationPosition);
+    });
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(4); // No emission yet
+
+    // Now turn sharply (more than 22.5)
+    // Move more East
+    nowMs += 10_000;
+    act(() => {
+      onGeolocationSuccess({
+        coords: { latitude: 47.6210, longitude: -122.3403, accuracy: 8 },
+      } as GeolocationPosition);
+    });
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(5); // Emission via turn!
+
     dateNow.mockRestore();
+  });
+
+  it("forces an immediate breadcrumb emission when Live GPS is toggled ON", async () => {
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({
+        coords: {
+          latitude: 47.62,
+          longitude: -122.34,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: true,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    // Toggle ON
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: "test-token",
+          lat: 47.62,
+          lon: -122.34,
+        }),
+      );
+    });
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
+
+    // Toggle OFF — symmetric to start, this emits a final closing breadcrumb
+    // at the current position so the trail tail reflects where sharing stopped.
+    fireEvent.click(screen.getByRole("button", { name: /Stop sharing live location/i }));
+    expect(stopTravelerLocationSharing).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
+    });
+
+    // Toggle ON again - should emit again immediately
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledTimes(3);
+    });
   });
 
   it("renders follower Live Trail breadcrumbs only when visible", async () => {
@@ -1950,6 +2029,133 @@ describe("TripMap location marker", () => {
         true,
       );
     });
+  });
+
+  it("turns a breadcrumb into a story during paused replay", async () => {
+    setEnabled(true);
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({
+      journalEvents: [], // No stories, only breadcrumbs
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    // Start Replay
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+
+    // Replay HUD should appear
+    const replayHud = await screen.findByRole("group", { name: "Trip Replay" });
+    expect(replayHud).toBeInTheDocument();
+
+    // Pause replay to show Check In button
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // Verify Check In button appears near the breadcrumb
+    const checkInBtn = await screen.findByRole("button", { name: "Check In" });
+    expect(checkInBtn).toBeInTheDocument();
+
+    // Fine-tune with "Next pin" button
+    const nextBtn = screen.getByRole("button", { name: "Next pin" });
+    fireEvent.click(nextBtn);
+
+    // Click Check In
+    fireEvent.click(checkInBtn);
+
+    // Checkpoint sheet should open (mocked to data-testid="checkpoint-sheet")
+    expect(await screen.findByTestId("checkpoint-sheet")).toBeInTheDocument();
+
+    expect(lastCheckpointSheetProps.selectedCoordinate).toMatchObject({
+      lat: 47.62,
+      lon: -122.32,
+      source: "replay_breadcrumb",
+    });
+
+    expect(lastCheckpointSheetProps.prefill).toMatchObject({
+      happenedAt: 10000,
+    });
+  });
+
+  it("hides Check In while replay is playing", async () => {
+    setEnabled(true);
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({ journalEvents: [] });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+
+    // Replay starts playing — Check In should NOT be visible.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
+  });
+
+  it("hides Check In for Follower role even when paused on a breadcrumb", async () => {
+    setEnabled(true);
+    // Two breadcrumbs so canReplayTrip (pins.length > 1) lets the HUD activate.
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({
+      journalEvents: [],
+      // Follower needs the Traveler to opt-in to live-trail visibility for replay to show breadcrumbs.
+      followerLiveTrail: { visible: true, samples: breadcrumbs },
+      allowFollowersTripPath: true,
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // Follower is paused on a breadcrumb — the role gate must still hide Check In.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
+  });
+
+  it("hides Check In when paused on a story (checkpoint) pin", async () => {
+    setEnabled(true);
+    convexQuery.mockResolvedValueOnce({ page: [], isDone: true, continueCursor: "" });
+    // Two story pins so canReplayTrip (pins.length > 1) lets the Replay HUD open;
+    // the playhead starts on a checkpoint, which is exactly what we want to assert against.
+    const storyEvents = [
+      makeJournalEvent({ _id: "story-1", occurredAt: 1000, lat: 47.61, lon: -122.31, title: "Pike Place" }),
+      makeJournalEvent({ _id: "story-2", occurredAt: 2000, lat: 47.62, lon: -122.32, title: "Pioneer Square" }),
+    ];
+    setupQueries({ journalEvents: storyEvents });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // The only pin in the replay is a story (checkpoint kind) — no Check In should appear.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
   });
 
   it("does not connect path to livePosition when GPS sharing is off", async () => {

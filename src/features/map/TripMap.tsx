@@ -6,7 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useConvex, useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { Crosshair, DollarSign, EyeOff, Pause, Play, RotateCcw, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crosshair, DollarSign, EyeOff, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -27,6 +27,7 @@ import AddCheckpointSheet, {
 import ReplayPoiCard from "./ReplayPoiCard";
 import ReplaySpeedSheet from "./ReplaySpeedSheet";
 import ReplayDateRangeSheet from "./ReplayDateRangeSheet";
+import { TripReplayHud, formatReplayTime } from "./TripReplayHud";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import {
   MapPickerConfirmPanel,
@@ -94,6 +95,19 @@ import {
 } from "./focusCoordinate";
 import { circlePolygon } from "./circlePolygon";
 import { useTripPath } from "./useTripPath";
+import {
+  evaluateBreadcrumbSample,
+  DEFAULT_SAMPLER_CONFIG,
+  PRECISE_SAMPLER_CONFIG,
+  type BreadcrumbSamplerState,
+  type GeoFix,
+} from "../../lib/breadcrumbSampler";
+import { evaluateLegacyBreadcrumbSample } from "../../lib/legacyBreadcrumbSampler";
+import { useSamplerMode } from "../../lib/samplerMode";
+import { distanceMeters } from "../../lib/geoUtils";
+import { pushRecentFix, type RecentFix } from "../../lib/pendingFixesBuffer";
+import { useFixOverlayEnabled } from "../../lib/fixOverlayToggle";
+import { useFixOverlay } from "./useFixOverlay";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
@@ -148,8 +162,8 @@ function pickLatestCheckpointCenter(
   return best ? [best.lon as number, best.lat as number] : null;
 }
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
-const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
-const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
+const LIVE_TRAIL_MIN_DISTANCE_METERS = 50;
+const LIVE_TRAIL_MIN_INTERVAL_MS = 120_000;
 const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 200;
@@ -398,15 +412,6 @@ function buildReplayPins(
   return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
 }
 
-function formatReplayTime(timestamp: number) {
-  return new Date(timestamp).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function formatReplayDate(timestamp: number) {
   return new Date(timestamp).toLocaleDateString([], {
     month: "short",
@@ -418,18 +423,6 @@ function roundedCoordinate(value: number) {
   return Number(value.toFixed(4));
 }
 
-function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
-  const radiusMeters = 6_371_000;
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const lat1 = toRadians(a.lat);
-  const lat2 = toRadians(b.lat);
-  const deltaLat = toRadians(b.lat - a.lat);
-  const deltaLon = toRadians(b.lon - a.lon);
-  const hav =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
-  return 2 * radiusMeters * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
-}
 
 function mapLibreErrorDetails(event: unknown) {
   const eventRecord = asRecord(event);
@@ -932,126 +925,6 @@ function TravelerLocationMarker({
   return null;
 }
 
-function TripReplayHud({
-  playheadIndex,
-  endIndex,
-  currentPinKind,
-  currentPinTime,
-  speed,
-  windowLabel,
-  isPaused,
-  onTogglePause,
-  onRestart,
-  onScrub,
-  onOpenSpeedSheet,
-  onOpenDateSheet,
-  onClose,
-}: {
-  playheadIndex: number;
-  endIndex: number;
-  currentPinKind: "checkpoint" | "breadcrumb" | "end";
-  currentPinTime: number | null;
-  speed: number;
-  /** "Full trip" or a formatted start–end label for the active replay window. */
-  windowLabel: string;
-  isPaused: boolean;
-  onTogglePause: () => void;
-  onRestart: () => void;
-  onScrub: (index: number) => void;
-  onOpenSpeedSheet: () => void;
-  onOpenDateSheet: () => void;
-  onClose: () => void;
-}) {
-  const isEnd = currentPinKind === "end";
-
-  return (
-    <motion.div
-      key="trip-replay"
-      initial={{ y: 16, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 16, opacity: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut" as const }}
-      className="pointer-events-auto absolute bottom-[88px] left-1/2 z-[21] flex w-[calc(100%-24px)] max-w-[390px] -translate-x-1/2 flex-col gap-2.5 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]/80 p-3 text-[var(--ink-1)] shadow-[var(--shadow-card)] backdrop-blur-2xl"
-      role="group"
-      aria-label="Trip Replay"
-      data-replay-hud=""
-    >
-      {/* Top row: Speed pill · Play/Pause · Date Range pill */}
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={onOpenSpeedSheet}
-          aria-label="Change replay speed"
-          className="flex min-w-[96px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-4 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
-        >
-          <span className="text-sm font-semibold leading-tight">Speed</span>
-          <span className="text-xs text-[var(--ink-3)]">{speed}x</span>
-        </button>
-
-        {isEnd ? (
-          <button
-            type="button"
-            onClick={onRestart}
-            aria-label="Replay from start"
-            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
-          >
-            <RotateCcw className="h-6 w-6" aria-hidden="true" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onTogglePause}
-            aria-label={isPaused ? "Play replay" : "Pause replay"}
-            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
-          >
-            {isPaused ? (
-              <Play className="h-7 w-7" aria-hidden="true" style={{ marginLeft: 2 }} />
-            ) : (
-              <Pause className="h-7 w-7" aria-hidden="true" />
-            )}
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={onOpenDateSheet}
-          aria-label="Change replay date range"
-          className="flex min-w-[96px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-4 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
-        >
-          <span className="text-sm font-semibold leading-tight">Date Range</span>
-          <span className="max-w-[110px] truncate text-xs text-[var(--ink-3)]">{windowLabel}</span>
-        </button>
-      </div>
-
-      {/* Bottom row: current beat time + timeline scrubber */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[var(--ink-1)]">
-            {isEnd ? "End of replay" : currentPinTime !== null ? formatReplayTime(currentPinTime) : ""}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close trip replay"
-            className="grid h-7 w-7 place-items-center rounded-full text-[var(--ink-3)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={endIndex}
-          step={1}
-          value={Math.min(endIndex, Math.max(0, playheadIndex))}
-          onChange={(event) => onScrub(Number(event.currentTarget.value))}
-          className="h-2 w-full accent-[var(--flag)]"
-          aria-label="Replay timeline"
-        />
-      </div>
-    </motion.div>
-  );
-}
 
 const CLOAKING_RADIUS_OPTIONS = [
   { value: 100, label: "100 m" },
@@ -1365,7 +1238,6 @@ function ConvexCheckpointSheet({
 // ---------------------------------------------------------------------------
 
 type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
-type LastLiveTrailSample = { lat: number; lon: number; sentAt: number } | null;
 
 // Names which watcher (if any) currently owns GPS. `live-pill` is the only
 // background-allowed reason. `map-foreground` is the foreground browser
@@ -1433,7 +1305,12 @@ export default function TripMap({
   const lastLocationFixAtRef = useRef<number | null>(null);
   const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
-  const lastLiveTrailSampleRef = useRef<LastLiveTrailSample>(null);
+  const breadcrumbSamplerStateRef = useRef<BreadcrumbSamplerState>({});
+  const samplerMode = useSamplerMode();
+  const samplerModeRef = useRef(samplerMode);
+  const recentFixesRef = useRef<RecentFix[]>([]);
+  const [recentFixes, setRecentFixes] = useState<RecentFix[]>([]);
+  const fixOverlayEnabled = useFixOverlayEnabled();
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
@@ -1721,6 +1598,7 @@ export default function TripMap({
   );
 
   useCloakingZones(mapInstance, cloakingPinsForMap, handleCloakingPinClick);
+  useFixOverlay(mapInstance, recentFixes, fixOverlayEnabled);
 
   useEffect(() => {
     logMapEvent("map:trip-path:gating", {
@@ -3179,15 +3057,27 @@ export default function TripMap({
     if (!travelerLiveTrailStatus) return;
     const latestSample = travelerLiveTrailStatus.samples.at(-1);
     if (latestSample) {
-      lastLiveTrailSampleRef.current = {
-        lat: latestSample.lat,
-        lon: latestSample.lon,
-        sentAt: latestSample.sampledAt,
+      breadcrumbSamplerStateRef.current = {
+        ...breadcrumbSamplerStateRef.current,
+        lastEmitted: {
+          lat: latestSample.lat,
+          lon: latestSample.lon,
+          sampledAt: latestSample.sampledAt,
+          // Note: bearing is lost on refresh since the backend doesn't store it,
+          // which is acceptable; the next segment will re-establish it.
+        },
       };
     } else {
-      lastLiveTrailSampleRef.current = null;
+      breadcrumbSamplerStateRef.current = {};
     }
   }, [liveTrailEnabled, travelerLiveTrailStatus]);
+
+  useEffect(() => {
+    if (samplerModeRef.current !== samplerMode) {
+      samplerModeRef.current = samplerMode;
+      breadcrumbSamplerStateRef.current = {};
+    }
+  }, [samplerMode]);
 
   useEffect(() => {
     const pins = cloakingPinsData ?? [];
@@ -3752,7 +3642,7 @@ export default function TripMap({
     setIsReplaySpeedSheetOpen(false);
     setIsReplayDateSheetOpen(false);
     clearReplayResume(token);
-    lastLiveTrailSampleRef.current = null;
+    breadcrumbSamplerStateRef.current = {};
   }, [tripDataResetNonce, stopFollowing, token]);
 
   function publishTravelerLocation(
@@ -3784,26 +3674,53 @@ export default function TripMap({
   function publishLiveTrailSample(
     position: { lat: number; lon: number },
     accuracy?: number,
+    force = false,
   ) {
-    const last = lastLiveTrailSampleRef.current;
-    const now = Date.now();
-    const elapsed = last ? now - last.sentAt : Number.POSITIVE_INFINITY;
-    const movedMeters = last ? distanceMeters(last, position) : Number.POSITIVE_INFINITY;
-    if (last && movedMeters < LIVE_TRAIL_MIN_DISTANCE_METERS && elapsed < LIVE_TRAIL_MIN_INTERVAL_MS) {
+    const fix: GeoFix = { ...position, accuracy, sampledAt: Date.now() };
+    const mode = samplerModeRef.current;
+    const { shouldEmit, reason, nextState } =
+      mode === "legacy"
+        ? evaluateLegacyBreadcrumbSample(breadcrumbSamplerStateRef.current, fix, force)
+        : evaluateBreadcrumbSample(
+            breadcrumbSamplerStateRef.current,
+            fix,
+            mode === "precise" ? PRECISE_SAMPLER_CONFIG : DEFAULT_SAMPLER_CONFIG,
+            force,
+          );
+
+    breadcrumbSamplerStateRef.current = nextState;
+
+    recentFixesRef.current = pushRecentFix(
+      recentFixesRef.current,
+      {
+        lat: position.lat,
+        lon: position.lon,
+        sampledAt: fix.sampledAt,
+        outcome: shouldEmit ? "emitted" : "rejected",
+      },
+      fix.sampledAt,
+    );
+    setRecentFixes(recentFixesRef.current);
+
+    if (!shouldEmit) {
+      log.logInteraction("live-trail:sample:rejected", { mode });
       return;
     }
 
-    lastLiveTrailSampleRef.current = {
-      lat: position.lat,
-      lon: position.lon,
-      sentAt: now,
-    };
+    log.logInteraction("live-trail:sample:emitted", { mode, reason });
+
+    if (reason === "turn" && nextState.lastEmitted?.bearing !== undefined) {
+      log.logInteraction("live-trail:sample:relevant-turn", {
+        bearing: Math.round(nextState.lastEmitted.bearing),
+      });
+    }
+
     recordLiveTrailSample({
       token,
       lat: position.lat,
       lon: position.lon,
       accuracy,
-      sampledAt: now,
+      sampledAt: fix.sampledAt,
     }).catch((error) => {
       log.error("live-trail:sample:error", "mutation", {
         message: error instanceof Error ? error.message : String(error),
@@ -3812,8 +3729,19 @@ export default function TripMap({
   }
 
   function stopLocationSharing() {
+    // Symmetric to the start-side forced emit: capture a closing breadcrumb at
+    // the current position before tearing down sampler state, so the trail's
+    // tail reflects where the user actually stopped sharing.
+    if (
+      liveTrailEnabledRef.current &&
+      liveTrailCanRecordRef.current &&
+      livePosition
+    ) {
+      publishLiveTrailSample(livePosition, livePosition.accuracy, true);
+    }
     isLocationSharingRef.current = false;
     lastSentLocationRef.current = null;
+    breadcrumbSamplerStateRef.current = {};
     setIsLocationSharing(false);
     stopFollowing();
     stopTravelerLocationSharing({ token }).catch(() => {});
@@ -3859,6 +3787,9 @@ export default function TripMap({
       setIsLocationSharing(true);
       if (livePosition) {
         publishTravelerLocation(livePosition, livePosition.accuracy);
+        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+          publishLiveTrailSample(livePosition, livePosition.accuracy, true);
+        }
       }
     }
   }
@@ -4023,7 +3954,7 @@ export default function TripMap({
   // Apply the active focus to the camera. Used both for the immediate move and
   // for the debounced re-apply once the sheet settles/resizes. Handles both a
   // "center a point" target and a "fit bounds" target with measured occluders.
-  function applyActiveFocus(reason: "initial" | "resize") {
+  const applyActiveFocus = useCallback((reason: "initial" | "resize") => {
     const focus = activeFocusRef.current;
     const map = mapRef.current;
     if (!focus || !map) return;
@@ -4098,11 +4029,11 @@ export default function TripMap({
       duration: focus.duration ?? 700,
       padding: geometry.padding,
     });
-  }
+  }, [stopFollowing]);
 
   // Watch the active sheet so the pin recenters once it reaches final height
   // (animate-in) and whenever it changes size later (e.g. list <-> detail).
-  function observeActiveSheet(sheetSelector: string | null) {
+  const observeActiveSheet = useCallback((sheetSelector: string | null) => {
     disconnectSheetObserver();
     if (sheetSelector === null || typeof ResizeObserver === "undefined") return;
 
@@ -4131,21 +4062,24 @@ export default function TripMap({
       if (attempt < 30) requestAnimationFrame(() => tryAttach(attempt + 1));
     };
     tryAttach(0);
-  }
+  }, [applyActiveFocus]);
 
   // Unified, measured focus: clamps the pin to the center of the visible band
   // between the status card and the active sheet, then logs the geometry so the
   // result is observable (see focusCoordinate.ts and docs/agents/debug-log.md).
-  function focusCoordinate(
-    coord: { lat: number; lon: number },
-    opts: { trigger: string; sheetSelector: string | null; minZoom?: number; duration?: number },
-  ) {
-    stopFollowing();
-    activeFocusRef.current = { kind: "center", coord, ...opts };
-    lastRecenterHeightRef.current = -1;
-    applyActiveFocus("initial"); // move now with best-available measurement
-    observeActiveSheet(opts.sheetSelector); // then correct as the sheet settles
-  }
+  const focusCoordinate = useCallback(
+    (
+      coord: { lat: number; lon: number },
+      opts: { trigger: string; sheetSelector: string | null; minZoom?: number; duration?: number },
+    ) => {
+      stopFollowing();
+      activeFocusRef.current = { kind: "center", coord, ...opts };
+      lastRecenterHeightRef.current = -1;
+      applyActiveFocus("initial"); // move now with best-available measurement
+      observeActiveSheet(opts.sheetSelector); // then correct as the sheet settles
+    },
+    [applyActiveFocus, observeActiveSheet, stopFollowing],
+  );
 
   function handleNavigateToMission(coord: { lat: number; lon: number }) {
     focusCoordinate(coord, {
@@ -4226,6 +4160,25 @@ export default function TripMap({
     setSelectedStoryDetail(null);
     handleNavigateToMissionDetail(missionId, { source: "story-detail:mission", sourceLabel: "Story detail -> Mission" });
   }
+
+  const handleBreadcrumbCheckIn = useCallback(() => {
+    if (!currentReplayPin || currentReplayPin.kind !== "breadcrumb") return;
+    const coord = { lat: currentReplayPin.lat, lon: currentReplayPin.lon };
+    music.sfx("tap");
+    setCheckInDebugSource({ source: "replay_breadcrumb", sourceLabel: "Replay Breadcrumb -> Check In" });
+    setSelectedCoordinate({
+      ...coord,
+      source: "replay_breadcrumb",
+    });
+    setStoryPrefill({
+      happenedAt: currentReplayPin.occurredAt,
+    });
+    focusCoordinate(coord, {
+      trigger: "replay:breadcrumb-check-in",
+      sheetSelector: "[data-role='add-checkpoint-sheet']",
+      minZoom: 13,
+    });
+  }, [currentReplayPin, music, focusCoordinate]);
 
   function handleNavigateStoryDetail(direction: StoryNavigationDirection) {
     if (!storyNavigation) {
@@ -4635,6 +4588,25 @@ export default function TripMap({
             )}
           />
         )}
+        {replayActive && replayPaused && role === "traveler" && currentReplayPin?.kind === "breadcrumb" && (
+          <motion.div
+            key="breadcrumb-checkin"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="pointer-events-none absolute inset-x-0 bottom-[56%] z-[19] flex justify-center px-4"
+          >
+            <button
+              type="button"
+              onClick={handleBreadcrumbCheckIn}
+              className="pointer-events-auto flex items-center gap-2 rounded-full bg-[var(--flag)] px-4 py-2 text-sm font-bold text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] hover:scale-105 active:scale-95"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Check In
+            </button>
+          </motion.div>
+        )}
       </AnimatePresence>
       <AccuracyCircle
         map={mapInstance}
@@ -4787,6 +4759,14 @@ export default function TripMap({
             isPaused={replayPaused}
             onTogglePause={handleToggleReplayPause}
             onRestart={handleRestartReplay}
+            onNext={() => {
+              if (!replayPaused) setReplayPaused(true);
+              handleReplayScrub((replayPlayheadIndex ?? 0) + 1);
+            }}
+            onPrevious={() => {
+              if (!replayPaused) setReplayPaused(true);
+              handleReplayScrub((replayPlayheadIndex ?? 0) - 1);
+            }}
             onScrub={handleReplayScrub}
             onOpenSpeedSheet={() => {
               music.sfx("tap");

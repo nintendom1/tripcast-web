@@ -39,6 +39,7 @@ export type CheckpointPrefill = {
   missionId?: string;
   completeMission?: boolean;
   mysteryReveal?: boolean;
+  happenedAt?: number;
 };
 
 type AddCheckpointSheetProps = {
@@ -121,9 +122,11 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<StoryImageSize>(() => getDefaultStoryImageSize());
-  const [happenedAtInput, setHappenedAtInput] = useState<string>(() =>
-    toLocalDatetimeInputValue(new Date()),
-  );
+  const [happenedAtInput, setHappenedAtInput] = useState<string>(() => {
+    const initial =
+      prefill?.happenedAt !== undefined ? new Date(prefill.happenedAt) : new Date();
+    return toLocalDatetimeInputValue(initial);
+  });
   const music = useMusicSafe();
 
   const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
@@ -168,7 +171,9 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     }
 
     setImageSize(getDefaultStoryImageSize());
-    setHappenedAtInput(toLocalDatetimeInputValue(new Date()));
+    const initialHappenedAt =
+      prefill?.happenedAt !== undefined ? new Date(prefill.happenedAt) : new Date();
+    setHappenedAtInput(toLocalDatetimeInputValue(initialHappenedAt));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCoordinate, prefill, props.prefillFile]);
 
