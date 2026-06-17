@@ -115,6 +115,14 @@ vi.mock("maplibre-gl", () => {
       this.handlers[event] = handler;
       return this;
     });
+    off = vi.fn((event: string) => {
+      delete this.handlers[event];
+      return this;
+    });
+    once = vi.fn((event: string, handler: (event: any) => void) => {
+      this.handlers[event] = handler;
+      return this;
+    });
     getLayer = vi.fn(() => false);
     removeLayer = vi.fn();
     getSource = vi.fn(() => false);
@@ -1651,7 +1659,7 @@ describe("TripMap location marker", () => {
     expect(serializedLogs).not.toContain("accuracy");
   });
 
-  it("records Live Trail samples only after 200m movement or 60 seconds", async () => {
+  it("records Live Trail samples based on distance, time, and relevant turns", async () => {
     let nowMs = Date.UTC(2026, 0, 1, 0, 0, 0);
     const dateNow = vi.spyOn(Date, "now").mockImplementation(() => nowMs);
     let onGeolocationSuccess: ((position: GeolocationPosition) => void) = () => {};
@@ -1682,42 +1690,109 @@ describe("TripMap location marker", () => {
       expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
     });
 
-    nowMs += 30_000;
+    // 1. Distance-based (50m)
+    // 0.0005 deg lat is ~55m
+    nowMs += 10_000;
     act(() => {
       onGeolocationSuccess({
-        coords: {
-          latitude: 47.6201,
-          longitude: -122.3401,
-          accuracy: 8,
-        },
-      } as GeolocationPosition);
-    });
-    expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
-
-    nowMs += 30_000;
-    act(() => {
-      onGeolocationSuccess({
-        coords: {
-          latitude: 47.6201,
-          longitude: -122.3401,
-          accuracy: 8,
-        },
+        coords: { latitude: 47.6205, longitude: -122.34, accuracy: 8 },
       } as GeolocationPosition);
     });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
 
-    nowMs += 1_000;
+    // 2. Time-based (2 minutes / 120s)
+    nowMs += 121_000;
     act(() => {
       onGeolocationSuccess({
-        coords: {
-          latitude: 47.623,
-          longitude: -122.34,
-          accuracy: 8,
-        },
+        coords: { latitude: 47.6205, longitude: -122.34, accuracy: 8 },
       } as GeolocationPosition);
     });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(3);
+
+    // 3. Turn-based (22.5 deg)
+    // First, move in a straight line to establish bearing (North: 0 deg)
+    nowMs += 10_000;
+    act(() => {
+      onGeolocationSuccess({
+        coords: { latitude: 47.6210, longitude: -122.34, accuracy: 8 },
+      } as GeolocationPosition);
+    });
+    // This was only 55m since last emission (47.6205 -> 47.6210), so it emits via distance.
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(4);
+
+    // Now turn slightly (less than 22.5) - East-ish
+    // Moving 15m East (0.0002 deg lon) from 47.6210, -122.34
+    nowMs += 10_000;
+    act(() => {
+      onGeolocationSuccess({
+        coords: { latitude: 47.6210, longitude: -122.3401, accuracy: 8 },
+      } as GeolocationPosition);
+    });
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(4); // No emission yet
+
+    // Now turn sharply (more than 22.5)
+    // Move more East
+    nowMs += 10_000;
+    act(() => {
+      onGeolocationSuccess({
+        coords: { latitude: 47.6210, longitude: -122.3403, accuracy: 8 },
+      } as GeolocationPosition);
+    });
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(5); // Emission via turn!
+
     dateNow.mockRestore();
+  });
+
+  it("forces an immediate breadcrumb emission when Live GPS is toggled ON", async () => {
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({
+        coords: {
+          latitude: 47.62,
+          longitude: -122.34,
+          accuracy: 9,
+        },
+      });
+      return 42;
+    });
+    setupQueries({
+      liveTrailStatus: {
+        enabled: true,
+        visibleToFollowers: true,
+        sampleCount: 0,
+        samples: [],
+      },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    // Toggle ON
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: "test-token",
+          lat: 47.62,
+          lon: -122.34,
+        }),
+      );
+    });
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
+
+    // Toggle OFF — symmetric to start, this emits a final closing breadcrumb
+    // at the current position so the trail tail reflects where sharing stopped.
+    fireEvent.click(screen.getByRole("button", { name: /Stop sharing live location/i }));
+    expect(stopTravelerLocationSharing).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
+    });
+
+    // Toggle ON again - should emit again immediately
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledTimes(3);
+    });
   });
 
   it("renders follower Live Trail breadcrumbs only when visible", async () => {

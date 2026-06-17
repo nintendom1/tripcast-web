@@ -38,6 +38,7 @@ import {
   Volume2,
   VolumeX,
   Wallet,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import DebugPanel from "../../debug/DebugPanel";
@@ -48,6 +49,8 @@ import { useTheme } from "../../providers/ThemeProvider";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 import { tripcastApi } from "../../convex/tripcastApi";
+import { useSamplerMode, setSamplerMode, SAMPLER_MODE_INFO, type SamplerMode } from "../../lib/samplerMode";
+import { useFixOverlayEnabled, setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 import type {
   CloakingPin,
   LiveTrailDeletePreview,
@@ -1087,6 +1090,8 @@ function FollowerAttributionToggle({ token }: { token: string }) {
 }
 
 function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogger }) {
+  const samplerMode = useSamplerMode();
+  const fixOverlayEnabled = useFixOverlayEnabled();
   const fallbackTimeZone = detectBrowserTimeZone() ?? "UTC";
   const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
   const status = useQuery(tripcastApi.liveTrail.travelerGetLiveTrailStatus, { token });
@@ -1251,6 +1256,34 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
             detail="Followers see an approximate recent route, not precise breadcrumb data."
             checked={visibleToFollowers}
             onChange={handleVisibilityChange}
+          />
+          <div className="flex flex-col gap-3 px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-4">
+              <OptionsIcon icon={Zap} />
+              <div className="min-w-0 flex-1">
+                <div className="text-base font-medium text-[var(--ink-1)]">Sampler</div>
+                <div className="text-sm text-[var(--ink-3)]">Controls how often breadcrumbs are saved.</div>
+              </div>
+            </div>
+            <OptionsSegmentedControl
+              value={samplerMode}
+              options={[
+                { value: "legacy", label: "Legacy" },
+                { value: "relevant", label: "Relevant" },
+                { value: "precise", label: "Precise" },
+              ]}
+              onChange={(value) => setSamplerMode(value as SamplerMode)}
+            />
+            <div className="rounded-lg bg-[var(--meter-track)]/60 px-3 py-2 text-xs text-[var(--ink-3)]">
+              {SAMPLER_MODE_INFO[samplerMode]}
+            </div>
+          </div>
+          <OptionsSwitchRow
+            icon={Bug}
+            title="Show GPS Fix Overlay"
+            detail="Green = emitted breadcrumb. Red = rejected by sampler. Clears after 30 minutes."
+            checked={fixOverlayEnabled}
+            onChange={setFixOverlayEnabled}
           />
         </OptionsGroup>
       </OptionsSection>
