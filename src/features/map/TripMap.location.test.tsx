@@ -1779,15 +1779,19 @@ describe("TripMap location marker", () => {
     });
     expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
 
-    // Toggle OFF
+    // Toggle OFF — symmetric to start, this emits a final closing breadcrumb
+    // at the current position so the trail tail reflects where sharing stopped.
     fireEvent.click(screen.getByRole("button", { name: /Stop sharing live location/i }));
     expect(stopTravelerLocationSharing).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
+    });
 
     // Toggle ON again - should emit again immediately
     fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
 
     await waitFor(() => {
-      expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
+      expect(recordLiveTrailSample).toHaveBeenCalledTimes(3);
     });
   });
 

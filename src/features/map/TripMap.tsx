@@ -3729,6 +3729,16 @@ export default function TripMap({
   }
 
   function stopLocationSharing() {
+    // Symmetric to the start-side forced emit: capture a closing breadcrumb at
+    // the current position before tearing down sampler state, so the trail's
+    // tail reflects where the user actually stopped sharing.
+    if (
+      liveTrailEnabledRef.current &&
+      liveTrailCanRecordRef.current &&
+      livePosition
+    ) {
+      publishLiveTrailSample(livePosition, livePosition.accuracy, true);
+    }
     isLocationSharingRef.current = false;
     lastSentLocationRef.current = null;
     breadcrumbSamplerStateRef.current = {};
