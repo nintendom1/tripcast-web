@@ -9,7 +9,7 @@ export type Role = "traveler" | "follower";
 
 export type StoryImageSize = "compact" | "medium" | "large";
 
-export type CheckpointSource = "right_click" | "tap_add_mode" | "long_press" | "current_activity" | "inline_form" | "fan_menu";
+export type CheckpointSource = "right_click" | "tap_add_mode" | "long_press" | "current_activity" | "inline_form" | "fan_menu" | "replay_breadcrumb";
 
 export type Checkpoint = {
   _id: string;

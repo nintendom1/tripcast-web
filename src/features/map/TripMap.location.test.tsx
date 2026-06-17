@@ -1,3 +1,4 @@
+import React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -55,11 +56,17 @@ const mapInstances: Array<{
 const routeVotePanelProps: Array<{
   fallbackOrigin: { lat: number; lon: number } | null;
 }> = [];
+let lastCheckpointSheetProps: any = null;
 
 vi.mock("convex/react", () => ({
   useConvex: vi.fn(() => ({ query: convexMocks.query })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
+}));
+
+vi.mock("../../providers/BackgroundSaveProvider", () => ({
+  useBackgroundSave: () => ({ saves: [], startSave: vi.fn().mockResolvedValue("mock-id"), retrySave: vi.fn(), dismissSave: vi.fn() }),
+  BackgroundSaveProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 vi.mock("./useTripPath", () => ({
@@ -160,8 +167,10 @@ vi.mock("maplibre-gl", () => {
 });
 
 vi.mock("./AddCheckpointSheet", () => ({
-  default: (props: { selectedCoordinate?: { lat: number; lon: number } | null }) =>
-    props.selectedCoordinate ? <div data-testid="checkpoint-sheet" /> : null,
+  default: (props: any) => {
+    lastCheckpointSheetProps = props;
+    return props.selectedCoordinate ? <div data-testid="checkpoint-sheet" /> : null;
+  },
 }));
 
 vi.mock("./RouteVoteMapOverlay", () => ({
@@ -377,6 +386,7 @@ beforeEach(() => {
   mapConstructorOptions.length = 0;
   mapInstances.length = 0;
   routeVotePanelProps.length = 0;
+  lastCheckpointSheetProps = null;
   mapStyleLoaded = true;
   mapFitBounds.mockClear();
   updateTravelerLocation.mockResolvedValue(null);
@@ -2007,6 +2017,133 @@ describe("TripMap location marker", () => {
         true,
       );
     });
+  });
+
+  it("turns a breadcrumb into a story during paused replay", async () => {
+    setEnabled(true);
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({
+      journalEvents: [], // No stories, only breadcrumbs
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    // Start Replay
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+
+    // Replay HUD should appear
+    const replayHud = await screen.findByRole("group", { name: "Trip Replay" });
+    expect(replayHud).toBeInTheDocument();
+
+    // Pause replay to show Check In button
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // Verify Check In button appears near the breadcrumb
+    const checkInBtn = await screen.findByRole("button", { name: "Check In" });
+    expect(checkInBtn).toBeInTheDocument();
+
+    // Fine-tune with "Next pin" button
+    const nextBtn = screen.getByRole("button", { name: "Next pin" });
+    fireEvent.click(nextBtn);
+
+    // Click Check In
+    fireEvent.click(checkInBtn);
+
+    // Checkpoint sheet should open (mocked to data-testid="checkpoint-sheet")
+    expect(await screen.findByTestId("checkpoint-sheet")).toBeInTheDocument();
+
+    expect(lastCheckpointSheetProps.selectedCoordinate).toMatchObject({
+      lat: 47.62,
+      lon: -122.32,
+      source: "replay_breadcrumb",
+    });
+
+    expect(lastCheckpointSheetProps.prefill).toMatchObject({
+      happenedAt: 10000,
+    });
+  });
+
+  it("hides Check In while replay is playing", async () => {
+    setEnabled(true);
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({ journalEvents: [] });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+
+    // Replay starts playing — Check In should NOT be visible.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
+  });
+
+  it("hides Check In for Follower role even when paused on a breadcrumb", async () => {
+    setEnabled(true);
+    // Two breadcrumbs so canReplayTrip (pins.length > 1) lets the HUD activate.
+    const breadcrumbs = [
+      { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
+      { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
+    ];
+    convexQuery.mockResolvedValueOnce({
+      page: breadcrumbs,
+      isDone: true,
+      continueCursor: "",
+    });
+    setupQueries({
+      journalEvents: [],
+      // Follower needs the Traveler to opt-in to live-trail visibility for replay to show breadcrumbs.
+      followerLiveTrail: { visible: true, samples: breadcrumbs },
+      allowFollowersTripPath: true,
+    });
+
+    render(<TripMap token="test-token" role="follower" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // Follower is paused on a breadcrumb — the role gate must still hide Check In.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
+  });
+
+  it("hides Check In when paused on a story (checkpoint) pin", async () => {
+    setEnabled(true);
+    convexQuery.mockResolvedValueOnce({ page: [], isDone: true, continueCursor: "" });
+    // Two story pins so canReplayTrip (pins.length > 1) lets the Replay HUD open;
+    // the playhead starts on a checkpoint, which is exactly what we want to assert against.
+    const storyEvents = [
+      makeJournalEvent({ _id: "story-1", occurredAt: 1000, lat: 47.61, lon: -122.31, title: "Pike Place" }),
+      makeJournalEvent({ _id: "story-2", occurredAt: 2000, lat: 47.62, lon: -122.32, title: "Pioneer Square" }),
+    ];
+    setupQueries({ journalEvents: storyEvents });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await screen.findByRole("group", { name: "Trip Replay" });
+    const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
+    fireEvent.click(pauseBtn);
+
+    // The only pin in the replay is a story (checkpoint kind) — no Check In should appear.
+    expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
   });
 
   it("does not connect path to livePosition when GPS sharing is off", async () => {

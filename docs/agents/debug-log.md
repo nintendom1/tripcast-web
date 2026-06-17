@@ -15,6 +15,8 @@ TripCast includes a local-only debug logger surfaced through Options -> Develope
 
 The logger should capture sheet/panel open and close events, Dock and FanMenu actions, panel view changes, filter changes, form submit attempts/results, global errors, unhandled rejections, and React render errors. Incorporate logging when planning if applicable, especially on new features.
 
+For FanMenu and Dock panel-open actions, pair each `log.logInteraction` with a `performance.mark("tripcast:debug:<action>")`. Omitting the mark doesn't break anything at runtime but silently drops the timing measurement from the observability triad.
+
 ## Map Focus Centering (observability + "teach by dragging")
 
 When a focused pin (mission/journal/story/replay) is moved into view, all triggers route through `src/features/map/focusCoordinate.ts`, which clamps the pin to the **center of the visible band** between the status card and the active bottom sheet. The result is observable through a three-event triad (category `map`):

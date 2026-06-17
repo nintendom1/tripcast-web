@@ -6,7 +6,7 @@ import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useConvex, useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
-import { Crosshair, DollarSign, EyeOff, Pause, Play, RotateCcw, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crosshair, DollarSign, EyeOff, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import {
   tripcastApi,
   type AddCheckpointArgs,
@@ -27,6 +27,7 @@ import AddCheckpointSheet, {
 import ReplayPoiCard from "./ReplayPoiCard";
 import ReplaySpeedSheet from "./ReplaySpeedSheet";
 import ReplayDateRangeSheet from "./ReplayDateRangeSheet";
+import { TripReplayHud, formatReplayTime } from "./TripReplayHud";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import {
   MapPickerConfirmPanel,
@@ -51,6 +52,8 @@ import {
   MapCenterButton,
   MusicMuteIndicator,
   StatusCardConnected,
+  BackgroundUploadBar,
+  BackgroundSaveRetryToast,
 } from "../hud";
 import {
   isNativeLocationAvailable,
@@ -66,7 +69,9 @@ import {
 } from "../../components/ui/sheet";
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
+import { useImagePrefetch } from "../journal/useImagePrefetch";
 import { uploadStoryImage } from "../journal/storyImageUpload";
+import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
 import AchievementsConnected from "../achievements/AchievementsConnected";
 import { MessagingSheet } from "../messaging/MessagingSheet";
 import { useMessagingUnread } from "../messaging/useMessagingUnread";
@@ -405,15 +410,6 @@ function buildReplayPins(
   }
 
   return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
-}
-
-function formatReplayTime(timestamp: number) {
-  return new Date(timestamp).toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
 }
 
 function formatReplayDate(timestamp: number) {
@@ -805,10 +801,23 @@ function ReplayCheckpointOverlay({
   finale?: boolean;
   transitionScale?: number;
 }) {
+  const log = useDebugLogger("ReplayCheckpointOverlay", "src/features/map/TripMap.tsx");
+  // Performance instrumentation only — refs so timing capture doesn't trigger renders.
+  const metricsRef = useRef<{ startAt: number; urlReadyAt?: number; imageId?: string } | null>(null);
+
+  useEffect(() => {
+    metricsRef.current = pin.imageId ? { startAt: performance.now(), imageId: pin.imageId } : null;
+  }, [pin.eventId, pin.imageId]);
+
   const imageUrl = useQuery(
     tripcastApi.checkpoints.getStoryImageUrl,
     pin.imageId ? { token, imageId: pin.imageId } : "skip",
   );
+
+  useEffect(() => {
+    const m = metricsRef.current;
+    if (imageUrl && m && !m.urlReadyAt) m.urlReadyAt = performance.now();
+  }, [imageUrl]);
 
   // Stable scrapbook tilt in [-2, 2] degrees, seeded by the pin so it doesn't
   // jitter as the card re-renders.
@@ -841,6 +850,22 @@ function ReplayCheckpointOverlay({
         tilt={tilt}
         onClick={onClick}
         transitionScale={transitionScale}
+        onImageLoad={(w, h) => {
+          const m = metricsRef.current;
+          const now = performance.now();
+          const totalMs = m ? Math.round(now - m.startAt) : undefined;
+          const urlFetchMs = m?.urlReadyAt ? Math.round(m.urlReadyAt - m.startAt) : undefined;
+          const downloadMs = m?.urlReadyAt ? Math.round(now - m.urlReadyAt) : undefined;
+          log.logPerformance("story-image:render", {
+            source: "replay",
+            totalMs,
+            urlFetchMs,
+            downloadMs,
+            naturalWidth: w,
+            naturalHeight: h,
+            eventId: pin.eventId,
+          });
+        }}
       />
     </div>
   );
@@ -900,126 +925,6 @@ function TravelerLocationMarker({
   return null;
 }
 
-function TripReplayHud({
-  playheadIndex,
-  endIndex,
-  currentPinKind,
-  currentPinTime,
-  speed,
-  windowLabel,
-  isPaused,
-  onTogglePause,
-  onRestart,
-  onScrub,
-  onOpenSpeedSheet,
-  onOpenDateSheet,
-  onClose,
-}: {
-  playheadIndex: number;
-  endIndex: number;
-  currentPinKind: "checkpoint" | "breadcrumb" | "end";
-  currentPinTime: number | null;
-  speed: number;
-  /** "Full trip" or a formatted start–end label for the active replay window. */
-  windowLabel: string;
-  isPaused: boolean;
-  onTogglePause: () => void;
-  onRestart: () => void;
-  onScrub: (index: number) => void;
-  onOpenSpeedSheet: () => void;
-  onOpenDateSheet: () => void;
-  onClose: () => void;
-}) {
-  const isEnd = currentPinKind === "end";
-
-  return (
-    <motion.div
-      key="trip-replay"
-      initial={{ y: 16, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      exit={{ y: 16, opacity: 0 }}
-      transition={{ duration: 0.18, ease: "easeOut" as const }}
-      className="pointer-events-auto absolute bottom-[88px] left-1/2 z-[21] flex w-[calc(100%-24px)] max-w-[390px] -translate-x-1/2 flex-col gap-2.5 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)]/80 p-3 text-[var(--ink-1)] shadow-[var(--shadow-card)] backdrop-blur-2xl"
-      role="group"
-      aria-label="Trip Replay"
-      data-replay-hud=""
-    >
-      {/* Top row: Speed pill · Play/Pause · Date Range pill */}
-      <div className="flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={onOpenSpeedSheet}
-          aria-label="Change replay speed"
-          className="flex min-w-[96px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-4 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
-        >
-          <span className="text-sm font-semibold leading-tight">Speed</span>
-          <span className="text-xs text-[var(--ink-3)]">{speed}x</span>
-        </button>
-
-        {isEnd ? (
-          <button
-            type="button"
-            onClick={onRestart}
-            aria-label="Replay from start"
-            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
-          >
-            <RotateCcw className="h-6 w-6" aria-hidden="true" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={onTogglePause}
-            aria-label={isPaused ? "Play replay" : "Pause replay"}
-            className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
-          >
-            {isPaused ? (
-              <Play className="h-7 w-7" aria-hidden="true" style={{ marginLeft: 2 }} />
-            ) : (
-              <Pause className="h-7 w-7" aria-hidden="true" />
-            )}
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={onOpenDateSheet}
-          aria-label="Change replay date range"
-          className="flex min-w-[96px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-4 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
-        >
-          <span className="text-sm font-semibold leading-tight">Date Range</span>
-          <span className="max-w-[110px] truncate text-xs text-[var(--ink-3)]">{windowLabel}</span>
-        </button>
-      </div>
-
-      {/* Bottom row: current beat time + timeline scrubber */}
-      <div className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[var(--ink-1)]">
-            {isEnd ? "End of replay" : currentPinTime !== null ? formatReplayTime(currentPinTime) : ""}
-          </span>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close trip replay"
-            className="grid h-7 w-7 place-items-center rounded-full text-[var(--ink-3)] transition-colors hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-        <input
-          type="range"
-          min={0}
-          max={endIndex}
-          step={1}
-          value={Math.min(endIndex, Math.max(0, playheadIndex))}
-          onChange={(event) => onScrub(Number(event.currentTarget.value))}
-          className="h-2 w-full accent-[var(--flag)]"
-          aria-label="Replay timeline"
-        />
-      </div>
-    </motion.div>
-  );
-}
 
 const CLOAKING_RADIUS_OPTIONS = [
   { value: 100, label: "100 m" },
@@ -1130,6 +1035,7 @@ function ConvexCheckpointSheet({
   token,
   onClose,
   prefill,
+  prefillFile,
   onCheckpointCreated,
   onBack,
   debugSource,
@@ -1138,17 +1044,14 @@ function ConvexCheckpointSheet({
   token: string;
   onClose: () => void;
   prefill?: CheckpointPrefill;
+  prefillFile?: File;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
   debugSource?: DebugOpenSource;
 }) {
   const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
-  const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
-  const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
-  const completeMissionAsStory = useMutation(
-    tripcastApi.missions.travelerCompleteMissionAsStory,
-  );
-  const updateTransaction = useMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
+  const bgSave = useBackgroundSave();
+  const convex = useConvex();
   const isFromMission = Boolean(prefill?.missionId);
   const badgeDefinitions = useQuery(
     tripcastApi.badges.listBadgeDefinitions,
@@ -1183,61 +1086,23 @@ function ConvexCheckpointSheet({
     }
   }, [selectedCoordinate]);
 
-  async function handleSave(args: Omit<AddCheckpointArgs, "token">): Promise<string> {
-    let checkpointId: string;
-    if (prefill?.missionId && prefill.completeMission !== false) {
-      if (args.lat === undefined || args.lon === undefined) {
-        throw new Error("A map location is required to complete as story.");
-      }
-      checkpointId = await completeMissionAsStory({
-        token,
-        missionId: prefill.missionId,
-        title: args.title,
-        note: args.note,
-        locationLabel: args.locationLabel,
-        lat: args.lat,
-        lon: args.lon,
-        source: args.source,
-        imageId: args.imageId,
-        awardBadgeType: awardBadgeType ?? undefined,
-      });
-    } else {
-      checkpointId = await addCheckpoint({
-        ...args,
-        token,
-        moodValue,
-        energyLevel,
-        energyScore: energyLevel ? ENERGY_SCORE_FOR_LEVEL[energyLevel] : undefined,
-        stomachLevel,
-        stomachScore: stomachLevel ? STOMACH_SCORE_FOR_LEVEL[stomachLevel] : undefined,
-        stressLevel,
-        stressScore: stressLevel ? STRESS_SCORE_FOR_LEVEL[stressLevel] : undefined,
-        schedulePressureLevel: scheduleLevel,
-        statusNote: quickNote.trim() || undefined,
-        imageId: args.imageId,
-      });
-    }
-    // Link each staged transaction to the new checkpoint. Per-tx try/catch so
-    // one failure doesn't strand the rest — the checkpoint exists either way.
-    for (const tx of stagedTransactions) {
-      try {
-        await updateTransaction({
-          token,
-          transactionId: tx._id,
-          linkedCheckpointId: checkpointId,
-        });
-        log.logFunds("transaction:link-after-save", {
-          transactionId: tx._id,
-          checkpointId,
-        });
-      } catch (linkError) {
-        log.error("transaction:link-after-save:error", "funds", {
-          transactionId: tx._id,
-          message: linkError instanceof Error ? linkError.message : String(linkError),
-        });
-      }
-    }
-    return checkpointId;
+  function handleSave(args: Omit<AddCheckpointArgs, "token">, file?: File) {
+    bgSave.startSave({
+      ...args,
+      showInStory: args.showInStory ?? true,
+      moodValue,
+      energyLevel,
+      stomachLevel,
+      stressLevel,
+      schedulePressureLevel: scheduleLevel,
+      statusNote: quickNote.trim() || undefined,
+      stagedTransactionIds: stagedTransactions.map(tx => tx._id),
+      awardBadgeType: awardBadgeType ?? undefined,
+      prefill: prefill ? {
+        completeMission: prefill.completeMission,
+        mysteryReveal: prefill.mysteryReveal,
+      } : undefined,
+    } as any, file, onCheckpointCreated);
   }
 
   function Chips<T extends string>({ values, labels, selected, onSelect }: { values: T[]; labels: Record<T, string>; selected: T | undefined; onSelect: (v: T) => void }) {
@@ -1362,7 +1227,7 @@ function ConvexCheckpointSheet({
       prefill={prefill}
       onCheckpointCreated={onCheckpointCreated}
       onBack={onBack}
-      onUploadImage={(file) => uploadStoryImage(file, () => generateStoryImageUploadUrl({ token }))}
+      onUploadImage={(file) => uploadStoryImage(file, () => convex.mutation(tripcastApi.checkpoints.generateStoryImageUploadUrl, { token }))}
       debugSource={debugSource}
     />
   );
@@ -1499,6 +1364,7 @@ export default function TripMap({
   const [isPlacementMode, setIsPlacementMode] = useState(false);
   const [isVotePanelOpen, setIsVotePanelOpen] = useState(false);
   const [isTravelerStateOpen, setIsTravelerStateOpen] = useState(false);
+  const { dismissSave } = useBackgroundSave();
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(false);
@@ -1564,6 +1430,7 @@ export default function TripMap({
   // view (the four-button action set the Traveler expects to return to).
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
+  const [prefillFile, setPrefillFile] = useState<File | undefined>();
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
@@ -4077,7 +3944,7 @@ export default function TripMap({
   // Apply the active focus to the camera. Used both for the immediate move and
   // for the debounced re-apply once the sheet settles/resizes. Handles both a
   // "center a point" target and a "fit bounds" target with measured occluders.
-  function applyActiveFocus(reason: "initial" | "resize") {
+  const applyActiveFocus = useCallback((reason: "initial" | "resize") => {
     const focus = activeFocusRef.current;
     const map = mapRef.current;
     if (!focus || !map) return;
@@ -4152,11 +4019,11 @@ export default function TripMap({
       duration: focus.duration ?? 700,
       padding: geometry.padding,
     });
-  }
+  }, [stopFollowing]);
 
   // Watch the active sheet so the pin recenters once it reaches final height
   // (animate-in) and whenever it changes size later (e.g. list <-> detail).
-  function observeActiveSheet(sheetSelector: string | null) {
+  const observeActiveSheet = useCallback((sheetSelector: string | null) => {
     disconnectSheetObserver();
     if (sheetSelector === null || typeof ResizeObserver === "undefined") return;
 
@@ -4185,21 +4052,24 @@ export default function TripMap({
       if (attempt < 30) requestAnimationFrame(() => tryAttach(attempt + 1));
     };
     tryAttach(0);
-  }
+  }, [applyActiveFocus]);
 
   // Unified, measured focus: clamps the pin to the center of the visible band
   // between the status card and the active sheet, then logs the geometry so the
   // result is observable (see focusCoordinate.ts and docs/agents/debug-log.md).
-  function focusCoordinate(
-    coord: { lat: number; lon: number },
-    opts: { trigger: string; sheetSelector: string | null; minZoom?: number; duration?: number },
-  ) {
-    stopFollowing();
-    activeFocusRef.current = { kind: "center", coord, ...opts };
-    lastRecenterHeightRef.current = -1;
-    applyActiveFocus("initial"); // move now with best-available measurement
-    observeActiveSheet(opts.sheetSelector); // then correct as the sheet settles
-  }
+  const focusCoordinate = useCallback(
+    (
+      coord: { lat: number; lon: number },
+      opts: { trigger: string; sheetSelector: string | null; minZoom?: number; duration?: number },
+    ) => {
+      stopFollowing();
+      activeFocusRef.current = { kind: "center", coord, ...opts };
+      lastRecenterHeightRef.current = -1;
+      applyActiveFocus("initial"); // move now with best-available measurement
+      observeActiveSheet(opts.sheetSelector); // then correct as the sheet settles
+    },
+    [applyActiveFocus, observeActiveSheet, stopFollowing],
+  );
 
   function handleNavigateToMission(coord: { lat: number; lon: number }) {
     focusCoordinate(coord, {
@@ -4280,6 +4150,25 @@ export default function TripMap({
     setSelectedStoryDetail(null);
     handleNavigateToMissionDetail(missionId, { source: "story-detail:mission", sourceLabel: "Story detail -> Mission" });
   }
+
+  const handleBreadcrumbCheckIn = useCallback(() => {
+    if (!currentReplayPin || currentReplayPin.kind !== "breadcrumb") return;
+    const coord = { lat: currentReplayPin.lat, lon: currentReplayPin.lon };
+    music.sfx("tap");
+    setCheckInDebugSource({ source: "replay_breadcrumb", sourceLabel: "Replay Breadcrumb -> Check In" });
+    setSelectedCoordinate({
+      ...coord,
+      source: "replay_breadcrumb",
+    });
+    setStoryPrefill({
+      happenedAt: currentReplayPin.occurredAt,
+    });
+    focusCoordinate(coord, {
+      trigger: "replay:breadcrumb-check-in",
+      sheetSelector: "[data-role='add-checkpoint-sheet']",
+      minZoom: 13,
+    });
+  }, [currentReplayPin, music, focusCoordinate]);
 
   function handleNavigateStoryDetail(direction: StoryNavigationDirection) {
     if (!storyNavigation) {
@@ -4427,6 +4316,55 @@ export default function TripMap({
     }
   }
 
+  // Recovery path: fires the mission completion UX for saves that completed
+  // after the in-memory callback was lost (e.g. app closed mid-upload).
+  useEffect(() => {
+    function onBgSaveComplete(e: Event) {
+      const detail = (e as CustomEvent).detail as { wasRestoredFromIDB?: boolean; prefill?: CheckpointPrefill };
+      if (!detail?.wasRestoredFromIDB) return;
+      setStoryPrefill(null);
+      setPendingOpenDetailMissionId(null);
+      if (detail.prefill?.completeMission) {
+        music.sfx("success");
+        showToast(detail.prefill.mysteryReveal ? "Mystery Mission revealed." : "Mission completed.", detail.prefill.mysteryReveal ? "mystery" : "default");
+      } else if (detail.prefill?.missionId) {
+        music.sfx("success");
+        showToast("Story added to mission.");
+      }
+    }
+    window.addEventListener("tripcast:bg-save-complete", onBgSaveComplete);
+    return () => window.removeEventListener("tripcast:bg-save-complete", onBgSaveComplete);
+  }, [music, showToast]);
+
+  function handleRetrySave(save: any) {
+    // Re-populate the form with the failed save's data
+    setStoryPrefill({
+      missionId: save.data.missionId,
+      completeMission: save.data.missionId ? true : false, // heuristic
+      title: save.data.title,
+      note: save.data.note,
+      locationLabel: save.data.locationLabel,
+    });
+
+    setSelectedCoordinate({
+      lat: save.data.lat,
+      lon: save.data.lon,
+      source: save.data.source as any,
+    });
+
+    // Restore the image file if available
+    if (save.imageBlob) {
+      setPrefillFile(new File([save.imageBlob], "image.jpg", { type: save.imageType }));
+    } else {
+      setPrefillFile(undefined);
+    }
+
+    // Dismiss the failed save from the background queue so it doesn't show the toast anymore
+    dismissSave(save.id);
+
+    music.sfx("open");
+  }
+
 
   function startFollowingTraveler(coordinate: { lat: number; lon: number }) {
     pendingFocusRef.current = null;
@@ -4537,6 +4475,28 @@ export default function TripMap({
     return null;
   }, [latestCheckpointLat, latestCheckpointLon, livePosition, role]);
 
+  // Prefetch only the images the user is likely to see next: the one currently
+  // on screen, the one they just opened, and the next handful in replay. A full
+  // "every checkpoint" pass would fan out N parallel Convex queries on mount.
+  const imageIdsToPrefetch = useMemo(() => {
+    const ids = new Set<string>();
+    if (currentOverlayPin?.imageId) ids.add(currentOverlayPin.imageId);
+    if (selectedStoryEvent?.imageId) ids.add(selectedStoryEvent.imageId);
+    if (replayActive && replayPlayheadIndex !== null) {
+      let found = 0;
+      for (let i = replayPlayheadIndex + 1; i < replayPins.length && found < 3; i++) {
+        const pin = replayPins[i];
+        if (pin.kind === "checkpoint" && pin.imageId) {
+          ids.add(pin.imageId);
+          found++;
+        }
+      }
+    }
+    return Array.from(ids);
+  }, [currentOverlayPin?.imageId, replayActive, replayPins, replayPlayheadIndex, selectedStoryEvent?.imageId]);
+
+  useImagePrefetch(token, imageIdsToPrefetch);
+
   return (
     <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
       <DesktopMapFrame
@@ -4617,6 +4577,25 @@ export default function TripMap({
               Math.min(1, replayBeatMs("checkpoint", effectiveReplaySpeed) / REPLAY_CHECKPOINT_DWELL_MS),
             )}
           />
+        )}
+        {replayActive && replayPaused && role === "traveler" && currentReplayPin?.kind === "breadcrumb" && (
+          <motion.div
+            key="breadcrumb-checkin"
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.8, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="pointer-events-none absolute inset-x-0 bottom-[56%] z-[19] flex justify-center px-4"
+          >
+            <button
+              type="button"
+              onClick={handleBreadcrumbCheckIn}
+              className="pointer-events-auto flex items-center gap-2 rounded-full bg-[var(--flag)] px-4 py-2 text-sm font-bold text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] hover:scale-105 active:scale-95"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Check In
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
       <AccuracyCircle
@@ -4770,6 +4749,14 @@ export default function TripMap({
             isPaused={replayPaused}
             onTogglePause={handleToggleReplayPause}
             onRestart={handleRestartReplay}
+            onNext={() => {
+              if (!replayPaused) setReplayPaused(true);
+              handleReplayScrub((replayPlayheadIndex ?? 0) + 1);
+            }}
+            onPrevious={() => {
+              if (!replayPaused) setReplayPaused(true);
+              handleReplayScrub((replayPlayheadIndex ?? 0) - 1);
+            }}
             onScrub={handleReplayScrub}
             onOpenSpeedSheet={() => {
               music.sfx("tap");
@@ -4938,6 +4925,11 @@ export default function TripMap({
       ) : null}
 
       {/* Map utility — center on traveler (replaces the LocateFixed FAB) */}
+      <div className="absolute bottom-[118px] left-1/2 z-[2] -translate-x-1/2 flex flex-col items-center gap-2">
+        <BackgroundSaveRetryToast onRetry={handleRetrySave} />
+        <BackgroundUploadBar />
+      </div>
+
       <MapCenterButton
         className="absolute bottom-[118px] right-3 z-[2]"
         active={isFollowing}
@@ -4999,12 +4991,14 @@ export default function TripMap({
             music.sfx("close");
             setSelectedCoordinate(null);
             setStoryPrefill(null);
+          setPrefillFile(undefined);
             // Swipe-down / escape dismissal — drop the pending detail return
             // so a later unrelated open of the missions panel doesn't surprise
             // the Traveler by jumping to this mission's detail.
             setPendingOpenDetailMissionId(null);
           }}
           prefill={storyPrefill ?? undefined}
+        prefillFile={prefillFile}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
           debugSource={checkInDebugSource}
