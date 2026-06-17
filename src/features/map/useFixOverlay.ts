@@ -72,11 +72,15 @@ export function useFixOverlay(
       if ((styleReady || map.isStyleLoaded()) && overlayData) addLayer();
     };
 
-    if (map.isStyleLoaded()) {
-      sync();
-    } else {
-      map.once("load", sync);
-    }
+    // Always run sync once so a null overlayData tears down the layer cleanly.
+    if (map.isStyleLoaded()) sync();
+
+    // Only subscribe to style-reload events when we actually have data to keep
+    // alive — otherwise the no-op hook would overwrite other hooks' single-slot
+    // style.load handler (notably the traveler-accuracy-circle effect).
+    if (!overlayData) return;
+
+    if (!map.isStyleLoaded()) map.once("load", sync);
     map.on("style.load", ensureAfterStyle);
     map.on("styledata", ensureAfterStyle);
     map.on("idle", ensureAfterStyle);

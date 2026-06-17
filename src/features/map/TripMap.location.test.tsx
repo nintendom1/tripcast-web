@@ -115,6 +115,14 @@ vi.mock("maplibre-gl", () => {
       this.handlers[event] = handler;
       return this;
     });
+    off = vi.fn((event: string) => {
+      delete this.handlers[event];
+      return this;
+    });
+    once = vi.fn((event: string, handler: (event: any) => void) => {
+      this.handlers[event] = handler;
+      return this;
+    });
     getLayer = vi.fn(() => false);
     removeLayer = vi.fn();
     getSource = vi.fn(() => false);
