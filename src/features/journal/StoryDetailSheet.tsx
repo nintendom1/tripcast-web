@@ -440,12 +440,12 @@ export default function StoryDetailSheet({
         lat: editLat,
         lon: editLon,
         imageId: imageId ?? (editClearImage ? undefined : event.imageId),
-        imageWidth: uploadResult?.width ?? (editClearImage ? undefined : (event as any).imageWidth),
-        imageHeight: uploadResult?.height ?? (editClearImage ? undefined : (event as any).imageHeight),
+        imageWidth: uploadResult?.width ?? (editClearImage ? undefined : event.imageWidth),
+        imageHeight: uploadResult?.height ?? (editClearImage ? undefined : event.imageHeight),
         imageSize: editImageSize,
         narrativeLevel: editShowInStory ? "narrative" : "activity",
         ...(happenedAtChanged ? { occurredAt: happenedAtMs } : {}),
-      } as any);
+      });
       setIsEditing(false);
       setEditImageFile(null);
       setEditImagePreviewUrl(null);
@@ -874,8 +874,8 @@ function NarrativeContent({
                 src={imageUrl}
                 alt=""
                 aspectRatio={imageSize === "compact" ? "1/1" : undefined}
-                imageWidth={(event as any).imageWidth}
-                imageHeight={(event as any).imageHeight}
+                imageWidth={event.imageWidth}
+                imageHeight={event.imageHeight}
                 containerClassName={cn(
                   "w-full rounded-md",
                   imageSize !== "compact" && "max-h-96"

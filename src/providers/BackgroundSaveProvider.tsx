@@ -105,6 +105,8 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
       } else {
         // Full path: upload image → create checkpoint
         let imageId: string | undefined;
+        let imageWidth: number | undefined;
+        let imageHeight: number | undefined;
 
         if (save.imageBlob) {
           setSaves(prev => prev.map(s => s.id === save.id ? { ...s, status: "uploading", progress: 10 } : s));
@@ -116,8 +118,8 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
           const file = new File([save.imageBlob], "image.jpg", { type: save.imageType });
           const uploadResult = await uploadStoryImage(file, () => generateUploadUrl({ token }));
           imageId = uploadResult.storageId;
-          (save as any).imageWidth = uploadResult.width;
-          (save as any).imageHeight = uploadResult.height;
+          imageWidth = uploadResult.width;
+          imageHeight = uploadResult.height;
 
           setSaves(prev => prev.map(s => s.id === save.id ? { ...s, progress: 50 } : s));
           await savePendingSave({ ...save, status: "uploading", progress: 50 });
@@ -148,8 +150,8 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
             lon: save.data.lon,
             source: save.data.source as any,
             imageId,
-            imageWidth: (save as any).imageWidth,
-            imageHeight: (save as any).imageHeight,
+            imageWidth,
+            imageHeight,
             awardBadgeType: save.data.awardBadgeType as any,
           });
         } else {
@@ -167,8 +169,8 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
             showInStory: save.data.showInStory,
             imageSize: save.data.imageSize,
             imageId,
-            imageWidth: (save as any).imageWidth,
-            imageHeight: (save as any).imageHeight,
+            imageWidth,
+            imageHeight,
             happenedAt: save.data.happenedAt,
             missionId: save.data.missionId as any,
             moodValue: save.data.moodValue as any,
