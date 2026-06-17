@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from "react";
-import { ChevronLeft, ImagePlus, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, ImagePlus, MapPin, Trash2 } from "lucide-react";
+import ExifReader from "exifreader";
 
 import type { AddCheckpointArgs, CheckpointSource, StoryImageSize } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -15,6 +16,9 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { validateStoryImageFile } from "../journal/storyImageUpload";
+import { LoadingImage } from "../../components/ui/LoadingImage";
+import { ConfirmModal } from "../../components/ui/ConfirmModal";
+import { InfoTooltip } from "../../components/ui/info-tooltip";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -44,6 +48,7 @@ export type CheckpointPrefill = {
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
   onSave: (args: Omit<AddCheckpointArgs, "token">, file?: File) => void;
+  onCoordinateChange?: (lat: number, lon: number) => void;
   onClose: () => void;
   saveUnavailableMessage?: string;
   stateSection?: React.ReactNode;
@@ -57,7 +62,7 @@ type AddCheckpointSheetProps = {
    *  still flows through `onClose` and just closes the sheet without
   *  navigating back to the mission. */
   onBack?: () => void;
-  onUploadImage?: (file: File) => Promise<string>;
+  onUploadImage?: (file: File) => Promise<{ storageId: string; width?: number; height?: number }>;
   debugSource?: { source: string; sourceLabel: string };
 };
 
@@ -104,6 +109,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   const {
     selectedCoordinate,
     onSave,
+    onCoordinateChange,
     onClose,
     saveUnavailableMessage,
     stateSection,
@@ -126,6 +132,17 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       prefill?.happenedAt !== undefined ? new Date(prefill.happenedAt) : new Date();
     return toLocalDatetimeInputValue(initial);
   });
+  const [metadata, setMetadata] = useState<{
+    date?: number;
+    lat?: number;
+    lon?: number;
+  } | null>(null);
+  const [confirmMetadata, setConfirmMetadata] = useState<{
+    type: "date" | "gps";
+    newValue: string | { lat: number; lon: number };
+    oldValue: string | { lat: number; lon: number };
+  } | null>(null);
+
   const music = useMusicSafe();
 
   const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
@@ -162,8 +179,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     setError(null);
 
     if (props.prefillFile) {
-      setImageFile(props.prefillFile);
-      setImagePreviewUrl(URL.createObjectURL(props.prefillFile));
+      handleImageChange(props.prefillFile);
     } else {
       setImageFile(null);
       setImagePreviewUrl(null);
@@ -182,7 +198,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     };
   }, [imagePreviewUrl]);
 
-  function handleImageChange(file: File | undefined) {
+  async function handleImageChange(file: File | undefined) {
     if (!file) return;
     try {
       validateStoryImageFile(file);
@@ -191,6 +207,49 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
         if (current) URL.revokeObjectURL(current);
         return URL.createObjectURL(file);
       });
+
+      // Extract metadata
+      try {
+        const tags = await ExifReader.load(file);
+        const nextMetadata: typeof metadata = {};
+
+        if (tags.DateTimeOriginal) {
+          // Format from EXIF is often "YYYY:MM:DD HH:MM:SS"
+          const dateStr = tags.DateTimeOriginal.description;
+          const [datePart, timePart] = dateStr.split(" ");
+          const normalizedDateStr = datePart.replace(/:/g, "-") + "T" + timePart;
+          const date = new Date(normalizedDateStr);
+          if (!isNaN(date.getTime())) {
+            nextMetadata.date = date.getTime();
+          }
+        }
+
+        if (tags.GPSLatitude && tags.GPSLongitude) {
+          const lat = typeof tags.GPSLatitude.description === 'number'
+            ? tags.GPSLatitude.description
+            : parseFloat(tags.GPSLatitude.description);
+          const lon = typeof tags.GPSLongitude.description === 'number'
+            ? tags.GPSLongitude.description
+            : parseFloat(tags.GPSLongitude.description);
+
+          if (!isNaN(lat) && !isNaN(lon)) {
+            nextMetadata.lat = lat;
+            nextMetadata.lon = lon;
+          }
+        }
+
+        setMetadata(Object.keys(nextMetadata).length > 0 ? nextMetadata : null);
+        log.logInteraction("story-image:metadata-extracted", {
+          hasDate: Boolean(nextMetadata.date),
+          hasGps: Boolean(nextMetadata.lat),
+        });
+      } catch (exifError) {
+        log.warn("story-image:metadata-error", "interaction", {
+          message: exifError instanceof Error ? exifError.message : String(exifError),
+        });
+        setMetadata(null);
+      }
+
       setError(null);
       log.logInteraction("story-image:attach", {
         bytes: file.size,
@@ -210,7 +269,48 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       if (current) URL.revokeObjectURL(current);
       return null;
     });
+    setMetadata(null);
     log.logInteraction("story-image:remove-draft");
+  }
+
+  function handleUseMetadataDate() {
+    if (!metadata?.date) return;
+    const newDate = new Date(metadata.date);
+    const newValue = toLocalDatetimeInputValue(newDate);
+    const oldValue = happenedAtInput;
+
+    setConfirmMetadata({
+      type: "date",
+      newValue,
+      oldValue,
+    });
+  }
+
+  function handleUseMetadataGps() {
+    if (!metadata?.lat || !metadata?.lon || !selectedCoordinate) return;
+    const newValue = { lat: metadata.lat, lon: metadata.lon };
+    const oldValue = { lat: selectedCoordinate.lat, lon: selectedCoordinate.lon };
+
+    setConfirmMetadata({
+      type: "gps",
+      newValue,
+      oldValue,
+    });
+  }
+
+  function confirmMetadataChange() {
+    if (!confirmMetadata) return;
+
+    if (confirmMetadata.type === "date") {
+      setHappenedAtInput(confirmMetadata.newValue as string);
+      log.logInteraction("metadata:apply-date", { value: confirmMetadata.newValue });
+    } else if (confirmMetadata.type === "gps") {
+      const { lat, lon } = confirmMetadata.newValue as { lat: number; lon: number };
+      onCoordinateChange?.(lat, lon);
+      log.logInteraction("metadata:apply-gps", { lat, lon });
+    }
+
+    setConfirmMetadata(null);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -358,13 +458,55 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
                 ) : null}
               </div>
               {imagePreviewUrl ? (
-                <img
-                  src={imagePreviewUrl}
-                  alt=""
-                  className="max-h-48 w-full rounded-md object-cover"
-                  onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
-                  onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
-                />
+                <div className="space-y-3">
+                  <LoadingImage
+                    src={imagePreviewUrl}
+                    alt=""
+                    aspectRatio="4/3"
+                    containerClassName="max-h-48 w-full rounded-md"
+                    className="object-contain"
+                    onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
+                    onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 px-3 text-xs"
+                        disabled={!metadata?.date}
+                        onClick={handleUseMetadataDate}
+                      >
+                        <CalendarClock className="h-3.5 w-3.5" />
+                        Use date/time
+                      </Button>
+                      {!metadata?.date && (
+                        <InfoTooltip label="No date metadata found">
+                          This photo doesn't have embedded date/time information.
+                        </InfoTooltip>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 px-3 text-xs"
+                        disabled={!metadata?.lat}
+                        onClick={handleUseMetadataGps}
+                      >
+                        <MapPin className="h-3.5 w-3.5" />
+                        Use GPS
+                      </Button>
+                      {!metadata?.lat && (
+                        <InfoTooltip label="No GPS metadata found">
+                          This photo doesn't have embedded location information.
+                        </InfoTooltip>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--bg-paper-2)]">
                   <ImagePlus className="h-4 w-4" aria-hidden="true" />
@@ -433,6 +575,49 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
               {error}
             </p>
           ) : null}
+
+          <ConfirmModal
+            open={confirmMetadata !== null}
+            onOpenChange={(open) => {
+              if (!open) setConfirmMetadata(null);
+            }}
+            title={confirmMetadata?.type === "date" ? "Update date/time?" : "Update location?"}
+            description={
+              <div className="space-y-3">
+                <p>Use the metadata from the photo instead of the current value?</p>
+                <div className="grid grid-cols-2 gap-4 rounded-lg bg-[var(--bg-paper-2)] p-3 text-xs">
+                  <div className="space-y-1">
+                    <span className="font-bold uppercase tracking-wider text-[var(--ink-3)]">Current</span>
+                    <div className="font-mono text-[var(--ink-1)]">
+                      {confirmMetadata?.type === "date" ? (
+                        confirmMetadata.oldValue as string
+                      ) : (
+                        <>
+                          {formatCoordinate((confirmMetadata?.oldValue as any)?.lat ?? 0)},<br />
+                          {formatCoordinate((confirmMetadata?.oldValue as any)?.lon ?? 0)}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="font-bold uppercase tracking-wider text-[var(--flag)]">Photo</span>
+                    <div className="font-mono text-[var(--ink-1)]">
+                      {confirmMetadata?.type === "date" ? (
+                        confirmMetadata.newValue as string
+                      ) : (
+                        <>
+                          {formatCoordinate((confirmMetadata?.newValue as any)?.lat ?? 0)},<br />
+                          {formatCoordinate((confirmMetadata?.newValue as any)?.lon ?? 0)}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            }
+            confirmLabel="Update"
+            onConfirm={confirmMetadataChange}
+          />
           <div
             className="flex flex-wrap justify-end gap-2 pt-1"
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}

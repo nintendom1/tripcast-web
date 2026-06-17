@@ -18,7 +18,9 @@ export function validateStoryImageFile(file: File) {
   }
 }
 
-export async function compressImage(file: File): Promise<Blob> {
+export async function compressImage(
+  file: File,
+): Promise<{ blob: Blob; width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const objectUrl = URL.createObjectURL(file);
     const img = new Image();
@@ -55,7 +57,7 @@ export async function compressImage(file: File): Promise<Blob> {
         canvas.toBlob(
           (blob) => {
             cleanup();
-            if (blob) resolve(blob);
+            if (blob) resolve({ blob, width, height });
             else reject(new Error("Failed to compress image"));
           },
           "image/jpeg",
@@ -77,13 +79,19 @@ export async function compressImage(file: File): Promise<Blob> {
 export async function uploadStoryImage(
   file: File,
   getUploadUrl: () => Promise<string>,
-) {
+): Promise<{ storageId: string; width?: number; height?: number }> {
   validateStoryImageFile(file);
 
   let uploadBlob: Blob = file;
+  let finalWidth: number | undefined;
+  let finalHeight: number | undefined;
+
   const startedAt = performance.now();
   try {
-    const compressed = await compressImage(file);
+    const { blob: compressed, width, height } = await compressImage(file);
+    finalWidth = width;
+    finalHeight = height;
+
     // Already-small JPEGs can grow after a re-encode — keep whichever is smaller.
     if (compressed.size < file.size) {
       uploadBlob = compressed;
@@ -118,9 +126,13 @@ export async function uploadStoryImage(
   if (!response.ok) {
     throw new Error("Unable to upload image.");
   }
-  const result = await response.json() as { storageId?: string };
+  const result = (await response.json()) as { storageId?: string };
   if (!result.storageId) {
     throw new Error("Image upload did not return a storage id.");
   }
-  return result.storageId;
+  return {
+    storageId: result.storageId,
+    width: finalWidth,
+    height: finalHeight,
+  };
 }

@@ -95,6 +95,19 @@ import {
 } from "./focusCoordinate";
 import { circlePolygon } from "./circlePolygon";
 import { useTripPath } from "./useTripPath";
+import {
+  evaluateBreadcrumbSample,
+  DEFAULT_SAMPLER_CONFIG,
+  PRECISE_SAMPLER_CONFIG,
+  type BreadcrumbSamplerState,
+  type GeoFix,
+} from "../../lib/breadcrumbSampler";
+import { evaluateLegacyBreadcrumbSample } from "../../lib/legacyBreadcrumbSampler";
+import { useSamplerMode } from "../../lib/samplerMode";
+import { distanceMeters } from "../../lib/geoUtils";
+import { pushRecentFix, type RecentFix } from "../../lib/pendingFixesBuffer";
+import { useFixOverlayEnabled } from "../../lib/fixOverlayToggle";
+import { useFixOverlay } from "./useFixOverlay";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
@@ -149,8 +162,8 @@ function pickLatestCheckpointCenter(
   return best ? [best.lon as number, best.lat as number] : null;
 }
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
-const LIVE_TRAIL_MIN_DISTANCE_METERS = 200;
-const LIVE_TRAIL_MIN_INTERVAL_MS = 60_000;
+const LIVE_TRAIL_MIN_DISTANCE_METERS = 50;
+const LIVE_TRAIL_MIN_INTERVAL_MS = 120_000;
 const REPLAY_TRAIL_PAGE_SIZE = 500;
 const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 200;
@@ -410,18 +423,6 @@ function roundedCoordinate(value: number) {
   return Number(value.toFixed(4));
 }
 
-function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
-  const radiusMeters = 6_371_000;
-  const toRadians = (value: number) => (value * Math.PI) / 180;
-  const lat1 = toRadians(a.lat);
-  const lat2 = toRadians(b.lat);
-  const deltaLat = toRadians(b.lat - a.lat);
-  const deltaLon = toRadians(b.lon - a.lon);
-  const hav =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
-  return 2 * radiusMeters * Math.atan2(Math.sqrt(hav), Math.sqrt(1 - hav));
-}
 
 function mapLibreErrorDetails(event: unknown) {
   const eventRecord = asRecord(event);
@@ -1037,6 +1038,8 @@ function ConvexCheckpointSheet({
   prefillFile,
   onCheckpointCreated,
   onBack,
+  setSelectedCoordinate,
+  centerMapOnCoordinate,
   debugSource,
 }: {
   selectedCoordinate: SelectedCoordinate | null;
@@ -1046,6 +1049,8 @@ function ConvexCheckpointSheet({
   prefillFile?: File;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
+  setSelectedCoordinate: (coord: SelectedCoordinate | null) => void;
+  centerMapOnCoordinate: (coord: { lat: number; lon: number }) => void;
   debugSource?: DebugOpenSource;
 }) {
   const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
@@ -1227,6 +1232,13 @@ function ConvexCheckpointSheet({
       onCheckpointCreated={onCheckpointCreated}
       onBack={onBack}
       onUploadImage={(file) => uploadStoryImage(file, () => convex.mutation(tripcastApi.checkpoints.generateStoryImageUploadUrl, { token }))}
+      onCoordinateChange={(lat, lon) => {
+        if (selectedCoordinate) {
+          const next = { ...selectedCoordinate, lat, lon };
+          setSelectedCoordinate(next);
+          centerMapOnCoordinate(next);
+        }
+      }}
       debugSource={debugSource}
     />
   );
@@ -1237,7 +1249,6 @@ function ConvexCheckpointSheet({
 // ---------------------------------------------------------------------------
 
 type LastSentLocation = { lat: number; lon: number; sentAt: number } | null;
-type LastLiveTrailSample = { lat: number; lon: number; sentAt: number } | null;
 
 // Names which watcher (if any) currently owns GPS. `live-pill` is the only
 // background-allowed reason. `map-foreground` is the foreground browser
@@ -1305,7 +1316,12 @@ export default function TripMap({
   const lastLocationFixAtRef = useRef<number | null>(null);
   const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
-  const lastLiveTrailSampleRef = useRef<LastLiveTrailSample>(null);
+  const breadcrumbSamplerStateRef = useRef<BreadcrumbSamplerState>({});
+  const samplerMode = useSamplerMode();
+  const samplerModeRef = useRef(samplerMode);
+  const recentFixesRef = useRef<RecentFix[]>([]);
+  const [recentFixes, setRecentFixes] = useState<RecentFix[]>([]);
+  const fixOverlayEnabled = useFixOverlayEnabled();
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
@@ -1593,6 +1609,7 @@ export default function TripMap({
   );
 
   useCloakingZones(mapInstance, cloakingPinsForMap, handleCloakingPinClick);
+  useFixOverlay(mapInstance, recentFixes, fixOverlayEnabled);
 
   useEffect(() => {
     logMapEvent("map:trip-path:gating", {
@@ -3051,15 +3068,27 @@ export default function TripMap({
     if (!travelerLiveTrailStatus) return;
     const latestSample = travelerLiveTrailStatus.samples.at(-1);
     if (latestSample) {
-      lastLiveTrailSampleRef.current = {
-        lat: latestSample.lat,
-        lon: latestSample.lon,
-        sentAt: latestSample.sampledAt,
+      breadcrumbSamplerStateRef.current = {
+        ...breadcrumbSamplerStateRef.current,
+        lastEmitted: {
+          lat: latestSample.lat,
+          lon: latestSample.lon,
+          sampledAt: latestSample.sampledAt,
+          // Note: bearing is lost on refresh since the backend doesn't store it,
+          // which is acceptable; the next segment will re-establish it.
+        },
       };
     } else {
-      lastLiveTrailSampleRef.current = null;
+      breadcrumbSamplerStateRef.current = {};
     }
   }, [liveTrailEnabled, travelerLiveTrailStatus]);
+
+  useEffect(() => {
+    if (samplerModeRef.current !== samplerMode) {
+      samplerModeRef.current = samplerMode;
+      breadcrumbSamplerStateRef.current = {};
+    }
+  }, [samplerMode]);
 
   useEffect(() => {
     const pins = cloakingPinsData ?? [];
@@ -3624,7 +3653,7 @@ export default function TripMap({
     setIsReplaySpeedSheetOpen(false);
     setIsReplayDateSheetOpen(false);
     clearReplayResume(token);
-    lastLiveTrailSampleRef.current = null;
+    breadcrumbSamplerStateRef.current = {};
   }, [tripDataResetNonce, stopFollowing, token]);
 
   function publishTravelerLocation(
@@ -3656,26 +3685,53 @@ export default function TripMap({
   function publishLiveTrailSample(
     position: { lat: number; lon: number },
     accuracy?: number,
+    force = false,
   ) {
-    const last = lastLiveTrailSampleRef.current;
-    const now = Date.now();
-    const elapsed = last ? now - last.sentAt : Number.POSITIVE_INFINITY;
-    const movedMeters = last ? distanceMeters(last, position) : Number.POSITIVE_INFINITY;
-    if (last && movedMeters < LIVE_TRAIL_MIN_DISTANCE_METERS && elapsed < LIVE_TRAIL_MIN_INTERVAL_MS) {
+    const fix: GeoFix = { ...position, accuracy, sampledAt: Date.now() };
+    const mode = samplerModeRef.current;
+    const { shouldEmit, reason, nextState } =
+      mode === "legacy"
+        ? evaluateLegacyBreadcrumbSample(breadcrumbSamplerStateRef.current, fix, force)
+        : evaluateBreadcrumbSample(
+            breadcrumbSamplerStateRef.current,
+            fix,
+            mode === "precise" ? PRECISE_SAMPLER_CONFIG : DEFAULT_SAMPLER_CONFIG,
+            force,
+          );
+
+    breadcrumbSamplerStateRef.current = nextState;
+
+    recentFixesRef.current = pushRecentFix(
+      recentFixesRef.current,
+      {
+        lat: position.lat,
+        lon: position.lon,
+        sampledAt: fix.sampledAt,
+        outcome: shouldEmit ? "emitted" : "rejected",
+      },
+      fix.sampledAt,
+    );
+    setRecentFixes(recentFixesRef.current);
+
+    if (!shouldEmit) {
+      log.logInteraction("live-trail:sample:rejected", { mode });
       return;
     }
 
-    lastLiveTrailSampleRef.current = {
-      lat: position.lat,
-      lon: position.lon,
-      sentAt: now,
-    };
+    log.logInteraction("live-trail:sample:emitted", { mode, reason });
+
+    if (reason === "turn" && nextState.lastEmitted?.bearing !== undefined) {
+      log.logInteraction("live-trail:sample:relevant-turn", {
+        bearing: Math.round(nextState.lastEmitted.bearing),
+      });
+    }
+
     recordLiveTrailSample({
       token,
       lat: position.lat,
       lon: position.lon,
       accuracy,
-      sampledAt: now,
+      sampledAt: fix.sampledAt,
     }).catch((error) => {
       log.error("live-trail:sample:error", "mutation", {
         message: error instanceof Error ? error.message : String(error),
@@ -3684,8 +3740,19 @@ export default function TripMap({
   }
 
   function stopLocationSharing() {
+    // Symmetric to the start-side forced emit: capture a closing breadcrumb at
+    // the current position before tearing down sampler state, so the trail's
+    // tail reflects where the user actually stopped sharing.
+    if (
+      liveTrailEnabledRef.current &&
+      liveTrailCanRecordRef.current &&
+      livePosition
+    ) {
+      publishLiveTrailSample(livePosition, livePosition.accuracy, true);
+    }
     isLocationSharingRef.current = false;
     lastSentLocationRef.current = null;
+    breadcrumbSamplerStateRef.current = {};
     setIsLocationSharing(false);
     stopFollowing();
     stopTravelerLocationSharing({ token }).catch(() => {});
@@ -3731,6 +3798,9 @@ export default function TripMap({
       setIsLocationSharing(true);
       if (livePosition) {
         publishTravelerLocation(livePosition, livePosition.accuracy);
+        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+          publishLiveTrailSample(livePosition, livePosition.accuracy, true);
+        }
       }
     }
   }
@@ -4952,6 +5022,8 @@ export default function TripMap({
         prefillFile={prefillFile}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
+          setSelectedCoordinate={setSelectedCoordinate}
+          centerMapOnCoordinate={centerMapOnCoordinate}
           debugSource={checkInDebugSource}
         />
       )}

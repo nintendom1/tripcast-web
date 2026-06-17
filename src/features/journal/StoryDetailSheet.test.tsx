@@ -14,7 +14,10 @@ vi.mock("convex/react", () => ({
 }));
 
 vi.mock("framer-motion", () => ({
-  motion: { div: "div" },
+  motion: {
+    div: "div",
+    img: "img",
+  },
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 

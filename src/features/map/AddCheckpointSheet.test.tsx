@@ -3,10 +3,17 @@ import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import AddCheckpointSheet from "./AddCheckpointSheet";
 import type { SelectedCoordinate } from "./AddCheckpointSheet";
+import ExifReader from "exifreader";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
   useQuery: vi.fn(),
+}));
+
+vi.mock("exifreader", () => ({
+  default: {
+    load: vi.fn(),
+  },
 }));
 
 const COORD: SelectedCoordinate = { lat: 47.6097, lon: -122.3422, source: "tap_add_mode" };
@@ -205,5 +212,66 @@ describe("AddCheckpointSheet", () => {
         undefined,
       );
     });
+  });
+
+  it("shows 'Use date/time' and 'Use GPS' buttons when photo is uploaded", async () => {
+    const user = userEvent.setup();
+    render(<AddCheckpointSheet {...makeProps()} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    expect(screen.getByRole("button", { name: /Use date\/time/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Use GPS/i })).toBeInTheDocument();
+  });
+
+  it("applies date metadata after confirmation", async () => {
+    const user = userEvent.setup();
+    const metadataDate = new Date(2026, 0, 1, 12, 0);
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      DateTimeOriginal: { description: "2026:01:01 12:00:00" },
+    } as any);
+
+    render(<AddCheckpointSheet {...makeProps()} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    const useDateBtn = await screen.findByRole("button", { name: /Use date\/time/i });
+    await user.click(useDateBtn);
+
+    // Confirmation modal should appear
+    expect(screen.getByText(/Update date\/time\?/i)).toBeInTheDocument();
+    expect(screen.getByText("2026-01-01T12:00")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    const input = screen.getByLabelText(/Happened at/i) as HTMLInputElement;
+    expect(input.value).toBe("2026-01-01T12:00");
+  });
+
+  it("calls onCoordinateChange and updates UI when GPS metadata is applied", async () => {
+    const user = userEvent.setup();
+    const onCoordinateChange = vi.fn();
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      GPSLatitude: { description: 10.5 },
+      GPSLongitude: { description: 20.5 },
+    } as any);
+
+    render(<AddCheckpointSheet {...makeProps({ onCoordinateChange })} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    const useGpsBtn = await screen.findByRole("button", { name: /Use GPS/i });
+    await user.click(useGpsBtn);
+
+    expect(screen.getByText(/Update location\?/i)).toBeInTheDocument();
+    expect(screen.getByText(/10.500000/)).toBeInTheDocument();
+    expect(screen.getByText(/20.500000/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    expect(onCoordinateChange).toHaveBeenCalledWith(10.5, 20.5);
   });
 });

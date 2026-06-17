@@ -126,8 +126,8 @@ describe("uploadStoryImage", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const id = await uploadStoryImage(makeImageFile(10 * 1024 * 1024), getUploadUrl);
-    expect(id).toBe("store-1");
+    const result = await uploadStoryImage(makeImageFile(10 * 1024 * 1024), getUploadUrl);
+    expect(result.storageId).toBe("store-1");
 
     const body = fetchMock.mock.calls[0][1].body as Blob;
     expect(body.size).toBe(800_000);
