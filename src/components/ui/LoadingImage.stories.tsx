@@ -64,9 +64,14 @@ export const SixteenNine: Story = {
   },
 };
 
+/**
+ * Deterministic error state using the status prop override, so visual
+ * snapshots and the Storybook test runner don't depend on a real network
+ * request failing.
+ */
 export const Error: Story = {
   args: {
-    src: "https://invalid-image-url.com/not-found.jpg",
+    status: "error",
     alt: "Error state",
     containerClassName: "w-80 rounded-lg shadow-md",
   },
