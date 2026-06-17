@@ -30,7 +30,7 @@ export const AddPin: Story = {
     selectedCoordinate,
     onSave: async () => "checkpoint-storybook",
     onClose: () => {},
-    onUploadImage: async () => "story-image-storybook",
+    onUploadImage: async () => ({ storageId: "story-image-storybook", width: 800, height: 600 }),
     debugSource: {
       source: "storybook:add-pin",
       sourceLabel: "Storybook -> Add Pin",
@@ -52,7 +52,7 @@ export const CompleteMissionAsStory: Story = {
     onSave: async () => "mission-story-checkpoint",
     onClose: () => {},
     onBack: () => {},
-    onUploadImage: async () => "story-image-storybook",
+    onUploadImage: async () => ({ storageId: "story-image-storybook", width: 800, height: 600 }),
     stateSection: (
       <div className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--ink-2)]">
         Feeling good · Energy high · Stress calm

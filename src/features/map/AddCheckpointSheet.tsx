@@ -15,6 +15,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { validateStoryImageFile } from "../journal/storyImageUpload";
+import { LoadingImage } from "../../components/ui/LoadingImage";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -57,7 +58,7 @@ type AddCheckpointSheetProps = {
    *  still flows through `onClose` and just closes the sheet without
   *  navigating back to the mission. */
   onBack?: () => void;
-  onUploadImage?: (file: File) => Promise<string>;
+  onUploadImage?: (file: File) => Promise<{ storageId: string; width?: number; height?: number }>;
   debugSource?: { source: string; sourceLabel: string };
 };
 
@@ -358,10 +359,12 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
                 ) : null}
               </div>
               {imagePreviewUrl ? (
-                <img
+                <LoadingImage
                   src={imagePreviewUrl}
                   alt=""
-                  className="max-h-48 w-full rounded-md object-cover"
+                  aspectRatio="4/3"
+                  containerClassName="max-h-48 w-full rounded-md"
+                  className="object-contain"
                   onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
                   onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
                 />
