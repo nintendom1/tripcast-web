@@ -92,10 +92,17 @@ import { circlePolygon } from "./circlePolygon";
 import { useTripPath } from "./useTripPath";
 import {
   evaluateBreadcrumbSample,
+  DEFAULT_SAMPLER_CONFIG,
+  PRECISE_SAMPLER_CONFIG,
   type BreadcrumbSamplerState,
   type GeoFix,
 } from "../../lib/breadcrumbSampler";
+import { evaluateLegacyBreadcrumbSample } from "../../lib/legacyBreadcrumbSampler";
+import { useSamplerMode } from "../../lib/samplerMode";
 import { distanceMeters } from "../../lib/geoUtils";
+import { pushRecentFix, type RecentFix } from "../../lib/pendingFixesBuffer";
+import { useFixOverlayEnabled } from "../../lib/fixOverlayToggle";
+import { useFixOverlay } from "./useFixOverlay";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
@@ -1434,6 +1441,11 @@ export default function TripMap({
   const [locationStale, setLocationStale] = useState(false);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const breadcrumbSamplerStateRef = useRef<BreadcrumbSamplerState>({});
+  const samplerMode = useSamplerMode();
+  const samplerModeRef = useRef(samplerMode);
+  const recentFixesRef = useRef<RecentFix[]>([]);
+  const [recentFixes, setRecentFixes] = useState<RecentFix[]>([]);
+  const fixOverlayEnabled = useFixOverlayEnabled();
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
@@ -1719,6 +1731,7 @@ export default function TripMap({
   );
 
   useCloakingZones(mapInstance, cloakingPinsForMap, handleCloakingPinClick);
+  useFixOverlay(mapInstance, recentFixes, fixOverlayEnabled);
 
   useEffect(() => {
     logMapEvent("map:trip-path:gating", {
@@ -3193,6 +3206,13 @@ export default function TripMap({
   }, [liveTrailEnabled, travelerLiveTrailStatus]);
 
   useEffect(() => {
+    if (samplerModeRef.current !== samplerMode) {
+      samplerModeRef.current = samplerMode;
+      breadcrumbSamplerStateRef.current = {};
+    }
+  }, [samplerMode]);
+
+  useEffect(() => {
     const pins = cloakingPinsData ?? [];
     cloakingPinsRef.current = pins;
 
@@ -3790,16 +3810,37 @@ export default function TripMap({
     force = false,
   ) {
     const fix: GeoFix = { ...position, accuracy, sampledAt: Date.now() };
-    const { shouldEmit, reason, nextState } = evaluateBreadcrumbSample(
-      breadcrumbSamplerStateRef.current,
-      fix,
-      undefined,
-      force,
-    );
+    const mode = samplerModeRef.current;
+    const { shouldEmit, reason, nextState } =
+      mode === "legacy"
+        ? evaluateLegacyBreadcrumbSample(breadcrumbSamplerStateRef.current, fix, force)
+        : evaluateBreadcrumbSample(
+            breadcrumbSamplerStateRef.current,
+            fix,
+            mode === "precise" ? PRECISE_SAMPLER_CONFIG : DEFAULT_SAMPLER_CONFIG,
+            force,
+          );
 
     breadcrumbSamplerStateRef.current = nextState;
 
-    if (!shouldEmit) return;
+    recentFixesRef.current = pushRecentFix(
+      recentFixesRef.current,
+      {
+        lat: position.lat,
+        lon: position.lon,
+        sampledAt: fix.sampledAt,
+        outcome: shouldEmit ? "emitted" : "rejected",
+      },
+      fix.sampledAt,
+    );
+    setRecentFixes(recentFixesRef.current);
+
+    if (!shouldEmit) {
+      log.logInteraction("live-trail:sample:rejected", { mode });
+      return;
+    }
+
+    log.logInteraction("live-trail:sample:emitted", { mode, reason });
 
     if (reason === "turn" && nextState.lastEmitted?.bearing !== undefined) {
       log.logInteraction("live-trail:sample:relevant-turn", {

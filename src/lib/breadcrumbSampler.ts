@@ -20,6 +20,8 @@ export type BreadcrumbSamplerConfig = {
   bearingHopMeters: number;
   /** Minimum distance moved from last emitted point to consider a turn valid (noise guard). */
   turnMovementGuardMeters: number;
+  /** Floor: never emit twice within this many ms of the last emit (0 disables). Caps spam at high speed. */
+  minIntervalMs: number;
 };
 
 export const DEFAULT_SAMPLER_CONFIG: BreadcrumbSamplerConfig = {
@@ -28,6 +30,16 @@ export const DEFAULT_SAMPLER_CONFIG: BreadcrumbSamplerConfig = {
   turnThresholdDegrees: 22.5,
   bearingHopMeters: 5,
   turnMovementGuardMeters: 10,
+  minIntervalMs: 0,
+};
+
+export const PRECISE_SAMPLER_CONFIG: BreadcrumbSamplerConfig = {
+  minDistanceMeters: 10,
+  maxIntervalMs: 60_000,
+  turnThresholdDegrees: 18,
+  bearingHopMeters: 3,
+  turnMovementGuardMeters: 4,
+  minIntervalMs: 3_000,
 };
 
 /**
@@ -55,7 +67,12 @@ export function evaluateBreadcrumbSample(
   let reason: BreadcrumbSampleReason | undefined = force ? "force" : !last ? "initial" : undefined;
   let currentBearing: number | undefined;
 
-  if (!shouldEmit && last) {
+  // Min-interval floor: short-circuit emit triggers when the previous emit was
+  // too recent. Bearing bootstrap + previousFix update below still run, so
+  // turn-detection state stays current. Force emits bypass this floor.
+  const flooredOut = !!last && config.minIntervalMs > 0 && elapsed < config.minIntervalMs;
+
+  if (!shouldEmit && last && !flooredOut) {
     // 1. Time-based heartbeat
     if (elapsed >= config.maxIntervalMs) {
       shouldEmit = true;
@@ -88,6 +105,15 @@ export function evaluateBreadcrumbSample(
     // Always update previousFix if we've moved enough to create a new bearing baseline
     previousFix: (!prevFix || hopMeters >= config.bearingHopMeters) ? fix : prevFix,
   };
+
+  // Bearing bootstrap: if the last emitted point still has no bearing (typically
+  // because it was the initial/forced emit), seed it from the first fix that is
+  // far enough away. Without this, turn detection stays disabled until some
+  // other reason (distance/heartbeat) fires and writes a bearing — which never
+  // happens on a tight loop.
+  if (!shouldEmit && last && last.bearing === undefined && movedMeters >= config.bearingHopMeters) {
+    nextState.lastEmitted = { ...last, bearing: calculateBearing(last, fix) };
+  }
 
   if (shouldEmit) {
     // Determine the finalized bearing for the emitted point.
