@@ -45,13 +45,27 @@ export function useImagePrefetch(token: string, imageIds: string[]) {
         const urlMs = Math.round(performance.now() - start);
         await new Promise<void>((resolve) => {
           const img = new Image();
+          img.decoding = "async";
           img.onload = () => {
-            logMapEvent("image:prefetch:success", {
-              imageId,
-              urlFetchMs: urlMs,
-              totalMs: Math.round(performance.now() - start),
-            });
-            resolve();
+            if ("decode" in img) {
+              img.decode().catch(() => {}).finally(() => {
+                logMapEvent("image:prefetch:success", {
+                  imageId,
+                  urlFetchMs: urlMs,
+                  totalMs: Math.round(performance.now() - start),
+                  decoded: true,
+                });
+                resolve();
+              });
+            } else {
+              logMapEvent("image:prefetch:success", {
+                imageId,
+                urlFetchMs: urlMs,
+                totalMs: Math.round(performance.now() - start),
+                decoded: false,
+              });
+              resolve();
+            }
           };
           img.onerror = () => {
             // Don't unmark — a broken URL won't get fixed by retrying.

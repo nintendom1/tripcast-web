@@ -66,17 +66,33 @@ export function LoadingImage({
       onError?.(e);
       return;
     }
-    // Debug: hold the spinner so the loading → fade-in transition is visible.
-    // Fire onLoad now while the event is live (consumers read e.currentTarget),
-    // and defer only the visual "loaded" status.
-    if (SIM_LOAD_SLOW_MS > 0) {
+
+    const img = e.currentTarget;
+    const finalize = () => {
+      setInternalStatus("loaded");
       onLoad?.(e);
+    };
+
+    // Debug: hold the spinner so the loading → fade-in transition is visible.
+    if (SIM_LOAD_SLOW_MS > 0) {
       if (delayTimerRef.current) clearTimeout(delayTimerRef.current);
-      delayTimerRef.current = setTimeout(() => setInternalStatus("loaded"), SIM_LOAD_SLOW_MS);
+      delayTimerRef.current = setTimeout(finalize, SIM_LOAD_SLOW_MS);
       return;
     }
-    setInternalStatus("loaded");
-    onLoad?.(e);
+
+    // Use the decode() API if available to ensure the image is ready to paint
+    // without blocking the main thread. This prevents "right before it appears"
+    // UI freezes on large photos.
+    if ("decode" in img) {
+      img
+        .decode()
+        .catch(() => {
+          /* ignore decode errors, fallback to immediate show */
+        })
+        .finally(finalize);
+    } else {
+      finalize();
+    }
   };
 
   const handleError = (e: React.SyntheticEvent<HTMLImageElement>) => {
@@ -125,6 +141,7 @@ export function LoadingImage({
       <motion.img
         src={src}
         alt={alt}
+        decoding="async"
         className={cn(
           "h-full w-full",
           status === "loaded" ? "opacity-100" : "opacity-0",

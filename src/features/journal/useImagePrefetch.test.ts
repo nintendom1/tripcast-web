@@ -15,6 +15,8 @@ vi.mock("../../debug/debugLogger", () => ({
 class FakeImage {
   onload?: () => void;
   onerror?: () => void;
+  decoding?: string;
+  decode = vi.fn().mockResolvedValue(undefined);
   set src(_value: string) {
     queueMicrotask(() => this.onload?.());
   }
@@ -124,5 +126,27 @@ describe("useImagePrefetch", () => {
 
     rerender({ ids: ["a"] });
     await waitFor(() => expect(query).toHaveBeenCalledTimes(2));
+  });
+
+  it("calls decode() and sets decoding='async' on prefetch images", async () => {
+    const { client } = makeConvex(() => "https://img/a.jpg");
+    vi.mocked(useConvex).mockReturnValue(client as never);
+
+    let capturedImage: FakeImage | null = null;
+    vi.stubGlobal("Image", class extends FakeImage {
+      constructor() {
+        super();
+        // eslint-disable-next-line @typescript-eslint/no-this-alias
+        capturedImage = this;
+      }
+    });
+
+    renderHook(() => useImagePrefetch("tok", ["a"]));
+
+    await waitFor(() => {
+      expect(capturedImage).not.toBeNull();
+      expect(capturedImage?.decoding).toBe("async");
+      expect(capturedImage?.decode).toHaveBeenCalled();
+    });
   });
 });
