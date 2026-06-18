@@ -70,4 +70,48 @@ describe("LoadingImage", () => {
         expect(spinner).toBeNull();
     });
   });
+
+  it("ignores a stale decode resolution after src changes", async () => {
+    // Image A's decode is held pending so we can resolve it *after* src swaps.
+    let resolveStaleDecode: () => void;
+    const staleDecode = new Promise<void>((resolve) => {
+      resolveStaleDecode = resolve;
+    });
+
+    const { rerender } = render(<LoadingImage src="https://example.com/a.jpg" />);
+    const img = screen.getByRole("img", { hidden: true });
+    (img as any).decode = vi.fn().mockReturnValue(staleDecode);
+
+    // A loads but its decode is still pending → spinner stays up.
+    fireEvent.load(img);
+    expect(screen.queryByRole("status") || document.querySelector(".animate-spin")).not.toBeNull();
+
+    // src changes to B before A finishes decoding; B has not loaded yet.
+    rerender(<LoadingImage src="https://example.com/b.jpg" />);
+
+    // A's stale decode finally resolves — the generation guard must drop it so
+    // B (still loading) is not falsely revealed.
+    resolveStaleDecode!();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.queryByRole("status") || document.querySelector(".animate-spin")).not.toBeNull();
+  });
+
+  it("shows the error state when decode() fails", async () => {
+    const onError = vi.fn();
+    render(<LoadingImage src="https://example.com/x.jpg" onError={onError} />);
+
+    const img = screen.getByRole("img", { hidden: true });
+    (img as any).decode = vi.fn().mockRejectedValue(new Error("decode failed"));
+
+    fireEvent.load(img);
+
+    // A genuine decode failure surfaces the error UI instead of fading in a
+    // broken image, and notifies the consumer.
+    await waitFor(() => {
+      expect(screen.queryByText("Failed to load")).not.toBeNull();
+    });
+    expect(onError).toHaveBeenCalled();
+  });
 });
