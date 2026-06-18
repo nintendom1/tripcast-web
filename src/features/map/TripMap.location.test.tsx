@@ -9,6 +9,7 @@ import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
 import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
 import { useTripPath } from "./useTripPath";
+import { setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 
 const mapEaseTo = vi.fn();
 const mapFitBounds = vi.fn();
@@ -2175,5 +2176,118 @@ describe("TripMap location marker", () => {
         false,
       );
     });
+  });
+});
+
+describe("TripMap fix overlay debug densifier", () => {
+  // The densifier is a 4s getCurrentPosition poll that runs only while the GPS Fix
+  // Overlay debug toggle is on. It feeds the real sampler a dense stream so the
+  // overlay finally shows the close-spaced fixes the native 50m distanceFilter would
+  // otherwise eat — rejected (red) while stationary, emitted (green) on movement.
+  afterEach(() => {
+    // Reset module-level cached flag so it can't leak into other suites.
+    setFixOverlayEnabled(false);
+  });
+
+  function overlayFeatureOutcomes(): string[] {
+    const map = mapInstances.at(-1);
+    const calls = (map?.addSource as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c: unknown[]) => c[0] === "live-trail-fix-overlay",
+    );
+    const last = calls.at(-1);
+    const data = last?.[1] as { data?: { features?: Array<{ properties?: { outcome?: string } }> } } | undefined;
+    return (data?.data?.features ?? []).map((f) => f.properties?.outcome ?? "");
+  }
+
+  it("polls getCurrentPosition on a 4s cadence only while the overlay is enabled", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    setFixOverlayEnabled(true);
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
+      return 42;
+    });
+    geolocationGetCurrentPosition.mockImplementation((onSuccess: (p: unknown) => void) => {
+      onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
+    });
+    setupQueries({
+      liveTrailStatus: { enabled: true, visibleToFollowers: false, sampleCount: 0, samples: [] },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    // Sharing emits via the watch, not getCurrentPosition — the poll starts at 0.
+    const before = geolocationGetCurrentPosition.mock.calls.length;
+    act(() => { vi.advanceTimersByTime(4000); });
+    expect(geolocationGetCurrentPosition.mock.calls.length).toBe(before + 1);
+    act(() => { vi.advanceTimersByTime(4000); });
+    expect(geolocationGetCurrentPosition.mock.calls.length).toBe(before + 2);
+
+    vi.useRealTimers();
+  });
+
+  it("never polls getCurrentPosition while the overlay is off", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    setFixOverlayEnabled(false);
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
+      return 42;
+    });
+    setupQueries({
+      liveTrailStatus: { enabled: true, visibleToFollowers: false, sampleCount: 0, samples: [] },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    // Baseline ignores the one-shot launch fix; the densifier must add nothing.
+    const before = geolocationGetCurrentPosition.mock.calls.length;
+    act(() => { vi.advanceTimersByTime(20_000); });
+    expect(geolocationGetCurrentPosition.mock.calls.length).toBe(before);
+
+    vi.useRealTimers();
+  });
+
+  it("rejects stationary polled fixes (red dots) and emits after moving >50m (green dot)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    setFixOverlayEnabled(true);
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
+      return 42;
+    });
+    // Stationary: every poll returns the same coordinates as the opening breadcrumb.
+    geolocationGetCurrentPosition.mockImplementation((onSuccess: (p: unknown) => void) => {
+      onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
+    });
+    setupQueries({
+      liveTrailStatus: { enabled: true, visibleToFollowers: false, sampleCount: 0, samples: [] },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    // Opening force-emit on share: one recorded breadcrumb (green).
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
+
+    // Three stationary polls within the 120s heartbeat: all rejected, no new emits.
+    act(() => { vi.advanceTimersByTime(4000); });
+    act(() => { vi.advanceTimersByTime(4000); });
+    act(() => { vi.advanceTimersByTime(4000); });
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(1);
+    // The overlay buffer holds the rejected (red) fixes the user was missing.
+    expect(overlayFeatureOutcomes()).toContain("rejected");
+
+    // Move >50m (0.001 deg lat ≈ 111m): the next poll emits (green).
+    geolocationGetCurrentPosition.mockImplementation((onSuccess: (p: unknown) => void) => {
+      onSuccess({ coords: { latitude: 47.621, longitude: -122.34, accuracy: 9 } });
+    });
+    act(() => { vi.advanceTimersByTime(4000); });
+    expect(recordLiveTrailSample).toHaveBeenCalledTimes(2);
+    expect(overlayFeatureOutcomes()).toContain("emitted");
+
+    vi.useRealTimers();
   });
 });
