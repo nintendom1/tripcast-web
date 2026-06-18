@@ -68,9 +68,13 @@ export function LoadingImage({
     }
 
     const img = e.currentTarget;
+
+    // Fire onLoad now while the event is live (consumers read e.currentTarget),
+    // and defer only the visual "loaded" status (the fade-in).
+    onLoad?.(e);
+
     const finalize = () => {
       setInternalStatus("loaded");
-      onLoad?.(e);
     };
 
     // Debug: hold the spinner so the loading → fade-in transition is visible.
@@ -83,7 +87,7 @@ export function LoadingImage({
     // Use the decode() API if available to ensure the image is ready to paint
     // without blocking the main thread. This prevents "right before it appears"
     // UI freezes on large photos.
-    if ("decode" in img) {
+    if (typeof img.decode === "function") {
       img
         .decode()
         .catch(() => {
