@@ -39,6 +39,17 @@ export const AddPin: Story = {
 };
 
 /** @tag ai-generated */
+export const WithPhotoMetadata: Story = {
+  args: {
+    selectedCoordinate,
+    prefillFile: new File([""], "test.jpg", { type: "image/jpeg" }),
+    onSave: async () => "checkpoint-with-photo",
+    onClose: () => {},
+    onUploadImage: async () => ({ storageId: "story-image-storybook", width: 800, height: 600 }),
+  },
+};
+
+/** @tag ai-generated */
 export const CompleteMissionAsStory: Story = {
   args: {
     selectedCoordinate,
