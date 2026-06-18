@@ -145,6 +145,10 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   // Monotonic id so an in-flight EXIF read for a superseded photo can't clobber
   // the metadata of the photo the user actually ended up with.
   const metadataRequestIdRef = useRef(0);
+  // Applying photo GPS updates the parent's selectedCoordinate, which would
+  // otherwise re-run the init effect and wipe the in-progress form. This guard
+  // lets that one self-initiated coordinate change through without a reset.
+  const skipInitForCoordRef = useRef(false);
 
   const music = useMusicSafe();
 
@@ -165,6 +169,12 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     if (!selectedCoordinate) {
       setImageFile(null);
       setImagePreviewUrl(null);
+      return;
+    }
+    // A coordinate change we triggered by applying photo GPS is a refinement of
+    // the current pin, not a new sheet session — keep the form as-is.
+    if (skipInitForCoordRef.current) {
+      skipInitForCoordRef.current = false;
       return;
     }
     log.logInteraction("sheet:open", {
@@ -318,6 +328,8 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       log.logInteraction("metadata:apply-date", { value: confirmMetadata.newValue });
     } else if (confirmMetadata.type === "gps") {
       const { lat, lon } = confirmMetadata.newValue as { lat: number; lon: number };
+      // Refining the coordinate must not reset the form the traveler is filling in.
+      skipInitForCoordRef.current = true;
       onCoordinateChange?.(lat, lon);
       log.logInteraction("metadata:apply-gps", { lat, lon });
     }

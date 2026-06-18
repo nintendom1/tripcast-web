@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import AddCheckpointSheet from "./AddCheckpointSheet";
 import type { SelectedCoordinate } from "./AddCheckpointSheet";
@@ -312,5 +313,39 @@ describe("AddCheckpointSheet", () => {
     await user.click(screen.getByRole("button", { name: "Update" }));
 
     expect(onCoordinateChange).toHaveBeenCalledWith(0, 0);
+  });
+
+  it("preserves the in-progress form when GPS metadata is applied", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      gps: { Latitude: 34.98, Longitude: 135.76 },
+    } as any);
+
+    // Mirror TripMap: applying GPS replaces selectedCoordinate with a new object,
+    // which previously re-ran the init effect and wiped the form.
+    function Harness() {
+      const [coord, setCoord] = useState<SelectedCoordinate>(COORD);
+      return (
+        <AddCheckpointSheet
+          {...makeProps({
+            selectedCoordinate: coord,
+            onCoordinateChange: (lat, lon) => setCoord((c) => ({ ...c, lat, lon })),
+          })}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await user.type(screen.getByLabelText(/Title/i), "Kyoto temple");
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    await user.click(await screen.findByRole("button", { name: /Use GPS/i }));
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    // The refined coordinate is shown, but the typed title survives.
+    expect(screen.getByText(/34.980000/)).toBeInTheDocument();
+    expect((screen.getByLabelText(/Title/i) as HTMLInputElement).value).toBe("Kyoto temple");
   });
 });
