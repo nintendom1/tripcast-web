@@ -1038,6 +1038,8 @@ function ConvexCheckpointSheet({
   prefillFile,
   onCheckpointCreated,
   onBack,
+  setSelectedCoordinate,
+  centerMapOnCoordinate,
   debugSource,
 }: {
   selectedCoordinate: SelectedCoordinate | null;
@@ -1047,6 +1049,8 @@ function ConvexCheckpointSheet({
   prefillFile?: File;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
+  setSelectedCoordinate: (coord: SelectedCoordinate | null) => void;
+  centerMapOnCoordinate: (coord: { lat: number; lon: number }) => void;
   debugSource?: DebugOpenSource;
 }) {
   const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
@@ -1228,6 +1232,13 @@ function ConvexCheckpointSheet({
       onCheckpointCreated={onCheckpointCreated}
       onBack={onBack}
       onUploadImage={(file) => uploadStoryImage(file, () => convex.mutation(tripcastApi.checkpoints.generateStoryImageUploadUrl, { token }))}
+      onCoordinateChange={(lat, lon) => {
+        if (selectedCoordinate) {
+          const next = { ...selectedCoordinate, lat, lon };
+          setSelectedCoordinate(next);
+          centerMapOnCoordinate(next);
+        }
+      }}
       debugSource={debugSource}
     />
   );
@@ -5011,6 +5022,8 @@ export default function TripMap({
         prefillFile={prefillFile}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
+          setSelectedCoordinate={setSelectedCoordinate}
+          centerMapOnCoordinate={centerMapOnCoordinate}
           debugSource={checkInDebugSource}
         />
       )}

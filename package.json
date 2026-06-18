@@ -38,6 +38,7 @@
     "clsx": "^2.1.1",
     "convex": "^1.38.0",
     "dayjs": "^1.11.20",
+    "exifreader": "^4.41.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.14.0",
     "maplibre-gl": "^5.24.0",
