@@ -227,9 +227,8 @@ describe("AddCheckpointSheet", () => {
 
   it("applies date metadata after confirmation", async () => {
     const user = userEvent.setup();
-    const metadataDate = new Date(2026, 0, 1, 12, 0);
     vi.mocked(ExifReader.load).mockResolvedValue({
-      DateTimeOriginal: { description: "2026:01:01 12:00:00" },
+      exif: { DateTimeOriginal: { description: "2026:01:01 12:00:00" } },
     } as any);
 
     render(<AddCheckpointSheet {...makeProps()} />);
@@ -254,8 +253,7 @@ describe("AddCheckpointSheet", () => {
     const user = userEvent.setup();
     const onCoordinateChange = vi.fn();
     vi.mocked(ExifReader.load).mockResolvedValue({
-      GPSLatitude: { description: 10.5 },
-      GPSLongitude: { description: 20.5 },
+      gps: { Latitude: 10.5, Longitude: 20.5 },
     } as any);
 
     render(<AddCheckpointSheet {...makeProps({ onCoordinateChange })} />);
@@ -273,5 +271,46 @@ describe("AddCheckpointSheet", () => {
     await user.click(screen.getByRole("button", { name: "Update" }));
 
     expect(onCoordinateChange).toHaveBeenCalledWith(10.5, 20.5);
+  });
+
+  it("preserves the hemisphere for southern/western GPS metadata", async () => {
+    const user = userEvent.setup();
+    const onCoordinateChange = vi.fn();
+    // Expanded mode supplies signed values, so a Sydney photo must stay negative
+    // for latitude (south) — the previous .description parsing dropped the sign.
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      gps: { Latitude: -33.8688, Longitude: 151.2093 },
+    } as any);
+
+    render(<AddCheckpointSheet {...makeProps({ onCoordinateChange })} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    await user.click(await screen.findByRole("button", { name: /Use GPS/i }));
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    expect(onCoordinateChange).toHaveBeenCalledWith(-33.8688, 151.2093);
+  });
+
+  it("applies GPS metadata that sits exactly on the equator", async () => {
+    const user = userEvent.setup();
+    const onCoordinateChange = vi.fn();
+    // Zero is a valid coordinate; truthiness guards used to reject it.
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      gps: { Latitude: 0, Longitude: 0 },
+    } as any);
+
+    render(<AddCheckpointSheet {...makeProps({ onCoordinateChange })} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    const useGpsBtn = await screen.findByRole("button", { name: /Use GPS/i });
+    expect(useGpsBtn).toBeEnabled();
+    await user.click(useGpsBtn);
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    expect(onCoordinateChange).toHaveBeenCalledWith(0, 0);
   });
 });

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { CalendarClock, ChevronLeft, ImagePlus, MapPin, Trash2 } from "lucide-react";
 import ExifReader from "exifreader";
 
@@ -142,6 +142,9 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     newValue: string | { lat: number; lon: number };
     oldValue: string | { lat: number; lon: number };
   } | null>(null);
+  // Monotonic id so an in-flight EXIF read for a superseded photo can't clobber
+  // the metadata of the photo the user actually ended up with.
+  const metadataRequestIdRef = useRef(0);
 
   const music = useMusicSafe();
 
@@ -209,41 +212,48 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       });
 
       // Extract metadata
+      const requestId = ++metadataRequestIdRef.current;
       try {
-        const tags = await ExifReader.load(file);
+        // Expanded mode gives us signed GPS values (hemisphere already applied
+        // from GPSLatitudeRef/GPSLongitudeRef) and grouped EXIF/GPS namespaces.
+        const tags = await ExifReader.load(file, {
+          expanded: true,
+          length: "auto",
+          includeOffsets: true,
+        });
+        // A newer photo (or a cleared draft) superseded this read while awaiting.
+        if (requestId !== metadataRequestIdRef.current) return;
+
         const nextMetadata: typeof metadata = {};
 
-        if (tags.DateTimeOriginal) {
-          // Format from EXIF is often "YYYY:MM:DD HH:MM:SS"
-          const dateStr = tags.DateTimeOriginal.description;
+        const dateStr = tags.exif?.DateTimeOriginal?.description;
+        if (dateStr) {
+          // EXIF DateTimeOriginal is "YYYY:MM:DD HH:MM:SS" with no timezone.
+          // Prefer OffsetTimeOriginal when present so the instant is correct;
+          // otherwise fall back to the viewer's local timezone.
           const [datePart, timePart] = dateStr.split(" ");
           const normalizedDateStr = datePart.replace(/:/g, "-") + "T" + timePart;
-          const date = new Date(normalizedDateStr);
+          const offset = tags.exif?.OffsetTimeOriginal?.description;
+          const date = new Date(offset ? normalizedDateStr + offset : normalizedDateStr);
           if (!isNaN(date.getTime())) {
             nextMetadata.date = date.getTime();
           }
         }
 
-        if (tags.GPSLatitude && tags.GPSLongitude) {
-          const lat = typeof tags.GPSLatitude.description === 'number'
-            ? tags.GPSLatitude.description
-            : parseFloat(tags.GPSLatitude.description);
-          const lon = typeof tags.GPSLongitude.description === 'number'
-            ? tags.GPSLongitude.description
-            : parseFloat(tags.GPSLongitude.description);
-
-          if (!isNaN(lat) && !isNaN(lon)) {
-            nextMetadata.lat = lat;
-            nextMetadata.lon = lon;
-          }
+        const lat = tags.gps?.Latitude;
+        const lon = tags.gps?.Longitude;
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          nextMetadata.lat = lat;
+          nextMetadata.lon = lon;
         }
 
         setMetadata(Object.keys(nextMetadata).length > 0 ? nextMetadata : null);
         log.logInteraction("story-image:metadata-extracted", {
-          hasDate: Boolean(nextMetadata.date),
-          hasGps: Boolean(nextMetadata.lat),
+          hasDate: nextMetadata.date != null,
+          hasGps: nextMetadata.lat != null,
         });
       } catch (exifError) {
+        if (requestId !== metadataRequestIdRef.current) return;
         log.warn("story-image:metadata-error", "interaction", {
           message: exifError instanceof Error ? exifError.message : String(exifError),
         });
@@ -264,6 +274,8 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   }
 
   function clearImageDraft() {
+    // Invalidate any in-flight EXIF read so it can't repopulate metadata.
+    metadataRequestIdRef.current++;
     setImageFile(null);
     setImagePreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
@@ -287,7 +299,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   }
 
   function handleUseMetadataGps() {
-    if (!metadata?.lat || !metadata?.lon || !selectedCoordinate) return;
+    if (metadata?.lat == null || metadata?.lon == null || !selectedCoordinate) return;
     const newValue = { lat: metadata.lat, lon: metadata.lon };
     const oldValue = { lat: selectedCoordinate.lat, lon: selectedCoordinate.lon };
 
@@ -493,13 +505,13 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
                         variant="outline"
                         size="sm"
                         className="h-8 gap-1.5 px-3 text-xs"
-                        disabled={!metadata?.lat}
+                        disabled={metadata?.lat == null}
                         onClick={handleUseMetadataGps}
                       >
                         <MapPin className="h-3.5 w-3.5" />
                         Use GPS
                       </Button>
-                      {!metadata?.lat && (
+                      {metadata?.lat == null && (
                         <InfoTooltip label="No GPS metadata found">
                           This photo doesn't have embedded location information.
                         </InfoTooltip>
