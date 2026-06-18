@@ -49,9 +49,16 @@ export function LoadingImage({
   // Holds the simulated-delay timer so it can be cancelled if src changes or
   // the component unmounts before it fires. No-op unless SIM_LOAD_SLOW_MS is set.
   const delayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonic load counter. handleLoad captures the current value; a deferred
+  // decode() resolution only takes effect if the counter hasn't advanced (i.e.
+  // src hasn't changed underneath it). Prevents a stale image's decode from
+  // flipping a newer, still-loading src to "loaded".
+  const loadGenRef = useRef(0);
 
-  // Reset status when the source changes; clear any pending sim-delay timer.
+  // Reset status when the source changes; clear any pending sim-delay timer and
+  // invalidate any in-flight decode by advancing the load generation.
   useEffect(() => {
+    loadGenRef.current += 1;
     setInternalStatus(src ? "loading" : "error");
     return () => {
       if (delayTimerRef.current) clearTimeout(delayTimerRef.current);
@@ -68,34 +75,42 @@ export function LoadingImage({
     }
 
     const img = e.currentTarget;
+    const gen = loadGenRef.current;
 
     // Fire onLoad now while the event is live (consumers read e.currentTarget),
     // and defer only the visual "loaded" status (the fade-in).
     onLoad?.(e);
 
-    const finalize = () => {
+    // Reveal the (now decoded) image. Bail if src changed while decode was
+    // pending — loadGenRef has advanced and a newer load owns the status.
+    const reveal = () => {
+      if (loadGenRef.current !== gen) return;
+      // Debug: hold the spinner so the loading → fade-in transition is visible.
+      if (SIM_LOAD_SLOW_MS > 0) {
+        if (delayTimerRef.current) clearTimeout(delayTimerRef.current);
+        delayTimerRef.current = setTimeout(() => setInternalStatus("loaded"), SIM_LOAD_SLOW_MS);
+        return;
+      }
       setInternalStatus("loaded");
     };
 
-    // Debug: hold the spinner so the loading → fade-in transition is visible.
-    if (SIM_LOAD_SLOW_MS > 0) {
-      if (delayTimerRef.current) clearTimeout(delayTimerRef.current);
-      delayTimerRef.current = setTimeout(finalize, SIM_LOAD_SLOW_MS);
-      return;
-    }
+    // A genuine decode failure (e.g. a truncated image that still fired load):
+    // show the error state rather than fading in a broken image. decode()'s
+    // AbortError from a src change lands here too, but is dropped by the
+    // generation guard so it neither reveals nor errors the newer load.
+    const failDecode = () => {
+      if (loadGenRef.current !== gen) return;
+      setInternalStatus("error");
+      onError?.(e);
+    };
 
-    // Use the decode() API if available to ensure the image is ready to paint
-    // without blocking the main thread. This prevents "right before it appears"
-    // UI freezes on large photos.
+    // Decode off the main thread (paired with decoding="async") so the image is
+    // ready to paint before we reveal it — avoids "right before it appears" UI
+    // hitches on large photos.
     if (typeof img.decode === "function") {
-      img
-        .decode()
-        .catch(() => {
-          /* ignore decode errors, fallback to immediate show */
-        })
-        .finally(finalize);
+      img.decode().then(reveal, failDecode);
     } else {
-      finalize();
+      reveal();
     }
   };
 

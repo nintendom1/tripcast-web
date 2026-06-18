@@ -31,7 +31,9 @@ describe("LoadingImage", () => {
     // onLoad should have been called IMMEDIATELY
     expect(handleLoad).toHaveBeenCalled();
     expect(capturedTarget).not.toBeNull();
-    expect(capturedTarget?.src).toBe("https://example.com/test.jpg");
+    // Cast restores the declared union: TS narrows closure-assigned `let`s back
+    // to their initializer (`null`), which would make `?.src` deref `never`.
+    expect((capturedTarget as HTMLImageElement | null)?.src).toBe("https://example.com/test.jpg");
 
     // The status should still be "loading" because decode hasn't finished
     const spinner = screen.queryByRole("status") || document.querySelector(".animate-spin");
