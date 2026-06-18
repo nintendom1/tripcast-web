@@ -162,6 +162,11 @@ function pickLatestCheckpointCenter(
   return best ? [best.lon as number, best.lat as number] : null;
 }
 const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
+// Debug-only: while the GPS Fix Overlay is on, poll a fresh fix this often so the
+// sampler sees a dense stream (~5m apart at walking pace). This surfaces the
+// "rejected" (red) fixes that the native 50m distanceFilter would otherwise eat
+// before the sampler ever runs. Off by default; no effect when the overlay is off.
+const FIX_OVERLAY_DEBUG_POLL_MS = 4_000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 50;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 120_000;
 const REPLAY_TRAIL_PAGE_SIZE = 500;
@@ -1322,6 +1327,7 @@ export default function TripMap({
   const recentFixesRef = useRef<RecentFix[]>([]);
   const [recentFixes, setRecentFixes] = useState<RecentFix[]>([]);
   const fixOverlayEnabled = useFixOverlayEnabled();
+  const fixOverlayEnabledRef = useRef(fixOverlayEnabled);
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
@@ -3063,6 +3069,10 @@ export default function TripMap({
   }, [livePosition]);
 
   useEffect(() => {
+    fixOverlayEnabledRef.current = fixOverlayEnabled;
+  }, [fixOverlayEnabled]);
+
+  useEffect(() => {
     liveTrailEnabledRef.current = liveTrailEnabled;
     liveTrailCanRecordRef.current = liveTrailEnabled;
     if (!travelerLiveTrailStatus) return;
@@ -3522,12 +3532,45 @@ export default function TripMap({
       }
     }, 60_000);
 
+    // Debug-only densifier: while the GPS Fix Overlay is on and we're actively
+    // recording, poll a fresh fix on a short cadence and route it through the same
+    // handleFix path as the live watcher. getCurrentPosition bypasses the native
+    // 50m distanceFilter, so the sampler finally sees the close-spaced fixes it
+    // would otherwise never get — repeated near-identical fixes while stationary
+    // get rejected (red dots), movement past 50m emits (green). Platform-agnostic
+    // (native, browser, DevTools-simulated location). No-op unless the overlay is
+    // on, so it costs nothing in normal use.
+    const fixOverlayDebugInterval = setInterval(() => {
+      if (
+        !fixOverlayEnabledRef.current ||
+        !isLocationSharingRef.current ||
+        !liveTrailEnabledRef.current ||
+        !liveTrailCanRecordRef.current
+      ) {
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          handleFix(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            pos.coords.accuracy ?? undefined,
+            typeof pos.coords.speed === "number" && pos.coords.speed >= 0
+              ? pos.coords.speed
+              : undefined,
+          ),
+        () => {},
+        { enableHighAccuracy: true, maximumAge: 0 },
+      );
+    }, FIX_OVERLAY_DEBUG_POLL_MS);
+
     return () => {
       cleanup();
       if (gpsCleanupRef.current === cleanup) {
         gpsCleanupRef.current = null;
       }
       clearInterval(staleInterval);
+      clearInterval(fixOverlayDebugInterval);
     };
   // publish* only uses refs plus stable mutation inputs. We depend on
   // `browserWatcherEnabled` (derived below) rather than `isAppActive` so
