@@ -128,6 +128,8 @@ export const StationSCurvePrecise: StoryObj<Args> = {
 };
 
 export const StationaryJitter: StoryObj<Args> = {
-  args: { traceKey: "stationaryJitter", mode: "precise" },
+  // `relevant` (50m distance threshold) matches the production sampler semantics
+  // that rejected the stationary jitter into a red cluster.
+  args: { traceKey: "stationaryJitter", mode: "relevant" },
   render: (args) => <OverlayPreview traceKey={args.traceKey} mode={args.mode} />,
 };

@@ -107,6 +107,7 @@ import { useSamplerMode } from "../../lib/samplerMode";
 import { distanceMeters } from "../../lib/geoUtils";
 import {
   pushRecentFix,
+  pruneRecentFixes,
   loadRecentFixes,
   saveRecentFixes,
   type RecentFix,
@@ -3098,6 +3099,29 @@ export default function TripMap({
   useEffect(() => {
     livePositionRef.current = livePosition;
   }, [livePosition]);
+
+  // Idle sweep for the debug fix buffer. pushRecentFix only trims on a new fix,
+  // so while stationary + backgrounded (densifier timing out, native watcher
+  // idle) nothing prunes the TTL and stale dots linger for hours. Sweep on a
+  // timer and whenever the app returns to the foreground.
+  useEffect(() => {
+    const sweep = () => {
+      const pruned = pruneRecentFixes(recentFixesRef.current, Date.now());
+      if (pruned.length === recentFixesRef.current.length) return;
+      recentFixesRef.current = pruned;
+      setRecentFixes(pruned);
+      saveRecentFixes(pruned);
+    };
+    const sweepInterval = setInterval(sweep, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState !== "hidden") sweep();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(sweepInterval);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     fixOverlayEnabledRef.current = fixOverlayEnabled;

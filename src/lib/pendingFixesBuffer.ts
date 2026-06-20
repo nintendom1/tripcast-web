@@ -13,9 +13,11 @@ export const PENDING_TTL_MS = 30 * 60 * 1000;
 export const RECENT_FIXES_MAX_COUNT = 600;
 const RECENT_FIXES_STORAGE_KEY = "tripcast.liveTrail.recentFixes";
 
-export function pushRecentFix(
+// Drop fixes older than the TTL and cap the count. Pure read used both by
+// pushRecentFix and by the idle sweep, so stale dots clear even when no new fix
+// arrives to trigger a trim.
+export function pruneRecentFixes(
   buffer: readonly RecentFix[],
-  next: RecentFix,
   nowMs: number,
   ttlMs: number = PENDING_TTL_MS,
   maxCount: number = RECENT_FIXES_MAX_COUNT,
@@ -25,9 +27,18 @@ export function pushRecentFix(
   for (const fix of buffer) {
     if (fix.sampledAt >= cutoff) trimmed.push(fix);
   }
-  trimmed.push(next);
   // Drop the oldest entries if we're over the count cap.
   return trimmed.length > maxCount ? trimmed.slice(trimmed.length - maxCount) : trimmed;
+}
+
+export function pushRecentFix(
+  buffer: readonly RecentFix[],
+  next: RecentFix,
+  nowMs: number,
+  ttlMs: number = PENDING_TTL_MS,
+  maxCount: number = RECENT_FIXES_MAX_COUNT,
+): RecentFix[] {
+  return pruneRecentFixes([...buffer, next], nowMs, ttlMs, maxCount);
 }
 
 function isRecentFix(value: unknown): value is RecentFix {

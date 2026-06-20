@@ -87,7 +87,7 @@ function stationaryJitter(): GeoFix[] {
   // case from the production screenshots that motivated the densifier work.
   const cLat = 34.6716; // Shinsaibashi-suji, Osaka
   const cLon = 135.5012;
-  const radiusM = 12;
+  const radiusM = 8;
   const count = 30;
   const out: GeoFix[] = [];
   for (let i = 0; i < count; i++) {
