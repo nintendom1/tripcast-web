@@ -60,6 +60,7 @@ import {
   useDenseCaptureEnabledAt,
   DENSE_CAPTURE_TIMEOUT_OPTIONS,
 } from "../../lib/denseCaptureToggle";
+import { useEgressEstimateBytes } from "../../lib/egressMeter";
 import type {
   CloakingPin,
   LiveTrailDeletePreview,
@@ -1037,6 +1038,26 @@ function MissionSettingsSection({ token }: { token: string }) {
 
       {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
     </OptionsSection>
+  );
+}
+
+function ConvexUsageRow() {
+  const bytes = useEgressEstimateBytes();
+  const mb = (bytes / (1024 * 1024)).toFixed(1);
+  return (
+    <div className="flex flex-col gap-2 px-4 py-3 sm:px-5">
+      <div className="flex items-center gap-4">
+        <OptionsIcon icon={Database} />
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-medium text-[var(--ink-1)]">Convex data this month</div>
+          <div className="text-sm text-[var(--ink-3)]">≈ {mb} MB image data loaded on this device</div>
+        </div>
+      </div>
+      <div className="rounded-lg bg-[var(--meter-track)]/60 px-3 py-2 text-xs text-[var(--ink-3)]">
+        Per-device estimate (story images only). Map tiles no longer use Convex. Authoritative total
+        is in the Convex dashboard.
+      </div>
+    </div>
   );
 }
 
@@ -2051,6 +2072,7 @@ function OptionsHome({
   const developerSection = (
     <OptionsSection label="Developer">
       <OptionsGroup>
+        <ConvexUsageRow />
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
         {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
         <OptionsRow

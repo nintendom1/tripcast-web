@@ -1470,6 +1470,12 @@ export const tripcastApi = {
       { token: string; imageId: string },
       string | null
     >,
+    getStoryImageSizes: (anyApi as any).checkpoints.getStoryImageSizes as FunctionReference<
+      "query",
+      "public",
+      { token: string; imageIds: string[] },
+      Array<{ imageId: string; size: number }>
+    >,
     addCheckpoint: (anyApi as any).checkpoints.addCheckpoint as FunctionReference<
       "mutation",
       "public",

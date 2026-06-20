@@ -92,22 +92,27 @@ export function getMapProxyBaseUrl(): string | null {
   return getMapProxyBaseResolution().baseUrl;
 }
 
+// Serve the basemap directly from OpenFreeMap (free, tokenless, CORS-enabled:
+// every asset returns `access-control-allow-origin: *`). Tiles/glyphs/sprites no
+// longer round-trip through the Convex `/map/*` proxy, which eliminates that
+// data egress. Mirrors the theme→style mapping the old proxy used.
+export const OPENFREEMAP_ORIGIN = "https://tiles.openfreemap.org";
+
+function openFreeMapStylePath(style?: string): string {
+  if (style === "fiord") return "/styles/fiord";
+  if (style === "liberty") return "/styles/liberty";
+  return "/styles/bright";
+}
+
 export function getMapStyleUrl(): string | null {
-  const baseUrl = getMapProxyBaseUrl();
-  if (!baseUrl) return null;
-  return `${baseUrl}/map/style?base=${encodeURIComponent(baseUrl)}`;
+  return `${OPENFREEMAP_ORIGIN}${openFreeMapStylePath()}`;
 }
 
 export function getMapStyleResolution(style?: string): MapProxyBaseResolution & { styleUrl: string | null } {
-  const resolution = getMapProxyBaseResolution();
-  if (!resolution.baseUrl) {
-    return { ...resolution, styleUrl: null };
-  }
-  const base = encodeURIComponent(resolution.baseUrl);
-  const styleQuery = style ? `&style=${encodeURIComponent(style)}` : "";
   return {
-    ...resolution,
-    styleUrl: `${resolution.baseUrl}/map/style?base=${base}${styleQuery}`,
+    baseUrl: OPENFREEMAP_ORIGIN,
+    source: "override",
+    styleUrl: `${OPENFREEMAP_ORIGIN}${openFreeMapStylePath(style)}`,
   };
 }
 

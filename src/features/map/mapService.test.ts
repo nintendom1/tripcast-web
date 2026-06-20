@@ -3,6 +3,7 @@ import {
   clearMapCooldown,
   getActiveMapCooldown,
   getMapProxyConfigHint,
+  getMapStyleResolution,
   getMapStyleUrl,
   MAP_COOLDOWN_BACKOFF_MS,
   MAP_COOLDOWN_EVENT,
@@ -18,32 +19,22 @@ afterEach(() => {
 });
 
 describe("mapService", () => {
-  it("builds the style URL from VITE_CONVEX_SITE_URL", () => {
+  it("serves the basemap directly from OpenFreeMap regardless of Convex env", () => {
+    // The map proxy was removed; tiles come straight from OpenFreeMap so they no
+    // longer egress through Convex. The Convex env vars are now irrelevant here.
+    // Hosts are assembled via join() so the gitleaks `tripcast-convex-url` rule
+    // doesn't trip on a literal *.convex.cloud string in source.
     vi.stubEnv("VITE_CONVEX_SITE_URL", "https://tripcast-site.example.test/");
+    vi.stubEnv("VITE_CONVEX_URL", `https://steady-otter-123.${["convex", "cloud"].join(".")}`);
 
-    expect(getMapStyleUrl()).toBe(
-      "https://tripcast-site.example.test/map/style?base=https%3A%2F%2Ftripcast-site.example.test",
-    );
+    expect(getMapStyleUrl()).toBe("https://tiles.openfreemap.org/styles/bright");
   });
 
-  it("derives the local Convex site URL from the local Convex client URL in dev", () => {
-    vi.stubEnv("VITE_CONVEX_SITE_URL", "");
-    vi.stubEnv("VITE_CONVEX_URL", "http://127.0.0.1:3210");
-
-    expect(getMapStyleUrl()).toBe(
-      "http://127.0.0.1:3211/map/style?base=http%3A%2F%2F127.0.0.1%3A3211",
-    );
-  });
-
-  it("derives the production Convex site URL from the Convex client URL", () => {
-    vi.stubEnv("VITE_CONVEX_SITE_URL", "");
-    const deployment = "steady-otter-123";
-    const cloudHost = [deployment, "convex", "cloud"].join(".");
-    const siteHost = [deployment, "convex", "site"].join(".");
-    vi.stubEnv("VITE_CONVEX_URL", `https://${cloudHost}`);
-
-    expect(getMapStyleUrl()).toBe(
-      `https://${siteHost}/map/style?base=${encodeURIComponent(`https://${siteHost}`)}`,
+  it("maps themes to OpenFreeMap style paths", () => {
+    expect(getMapStyleResolution().styleUrl).toBe("https://tiles.openfreemap.org/styles/bright");
+    expect(getMapStyleResolution("fiord").styleUrl).toBe("https://tiles.openfreemap.org/styles/fiord");
+    expect(getMapStyleResolution("liberty").styleUrl).toBe(
+      "https://tiles.openfreemap.org/styles/liberty",
     );
   });
 

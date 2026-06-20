@@ -4,8 +4,11 @@ const MAX_STORY_IMAGE_BYTES = 8 * 1024 * 1024;
 // Reject obviously-broken/huge uploads BEFORE attempting to decode into a
 // canvas — a 100 MP photo can OOM the renderer on a low-end phone.
 const MAX_INPUT_BYTES = 50 * 1024 * 1024;
-const TARGET_IMAGE_MAX_DIMENSION = 1600;
-const COMPRESSION_QUALITY = 0.8;
+// Tuned down from 1600/0.8 to cut served image bytes (~30-40% smaller) and the
+// resulting Convex serving egress; 1280px @ q0.72 is still crisp on phone
+// screens. Applies to newly-uploaded images only.
+const TARGET_IMAGE_MAX_DIMENSION = 1280;
+const COMPRESSION_QUALITY = 0.72;
 
 const log = debugLoggerFor("storyImageUpload", "src/features/journal/storyImageUpload.ts");
 
