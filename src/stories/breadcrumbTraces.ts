@@ -80,6 +80,29 @@ function stationSCurve(): GeoFix[] {
   return out;
 }
 
+function stationaryJitter(): GeoFix[] {
+  // Standing still in a poor-GPS spot (think the covered Shinsaibashi arcade):
+  // the device reports fixes scattered within a ~12m radius. None move >50m, so
+  // the sampler rejects all but the first → a dense red cluster. This is the
+  // case from the production screenshots that motivated the densifier work.
+  const cLat = 34.6716; // Shinsaibashi-suji, Osaka
+  const cLon = 135.5012;
+  const radiusM = 12;
+  const count = 30;
+  const out: GeoFix[] = [];
+  for (let i = 0; i < count; i++) {
+    // Deterministic pseudo-scatter (no Math.random, so stories/tests are stable).
+    const ra = Math.sin((i + 1) * 12.9898) * 43758.5453;
+    const tb = Math.sin((i + 1) * 78.233) * 12543.1234;
+    const r = (ra - Math.floor(ra)) * radiusM;
+    const theta = (tb - Math.floor(tb)) * 2 * Math.PI;
+    const { lat, lon } = offset(cLat, cLon, r * Math.cos(theta), r * Math.sin(theta));
+    // ~4s cadence matches the debug densifier's poll interval.
+    out.push({ lat, lon, sampledAt: BASE_TIME + i * 4000, accuracy: 18 });
+  }
+  return out;
+}
+
 export type TraceSummary = {
   totalMeters: number;
   widthMeters: number;
@@ -135,5 +158,10 @@ export const CANNED_TRACES: Record<string, CannedTrace> = {
     label: "Station S-Curve (90s)",
     description: "Long S-curve through a train station at walking pace. Every emit should be legitimate.",
     fixes: stationSCurve(),
+  },
+  stationaryJitter: {
+    label: "Stationary Jitter (poor GPS)",
+    description: "30 fixes scattered within ~12m while standing still in bad GPS. Almost all rejected → the dense red cluster from the production screenshots.",
+    fixes: stationaryJitter(),
   },
 };

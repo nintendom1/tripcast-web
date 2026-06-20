@@ -82,7 +82,7 @@ function OverlayPreview({ traceKey, mode }: { traceKey: keyof typeof CANNED_TRAC
         {formatTraceSummary(summarizeTrace(trace.fixes))}
       </p>
       <p style={{ marginBottom: 8, opacity: 0.75, fontSize: 13 }}>
-        Green = emitted ({counts.emitted}) · Red = rejected ({counts.rejected})
+        Green = emitted ({counts.emitted}) · Red = rejected ({counts.rejected}) · Blue line = fixes connected in time order
       </p>
       <div ref={containerRef} style={{ height: 500, width: "100%", borderRadius: 8, border: "1px solid #e5e7eb" }} />
     </div>
@@ -124,5 +124,10 @@ export const HighwayRelevant: StoryObj<Args> = {
 
 export const StationSCurvePrecise: StoryObj<Args> = {
   args: { traceKey: "stationSCurve", mode: "precise" },
+  render: (args) => <OverlayPreview traceKey={args.traceKey} mode={args.mode} />,
+};
+
+export const StationaryJitter: StoryObj<Args> = {
+  args: { traceKey: "stationaryJitter", mode: "precise" },
   render: (args) => <OverlayPreview traceKey={args.traceKey} mode={args.mode} />,
 };

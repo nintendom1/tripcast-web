@@ -105,7 +105,12 @@ import {
 import { evaluateLegacyBreadcrumbSample } from "../../lib/legacyBreadcrumbSampler";
 import { useSamplerMode } from "../../lib/samplerMode";
 import { distanceMeters } from "../../lib/geoUtils";
-import { pushRecentFix, type RecentFix } from "../../lib/pendingFixesBuffer";
+import {
+  pushRecentFix,
+  loadRecentFixes,
+  saveRecentFixes,
+  type RecentFix,
+} from "../../lib/pendingFixesBuffer";
 import { useFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 import { useFixOverlay } from "./useFixOverlay";
 import { useCloakingZones } from "./useCloakingZones";
@@ -167,6 +172,12 @@ const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 // "rejected" (red) fixes that the native 50m distanceFilter would otherwise eat
 // before the sampler ever runs. Off by default; no effect when the overlay is off.
 const FIX_OVERLAY_DEBUG_POLL_MS = 4_000;
+// Cap each debug poll so a hung fix (common in poor GPS) errors out instead of
+// hanging forever and letting the next ticks queue behind it.
+const FIX_OVERLAY_DEBUG_TIMEOUT_MS = 10_000;
+// Flush densifier telemetry at most this often. Matches the 30s gps:fix debounce
+// so the Debug Panel's 500-entry ring buffer isn't drowned in per-poll lines.
+const FIX_OVERLAY_DEBUG_SUMMARY_MS = 30_000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 50;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 120_000;
 const REPLAY_TRAIL_PAGE_SIZE = 500;
@@ -1324,10 +1335,30 @@ export default function TripMap({
   const breadcrumbSamplerStateRef = useRef<BreadcrumbSamplerState>({});
   const samplerMode = useSamplerMode();
   const samplerModeRef = useRef(samplerMode);
-  const recentFixesRef = useRef<RecentFix[]>([]);
-  const [recentFixes, setRecentFixes] = useState<RecentFix[]>([]);
+  // Seed from localStorage so debug dots survive a WebView reload / remount
+  // within the TTL instead of vanishing.
+  const recentFixesRef = useRef<RecentFix[]>(loadRecentFixes(Date.now()));
+  const [recentFixes, setRecentFixes] = useState<RecentFix[]>(() => recentFixesRef.current);
   const fixOverlayEnabled = useFixOverlayEnabled();
   const fixOverlayEnabledRef = useRef(fixOverlayEnabled);
+  // Debug-only densifier instrumentation. The in-flight guard serializes the
+  // ~4s poll so a stalled getCurrentPosition can't queue up and flush as a
+  // burst; the stats are aggregated and flushed as one summary log per window
+  // (see FIX_OVERLAY_DEBUG_SUMMARY_MS) to stay under the Debug Panel's ring cap.
+  const densifyInFlightRef = useRef(false);
+  const densifyStatsRef = useRef({
+    attempts: 0,
+    skippedInFlight: 0,
+    succeeded: 0,
+    timedOut: 0,
+    errPermission: 0,
+    errUnavailable: 0,
+    resolveMsSum: 0,
+    resolveMsMax: 0,
+    emitted: 0,
+    rejected: 0,
+  });
+  const lastDensifySummaryAtRef = useRef(0);
   const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
@@ -3540,6 +3571,47 @@ export default function TripMap({
     // get rejected (red dots), movement past 50m emits (green). Platform-agnostic
     // (native, browser, DevTools-simulated location). No-op unless the overlay is
     // on, so it costs nothing in normal use.
+    // Flush aggregated densifier telemetry as a single privacy-safe log line
+    // (counts / ms / booleans only — never coords or accuracy) once per window,
+    // then reset the counters. emitted/rejected are tallied in
+    // publishLiveTrailSample so the summary reflects both the densifier and the
+    // native watcher.
+    const maybeFlushDensifySummary = () => {
+      const now = Date.now();
+      const since = lastDensifySummaryAtRef.current;
+      if (since !== 0 && now - since < FIX_OVERLAY_DEBUG_SUMMARY_MS) return;
+      const s = densifyStatsRef.current;
+      if (since !== 0) {
+        log.logUi("live-trail:densify:summary", {
+          windowMs: now - since,
+          attempts: s.attempts,
+          skippedInFlight: s.skippedInFlight,
+          succeeded: s.succeeded,
+          timedOut: s.timedOut,
+          errPermission: s.errPermission,
+          errUnavailable: s.errUnavailable,
+          avgResolveMs: s.succeeded > 0 ? Math.round(s.resolveMsSum / s.succeeded) : 0,
+          maxResolveMs: s.resolveMsMax,
+          emitted: s.emitted,
+          rejected: s.rejected,
+          isAppActive: isAppActiveRef.current,
+        });
+      }
+      lastDensifySummaryAtRef.current = now;
+      densifyStatsRef.current = {
+        attempts: 0,
+        skippedInFlight: 0,
+        succeeded: 0,
+        timedOut: 0,
+        errPermission: 0,
+        errUnavailable: 0,
+        resolveMsSum: 0,
+        resolveMsMax: 0,
+        emitted: 0,
+        rejected: 0,
+      };
+    };
+
     const fixOverlayDebugInterval = setInterval(() => {
       if (
         !fixOverlayEnabledRef.current ||
@@ -3549,8 +3621,25 @@ export default function TripMap({
       ) {
         return;
       }
+      // Serialize polls: if the previous getCurrentPosition is still pending,
+      // skip this tick instead of stacking another request. This is what kills
+      // the queue-and-flush burst in poor GPS.
+      if (densifyInFlightRef.current) {
+        densifyStatsRef.current.skippedInFlight += 1;
+        maybeFlushDensifySummary();
+        return;
+      }
+      densifyInFlightRef.current = true;
+      densifyStatsRef.current.attempts += 1;
+      const startedAt = Date.now();
       navigator.geolocation.getCurrentPosition(
-        (pos) =>
+        (pos) => {
+          densifyInFlightRef.current = false;
+          const resolveMs = Date.now() - startedAt;
+          const stats = densifyStatsRef.current;
+          stats.succeeded += 1;
+          stats.resolveMsSum += resolveMs;
+          stats.resolveMsMax = Math.max(stats.resolveMsMax, resolveMs);
           handleFix(
             pos.coords.latitude,
             pos.coords.longitude,
@@ -3558,9 +3647,20 @@ export default function TripMap({
             typeof pos.coords.speed === "number" && pos.coords.speed >= 0
               ? pos.coords.speed
               : undefined,
-          ),
-        () => {},
-        { enableHighAccuracy: true, maximumAge: 0 },
+          );
+          maybeFlushDensifySummary();
+        },
+        (err) => {
+          densifyInFlightRef.current = false;
+          const stats = densifyStatsRef.current;
+          // GeolocationPositionError codes: 1=permission, 2=unavailable, 3=timeout.
+          // No coords/accuracy/message logged — only the code bucket.
+          if (err.code === err.TIMEOUT) stats.timedOut += 1;
+          else if (err.code === err.PERMISSION_DENIED) stats.errPermission += 1;
+          else stats.errUnavailable += 1;
+          maybeFlushDensifySummary();
+        },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: FIX_OVERLAY_DEBUG_TIMEOUT_MS },
       );
     }, FIX_OVERLAY_DEBUG_POLL_MS);
 
@@ -3755,6 +3855,11 @@ export default function TripMap({
       fix.sampledAt,
     );
     setRecentFixes(recentFixesRef.current);
+    saveRecentFixes(recentFixesRef.current);
+    // Tally outcomes for the densifier summary (covers both the debug poll and
+    // the native watcher; flushed by maybeFlushDensifySummary).
+    if (shouldEmit) densifyStatsRef.current.emitted += 1;
+    else densifyStatsRef.current.rejected += 1;
 
     if (!shouldEmit) {
       log.logInteraction("live-trail:sample:rejected", { mode });
