@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useConvex } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { recordImageSizes, getRecordedImageIds } from "../../lib/egressMeter";
@@ -11,20 +11,22 @@ import { recordImageSizes, getRecordedImageIds } from "../../lib/egressMeter";
  */
 export function useEgressMeter(token: string, imageIds: string[]) {
   const convex = useConvex();
+  const pending = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!token || imageIds.length === 0) return;
     const recorded = getRecordedImageIds();
-    const missing = imageIds.filter((id) => id && !recorded.has(id));
+    const cacheKey = (id: string) => `${token}:${id}`;
+    const missing = imageIds.filter((id) => id && !recorded.has(id) && !pending.current.has(cacheKey(id)));
     if (missing.length === 0) return;
-    let cancelled = false;
+    for (const imageId of missing) pending.current.add(cacheKey(imageId));
     convex
       .query(tripcastApi.checkpoints.getStoryImageSizes, { token, imageIds: missing })
       .then((rows) => {
-        if (!cancelled && rows && rows.length > 0) recordImageSizes(rows);
+        if (rows && rows.length > 0) recordImageSizes(rows);
       })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+      .catch(() => {
+        for (const imageId of missing) pending.current.delete(cacheKey(imageId));
+      });
   }, [convex, token, imageIds]);
 }
