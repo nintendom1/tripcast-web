@@ -70,6 +70,7 @@ import {
 import JournalSheet from "../journal/JournalSheet";
 import StoryDetailSheet from "../journal/StoryDetailSheet";
 import { useImagePrefetch } from "../journal/useImagePrefetch";
+import { useEgressMeter } from "../journal/useEgressMeter";
 import { uploadStoryImage } from "../journal/storyImageUpload";
 import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
 import AchievementsConnected from "../achievements/AchievementsConnected";
@@ -4560,6 +4561,9 @@ export default function TripMap({
   }, [currentOverlayPin?.imageId, replayActive, replayPins, replayPlayheadIndex, selectedStoryEvent?.imageId]);
 
   useImagePrefetch(token, imageIdsToPrefetch);
+  // Record served sizes of the images this device fetches for the Developer
+  // egress estimate (same set the prefetch warms).
+  useEgressMeter(token, imageIdsToPrefetch);
 
   return (
     <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">

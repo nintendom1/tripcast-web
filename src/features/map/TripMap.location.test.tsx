@@ -1256,7 +1256,7 @@ describe("TripMap location marker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Constellation theme" }));
 
     await waitFor(() => {
-      expect(map.setStyle).toHaveBeenCalledWith(expect.stringContaining("style=fiord"));
+      expect(map.setStyle).toHaveBeenCalledWith(expect.stringContaining("styles/fiord"));
     });
     expect(mapConstructorOptions).toHaveLength(1);
     expect(map.remove).not.toHaveBeenCalled();
