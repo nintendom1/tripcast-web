@@ -13,6 +13,7 @@ import {
   Bell,
   Bomb,
   Bug,
+  Radar,
   ChevronRight,
   Clock,
   Database,
@@ -51,6 +52,14 @@ import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { useSamplerMode, setSamplerMode, SAMPLER_MODE_INFO, type SamplerMode } from "../../lib/samplerMode";
 import { useFixOverlayEnabled, setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
+import {
+  useDenseCaptureEnabled,
+  setDenseCaptureEnabled,
+  useDenseCaptureTimeoutMinutes,
+  setDenseCaptureTimeoutMinutes,
+  useDenseCaptureEnabledAt,
+  DENSE_CAPTURE_TIMEOUT_OPTIONS,
+} from "../../lib/denseCaptureToggle";
 import type {
   CloakingPin,
   LiveTrailDeletePreview,
@@ -1089,9 +1098,30 @@ function FollowerAttributionToggle({ token }: { token: string }) {
   );
 }
 
+function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
 function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogger }) {
   const samplerMode = useSamplerMode();
   const fixOverlayEnabled = useFixOverlayEnabled();
+  const denseCaptureEnabled = useDenseCaptureEnabled();
+  const denseCaptureTimeout = useDenseCaptureTimeoutMinutes();
+  const denseCaptureEnabledAt = useDenseCaptureEnabledAt();
+  // Tick once a second while capture is on so the auto-off countdown updates.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!denseCaptureEnabled || denseCaptureTimeout <= 0) return;
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [denseCaptureEnabled, denseCaptureTimeout]);
+  const denseCaptureRemainingMs =
+    denseCaptureEnabled && denseCaptureTimeout > 0 && denseCaptureEnabledAt !== null
+      ? Math.max(0, denseCaptureEnabledAt + denseCaptureTimeout * 60_000 - nowMs)
+      : null;
   const fallbackTimeZone = detectBrowserTimeZone() ?? "UTC";
   const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
   const status = useQuery(tripcastApi.liveTrail.travelerGetLiveTrailStatus, { token });
@@ -1285,6 +1315,31 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
             checked={fixOverlayEnabled}
             onChange={setFixOverlayEnabled}
           />
+          <OptionsSwitchRow
+            icon={Radar}
+            title="Dense GPS capture"
+            detail="Polls a dense GPS stream so the overlay fills in. High battery — runs in the background and auto-stops."
+            checked={denseCaptureEnabled}
+            onChange={setDenseCaptureEnabled}
+          />
+          {denseCaptureEnabled ? (
+            <div className="flex flex-col gap-3 px-4 py-3 sm:px-5">
+              <div className="text-sm text-[var(--ink-3)]">Auto-stop after</div>
+              <OptionsSegmentedControl
+                value={String(denseCaptureTimeout)}
+                options={DENSE_CAPTURE_TIMEOUT_OPTIONS.map((m) => ({
+                  value: String(m),
+                  label: m === 0 ? "Off" : m === 60 ? "1 hr" : `${m} min`,
+                }))}
+                onChange={(value) => setDenseCaptureTimeoutMinutes(Number(value))}
+              />
+              <div className="rounded-lg bg-[var(--meter-track)]/60 px-3 py-2 text-xs text-[var(--ink-3)]">
+                {denseCaptureTimeout <= 0
+                  ? "No auto-off — remember to turn this off."
+                  : `Auto-stops in ${formatCountdown(denseCaptureRemainingMs ?? 0)}.`}
+              </div>
+            </div>
+          ) : null}
         </OptionsGroup>
       </OptionsSection>
 

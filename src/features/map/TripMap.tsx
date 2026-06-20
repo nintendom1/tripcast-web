@@ -59,7 +59,14 @@ import {
   isNativeLocationAvailable,
   openNativeLocationSettings,
   startNativeLocationWatch,
+  startNativeDenseLocationWatch,
 } from "../../native/locationWatcher";
+import {
+  useDenseCaptureEnabled,
+  setDenseCaptureEnabled,
+  getDenseCaptureTimeoutMinutes,
+  isDenseCaptureExpired,
+} from "../../lib/denseCaptureToggle";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import {
   Sheet,
@@ -1342,6 +1349,14 @@ export default function TripMap({
   const [recentFixes, setRecentFixes] = useState<RecentFix[]>(() => recentFixesRef.current);
   const fixOverlayEnabled = useFixOverlayEnabled();
   const fixOverlayEnabledRef = useRef(fixOverlayEnabled);
+  const denseCaptureEnabled = useDenseCaptureEnabled();
+  const denseCaptureEnabledRef = useRef(denseCaptureEnabled);
+  // Stable handle to the location effect's handleFix so the dense-capture
+  // watcher (a separate effect) can route fixes through the same path without
+  // hoisting that large closure.
+  const handleFixRef = useRef<
+    ((lat: number, lon: number, accuracy?: number, speed?: number) => void) | null
+  >(null);
   // Debug-only densifier instrumentation. The in-flight guard serializes the
   // ~4s poll so a stalled getCurrentPosition can't queue up and flush as a
   // burst; the stats are aggregated and flushed as one summary log per window
@@ -3128,6 +3143,50 @@ export default function TripMap({
   }, [fixOverlayEnabled]);
 
   useEffect(() => {
+    denseCaptureEnabledRef.current = denseCaptureEnabled;
+  }, [denseCaptureEnabled]);
+
+  // Auto-disable dense capture once its selectable timeout elapses. Checked on a
+  // foreground interval (covers the idle case) and on each dense fix in the
+  // watcher effect below (covers the backgrounded case, where JS timers are
+  // suspended but native fix callbacks still run).
+  const maybeAutoDisableDenseCapture = useCallback(() => {
+    if (!isDenseCaptureExpired(Date.now())) return;
+    const mins = getDenseCaptureTimeoutMinutes();
+    setDenseCaptureEnabled(false);
+    showToast(`Dense GPS capture auto-disabled after ${mins} min.`);
+  }, [showToast]);
+
+  useEffect(() => {
+    if (!denseCaptureEnabled) return;
+    const id = setInterval(maybeAutoDisableDenseCapture, 5_000);
+    return () => clearInterval(id);
+  }, [denseCaptureEnabled, maybeAutoDisableDenseCapture]);
+
+  // Debug-only dense native watcher. Runs alongside the 50m trail watcher while
+  // dense capture is on and we're recording, routing fixes through the same
+  // handleFix path (via handleFixRef). getCurrentPosition is dead in the iOS
+  // background, but this native watcher keeps delivering — that's the whole
+  // point. No-op off-device; the browser/DevTools path uses the JS poll instead.
+  useEffect(() => {
+    if (!isNativeLocationAvailable()) return;
+    if (!denseCaptureEnabled || !isLocationSharing || !liveTrailEnabled) return;
+    log.logInteraction("live-trail:dense-capture:start", {});
+    const stop = startNativeDenseLocationWatch(
+      (fix) => {
+        if (!liveTrailCanRecordRef.current) return;
+        handleFixRef.current?.(fix.lat, fix.lon, fix.accuracy, fix.speed);
+        maybeAutoDisableDenseCapture();
+      },
+      () => {},
+    );
+    return () => {
+      log.logInteraction("live-trail:dense-capture:stop", {});
+      stop();
+    };
+  }, [denseCaptureEnabled, isLocationSharing, liveTrailEnabled, log, maybeAutoDisableDenseCapture]);
+
+  useEffect(() => {
     liveTrailEnabledRef.current = liveTrailEnabled;
     liveTrailCanRecordRef.current = liveTrailEnabled;
     if (!travelerLiveTrailStatus) return;
@@ -3568,6 +3627,8 @@ export default function TripMap({
     }
 
     gpsCleanupRef.current = cleanup;
+    // Expose handleFix to the dense-capture watcher effect.
+    handleFixRef.current = handleFix;
 
     // Native only: if LIVE is on but no fix has landed in a while, the plugin
     // may have silently stalled (iOS background-task timeout, system location
@@ -3636,9 +3697,13 @@ export default function TripMap({
       };
     };
 
+    // Browser/DevTools dense-capture path. On native, getCurrentPosition is dead
+    // in the background, so dense capture uses the native watcher (above) instead
+    // and this poll is gated off.
     const fixOverlayDebugInterval = setInterval(() => {
       if (
-        !fixOverlayEnabledRef.current ||
+        !denseCaptureEnabledRef.current ||
+        isNativeLocationAvailable() ||
         !isLocationSharingRef.current ||
         !liveTrailEnabledRef.current ||
         !liveTrailCanRecordRef.current
@@ -3692,6 +3757,9 @@ export default function TripMap({
       cleanup();
       if (gpsCleanupRef.current === cleanup) {
         gpsCleanupRef.current = null;
+      }
+      if (handleFixRef.current === handleFix) {
+        handleFixRef.current = null;
       }
       clearInterval(staleInterval);
       clearInterval(fixOverlayDebugInterval);

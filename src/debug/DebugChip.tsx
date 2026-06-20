@@ -9,6 +9,7 @@ import {
   type ActiveUiContext,
   type FloatingDebugSettings,
 } from "./activeUiContext";
+import { useDenseCaptureEnabled } from "../lib/denseCaptureToggle";
 
 const EDGE_PADDING = 12;
 const INITIAL_TOP = 48;
@@ -20,6 +21,7 @@ type PointerStart = { id: number; x: number; y: number };
 
 export function DebugChip({ onOpen }: { onOpen: () => void }) {
   const [enabled, setEnabledState] = useState(isEnabled);
+  const denseCaptureActive = useDenseCaptureEnabled();
   const [logCount, setLogCount] = useState(() => getLogs().length);
   const [activeContext, setActiveContext] = useState<ActiveUiContext | null>(getActiveUiContext);
   const [settings, setSettings] = useState<FloatingDebugSettings>(getFloatingDebugSettings);
@@ -320,6 +322,12 @@ export function DebugChip({ onOpen }: { onOpen: () => void }) {
       }}
     >
       {content}
+      {denseCaptureActive ? (
+        <span
+          aria-label="Dense GPS capture active"
+          className="pointer-events-none absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-[var(--ink-1)]"
+        />
+      ) : null}
     </motion.button>
   );
 }

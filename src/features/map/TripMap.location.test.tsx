@@ -10,6 +10,7 @@ import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
 import { useTripPath } from "./useTripPath";
 import { setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
+import { setDenseCaptureEnabled } from "../../lib/denseCaptureToggle";
 
 const mapEaseTo = vi.fn();
 const mapFitBounds = vi.fn();
@@ -2185,8 +2186,9 @@ describe("TripMap fix overlay debug densifier", () => {
   // overlay finally shows the close-spaced fixes the native 50m distanceFilter would
   // otherwise eat — rejected (red) while stationary, emitted (green) on movement.
   afterEach(() => {
-    // Reset module-level cached flag so it can't leak into other suites.
+    // Reset module-level cached flags so they can't leak into other suites.
     setFixOverlayEnabled(false);
+    setDenseCaptureEnabled(false);
   });
 
   function overlayFeatureOutcomes(): string[] {
@@ -2199,10 +2201,11 @@ describe("TripMap fix overlay debug densifier", () => {
     return (data?.data?.features ?? []).map((f) => f.properties?.outcome ?? "");
   }
 
-  it("polls getCurrentPosition on a 4s cadence only while the overlay is enabled", () => {
+  it("polls getCurrentPosition on a 4s cadence only while dense capture is enabled", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     setFixOverlayEnabled(true);
+    setDenseCaptureEnabled(true);
     geolocationWatchPosition.mockImplementation((onSuccess) => {
       onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
       return 42;
@@ -2227,10 +2230,12 @@ describe("TripMap fix overlay debug densifier", () => {
     vi.useRealTimers();
   });
 
-  it("never polls getCurrentPosition while the overlay is off", () => {
+  it("never polls getCurrentPosition while dense capture is off", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
-    setFixOverlayEnabled(false);
+    // Overlay visible but dense capture off: the poll must stay gated.
+    setFixOverlayEnabled(true);
+    setDenseCaptureEnabled(false);
     geolocationWatchPosition.mockImplementation((onSuccess) => {
       onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
       return 42;
@@ -2254,6 +2259,7 @@ describe("TripMap fix overlay debug densifier", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     setFixOverlayEnabled(true);
+    setDenseCaptureEnabled(true);
     geolocationWatchPosition.mockImplementation((onSuccess) => {
       onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
       return 42;

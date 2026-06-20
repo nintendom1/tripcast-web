@@ -20,6 +20,12 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
 // filter would only burn battery.
 const DISTANCE_FILTER_METERS = 50;
 
+// Debug-only "Dense GPS capture": a separate, tight-filter watcher that produces
+// the close-spaced stream the Fix Overlay visualizes. Deliberately small so the
+// sampler sees rejects between emits; battery-heavy, so it only runs while the
+// user has dense capture toggled on (and it auto-disables — see TripMap).
+const DENSE_DISTANCE_FILTER_METERS = 5;
+
 export type NativeLocationFix = { lat: number; lon: number; accuracy?: number; speed?: number };
 
 export function isNativeLocationAvailable(): boolean {
@@ -37,7 +43,9 @@ export function openNativeLocationSettings(): void {
  * (the message is only surfaced as a notification on Android; iOS ignores it).
  * Returns a cleanup function that removes the watcher.
  */
-export function startNativeLocationWatch(
+function startWatcher(
+  distanceFilter: number,
+  backgroundMessage: string,
   onFix: (fix: NativeLocationFix) => void,
   onError: (error: unknown) => void,
 ): () => void {
@@ -46,10 +54,10 @@ export function startNativeLocationWatch(
 
   BackgroundGeolocation.addWatcher(
     {
-      backgroundMessage: "TripCast is sharing your live location.",
+      backgroundMessage,
       backgroundTitle: "TripCast — Live location",
       requestPermissions: true,
-      distanceFilter: DISTANCE_FILTER_METERS,
+      distanceFilter,
     },
     (location, error) => {
       if (error) {
@@ -95,4 +103,34 @@ export function startNativeLocationWatch(
       watcherId = null;
     }
   };
+}
+
+export function startNativeLocationWatch(
+  onFix: (fix: NativeLocationFix) => void,
+  onError: (error: unknown) => void,
+): () => void {
+  return startWatcher(
+    DISTANCE_FILTER_METERS,
+    "TripCast is sharing your live location.",
+    onFix,
+    onError,
+  );
+}
+
+/**
+ * Debug-only dense watcher (tight distanceFilter). Runs alongside the normal
+ * 50m trail watcher — the plugin supports multiple concurrent watchers, each
+ * with its own id — so the real recorded trail is unaffected; only the Fix
+ * Overlay sees the extra fixes. Returns a cleanup that removes just this watcher.
+ */
+export function startNativeDenseLocationWatch(
+  onFix: (fix: NativeLocationFix) => void,
+  onError: (error: unknown) => void,
+): () => void {
+  return startWatcher(
+    DENSE_DISTANCE_FILTER_METERS,
+    "TripCast is capturing dense GPS for debugging.",
+    onFix,
+    onError,
+  );
 }
