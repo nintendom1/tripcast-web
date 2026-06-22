@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { ChevronLeft, ChevronRight, ImagePlus, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, ChevronRight, ImagePlus, MapPin as MapPinIcon, Trash2 } from "lucide-react";
 import Zoom from "react-medium-image-zoom";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { StatBar } from "../../components/rpg/StatBar";
+import { ConfirmModal } from "../../components/ui/ConfirmModal";
+import { InfoTooltip } from "../../components/ui/info-tooltip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { JournalEvent, Role, StoryImageSize } from "../../convex/tripcastApi";
@@ -20,7 +22,7 @@ import {
   SheetGradientHeader,
   SheetTitle,
 } from "../../components/ui/sheet";
-import { cn } from "@/lib/utils";
+import { cn, formatCoordinate, parseLocalDatetimeInputValue, toLocalDatetimeInputValue } from "@/lib/utils";
 import { LocationPickerField } from "../map/MapPicker";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { ConfirmDelete } from "../../components/ui/ConfirmDelete";
@@ -43,27 +45,10 @@ import {
   STRESS_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
 } from "../travelstate/travelerStateUtils";
-import { uploadStoryImage, validateStoryImageFile } from "./storyImageUpload";
+import { extractImageMetadata, uploadStoryImage, validateStoryImageFile, type ImageMetadata } from "./storyImageUpload";
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-function toLocalDatetimeInputValue(date: Date): string {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return (
-    date.getFullYear() +
-    "-" + pad(date.getMonth() + 1) +
-    "-" + pad(date.getDate()) +
-    "T" + pad(date.getHours()) +
-    ":" + pad(date.getMinutes())
-  );
-}
-
-function parseLocalDatetimeInputValue(value: string): number | null {
-  if (!value) return null;
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? ms : null;
 }
 
 // Treat any drift larger than ~1 minute between happenedAt and createdAt as
@@ -203,6 +188,13 @@ export default function StoryDetailSheet({
   const [editClearImage, setEditClearImage] = useState(false);
   const [editHappenedAt, setEditHappenedAt] = useState<string>("");
   const [editHappenedAtInitial, setEditHappenedAtInitial] = useState<string>("");
+  const [editMetadata, setEditMetadata] = useState<ImageMetadata | null>(null);
+  const [confirmMetadata, setConfirmMetadata] = useState<{
+    type: "date" | "gps";
+    newValue: string | { lat: number; lon: number };
+    oldValue: string | { lat: number; lon: number };
+  } | null>(null);
+  const metadataRequestIdRef = useRef(0);
   const [isWorking, setIsWorking] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState(false);
@@ -319,6 +311,7 @@ export default function StoryDetailSheet({
     setEditImagePreviewUrl(null);
     setEditImageSize(displayEvent.imageSize ?? "medium");
     setEditClearImage(false);
+    setEditMetadata(null);
     const initialHappenedAt = toLocalDatetimeInputValue(new Date(displayEvent.occurredAt));
     setEditHappenedAt(initialHappenedAt);
     setEditHappenedAtInitial(initialHappenedAt);
@@ -333,9 +326,10 @@ export default function StoryDetailSheet({
     setEditImageFile(null);
     setEditImagePreviewUrl(null);
     setEditClearImage(false);
+    setEditMetadata(null);
   }
 
-  function handleEditImageChange(file: File | undefined) {
+  async function handleEditImageChange(file: File | undefined) {
     if (!file) return;
     try {
       validateStoryImageFile(file);
@@ -351,6 +345,18 @@ export default function StoryDetailSheet({
         bytes: file.size,
         contentType: file.type || "unknown",
       });
+
+      const requestId = ++metadataRequestIdRef.current;
+      const metadata = await extractImageMetadata(file);
+      if (requestId !== metadataRequestIdRef.current) return;
+      setEditMetadata(metadata);
+      if (metadata) {
+        log.logInteraction("story-image:metadata-extracted", {
+          source: "edit",
+          hasDate: metadata.date != null,
+          hasGps: metadata.lat != null,
+        });
+      }
     } catch (imageError) {
       log.error("story-image:attach:error", "interaction", {
         source: "edit",
@@ -361,13 +367,59 @@ export default function StoryDetailSheet({
   }
 
   function clearEditImage() {
+    metadataRequestIdRef.current++;
     setEditImageFile(null);
     setEditClearImage(true);
     setEditImagePreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
     });
+    setEditMetadata(null);
     log.logInteraction("story-image:remove", { source: "edit" });
+  }
+
+  function handleUseMetadataDate() {
+    if (!editMetadata?.date) return;
+    const newDate = new Date(editMetadata.date);
+    const newValue = toLocalDatetimeInputValue(newDate);
+    const oldValue = editHappenedAt;
+
+    setConfirmMetadata({
+      type: "date",
+      newValue,
+      oldValue,
+    });
+  }
+
+  function handleUseMetadataGps() {
+    if (editMetadata?.lat == null || editMetadata?.lon == null) return;
+    const newValue = { lat: editMetadata.lat, lon: editMetadata.lon };
+    const oldValue =
+      editLat !== undefined && editLon !== undefined
+        ? { lat: editLat, lon: editLon }
+        : "Not set";
+
+    setConfirmMetadata({
+      type: "gps",
+      newValue,
+      oldValue,
+    });
+  }
+
+  function confirmMetadataChange() {
+    if (!confirmMetadata) return;
+
+    if (confirmMetadata.type === "date") {
+      setEditHappenedAt(confirmMetadata.newValue as string);
+      log.logInteraction("metadata:apply-date", { source: "edit", value: confirmMetadata.newValue });
+    } else if (confirmMetadata.type === "gps") {
+      const { lat, lon } = confirmMetadata.newValue as { lat: number; lon: number };
+      setEditLat(lat);
+      setEditLon(lon);
+      log.logInteraction("metadata:apply-gps", { source: "edit", lat, lon });
+    }
+
+    setConfirmMetadata(null);
   }
 
   function handleStoryNavigation(direction: "previous" | "next") {
@@ -674,15 +726,57 @@ export default function StoryDetailSheet({
                       ) : null}
                     </div>
                     {editImagePreviewUrl || (!editClearImage && currentImageUrl) ? (
-                      <LoadingImage
-                        src={editImagePreviewUrl ?? currentImageUrl ?? undefined}
-                        alt=""
-                        aspectRatio="4/3"
-                        containerClassName="max-h-48 w-full rounded-md"
-                        className="object-cover"
-                        onLoad={() => log.logInteraction("story-image:render", { source: editImagePreviewUrl ? "draft" : "stored" })}
-                        onError={() => log.error("story-image:render:error", "ui", { source: editImagePreviewUrl ? "draft" : "stored" })}
-                      />
+                      <div className="space-y-3">
+                        <LoadingImage
+                          src={editImagePreviewUrl ?? currentImageUrl ?? undefined}
+                          alt=""
+                          aspectRatio="4/3"
+                          containerClassName="max-h-48 w-full rounded-md"
+                          className="object-cover"
+                          onLoad={() => log.logInteraction("story-image:render", { source: editImagePreviewUrl ? "draft" : "stored" })}
+                          onError={() => log.error("story-image:render:error", "ui", { source: editImagePreviewUrl ? "draft" : "stored" })}
+                        />
+                        {editImagePreviewUrl && (
+                          <div className="flex flex-wrap gap-2">
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1.5 px-3 text-xs"
+                                disabled={!editMetadata?.date}
+                                onClick={handleUseMetadataDate}
+                              >
+                                <CalendarClock className="h-3.5 w-3.5" />
+                                Use date/time
+                              </Button>
+                              {!editMetadata?.date && (
+                                <InfoTooltip label="No date metadata found">
+                                  This photo doesn't have embedded date/time information.
+                                </InfoTooltip>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 gap-1.5 px-3 text-xs"
+                                disabled={editMetadata?.lat == null}
+                                onClick={handleUseMetadataGps}
+                              >
+                                <MapPinIcon className="h-3.5 w-3.5" />
+                                Use GPS
+                              </Button>
+                              {editMetadata?.lat == null && (
+                                <InfoTooltip label="No GPS metadata found">
+                                  This photo doesn't have embedded location information.
+                                </InfoTooltip>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ) : (
                       <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--bg-paper-2)]">
                         <ImagePlus className="h-4 w-4" aria-hidden="true" />
@@ -741,6 +835,49 @@ export default function StoryDetailSheet({
                       {actionError}
                     </p>
                   ) : null}
+
+                  <ConfirmModal
+                    open={confirmMetadata !== null}
+                    onOpenChange={(open) => {
+                      if (!open) setConfirmMetadata(null);
+                    }}
+                    title={confirmMetadata?.type === "date" ? "Update date/time?" : "Update location?"}
+                    description={
+                      <div className="space-y-3">
+                        <p>Use the metadata from the photo instead of the current value?</p>
+                        <div className="grid grid-cols-2 gap-4 rounded-lg bg-[var(--bg-paper-2)] p-3 text-xs">
+                          <div className="space-y-1">
+                            <span className="font-bold uppercase tracking-wider text-[var(--ink-3)]">Current</span>
+                            <div className="font-mono text-[var(--ink-1)]">
+                              {confirmMetadata?.type === "date" ? (
+                                confirmMetadata.oldValue as string
+                              ) : (
+                                <>
+                                  {formatCoordinate((confirmMetadata?.oldValue as any)?.lat ?? 0)},<br />
+                                  {formatCoordinate((confirmMetadata?.oldValue as any)?.lon ?? 0)}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <span className="font-bold uppercase tracking-wider text-[var(--flag)]">Photo</span>
+                            <div className="font-mono text-[var(--ink-1)]">
+                              {confirmMetadata?.type === "date" ? (
+                                confirmMetadata.newValue as string
+                              ) : (
+                                <>
+                                  {formatCoordinate((confirmMetadata?.newValue as any)?.lat ?? 0)},<br />
+                                  {formatCoordinate((confirmMetadata?.newValue as any)?.lon ?? 0)}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    }
+                    confirmLabel="Update"
+                    onConfirm={confirmMetadataChange}
+                  />
 
                   <Button type="button" disabled={isWorking} onClick={handleSaveEdit}>
                     {isWorking ? "Saving…" : "Save changes"}
