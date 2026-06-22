@@ -14,4 +14,21 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1100,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("react")) return "vendor-react";
+            if (id.includes("framer-motion")) return "vendor-framer";
+            if (id.includes("maplibre-gl")) return "vendor-map";
+            if (id.includes("convex")) return "vendor-convex";
+            if (id.includes("lucide-react") || id.includes("@base-ui/react")) return "vendor-ui";
+            return "vendor";
+          }
+        },
+      },
+    },
+  },
 }));
