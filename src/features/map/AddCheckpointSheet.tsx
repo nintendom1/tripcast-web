@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { CalendarClock, ChevronLeft, ImagePlus, MapPin, Trash2 } from "lucide-react";
-import ExifReader from "exifreader";
 
 import type { AddCheckpointArgs, CheckpointSource, StoryImageSize } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -15,10 +14,11 @@ import {
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
-import { validateStoryImageFile } from "../journal/storyImageUpload";
+import { extractImageMetadata, validateStoryImageFile, type ImageMetadata } from "../journal/storyImageUpload";
 import { LoadingImage } from "../../components/ui/LoadingImage";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
+import { formatCoordinate, parseLocalDatetimeInputValue, toLocalDatetimeInputValue } from "@/lib/utils";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -66,29 +66,6 @@ type AddCheckpointSheetProps = {
   debugSource?: { source: string; sourceLabel: string };
 };
 
-function formatCoordinate(value: number) {
-  return value.toFixed(6);
-}
-
-// Render a Date as a value the native `datetime-local` input understands.
-// We work in the user's local zone in the UI and convert to UTC epoch ms on
-// save — the schema column stores UTC.
-function toLocalDatetimeInputValue(date: Date) {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return (
-    date.getFullYear() +
-    "-" + pad(date.getMonth() + 1) +
-    "-" + pad(date.getDate()) +
-    "T" + pad(date.getHours()) +
-    ":" + pad(date.getMinutes())
-  );
-}
-
-function parseLocalDatetimeInputValue(value: string): number | null {
-  if (!value) return null;
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
 
 const FUTURE_WARNING_MS = 24 * 60 * 60 * 1000;
 const STORY_IMAGE_SIZES = ["compact", "medium", "large"] as const;
@@ -132,11 +109,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       prefill?.happenedAt !== undefined ? new Date(prefill.happenedAt) : new Date();
     return toLocalDatetimeInputValue(initial);
   });
-  const [metadata, setMetadata] = useState<{
-    date?: number;
-    lat?: number;
-    lon?: number;
-  } | null>(null);
+  const [metadata, setMetadata] = useState<ImageMetadata | null>(null);
   const [confirmMetadata, setConfirmMetadata] = useState<{
     type: "date" | "gps";
     newValue: string | { lat: number; lon: number };
@@ -223,51 +196,14 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
 
       // Extract metadata
       const requestId = ++metadataRequestIdRef.current;
-      try {
-        // Expanded mode gives us signed GPS values (hemisphere already applied
-        // from GPSLatitudeRef/GPSLongitudeRef) and grouped EXIF/GPS namespaces.
-        const tags = await ExifReader.load(file, {
-          expanded: true,
-          length: "auto",
-          includeOffsets: true,
-        });
-        // A newer photo (or a cleared draft) superseded this read while awaiting.
-        if (requestId !== metadataRequestIdRef.current) return;
-
-        const nextMetadata: typeof metadata = {};
-
-        const dateStr = tags.exif?.DateTimeOriginal?.description;
-        if (dateStr) {
-          // EXIF DateTimeOriginal is "YYYY:MM:DD HH:MM:SS" with no timezone.
-          // Prefer OffsetTimeOriginal when present so the instant is correct;
-          // otherwise fall back to the viewer's local timezone.
-          const [datePart, timePart] = dateStr.split(" ");
-          const normalizedDateStr = datePart.replace(/:/g, "-") + "T" + timePart;
-          const offset = tags.exif?.OffsetTimeOriginal?.description;
-          const date = new Date(offset ? normalizedDateStr + offset : normalizedDateStr);
-          if (!isNaN(date.getTime())) {
-            nextMetadata.date = date.getTime();
-          }
-        }
-
-        const lat = tags.gps?.Latitude;
-        const lon = tags.gps?.Longitude;
-        if (Number.isFinite(lat) && Number.isFinite(lon)) {
-          nextMetadata.lat = lat;
-          nextMetadata.lon = lon;
-        }
-
-        setMetadata(Object.keys(nextMetadata).length > 0 ? nextMetadata : null);
+      const nextMetadata = await extractImageMetadata(file);
+      if (requestId !== metadataRequestIdRef.current) return;
+      setMetadata(nextMetadata);
+      if (nextMetadata) {
         log.logInteraction("story-image:metadata-extracted", {
           hasDate: nextMetadata.date != null,
           hasGps: nextMetadata.lat != null,
         });
-      } catch (exifError) {
-        if (requestId !== metadataRequestIdRef.current) return;
-        log.warn("story-image:metadata-error", "interaction", {
-          message: exifError instanceof Error ? exifError.message : String(exifError),
-        });
-        setMetadata(null);
       }
 
       setError(null);
