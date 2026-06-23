@@ -756,24 +756,26 @@ export default function StoryDetailSheet({
                                 </InfoTooltip>
                               )}
                             </div>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 gap-1.5 px-3 text-xs"
-                                disabled={editMetadata?.lat == null}
-                                onClick={handleUseMetadataGps}
-                              >
-                                <MapPinIcon className="h-3.5 w-3.5" />
-                                Use GPS
-                              </Button>
-                              {editMetadata?.lat == null && (
-                                <InfoTooltip label="No GPS metadata found">
-                                  This photo doesn't have embedded location information.
-                                </InfoTooltip>
-                              )}
-                            </div>
+                            {onRequestCoordinatePick && (
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 gap-1.5 px-3 text-xs"
+                                  disabled={editMetadata?.lat == null}
+                                  onClick={handleUseMetadataGps}
+                                >
+                                  <MapPinIcon className="h-3.5 w-3.5" />
+                                  Use GPS
+                                </Button>
+                                {editMetadata?.lat == null && (
+                                  <InfoTooltip label="No GPS metadata found">
+                                    This photo doesn't have embedded location information.
+                                  </InfoTooltip>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -851,6 +853,8 @@ export default function StoryDetailSheet({
                             <div className="font-mono text-[var(--ink-1)]">
                               {confirmMetadata?.type === "date" ? (
                                 confirmMetadata.oldValue as string
+                              ) : typeof confirmMetadata?.oldValue === "string" ? (
+                                confirmMetadata.oldValue
                               ) : (
                                 <>
                                   {formatCoordinate((confirmMetadata?.oldValue as any)?.lat ?? 0)},<br />

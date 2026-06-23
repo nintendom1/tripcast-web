@@ -550,24 +550,26 @@ export default function JournalSheet({
                           </InfoTooltip>
                         )}
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 gap-1.5 px-3 text-xs"
-                          disabled={storyMetadata?.lat == null}
-                          onClick={handleUseMetadataGps}
-                        >
-                          <MapPin className="h-3.5 w-3.5" />
-                          Use GPS
-                        </Button>
-                        {storyMetadata?.lat == null && (
-                          <InfoTooltip label="No GPS metadata found">
-                            This photo doesn't have embedded location information.
-                          </InfoTooltip>
-                        )}
-                      </div>
+                      {onRequestCoordinatePick && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 px-3 text-xs"
+                            disabled={storyMetadata?.lat == null}
+                            onClick={handleUseMetadataGps}
+                          >
+                            <MapPin className="h-3.5 w-3.5" />
+                            Use GPS
+                          </Button>
+                          {storyMetadata?.lat == null && (
+                            <InfoTooltip label="No GPS metadata found">
+                              This photo doesn't have embedded location information.
+                            </InfoTooltip>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -671,6 +673,8 @@ export default function JournalSheet({
                         <div className="font-mono text-[var(--ink-1)]">
                           {confirmMetadata?.type === "date" ? (
                             confirmMetadata.oldValue as string
+                          ) : typeof confirmMetadata?.oldValue === "string" ? (
+                            confirmMetadata.oldValue
                           ) : (
                             <>
                               {formatCoordinate((confirmMetadata?.oldValue as any)?.lat ?? 0)},<br />
