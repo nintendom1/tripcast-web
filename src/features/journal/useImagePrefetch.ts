@@ -45,12 +45,20 @@ export function useImagePrefetch(token: string, imageIds: string[]) {
         const urlMs = Math.round(performance.now() - start);
         await new Promise<void>((resolve) => {
           const img = new Image();
+          // Prefetch only warms the HTTP/disk cache; load is enough to free the
+          // concurrency slot. The visible <img> in LoadingImage decodes before
+          // it paints, so decoding the throwaway Image here would only burn CPU
+          // (the bitmap isn't reused) and serialize the pump on decode latency.
           img.onload = () => {
-            logMapEvent("image:prefetch:success", {
-              imageId,
-              urlFetchMs: urlMs,
-              totalMs: Math.round(performance.now() - start),
-            });
+            // Effect may have torn down while this image was loading; skip the
+            // success log but still settle so the pump's bookkeeping unwinds.
+            if (!cancelled) {
+              logMapEvent("image:prefetch:success", {
+                imageId,
+                urlFetchMs: urlMs,
+                totalMs: Math.round(performance.now() - start),
+              });
+            }
             resolve();
           };
           img.onerror = () => {

@@ -31,6 +31,7 @@ export const Narrative: Story = {
     token: "mock-token",
     onClose: () => {},
     onLocationFocus: () => {},
+    onRequestCoordinatePick: (cb) => cb({ lat: 34.0123, lon: -116.0123 }),
   },
   parameters: {
     convexMocks: {

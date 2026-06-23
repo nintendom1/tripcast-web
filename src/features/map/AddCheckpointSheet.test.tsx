@@ -1,12 +1,20 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import AddCheckpointSheet from "./AddCheckpointSheet";
 import type { SelectedCoordinate } from "./AddCheckpointSheet";
+import ExifReader from "exifreader";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
   useQuery: vi.fn(),
+}));
+
+vi.mock("exifreader", () => ({
+  default: {
+    load: vi.fn(),
+  },
 }));
 
 const COORD: SelectedCoordinate = { lat: 47.6097, lon: -122.3422, source: "tap_add_mode" };
@@ -205,5 +213,139 @@ describe("AddCheckpointSheet", () => {
         undefined,
       );
     });
+  });
+
+  it("shows 'Use date/time' and 'Use GPS' buttons when photo is uploaded", async () => {
+    const user = userEvent.setup();
+    render(<AddCheckpointSheet {...makeProps()} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    expect(screen.getByRole("button", { name: /Use date\/time/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Use GPS/i })).toBeInTheDocument();
+  });
+
+  it("applies date metadata after confirmation", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      exif: { DateTimeOriginal: { description: "2026:01:01 12:00:00" } },
+    } as any);
+
+    render(<AddCheckpointSheet {...makeProps()} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    const useDateBtn = await screen.findByRole("button", { name: /Use date\/time/i });
+    await user.click(useDateBtn);
+
+    // Confirmation modal should appear
+    expect(screen.getByText(/Update date\/time\?/i)).toBeInTheDocument();
+    expect(screen.getByText("2026-01-01T12:00")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    const input = screen.getByLabelText(/Happened at/i) as HTMLInputElement;
+    expect(input.value).toBe("2026-01-01T12:00");
+  });
+
+  it("calls onCoordinateChange and updates UI when GPS metadata is applied", async () => {
+    const user = userEvent.setup();
+    const onCoordinateChange = vi.fn();
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      gps: { Latitude: 10.5, Longitude: 20.5 },
+    } as any);
+
+    render(<AddCheckpointSheet {...makeProps({ onCoordinateChange })} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    const useGpsBtn = await screen.findByRole("button", { name: /Use GPS/i });
+    await user.click(useGpsBtn);
+
+    expect(screen.getByText(/Update location\?/i)).toBeInTheDocument();
+    expect(screen.getByText(/10.500000/)).toBeInTheDocument();
+    expect(screen.getByText(/20.500000/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    expect(onCoordinateChange).toHaveBeenCalledWith(10.5, 20.5);
+  });
+
+  it("preserves the hemisphere for southern/western GPS metadata", async () => {
+    const user = userEvent.setup();
+    const onCoordinateChange = vi.fn();
+    // Expanded mode supplies signed values, so a Sydney photo must stay negative
+    // for latitude (south) — the previous .description parsing dropped the sign.
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      gps: { Latitude: -33.8688, Longitude: 151.2093 },
+    } as any);
+
+    render(<AddCheckpointSheet {...makeProps({ onCoordinateChange })} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    await user.click(await screen.findByRole("button", { name: /Use GPS/i }));
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    expect(onCoordinateChange).toHaveBeenCalledWith(-33.8688, 151.2093);
+  });
+
+  it("applies GPS metadata that sits exactly on the equator", async () => {
+    const user = userEvent.setup();
+    const onCoordinateChange = vi.fn();
+    // Zero is a valid coordinate; truthiness guards used to reject it.
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      gps: { Latitude: 0, Longitude: 0 },
+    } as any);
+
+    render(<AddCheckpointSheet {...makeProps({ onCoordinateChange })} />);
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    const useGpsBtn = await screen.findByRole("button", { name: /Use GPS/i });
+    expect(useGpsBtn).toBeEnabled();
+    await user.click(useGpsBtn);
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    expect(onCoordinateChange).toHaveBeenCalledWith(0, 0);
+  });
+
+  it("preserves the in-progress form when GPS metadata is applied", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ExifReader.load).mockResolvedValue({
+      gps: { Latitude: 34.98, Longitude: 135.76 },
+    } as any);
+
+    // Mirror TripMap: applying GPS replaces selectedCoordinate with a new object,
+    // which previously re-ran the init effect and wiped the form.
+    function Harness() {
+      const [coord, setCoord] = useState<SelectedCoordinate>(COORD);
+      return (
+        <AddCheckpointSheet
+          {...makeProps({
+            selectedCoordinate: coord,
+            onCoordinateChange: (lat, lon) => setCoord((c) => ({ ...c, lat, lon })),
+          })}
+        />
+      );
+    }
+    render(<Harness />);
+
+    await user.type(screen.getByLabelText(/Title/i), "Kyoto temple");
+
+    const file = new File(["image-bytes"], "story.png", { type: "image/png" });
+    await user.upload(screen.getByLabelText("Add photo"), file);
+
+    await user.click(await screen.findByRole("button", { name: /Use GPS/i }));
+    await user.click(screen.getByRole("button", { name: "Update" }));
+
+    // The refined coordinate is shown, but the typed title survives.
+    expect(screen.getByText(/34.980000/)).toBeInTheDocument();
+    expect((screen.getByLabelText(/Title/i) as HTMLInputElement).value).toBe("Kyoto temple");
   });
 });

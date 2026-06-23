@@ -1,11 +1,15 @@
+import ExifReader from "exifreader";
 import { debugLoggerFor } from "../../debug/useDebugLogger";
 
 const MAX_STORY_IMAGE_BYTES = 8 * 1024 * 1024;
 // Reject obviously-broken/huge uploads BEFORE attempting to decode into a
 // canvas — a 100 MP photo can OOM the renderer on a low-end phone.
 const MAX_INPUT_BYTES = 50 * 1024 * 1024;
-const TARGET_IMAGE_MAX_DIMENSION = 1600;
-const COMPRESSION_QUALITY = 0.8;
+// Tuned down from 1600/0.8 to cut served image bytes (~30-40% smaller) and the
+// resulting Convex serving egress; 1280px @ q0.72 is still crisp on phone
+// screens. Applies to newly-uploaded images only.
+const TARGET_IMAGE_MAX_DIMENSION = 1280;
+const COMPRESSION_QUALITY = 0.72;
 
 const log = debugLoggerFor("storyImageUpload", "src/features/journal/storyImageUpload.ts");
 
@@ -74,6 +78,49 @@ export async function compressImage(
     };
     img.src = objectUrl;
   });
+}
+
+export type ImageMetadata = {
+  date?: number;
+  lat?: number;
+  lon?: number;
+};
+
+export async function extractImageMetadata(file: File): Promise<ImageMetadata | null> {
+  try {
+    const tags = await ExifReader.load(file, {
+      expanded: true,
+      length: "auto",
+      includeOffsets: true,
+    });
+
+    const nextMetadata: ImageMetadata = {};
+
+    const dateStr = tags.exif?.DateTimeOriginal?.description;
+    if (dateStr) {
+      const [datePart, timePart] = dateStr.split(" ");
+      const normalizedDateStr = datePart.replace(/:/g, "-") + "T" + timePart;
+      const offset = tags.exif?.OffsetTimeOriginal?.description;
+      const date = new Date(offset ? normalizedDateStr + offset : normalizedDateStr);
+      if (!isNaN(date.getTime())) {
+        nextMetadata.date = date.getTime();
+      }
+    }
+
+    const lat = tags.gps?.Latitude;
+    const lon = tags.gps?.Longitude;
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      nextMetadata.lat = lat;
+      nextMetadata.lon = lon;
+    }
+
+    return Object.keys(nextMetadata).length > 0 ? nextMetadata : null;
+  } catch (error) {
+    log.warn("story-image:metadata-error", "interaction", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 export async function uploadStoryImage(

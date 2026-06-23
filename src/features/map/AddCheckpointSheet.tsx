@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
-import { ChevronLeft, ImagePlus, Trash2 } from "lucide-react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import { CalendarClock, ChevronLeft, ImagePlus, MapPin, Trash2 } from "lucide-react";
 
 import type { AddCheckpointArgs, CheckpointSource, StoryImageSize } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -14,8 +14,11 @@ import {
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
-import { validateStoryImageFile } from "../journal/storyImageUpload";
+import { extractImageMetadata, validateStoryImageFile, type ImageMetadata } from "../journal/storyImageUpload";
 import { LoadingImage } from "../../components/ui/LoadingImage";
+import { ConfirmModal } from "../../components/ui/ConfirmModal";
+import { InfoTooltip } from "../../components/ui/info-tooltip";
+import { formatCoordinate, parseLocalDatetimeInputValue, toLocalDatetimeInputValue } from "@/lib/utils";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -45,6 +48,7 @@ export type CheckpointPrefill = {
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
   onSave: (args: Omit<AddCheckpointArgs, "token">, file?: File) => void;
+  onCoordinateChange?: (lat: number, lon: number) => void;
   onClose: () => void;
   saveUnavailableMessage?: string;
   stateSection?: React.ReactNode;
@@ -62,29 +66,6 @@ type AddCheckpointSheetProps = {
   debugSource?: { source: string; sourceLabel: string };
 };
 
-function formatCoordinate(value: number) {
-  return value.toFixed(6);
-}
-
-// Render a Date as a value the native `datetime-local` input understands.
-// We work in the user's local zone in the UI and convert to UTC epoch ms on
-// save — the schema column stores UTC.
-function toLocalDatetimeInputValue(date: Date) {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return (
-    date.getFullYear() +
-    "-" + pad(date.getMonth() + 1) +
-    "-" + pad(date.getDate()) +
-    "T" + pad(date.getHours()) +
-    ":" + pad(date.getMinutes())
-  );
-}
-
-function parseLocalDatetimeInputValue(value: string): number | null {
-  if (!value) return null;
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
 
 const FUTURE_WARNING_MS = 24 * 60 * 60 * 1000;
 const STORY_IMAGE_SIZES = ["compact", "medium", "large"] as const;
@@ -105,6 +86,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   const {
     selectedCoordinate,
     onSave,
+    onCoordinateChange,
     onClose,
     saveUnavailableMessage,
     stateSection,
@@ -127,6 +109,20 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       prefill?.happenedAt !== undefined ? new Date(prefill.happenedAt) : new Date();
     return toLocalDatetimeInputValue(initial);
   });
+  const [metadata, setMetadata] = useState<ImageMetadata | null>(null);
+  const [confirmMetadata, setConfirmMetadata] = useState<{
+    type: "date" | "gps";
+    newValue: string | { lat: number; lon: number };
+    oldValue: string | { lat: number; lon: number };
+  } | null>(null);
+  // Monotonic id so an in-flight EXIF read for a superseded photo can't clobber
+  // the metadata of the photo the user actually ended up with.
+  const metadataRequestIdRef = useRef(0);
+  // Applying photo GPS updates the parent's selectedCoordinate, which would
+  // otherwise re-run the init effect and wipe the in-progress form. This guard
+  // lets that one self-initiated coordinate change through without a reset.
+  const skipInitForCoordRef = useRef(false);
+
   const music = useMusicSafe();
 
   const log = useDebugLogger("AddCheckpointSheet", "src/features/map/AddCheckpointSheet.tsx");
@@ -148,6 +144,12 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       setImagePreviewUrl(null);
       return;
     }
+    // A coordinate change we triggered by applying photo GPS is a refinement of
+    // the current pin, not a new sheet session — keep the form as-is.
+    if (skipInitForCoordRef.current) {
+      skipInitForCoordRef.current = false;
+      return;
+    }
     log.logInteraction("sheet:open", {
       source: selectedCoordinate.source,
       hasPrefill: Boolean(prefill),
@@ -163,8 +165,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     setError(null);
 
     if (props.prefillFile) {
-      setImageFile(props.prefillFile);
-      setImagePreviewUrl(URL.createObjectURL(props.prefillFile));
+      handleImageChange(props.prefillFile);
     } else {
       setImageFile(null);
       setImagePreviewUrl(null);
@@ -183,7 +184,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     };
   }, [imagePreviewUrl]);
 
-  function handleImageChange(file: File | undefined) {
+  async function handleImageChange(file: File | undefined) {
     if (!file) return;
     try {
       validateStoryImageFile(file);
@@ -192,6 +193,19 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
         if (current) URL.revokeObjectURL(current);
         return URL.createObjectURL(file);
       });
+
+      // Extract metadata
+      const requestId = ++metadataRequestIdRef.current;
+      const nextMetadata = await extractImageMetadata(file);
+      if (requestId !== metadataRequestIdRef.current) return;
+      setMetadata(nextMetadata);
+      if (nextMetadata) {
+        log.logInteraction("story-image:metadata-extracted", {
+          hasDate: nextMetadata.date != null,
+          hasGps: nextMetadata.lat != null,
+        });
+      }
+
       setError(null);
       log.logInteraction("story-image:attach", {
         bytes: file.size,
@@ -206,12 +220,57 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   }
 
   function clearImageDraft() {
+    // Invalidate any in-flight EXIF read so it can't repopulate metadata.
+    metadataRequestIdRef.current++;
     setImageFile(null);
     setImagePreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
     });
+    setMetadata(null);
     log.logInteraction("story-image:remove-draft");
+  }
+
+  function handleUseMetadataDate() {
+    if (!metadata?.date) return;
+    const newDate = new Date(metadata.date);
+    const newValue = toLocalDatetimeInputValue(newDate);
+    const oldValue = happenedAtInput;
+
+    setConfirmMetadata({
+      type: "date",
+      newValue,
+      oldValue,
+    });
+  }
+
+  function handleUseMetadataGps() {
+    if (metadata?.lat == null || metadata?.lon == null || !selectedCoordinate) return;
+    const newValue = { lat: metadata.lat, lon: metadata.lon };
+    const oldValue = { lat: selectedCoordinate.lat, lon: selectedCoordinate.lon };
+
+    setConfirmMetadata({
+      type: "gps",
+      newValue,
+      oldValue,
+    });
+  }
+
+  function confirmMetadataChange() {
+    if (!confirmMetadata) return;
+
+    if (confirmMetadata.type === "date") {
+      setHappenedAtInput(confirmMetadata.newValue as string);
+      log.logInteraction("metadata:apply-date", { value: confirmMetadata.newValue });
+    } else if (confirmMetadata.type === "gps") {
+      const { lat, lon } = confirmMetadata.newValue as { lat: number; lon: number };
+      // Refining the coordinate must not reset the form the traveler is filling in.
+      skipInitForCoordRef.current = true;
+      onCoordinateChange?.(lat, lon);
+      log.logInteraction("metadata:apply-gps", { lat, lon });
+    }
+
+    setConfirmMetadata(null);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -359,15 +418,55 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
                 ) : null}
               </div>
               {imagePreviewUrl ? (
-                <LoadingImage
-                  src={imagePreviewUrl}
-                  alt=""
-                  aspectRatio="4/3"
-                  containerClassName="max-h-48 w-full rounded-md"
-                  className="object-contain"
-                  onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
-                  onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
-                />
+                <div className="space-y-3">
+                  <LoadingImage
+                    src={imagePreviewUrl}
+                    alt=""
+                    aspectRatio="4/3"
+                    containerClassName="max-h-48 w-full rounded-md"
+                    className="object-contain"
+                    onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
+                    onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 px-3 text-xs"
+                        disabled={!metadata?.date}
+                        onClick={handleUseMetadataDate}
+                      >
+                        <CalendarClock className="h-3.5 w-3.5" />
+                        Use date/time
+                      </Button>
+                      {!metadata?.date && (
+                        <InfoTooltip label="No date metadata found">
+                          This photo doesn't have embedded date/time information.
+                        </InfoTooltip>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 px-3 text-xs"
+                        disabled={metadata?.lat == null}
+                        onClick={handleUseMetadataGps}
+                      >
+                        <MapPin className="h-3.5 w-3.5" />
+                        Use GPS
+                      </Button>
+                      {metadata?.lat == null && (
+                        <InfoTooltip label="No GPS metadata found">
+                          This photo doesn't have embedded location information.
+                        </InfoTooltip>
+                      )}
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--bg-paper-2)]">
                   <ImagePlus className="h-4 w-4" aria-hidden="true" />
@@ -436,6 +535,49 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
               {error}
             </p>
           ) : null}
+
+          <ConfirmModal
+            open={confirmMetadata !== null}
+            onOpenChange={(open) => {
+              if (!open) setConfirmMetadata(null);
+            }}
+            title={confirmMetadata?.type === "date" ? "Update date/time?" : "Update location?"}
+            description={
+              <div className="space-y-3">
+                <p>Use the metadata from the photo instead of the current value?</p>
+                <div className="grid grid-cols-2 gap-4 rounded-lg bg-[var(--bg-paper-2)] p-3 text-xs">
+                  <div className="space-y-1">
+                    <span className="font-bold uppercase tracking-wider text-[var(--ink-3)]">Current</span>
+                    <div className="font-mono text-[var(--ink-1)]">
+                      {confirmMetadata?.type === "date" ? (
+                        confirmMetadata.oldValue as string
+                      ) : (
+                        <>
+                          {formatCoordinate((confirmMetadata?.oldValue as any)?.lat ?? 0)},<br />
+                          {formatCoordinate((confirmMetadata?.oldValue as any)?.lon ?? 0)}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="font-bold uppercase tracking-wider text-[var(--flag)]">Photo</span>
+                    <div className="font-mono text-[var(--ink-1)]">
+                      {confirmMetadata?.type === "date" ? (
+                        confirmMetadata.newValue as string
+                      ) : (
+                        <>
+                          {formatCoordinate((confirmMetadata?.newValue as any)?.lat ?? 0)},<br />
+                          {formatCoordinate((confirmMetadata?.newValue as any)?.lon ?? 0)}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            }
+            confirmLabel="Update"
+            onConfirm={confirmMetadataChange}
+          />
           <div
             className="flex flex-wrap justify-end gap-2 pt-1"
             style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
