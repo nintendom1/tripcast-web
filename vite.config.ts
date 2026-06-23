@@ -19,14 +19,16 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes("node_modules")) {
-            if (id.includes("react")) return "vendor-react";
-            if (id.includes("framer-motion")) return "vendor-framer";
-            if (id.includes("maplibre-gl")) return "vendor-map";
-            if (id.includes("convex")) return "vendor-convex";
-            if (id.includes("lucide-react") || id.includes("@base-ui/react")) return "vendor-ui";
-            return "vendor";
-          }
+          if (!id.includes("/node_modules/")) return;
+          // Match on path boundaries, specific-before-generic. React itself is
+          // left in the catch-all `vendor` chunk on purpose: manually isolating
+          // it buys little (it is small next to MapLibre) and risks chunk
+          // init-order failures.
+          if (id.includes("/node_modules/maplibre-gl/")) return "vendor-map";
+          if (id.includes("/node_modules/framer-motion/")) return "vendor-framer";
+          if (id.includes("/node_modules/convex/")) return "vendor-convex";
+          if (id.includes("/node_modules/lucide-react/") || id.includes("/node_modules/@base-ui/")) return "vendor-ui";
+          return "vendor";
         },
       },
     },

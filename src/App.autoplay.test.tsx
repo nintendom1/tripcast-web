@@ -57,6 +57,11 @@ vi.mock("./features/onboarding/IntroSequence", () => ({
       <button onClick={onDone}>Finish Account Intro</button>
     </div>
   ),
+}));
+
+// markLocalIntroSeen now lives in introUtils (split out from IntroSequence), so
+// the mock must target that module to intercept the call App actually makes.
+vi.mock("./features/onboarding/introUtils", () => ({
   markLocalIntroSeen: vi.fn(),
 }));
 
