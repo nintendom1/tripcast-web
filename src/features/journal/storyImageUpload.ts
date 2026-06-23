@@ -1,3 +1,4 @@
+import ExifReader from "exifreader";
 import { debugLoggerFor } from "../../debug/useDebugLogger";
 
 const MAX_STORY_IMAGE_BYTES = 8 * 1024 * 1024;
@@ -77,6 +78,49 @@ export async function compressImage(
     };
     img.src = objectUrl;
   });
+}
+
+export type ImageMetadata = {
+  date?: number;
+  lat?: number;
+  lon?: number;
+};
+
+export async function extractImageMetadata(file: File): Promise<ImageMetadata | null> {
+  try {
+    const tags = await ExifReader.load(file, {
+      expanded: true,
+      length: "auto",
+      includeOffsets: true,
+    });
+
+    const nextMetadata: ImageMetadata = {};
+
+    const dateStr = tags.exif?.DateTimeOriginal?.description;
+    if (dateStr) {
+      const [datePart, timePart] = dateStr.split(" ");
+      const normalizedDateStr = datePart.replace(/:/g, "-") + "T" + timePart;
+      const offset = tags.exif?.OffsetTimeOriginal?.description;
+      const date = new Date(offset ? normalizedDateStr + offset : normalizedDateStr);
+      if (!isNaN(date.getTime())) {
+        nextMetadata.date = date.getTime();
+      }
+    }
+
+    const lat = tags.gps?.Latitude;
+    const lon = tags.gps?.Longitude;
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      nextMetadata.lat = lat;
+      nextMetadata.lon = lon;
+    }
+
+    return Object.keys(nextMetadata).length > 0 ? nextMetadata : null;
+  } catch (error) {
+    log.warn("story-image:metadata-error", "interaction", {
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 export async function uploadStoryImage(

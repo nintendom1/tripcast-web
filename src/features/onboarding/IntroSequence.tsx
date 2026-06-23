@@ -28,7 +28,7 @@ import { IntroMascot } from "./IntroMascot";
 import { IntroBackdrop, SceneCard } from "./IntroScenes";
 import { useTheme, type ThemeMode } from "../../providers/ThemeProvider";
 
-const INTRO_STORAGE_PREFIX = "tripcast.introSeen.v1";
+import { hasLocalIntroSeen, markLocalIntroSeen } from "./introUtils";
 
 type IntroDoneReason = "done" | "skip";
 
@@ -98,26 +98,6 @@ const LAST_BEAT_INDEX = BEATS.length - 1;
 type IntroAdvanceTrigger = "surface-click" | "cta" | "keyboard";
 type IntroBackTrigger = "back-button" | "keyboard";
 type IntroFinishTrigger = "surface-click" | "cta" | "keyboard" | "skip-button";
-
-export function introSeenStorageKey(role: Role, accountLabel?: string): string {
-  return `${INTRO_STORAGE_PREFIX}.${role}.${accountLabel?.trim().toLowerCase() || "unknown"}`;
-}
-
-export function hasLocalIntroSeen(role: Role, accountLabel?: string): boolean {
-  try {
-    return window.localStorage.getItem(introSeenStorageKey(role, accountLabel)) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function markLocalIntroSeen(role: Role, accountLabel?: string): void {
-  try {
-    window.localStorage.setItem(introSeenStorageKey(role, accountLabel), "1");
-  } catch {
-    // localStorage can be unavailable; backend seen state remains canonical.
-  }
-}
 
 export function IntroSequence({
   role,
