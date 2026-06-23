@@ -3247,6 +3247,14 @@ export default function TripMap({
     let lastMovementMutationAt = 0;
     let prevFixForSpeed: { lat: number; lon: number; at: number } | null = null;
     const MOVEMENT_MUTATION_MIN_INTERVAL_MS = 60_000;
+    // Dampening (hysteresis): require the same classification across a few
+    // consecutive fixes before firing, so a single noisy GPS sample can't flip
+    // activity. `lastFiredClassification` is the state we actually applied;
+    // `candidateStreak` counts back-to-back fixes agreeing on `candidateClassification`.
+    let lastFiredClassification: "walking" | "moving" | null = null;
+    let candidateClassification: "walking" | "moving" | "stopped" | null = null;
+    let candidateStreak = 0;
+    const MOVEMENT_MIN_CONSECUTIVE_FIXES = 2;
 
     const handleFix = (lat: number, lon: number, accuracy?: number, speed?: number) => {
       lastLocationFixAtRef.current = Date.now();
@@ -3343,6 +3351,9 @@ export default function TripMap({
         if (!isLocationSharingRef.current) {
           lastMovementClassification = null;
           prevFixForSpeed = null;
+          lastFiredClassification = null;
+          candidateClassification = null;
+          candidateStreak = 0;
           return;
         }
 
@@ -3401,10 +3412,22 @@ export default function TripMap({
             }
           }
 
-          const changed = classification !== lastMovementClassification;
-          const throttleOk = fixAt - lastMovementMutationAt >= MOVEMENT_MUTATION_MIN_INTERVAL_MS;
-          if (changed && classification !== "stopped" && (throttleOk || lastMovementClassification === null)) {
-            const from = lastMovementClassification;
+          // Build/extend the streak of agreeing fixes before acting.
+          if (classification === candidateClassification) {
+            candidateStreak += 1;
+          } else {
+            candidateClassification = classification;
+            candidateStreak = 1;
+          }
+
+          const isNewState = classification !== lastFiredClassification;
+          const sustained = candidateStreak >= MOVEMENT_MIN_CONSECUTIVE_FIXES;
+          const throttleOk =
+            fixAt - lastMovementMutationAt >= MOVEMENT_MUTATION_MIN_INTERVAL_MS ||
+            lastFiredClassification === null;
+          if (classification !== "stopped" && isNewState && sustained && throttleOk) {
+            const from = lastFiredClassification;
+            lastFiredClassification = classification;
             lastMovementClassification = classification;
             lastMovementMutationAt = fixAt;
             log.logUi("movement:classify", { speedMps, classification, from });
@@ -3428,7 +3451,8 @@ export default function TripMap({
                   message: error instanceof Error ? error.message : String(error),
                 });
               });
-          } else if (changed) {
+          } else {
+            // Not fired this fix — keep "last seen" in sync for debug/logging.
             lastMovementClassification = classification;
           }
         }
