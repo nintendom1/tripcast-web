@@ -18,6 +18,7 @@ const geolocationWatchPosition = vi.fn();
 const geolocationClearWatch = vi.fn();
 const geolocationGetCurrentPosition = vi.fn();
 const updateTravelerLocation = vi.fn();
+const applyMovementDetection = vi.fn();
 const stopTravelerLocationSharing = vi.fn();
 const setLiveTrailEnabled = vi.fn();
 const setLiveTrailVisibility = vi.fn();
@@ -263,6 +264,9 @@ function setupQueries({
     travelerTimeZone?: string;
     followerContentCutoffEnabled?: boolean;
     followerContentCutoffAt?: number;
+    movementDetectionEnabled?: boolean;
+    movementWalkingThresholdMps?: number;
+    movementMovingThresholdMps?: number;
   };
   liveTrailStatus?: {
     enabled: boolean;
@@ -399,6 +403,7 @@ beforeEach(() => {
   mapStyleLoaded = true;
   mapFitBounds.mockClear();
   updateTravelerLocation.mockResolvedValue(null);
+  applyMovementDetection.mockResolvedValue(null);
   stopTravelerLocationSharing.mockResolvedValue(null);
   setLiveTrailEnabled.mockResolvedValue(null);
   setLiveTrailVisibility.mockResolvedValue(null);
@@ -419,6 +424,9 @@ beforeEach(() => {
     if (mutation === tripcastApi.travelerLocations.stopTravelerLocationSharing) {
       return stopTravelerLocationSharing;
     }
+    if (mutation === tripcastApi.currentActivity.travelerApplyMovementDetection) {
+      return applyMovementDetection;
+    }
     if (mutation === tripcastApi.liveTrail.travelerSetLiveTrailEnabled) {
       return setLiveTrailEnabled;
     }
@@ -431,7 +439,7 @@ beforeEach(() => {
     if (mutation === tripcastApi.liveTrail.travelerDeleteRecentLiveTrail) {
       return deleteRecentLiveTrail;
     }
-    return vi.fn();
+    return vi.fn().mockResolvedValue(null);
   });
 
   Object.defineProperty(navigator, "geolocation", {
@@ -2175,6 +2183,105 @@ describe("TripMap location marker", () => {
         [],
         false,
       );
+    });
+  });
+
+  describe("Movement Detection gating", () => {
+    it("does not call applyMovementDetection when Live is off, even if moving", async () => {
+      nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+      let onFixCallback: (fix: any) => void = () => {};
+      nativeLocationMocks.startNativeLocationWatch.mockImplementation((onFix) => {
+        onFixCallback = onFix;
+        return vi.fn();
+      });
+
+      setupQueries({
+        travelerPreferences: {
+          movementDetectionEnabled: true,
+          movementWalkingThresholdMps: 1.0, // 1 m/s
+        },
+      });
+
+      render(<TripMap token="test-token" role="traveler" />);
+
+      // Simulate a fast fix (2.0 m/s)
+      act(() => {
+        onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 2.0 });
+      });
+
+      expect(applyMovementDetection).not.toHaveBeenCalled();
+    });
+
+    it("still updates the local GPS dot (livePosition) when Live is off", async () => {
+      nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+      let onFixCallback: (fix: any) => void = () => {};
+      nativeLocationMocks.startNativeLocationWatch.mockImplementation((onFix) => {
+        onFixCallback = onFix;
+        return vi.fn();
+      });
+
+      setupQueries();
+
+      render(<TripMap token="test-token" role="traveler" />);
+
+      act(() => {
+        onFixCallback({ lat: 47.7, lon: -122.4, accuracy: 15, speed: 1.0 });
+      });
+
+      await waitFor(() => {
+        expect(getTravelerMarker()).toBeDefined();
+      });
+      // Verification that it didn't publish to others
+      expect(updateTravelerLocation).not.toHaveBeenCalled();
+      // Verification that it didn't update activity
+      expect(applyMovementDetection).not.toHaveBeenCalled();
+    });
+
+    it("calls applyMovementDetection when Live is on and moving", async () => {
+      nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+      let onFixCallback: (fix: any) => void = () => {};
+      nativeLocationMocks.startNativeLocationWatch.mockImplementation((onFix) => {
+        onFixCallback = onFix;
+        return vi.fn();
+      });
+
+      setupQueries({
+        travelerPreferences: {
+          movementDetectionEnabled: true,
+          movementWalkingThresholdMps: 1.0,
+          movementMovingThresholdMps: 5.0,
+        },
+      });
+
+      render(<TripMap token="test-token" role="traveler" />);
+
+      // Turn on Live
+      fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+      // Simulate a fast fix (2.0 m/s -> walking)
+      act(() => {
+        onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 2.0 });
+      });
+
+      await waitFor(() => {
+        expect(applyMovementDetection).toHaveBeenCalledWith(
+          expect.objectContaining({
+            classification: "walking",
+            speedMps: 2.0,
+          }),
+        );
+      });
+    });
+
+    it("displays the updated UI copy in TravelerStateSheet", async () => {
+      setupQueries();
+      render(<TripMap token="test-token" role="traveler" />);
+
+      // Open Traveler State sheet
+      fireEvent.click(screen.getByRole("button", { name: /Traveler status/i }));
+
+      expect(await screen.findByText("Auto-sets your activity from GPS while Live is on.")).toBeInTheDocument();
+      expect(screen.getByText("Detect movement while Live is on")).toBeInTheDocument();
     });
   });
 });

@@ -3333,6 +3333,14 @@ export default function TripMap({
       // when the classification transitions. Native-only because reliable
       // background GPS is only available on the iOS Capacitor build.
       if (isNativeLocationAvailable()) {
+        // Movement detection should only run when Live is actually sharing.
+        // The Live-Off foreground watcher is only for the local GPS dot.
+        if (!isLocationSharingRef.current) {
+          lastMovementClassification = null;
+          prevFixForSpeed = null;
+          return;
+        }
+
         const prefs = movementPrefsRef.current;
         const fixAt = Date.now();
         if (prefs?.movementDetectionEnabled === true) {
