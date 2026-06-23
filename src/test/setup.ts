@@ -1,4 +1,11 @@
 import "@testing-library/jest-dom";
+import { configure } from "@testing-library/react";
+
+// Lazy-loaded sheets/panels resolve their chunk asynchronously, and the full
+// suite runs many files in parallel. Give findBy*/waitFor headroom so async
+// mounts don't flake under CPU contention (the timeout is a ceiling, not a
+// fixed delay — it resolves as soon as the condition is met).
+configure({ asyncUtilTimeout: 5000 });
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>();
