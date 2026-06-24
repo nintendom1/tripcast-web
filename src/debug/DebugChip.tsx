@@ -11,7 +11,7 @@ import {
 } from "./activeUiContext";
 
 const EDGE_PADDING = 12;
-const INITIAL_TOP = 281;
+const INITIAL_TOP = 340;
 const DRAG_THRESHOLD = 5;
 
 type SnappedEdge = "left" | "right" | "top" | "bottom";
