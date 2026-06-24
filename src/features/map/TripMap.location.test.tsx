@@ -2186,15 +2186,17 @@ describe("TripMap location marker", () => {
     });
   });
 
-  // TODO(manual-verify): un-skip after on-device manual testing, and replace the
-  // single-fix "fires" case with dampening-aware cases (≥2 consecutive fixes).
-  describe.skip("Movement Detection gating", () => {
-    it("does not call applyMovementDetection when Live is off, even if moving", async () => {
+  describe("Movement Detection gating", () => {
+    it("keeps the local GPS dot but suppresses publish and activity while Live is off", async () => {
+      // Live is off (default), so the foreground browser watcher drives fixes —
+      // not the native watcher. Native is "available" so the movement-detection
+      // code path is reachable and we can prove the gate suppresses it.
       nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
-      let onFixCallback: (fix: any) => void = () => {};
-      nativeLocationMocks.startNativeLocationWatch.mockImplementation((onFix) => {
-        onFixCallback = onFix;
-        return vi.fn();
+      geolocationWatchPosition.mockImplementation((onSuccess) => {
+        onSuccess({
+          coords: { latitude: 47.6, longitude: -122.3, accuracy: 5, speed: 2.0 },
+        });
+        return 7;
       });
 
       setupQueries({
@@ -2206,40 +2208,17 @@ describe("TripMap location marker", () => {
 
       render(<TripMap token="test-token" role="traveler" />);
 
-      // Simulate a fast fix (2.0 m/s)
-      act(() => {
-        onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 2.0 });
-      });
-
-      expect(applyMovementDetection).not.toHaveBeenCalled();
-    });
-
-    it("still updates the local GPS dot (livePosition) when Live is off", async () => {
-      nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
-      let onFixCallback: (fix: any) => void = () => {};
-      nativeLocationMocks.startNativeLocationWatch.mockImplementation((onFix) => {
-        onFixCallback = onFix;
-        return vi.fn();
-      });
-
-      setupQueries();
-
-      render(<TripMap token="test-token" role="traveler" />);
-
-      act(() => {
-        onFixCallback({ lat: 47.7, lon: -122.4, accuracy: 15, speed: 1.0 });
-      });
-
+      // The local GPS dot still renders while Live is off...
       await waitFor(() => {
         expect(getTravelerMarker()).toBeDefined();
       });
-      // Verification that it didn't publish to others
+      // ...but nothing is published to Followers...
       expect(updateTravelerLocation).not.toHaveBeenCalled();
-      // Verification that it didn't update activity
+      // ...and activity is never auto-updated while Live is off.
       expect(applyMovementDetection).not.toHaveBeenCalled();
     });
 
-    it("calls applyMovementDetection when Live is on and moving", async () => {
+    it("does not fire on a single moving fix while Live is on (hysteresis)", async () => {
       nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
       let onFixCallback: (fix: any) => void = () => {};
       nativeLocationMocks.startNativeLocationWatch.mockImplementation((onFix) => {
@@ -2256,11 +2235,39 @@ describe("TripMap location marker", () => {
       });
 
       render(<TripMap token="test-token" role="traveler" />);
-
-      // Turn on Live
       fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
 
-      // Simulate a fast fix (2.0 m/s -> walking)
+      // A single walking-speed fix must not be enough to flip activity.
+      act(() => {
+        onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 2.0 });
+      });
+
+      expect(applyMovementDetection).not.toHaveBeenCalled();
+    });
+
+    it("fires after two consecutive agreeing fixes while Live is on", async () => {
+      nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+      let onFixCallback: (fix: any) => void = () => {};
+      nativeLocationMocks.startNativeLocationWatch.mockImplementation((onFix) => {
+        onFixCallback = onFix;
+        return vi.fn();
+      });
+
+      setupQueries({
+        travelerPreferences: {
+          movementDetectionEnabled: true,
+          movementWalkingThresholdMps: 1.0,
+          movementMovingThresholdMps: 5.0,
+        },
+      });
+
+      render(<TripMap token="test-token" role="traveler" />);
+      fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+      // Two consecutive walking-speed fixes clear the streak threshold.
+      act(() => {
+        onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 2.0 });
+      });
       act(() => {
         onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 2.0 });
       });
@@ -2273,6 +2280,40 @@ describe("TripMap location marker", () => {
           }),
         );
       });
+      expect(applyMovementDetection).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not fire when classifications alternate and never sustain", async () => {
+      nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+      let onFixCallback: (fix: any) => void = () => {};
+      nativeLocationMocks.startNativeLocationWatch.mockImplementation((onFix) => {
+        onFixCallback = onFix;
+        return vi.fn();
+      });
+
+      setupQueries({
+        travelerPreferences: {
+          movementDetectionEnabled: true,
+          movementWalkingThresholdMps: 1.0,
+          movementMovingThresholdMps: 5.0,
+        },
+      });
+
+      render(<TripMap token="test-token" role="traveler" />);
+      fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+      // walking -> moving -> walking never reaches two in a row.
+      act(() => {
+        onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 2.0 });
+      });
+      act(() => {
+        onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 6.0 });
+      });
+      act(() => {
+        onFixCallback({ lat: 47.6, lon: -122.3, accuracy: 5, speed: 2.0 });
+      });
+
+      expect(applyMovementDetection).not.toHaveBeenCalled();
     });
 
     it("displays the updated UI copy in TravelerStateSheet", async () => {
