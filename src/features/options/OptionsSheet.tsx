@@ -9,6 +9,7 @@ import timezone from "dayjs/plugin/timezone";
 dayjs.extend(utc);
 dayjs.extend(timezone);
 import {
+  AlertTriangle,
   BookOpen,
   Bell,
   Bomb,
@@ -52,6 +53,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { useSamplerMode, setSamplerMode, SAMPLER_MODE_INFO, type SamplerMode } from "../../lib/samplerMode";
 import { useFixOverlayEnabled, setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 import { useEgressEstimateBytes } from "../../lib/egressMeter";
+import { distanceMeters } from "../../lib/geoUtils";
 import type {
   CloakingPin,
   LiveTrailDeletePreview,
@@ -205,6 +207,17 @@ function combineDateTime(date: string, time: string) {
   if (!date) return "";
   if (!time) return date;
   return `${date}T${time}`;
+}
+
+function formatDurationConcise(ms: number) {
+  const seconds = Math.floor(Math.abs(ms) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
 }
 
 type LiveTrailPreviewSample = LiveTrailDeletePreview["samples"][number];
@@ -1399,27 +1412,55 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
 
             {deleteMode === "individual" && previewSamples.length > 0 ? (
               <div className="max-h-52 overflow-auto rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)]">
-                {previewSamples.map((sample, index) => (
-                  <label
-                    key={sample._id}
-                    className="flex items-center gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-sm last:border-b-0"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={individualSelection[sample._id] === true}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
-                        setIndividualSelection((current) => ({
-                          ...current,
-                          [sample._id]: checked,
-                        }));
-                      }}
-                    />
-                    <span className="flex-1 text-[var(--ink-1)]">
-                      #{index + 1} · {dayjs(sample.sampledAt).tz(timeZone).format("MMM D, h:mm A")}
-                    </span>
-                  </label>
-                ))}
+                {previewSamples.map((sample, index) => {
+                  const prev = index > 0 ? previewSamples[index - 1] : null;
+                  const dist = prev ? distanceMeters(prev, sample) : null;
+                  const timeDiff = prev ? sample.sampledAt - prev.sampledAt : null;
+                  const isJumpy = dist !== null && dist > 250;
+
+                  return (
+                    <label
+                      key={sample._id}
+                      className={cn(
+                        "flex items-center gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-sm last:border-b-0 transition-colors",
+                        isJumpy && "bg-rose-50/50 dark:bg-rose-950/20"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={individualSelection[sample._id] === true}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setIndividualSelection((current) => ({
+                            ...current,
+                            [sample._id]: checked,
+                          }));
+                        }}
+                      />
+                      <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                        <span className="truncate text-[var(--ink-1)]">
+                          #{index + 1} · {dayjs(sample.sampledAt).tz(timeZone).format("MMM D, h:mm:ss A")}
+                        </span>
+                        {dist !== null && (
+                          <span
+                            className={cn(
+                              "flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-tight",
+                              isJumpy
+                                ? "bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300"
+                                : "bg-[var(--meter-track)] text-[var(--ink-3)]"
+                            )}
+                          >
+                            {isJumpy && <AlertTriangle className="h-2.5 w-2.5" />}
+                            {Math.round(dist)}m
+                            {timeDiff !== null && (
+                              <span className="opacity-70"> / {formatDurationConcise(timeDiff)}</span>
+                            )}
+                          </span>
+                        )}
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             ) : null}
 
