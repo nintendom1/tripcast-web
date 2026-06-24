@@ -386,7 +386,7 @@ export function StatusCardConnected({
             max: 100,
             valueLabel: formatPercent(stomachValue),
             color: "var(--green)",
-            overfillColor: "var(--flag)",
+            overfillColor: "var(--destructive)",
           },
           {
             label: "Calm",

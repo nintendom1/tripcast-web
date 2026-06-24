@@ -119,14 +119,10 @@ export function StatusCard({
             const tier = tierFor((meter.value / max) * 100);
             const color = meter.color ?? TIER_COLORS[tier];
 
-            const hasOverfill = meter.overfillColor && meter.value > max;
+            const hasOverfill = Boolean(meter.overfillColor && meter.value > max);
             const overfillPct = hasOverfill
               ? Math.min(100, ((meter.value - max) / max) * 100)
               : 0;
-
-            const background = hasOverfill
-              ? `linear-gradient(to right, ${meter.overfillColor} ${overfillPct}%, ${color} ${overfillPct}%)`
-              : color;
 
             return (
               <div key={meter.label} className="flex min-w-0 flex-col gap-1.5">
@@ -138,11 +134,17 @@ export function StatusCard({
                     </span>
                   ) : null}
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-[var(--meter-track)]">
+                <div className="relative h-2 overflow-hidden rounded-full bg-[var(--meter-track)]">
                   <span
                     className="block h-full rounded-full transition-[width]"
-                    style={{ width: `${pct}%`, background }}
+                    style={{ width: `${pct}%`, background: color }}
                   />
+                  {hasOverfill ? (
+                    <span
+                      className="absolute inset-y-0 left-0 transition-[width]"
+                      style={{ width: `${overfillPct}%`, background: meter.overfillColor }}
+                    />
+                  ) : null}
                 </div>
               </div>
             );
