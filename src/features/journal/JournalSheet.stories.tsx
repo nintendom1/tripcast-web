@@ -30,7 +30,17 @@ const FAKE_EVENTS = [
 ];
  /** @tag ai-generated */
 export const Default: StoryObj<typeof meta> = {
-  args: { token: "t", role: "follower", open: true, events: FAKE_EVENTS, onMarkAllRead: () => {}, onClose: () => {}, onStorySelect: () => {}, onLocationFocus: () => {} },
+  args: {
+    token: "t",
+    role: "traveler",
+    open: true,
+    events: FAKE_EVENTS,
+    onMarkAllRead: () => {},
+    onClose: () => {},
+    onStorySelect: () => {},
+    onLocationFocus: () => {},
+    onRequestCoordinatePick: (cb: (coord: { lat: number; lon: number }) => void) => cb({ lat: 34.0123, lon: -116.0123 }),
+  },
   parameters: {
     convexMocks: {
       queries: [

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import {
+  CalendarClock,
   Camera,
   CheckSquare,
   ChevronRight,
@@ -28,7 +29,7 @@ import {
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
-import { cn } from "@/lib/utils";
+import { cn, formatCoordinate, parseLocalDatetimeInputValue, toLocalDatetimeInputValue } from "@/lib/utils";
 import { getStateEmoji } from "../travelstate/travelerStateUtils";
 import { formatUsd } from "../travelfunds/currency";
 import { useDebugLogger } from "../../debug/useDebugLogger";
@@ -38,9 +39,11 @@ import { TERMS } from "../../copy/terminology";
 import AttributionPublicLine from "../attributions/AttributionPublicLine";
 import { ReactionSection } from "../../components/ui/ReactionSection";
 import { useSheetPersonalities, type SheetPersonality } from "../redesign/sheetPersonality";
-import { uploadStoryImage, validateStoryImageFile } from "./storyImageUpload";
+import { extractImageMetadata, uploadStoryImage, validateStoryImageFile, type ImageMetadata } from "./storyImageUpload";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import { LoadingImage } from "../../components/ui/LoadingImage";
+import { ConfirmModal } from "../../components/ui/ConfirmModal";
+import { InfoTooltip } from "../../components/ui/info-tooltip";
 
 type FilterTab = "story" | "all" | "entries";
 
@@ -199,6 +202,14 @@ export default function JournalSheet({
   const [storyImageFile, setStoryImageFile] = useState<File | null>(null);
   const [storyImagePreviewUrl, setStoryImagePreviewUrl] = useState<string | null>(null);
   const [storyImageSize, setStoryImageSize] = useState<StoryImageSize>("medium");
+  const [storyHappenedAt, setStoryHappenedAt] = useState<string>(() => toLocalDatetimeInputValue(new Date()));
+  const [storyMetadata, setStoryMetadata] = useState<ImageMetadata | null>(null);
+  const [confirmMetadata, setConfirmMetadata] = useState<{
+    type: "date" | "gps";
+    newValue: string | { lat: number; lon: number };
+    oldValue: string | { lat: number; lon: number };
+  } | null>(null);
+  const metadataRequestIdRef = useRef(0);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -234,6 +245,8 @@ export default function JournalSheet({
     setStoryImageFile(null);
     setStoryImagePreviewUrl(null);
     setStoryImageSize(window.innerWidth < 640 ? "compact" : "medium");
+    setStoryHappenedAt(toLocalDatetimeInputValue(new Date()));
+    setStoryMetadata(null);
   }, [open]);
   useEffect(() => {
     return () => {
@@ -258,7 +271,7 @@ export default function JournalSheet({
   const filtered = filterEvents(events, activeTab);
   const isTraveler = role === "traveler";
 
-  function handleStoryImageChange(file: File | undefined) {
+  async function handleStoryImageChange(file: File | undefined) {
     if (!file) return;
     try {
       validateStoryImageFile(file);
@@ -272,6 +285,17 @@ export default function JournalSheet({
         bytes: file.size,
         contentType: file.type || "unknown",
       });
+
+      const requestId = ++metadataRequestIdRef.current;
+      const metadata = await extractImageMetadata(file);
+      if (requestId !== metadataRequestIdRef.current) return;
+      setStoryMetadata(metadata);
+      if (metadata) {
+        log.logInteraction("story-image:metadata-extracted", {
+          hasDate: metadata.date != null,
+          hasGps: metadata.lat != null,
+        });
+      }
     } catch (imageError) {
       log.error("story-image:attach:error", "interaction", {
         message: imageError instanceof Error ? imageError.message : String(imageError),
@@ -281,17 +305,71 @@ export default function JournalSheet({
   }
 
   function clearStoryImageDraft() {
+    metadataRequestIdRef.current++;
     setStoryImageFile(null);
     setStoryImagePreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
     });
+    setStoryMetadata(null);
     log.logInteraction("story-image:remove-draft");
+  }
+
+  function handleUseMetadataDate() {
+    if (!storyMetadata?.date) return;
+    const newDate = new Date(storyMetadata.date);
+    const newValue = toLocalDatetimeInputValue(newDate);
+    const oldValue = storyHappenedAt;
+
+    setConfirmMetadata({
+      type: "date",
+      newValue,
+      oldValue,
+    });
+  }
+
+  function handleUseMetadataGps() {
+    if (storyMetadata?.lat == null || storyMetadata?.lon == null) return;
+    const newValue = { lat: storyMetadata.lat, lon: storyMetadata.lon };
+    const oldValue =
+      storyLat !== undefined && storyLon !== undefined
+        ? { lat: storyLat, lon: storyLon }
+        : "Not set";
+
+    setConfirmMetadata({
+      type: "gps",
+      newValue,
+      oldValue,
+    });
+  }
+
+  function confirmMetadataChange() {
+    if (!confirmMetadata) return;
+
+    if (confirmMetadata.type === "date") {
+      setStoryHappenedAt(confirmMetadata.newValue as string);
+      log.logInteraction("metadata:apply-date", { source: "create", value: confirmMetadata.newValue });
+    } else if (confirmMetadata.type === "gps") {
+      const { lat, lon } = confirmMetadata.newValue as { lat: number; lon: number };
+      setStoryLat(lat);
+      setStoryLon(lon);
+      log.logInteraction("metadata:apply-gps", { source: "create", lat, lon });
+    }
+
+    setConfirmMetadata(null);
   }
 
   async function handleCreateStory() {
     setIsCreating(true);
     setCreateError(null);
+
+    const happenedAtMs = parseLocalDatetimeInputValue(storyHappenedAt);
+    if (storyHappenedAt && happenedAtMs === null) {
+      setCreateError("Please enter a valid date and time.");
+      setIsCreating(false);
+      return;
+    }
+
     try {
       const uploadResult = storyImageFile
         ? await (async () => {
@@ -320,6 +398,7 @@ export default function JournalSheet({
         imageSize: storyImageSize,
         showInStory: true,
         source: "inline_form",
+        ...(happenedAtMs !== null ? { happenedAt: happenedAtMs } : {}),
       });
       setStoryTitle("");
       setStoryBody("");
@@ -442,15 +521,57 @@ export default function JournalSheet({
                   ) : null}
                 </div>
                 {storyImagePreviewUrl ? (
-                  <LoadingImage
-                    src={storyImagePreviewUrl}
-                    alt=""
-                    aspectRatio="4/3"
-                    containerClassName="max-h-48 w-full rounded-md"
-                    className="object-contain"
-                    onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
-                    onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
-                  />
+                  <div className="space-y-3">
+                    <LoadingImage
+                      src={storyImagePreviewUrl}
+                      alt=""
+                      aspectRatio="4/3"
+                      containerClassName="max-h-48 w-full rounded-md"
+                      className="object-contain"
+                      onLoad={() => log.logInteraction("story-image:render", { source: "draft" })}
+                      onError={() => log.error("story-image:render:error", "ui", { source: "draft" })}
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1.5 px-3 text-xs"
+                          disabled={!storyMetadata?.date}
+                          onClick={handleUseMetadataDate}
+                        >
+                          <CalendarClock className="h-3.5 w-3.5" />
+                          Use date/time
+                        </Button>
+                        {!storyMetadata?.date && (
+                          <InfoTooltip label="No date metadata found">
+                            This photo doesn't have embedded date/time information.
+                          </InfoTooltip>
+                        )}
+                      </div>
+                      {onRequestCoordinatePick && (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 gap-1.5 px-3 text-xs"
+                            disabled={storyMetadata?.lat == null}
+                            onClick={handleUseMetadataGps}
+                          >
+                            <MapPin className="h-3.5 w-3.5" />
+                            Use GPS
+                          </Button>
+                          {storyMetadata?.lat == null && (
+                            <InfoTooltip label="No GPS metadata found">
+                              This photo doesn't have embedded location information.
+                            </InfoTooltip>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ) : (
                   <label className="flex cursor-pointer items-center gap-2 rounded-md border border-dashed border-[var(--line-soft)] px-3 py-2 text-sm font-semibold text-[var(--ink-2)] hover:bg-[var(--bg-paper-2)]">
                     <ImagePlus className="h-4 w-4" aria-hidden="true" />
@@ -490,6 +611,21 @@ export default function JournalSheet({
                       </div>
                     )}
               </div>
+              <label className="flex flex-col gap-1.5 text-xs font-semibold text-[var(--ink-1)]">
+                Happened at
+                <Input
+                  type="datetime-local"
+                  value={storyHappenedAt}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    log.logInteraction("happened-at:change", {
+                      oldTime: storyHappenedAt,
+                      newTime: next,
+                    });
+                    setStoryHappenedAt(next);
+                  }}
+                />
+              </label>
               <Input
                 placeholder="Location (optional)"
                 value={storyLocation}
@@ -521,6 +657,52 @@ export default function JournalSheet({
               {createError && (
                 <p className="rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]" role="alert">{createError}</p>
               )}
+
+              <ConfirmModal
+                open={confirmMetadata !== null}
+                onOpenChange={(open) => {
+                  if (!open) setConfirmMetadata(null);
+                }}
+                title={confirmMetadata?.type === "date" ? "Update date/time?" : "Update location?"}
+                description={
+                  <div className="space-y-3">
+                    <p>Use the metadata from the photo instead of the current value?</p>
+                    <div className="grid grid-cols-2 gap-4 rounded-lg bg-[var(--bg-paper-2)] p-3 text-xs">
+                      <div className="space-y-1">
+                        <span className="font-bold uppercase tracking-wider text-[var(--ink-3)]">Current</span>
+                        <div className="font-mono text-[var(--ink-1)]">
+                          {confirmMetadata?.type === "date" ? (
+                            confirmMetadata.oldValue as string
+                          ) : typeof confirmMetadata?.oldValue === "string" ? (
+                            confirmMetadata.oldValue
+                          ) : (
+                            <>
+                              {formatCoordinate((confirmMetadata?.oldValue as any)?.lat ?? 0)},<br />
+                              {formatCoordinate((confirmMetadata?.oldValue as any)?.lon ?? 0)}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="font-bold uppercase tracking-wider text-[var(--flag)]">Photo</span>
+                        <div className="font-mono text-[var(--ink-1)]">
+                          {confirmMetadata?.type === "date" ? (
+                            confirmMetadata.newValue as string
+                          ) : (
+                            <>
+                              {formatCoordinate((confirmMetadata?.newValue as any)?.lat ?? 0)},<br />
+                              {formatCoordinate((confirmMetadata?.newValue as any)?.lon ?? 0)}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                }
+                confirmLabel="Update"
+                onConfirm={confirmMetadataChange}
+              />
+
               <Button type="button" disabled={isCreating} onClick={handleCreateStory}>
                 {isCreating ? "Saving…" : "Add to Journal"}
               </Button>

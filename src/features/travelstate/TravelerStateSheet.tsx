@@ -1219,10 +1219,10 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
             <StateSegment
               title="Movement detection"
-              hint="Auto-sets your activity from GPS speed."
+              hint="Auto-sets your activity from GPS while Live is on."
             >
               <ToggleRow
-                label="Detect movement from GPS"
+                label="Detect movement while Live is on"
                 checked={movementEnabled}
                 onChange={(v) => {
                   setMovementEnabled(v);

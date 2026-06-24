@@ -13,18 +13,9 @@ import {
 import { Button } from "./components/ui/button";
 import LandingPage from "./features/auth/LandingPage";
 import LoginModal from "./features/auth/LoginModal";
-import InviteRedemptionScreen from "./features/auth/InviteRedemptionScreen";
-import PasswordResetScreen from "./features/auth/PasswordResetScreen";
-import OptionsSheet, { type OptionsView } from "./features/options/OptionsSheet";
-import EndTripSheet from "./features/endtrip/EndTripSheet";
-import CreditsOverlay from "./features/endtrip/CreditsOverlay";
-import FollowerManagementPage from "./features/followers/FollowerManagementPage";
+import type { OptionsView } from "./features/options/OptionsSheet";
 import { TopBar, TripTicker, useTicker } from "./features/hud";
-import {
-  CreateAccountIntroFlow,
-  IntroSequence,
-  markLocalIntroSeen,
-} from "./features/onboarding/IntroSequence";
+import { markLocalIntroSeen } from "./features/onboarding/introUtils";
 import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
 import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
 import { PendingNotice } from "./components/resilience/PendingNotice";
@@ -39,7 +30,15 @@ import { log as debugLog } from "./debug/debugLogger";
 import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 import { BackgroundSaveProvider } from "./providers/BackgroundSaveProvider";
 
+import OptionsSheet from "./features/options/OptionsSheet";
+
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
+const InviteRedemptionScreen = React.lazy(() => import("./features/auth/InviteRedemptionScreen"));
+const PasswordResetScreen = React.lazy(() => import("./features/auth/PasswordResetScreen"));
+const EndTripSheet = React.lazy(() => import("./features/endtrip/EndTripSheet"));
+const CreditsOverlay = React.lazy(() => import("./features/endtrip/CreditsOverlay"));
+import FollowerManagementPage from "./features/followers/FollowerManagementPage";
+import { CreateAccountIntroFlow, IntroSequence } from "./features/onboarding/IntroSequence";
 
 const PANEL_MOTION = {
   initial: { y: 40, opacity: 0 },
@@ -353,34 +352,38 @@ function ConnectedApp() {
   // URL-param screens (no session required)
   if (pendingResetToken) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div key="reset" {...PANEL_MOTION}>
-          <PasswordResetScreen
-            resetToken={pendingResetToken}
-            onDone={() => {
-              setPendingResetToken(null);
-              history.replaceState({}, "", window.location.pathname);
-            }}
-          />
-        </motion.div>
-      </AnimatePresence>
+      <Suspense fallback={<div className="flex h-dvh items-center justify-center">Loading...</div>}>
+        <AnimatePresence mode="wait">
+          <motion.div key="reset" {...PANEL_MOTION}>
+            <PasswordResetScreen
+              resetToken={pendingResetToken}
+              onDone={() => {
+                setPendingResetToken(null);
+                history.replaceState({}, "", window.location.pathname);
+              }}
+            />
+          </motion.div>
+        </AnimatePresence>
+      </Suspense>
     );
   }
 
   if (pendingInviteToken) {
     return (
-      <AnimatePresence mode="wait">
-        <motion.div key="invite" {...PANEL_MOTION}>
-          <InviteRedemptionScreen
-            inviteToken={pendingInviteToken}
-            onSignIn={(newSession) => handleSignIn(newSession, { playCreateAccountIntro: true })}
-            onBack={() => {
-              setPendingInviteToken(null);
-              history.replaceState({}, "", window.location.pathname);
-            }}
-          />
-        </motion.div>
-      </AnimatePresence>
+      <Suspense fallback={<div className="flex h-dvh items-center justify-center">Loading...</div>}>
+        <AnimatePresence mode="wait">
+          <motion.div key="invite" {...PANEL_MOTION}>
+            <InviteRedemptionScreen
+              inviteToken={pendingInviteToken}
+              onSignIn={(newSession) => handleSignIn(newSession, { playCreateAccountIntro: true })}
+              onBack={() => {
+                setPendingInviteToken(null);
+                history.replaceState({}, "", window.location.pathname);
+              }}
+            />
+          </motion.div>
+        </AnimatePresence>
+      </Suspense>
     );
   }
 
@@ -496,51 +499,55 @@ function ConnectedApp() {
         )}
       </div>
 
-      <OptionsSheet
-        open={isOptionsOpen}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            music.sfx("close");
-            setOptionsDefaultView("options");
-            setPreserveDebugContext(false);
-          }
-          setIsOptionsOpen(nextOpen);
-        }}
-        defaultView={optionsDefaultView}
-        preserveDebugContext={preserveDebugContext}
-        session={session}
-        role={role}
-        onSignOut={handleSignOut}
-        onManageFollowers={() => {
-          music.sfx("page");
-          setIsOptionsOpen(false);
-          setView("follower-management");
-        }}
-        onReplayFollowerTour={() => {
-          music.sfx("page");
-          setIsOptionsOpen(false);
-          setIsIntroReplayOpen(true);
-        }}
-        onLoggedOut={handleLoggedOut}
-        onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
-        onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
-        onResetStarted={showResetToast}
-        onTriggerTestToast={handleTriggerTestToast}
-        onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); setIsEndTripOpen(true); } : undefined}
-        onViewCredits={() => { setIsOptionsOpen(false); setIsCreditsOpen(true); }}
-      />
+        <OptionsSheet
+          open={isOptionsOpen}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) {
+              music.sfx("close");
+              setOptionsDefaultView("options");
+              setPreserveDebugContext(false);
+            }
+            setIsOptionsOpen(nextOpen);
+          }}
+          defaultView={optionsDefaultView}
+          preserveDebugContext={preserveDebugContext}
+          session={session}
+          role={role}
+          onSignOut={handleSignOut}
+          onManageFollowers={() => {
+            music.sfx("page");
+            setIsOptionsOpen(false);
+            setView("follower-management");
+          }}
+          onReplayFollowerTour={() => {
+            music.sfx("page");
+            setIsOptionsOpen(false);
+            setIsIntroReplayOpen(true);
+          }}
+          onLoggedOut={handleLoggedOut}
+          onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
+          onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
+          onResetStarted={showResetToast}
+          onTriggerTestToast={handleTriggerTestToast}
+          onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); setIsEndTripOpen(true); } : undefined}
+          onViewCredits={() => { setIsOptionsOpen(false); setIsCreditsOpen(true); }}
+        />
 
       {role === "traveler" && (
-        <EndTripSheet
-          token={session.token}
-          open={isEndTripOpen}
-          onOpenChange={setIsEndTripOpen}
-          onViewCredits={() => { setIsEndTripOpen(false); setIsCreditsOpen(true); }}
-        />
+        <Suspense fallback={null}>
+          <EndTripSheet
+            token={session.token}
+            open={isEndTripOpen}
+            onOpenChange={setIsEndTripOpen}
+            onViewCredits={() => { setIsEndTripOpen(false); setIsCreditsOpen(true); }}
+          />
+        </Suspense>
       )}
 
       {isCreditsOpen && (
-        <CreditsOverlay token={session.token} role={role} onClose={() => setIsCreditsOpen(false)} />
+        <Suspense fallback={null}>
+          <CreditsOverlay token={session.token} role={role} onClose={() => setIsCreditsOpen(false)} />
+        </Suspense>
       )}
 
       <ErrorBoundary

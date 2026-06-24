@@ -20,13 +20,11 @@ import {
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
   type Transaction,
 } from "../../convex/tripcastApi";
-import AddCheckpointSheet, {
-  type CheckpointPrefill,
-  type SelectedCoordinate,
+import type {
+  CheckpointPrefill,
+  SelectedCoordinate,
 } from "./AddCheckpointSheet";
 import ReplayPoiCard from "./ReplayPoiCard";
-import ReplaySpeedSheet from "./ReplaySpeedSheet";
-import ReplayDateRangeSheet from "./ReplayDateRangeSheet";
 import { TripReplayHud, formatReplayTime } from "./TripReplayHud";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import {
@@ -36,11 +34,7 @@ import {
 } from "./MapPicker";
 import MissionMarkers from "./MissionMarkers";
 import MysteryMissionMarkers from "./MysteryMissionMarkers";
-import MissionPanel from "../missions/MissionPanel";
-import RouteVotePanel from "../routevote/RouteVotePanel";
 import VoteTimeSplash from "../routevote/VoteTimeSplash";
-import TravelerStateSheet from "../travelstate/TravelerStateSheet";
-import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import {
   Dock,
@@ -67,14 +61,10 @@ import {
   SheetContent,
   SheetTitle,
 } from "../../components/ui/sheet";
-import JournalSheet from "../journal/JournalSheet";
-import StoryDetailSheet from "../journal/StoryDetailSheet";
 import { useImagePrefetch } from "../journal/useImagePrefetch";
 import { useEgressMeter } from "../journal/useEgressMeter";
 import { uploadStoryImage } from "../journal/storyImageUpload";
 import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
-import AchievementsConnected from "../achievements/AchievementsConnected";
-import { MessagingSheet } from "../messaging/MessagingSheet";
 import { useMessagingUnread } from "../messaging/useMessagingUnread";
 import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
@@ -112,6 +102,7 @@ import { useFixOverlay } from "./useFixOverlay";
 import { useCloakingZones } from "./useCloakingZones";
 import { DebugChip } from "../../debug/DebugChip";
 import { useTheme } from "../../providers/ThemeProvider";
+import React, { Suspense } from "react";
 import { cn } from "../../lib/utils";
 import { isEnabled, isCategoryEnabled, log as rawLog, logMapError, logMapEvent } from "../../debug/debugLogger";
 import {
@@ -143,6 +134,18 @@ import {
   triggerMapCooldown,
   type MapCooldownState,
 } from "./mapService";
+
+const AddCheckpointSheet = React.lazy(() => import("./AddCheckpointSheet"));
+const ReplaySpeedSheet = React.lazy(() => import("./ReplaySpeedSheet"));
+const ReplayDateRangeSheet = React.lazy(() => import("./ReplayDateRangeSheet"));
+const MissionPanel = React.lazy(() => import("../missions/MissionPanel"));
+const RouteVotePanel = React.lazy(() => import("../routevote/RouteVotePanel"));
+const TravelerStateSheet = React.lazy(() => import("../travelstate/TravelerStateSheet"));
+const TravelFundsSheet = React.lazy(() => import("../travelfunds/TravelFundsSheet"));
+const JournalSheet = React.lazy(() => import("../journal/JournalSheet"));
+const StoryDetailSheet = React.lazy(() => import("../journal/StoryDetailSheet"));
+const AchievementsConnected = React.lazy(() => import("../achievements/AchievementsConnected"));
+const MessagingSheet = React.lazy(() => import("../messaging/MessagingSheet").then(m => ({ default: m.MessagingSheet })));
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 
@@ -1229,24 +1232,26 @@ function ConvexCheckpointSheet({
   );
 
   return (
-    <AddCheckpointSheet
-      selectedCoordinate={selectedCoordinate}
-      onClose={onClose}
-      onSave={handleSave}
-      stateSection={stateSection}
-      prefill={prefill}
-      onCheckpointCreated={onCheckpointCreated}
-      onBack={onBack}
-      onUploadImage={(file) => uploadStoryImage(file, () => convex.mutation(tripcastApi.checkpoints.generateStoryImageUploadUrl, { token }))}
-      onCoordinateChange={(lat, lon) => {
-        if (selectedCoordinate) {
-          const next = { ...selectedCoordinate, lat, lon };
-          setSelectedCoordinate(next);
-          centerMapOnCoordinate(next);
-        }
-      }}
-      debugSource={debugSource}
-    />
+    <Suspense fallback={null}>
+      <AddCheckpointSheet
+        selectedCoordinate={selectedCoordinate}
+        onClose={onClose}
+        onSave={handleSave}
+        stateSection={stateSection}
+        prefill={prefill}
+        onCheckpointCreated={onCheckpointCreated}
+        onBack={onBack}
+        onUploadImage={(file) => uploadStoryImage(file, () => convex.mutation(tripcastApi.checkpoints.generateStoryImageUploadUrl, { token }))}
+        onCoordinateChange={(lat, lon) => {
+          if (selectedCoordinate) {
+            const next = { ...selectedCoordinate, lat, lon };
+            setSelectedCoordinate(next);
+            centerMapOnCoordinate(next);
+          }
+        }}
+        debugSource={debugSource}
+      />
+    </Suspense>
   );
 }
 
@@ -3242,6 +3247,14 @@ export default function TripMap({
     let lastMovementMutationAt = 0;
     let prevFixForSpeed: { lat: number; lon: number; at: number } | null = null;
     const MOVEMENT_MUTATION_MIN_INTERVAL_MS = 60_000;
+    // Dampening (hysteresis): require the same classification across a few
+    // consecutive fixes before firing, so a single noisy GPS sample can't flip
+    // activity. `lastFiredClassification` is the state we actually applied;
+    // `candidateStreak` counts back-to-back fixes agreeing on `candidateClassification`.
+    let lastFiredClassification: "walking" | "moving" | null = null;
+    let candidateClassification: "walking" | "moving" | "stopped" | null = null;
+    let candidateStreak = 0;
+    const MOVEMENT_MIN_CONSECUTIVE_FIXES = 2;
 
     const handleFix = (lat: number, lon: number, accuracy?: number, speed?: number) => {
       lastLocationFixAtRef.current = Date.now();
@@ -3333,6 +3346,17 @@ export default function TripMap({
       // when the classification transitions. Native-only because reliable
       // background GPS is only available on the iOS Capacitor build.
       if (isNativeLocationAvailable()) {
+        // Movement detection should only run when Live is actually sharing.
+        // The Live-Off foreground watcher is only for the local GPS dot.
+        if (!isLocationSharingRef.current) {
+          lastMovementClassification = null;
+          prevFixForSpeed = null;
+          lastFiredClassification = null;
+          candidateClassification = null;
+          candidateStreak = 0;
+          return;
+        }
+
         const prefs = movementPrefsRef.current;
         const fixAt = Date.now();
         if (prefs?.movementDetectionEnabled === true) {
@@ -3388,10 +3412,22 @@ export default function TripMap({
             }
           }
 
-          const changed = classification !== lastMovementClassification;
-          const throttleOk = fixAt - lastMovementMutationAt >= MOVEMENT_MUTATION_MIN_INTERVAL_MS;
-          if (changed && classification !== "stopped" && (throttleOk || lastMovementClassification === null)) {
-            const from = lastMovementClassification;
+          // Build/extend the streak of agreeing fixes before acting.
+          if (classification === candidateClassification) {
+            candidateStreak += 1;
+          } else {
+            candidateClassification = classification;
+            candidateStreak = 1;
+          }
+
+          const isNewState = classification !== lastFiredClassification;
+          const sustained = candidateStreak >= MOVEMENT_MIN_CONSECUTIVE_FIXES;
+          const throttleOk =
+            fixAt - lastMovementMutationAt >= MOVEMENT_MUTATION_MIN_INTERVAL_MS ||
+            lastFiredClassification === null;
+          if (classification !== "stopped" && isNewState && sustained && throttleOk) {
+            const from = lastFiredClassification;
+            lastFiredClassification = classification;
             lastMovementClassification = classification;
             lastMovementMutationAt = fixAt;
             log.logUi("movement:classify", { speedMps, classification, from });
@@ -3415,7 +3451,8 @@ export default function TripMap({
                   message: error instanceof Error ? error.message : String(error),
                 });
               });
-          } else if (changed) {
+          } else {
+            // Not fired this fix — keep "last seen" in sync for debug/logging.
             lastMovementClassification = classification;
           }
         }
@@ -4847,21 +4884,25 @@ export default function TripMap({
         ) : null}
       </AnimatePresence>
 
-      <ReplaySpeedSheet
-        open={isReplaySpeedSheetOpen}
-        speed={replaySpeed}
-        options={REPLAY_SPEED_OPTIONS}
-        onSelect={handleReplaySpeedChange}
-        onClose={() => setIsReplaySpeedSheetOpen(false)}
-      />
-      <ReplayDateRangeSheet
-        open={isReplayDateSheetOpen}
-        bounds={tripTimeBounds}
-        window={replayWindow}
-        onApply={handleApplyReplayWindow}
-        onReset={handleResetReplayWindow}
-        onClose={() => setIsReplayDateSheetOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <ReplaySpeedSheet
+          open={isReplaySpeedSheetOpen}
+          speed={replaySpeed}
+          options={REPLAY_SPEED_OPTIONS}
+          onSelect={handleReplaySpeedChange}
+          onClose={() => setIsReplaySpeedSheetOpen(false)}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <ReplayDateRangeSheet
+          open={isReplayDateSheetOpen}
+          bounds={tripTimeBounds}
+          window={replayWindow}
+          onApply={handleApplyReplayWindow}
+          onReset={handleResetReplayWindow}
+          onClose={() => setIsReplayDateSheetOpen(false)}
+        />
+      </Suspense>
 
       <VoteTimeSplash
         token={token}
@@ -5011,12 +5052,14 @@ export default function TripMap({
         message="Try again."
         fallbackClassName={CARD_ERROR_CLASS}
       >
-        <AchievementsConnected
-          token={token}
-          open={isAchievementsOpen}
-          onOpenChange={setIsAchievementsOpen}
-          showButton={false}
-        />
+        <Suspense fallback={null}>
+          <AchievementsConnected
+            token={token}
+            open={isAchievementsOpen}
+            onOpenChange={setIsAchievementsOpen}
+            showButton={false}
+          />
+        </Suspense>
       </FeatureBoundary>
 
       {/* Bottom Dock */}
@@ -5059,14 +5102,14 @@ export default function TripMap({
             music.sfx("close");
             setSelectedCoordinate(null);
             setStoryPrefill(null);
-          setPrefillFile(undefined);
+            setPrefillFile(undefined);
             // Swipe-down / escape dismissal — drop the pending detail return
             // so a later unrelated open of the missions panel doesn't surprise
             // the Traveler by jumping to this mission's detail.
             setPendingOpenDetailMissionId(null);
           }}
           prefill={storyPrefill ?? undefined}
-        prefillFile={prefillFile}
+          prefillFile={prefillFile}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
           setSelectedCoordinate={setSelectedCoordinate}
@@ -5089,29 +5132,31 @@ export default function TripMap({
         message="Try again, or close votes and reopen them."
         fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
       >
-        <RouteVotePanel
-          key={`${role}-vote-panel`}
-          open={isVotePanelOpen}
-          token={token}
-          role={role}
-          onClose={() => {
-            music.sfx("close");
-            setIsVotePanelOpen(false);
-            setVoteMapOverlay(null);
-            setVoteOptionNumberById(null);
-          }}
-          onRequestCoordinatePick={handleRequestCoordinatePick}
-          onCoordinatePickSaved={clearPreviewPin}
-          referenceLocation={livePosition}
-          onVoteOverlayChange={handleVoteOverlayChange}
-          onRequestFitMap={handleRequestFitMap}
-          fallbackOrigin={routeVoteFallbackOrigin}
-          isPickingCoordinate={isPickingCoordinate}
-          pendingOpenVoteId={pendingOpenVoteId}
-          onClearPendingVoteId={() => setPendingOpenVoteId(null)}
-          onRequestOpenMissionDetail={handleNavigateToMissionDetail}
-          debugSource={votesDebugSource}
-        />
+        <Suspense fallback={null}>
+          <RouteVotePanel
+            key={`${role}-vote-panel`}
+            open={isVotePanelOpen}
+            token={token}
+            role={role}
+            onClose={() => {
+              music.sfx("close");
+              setIsVotePanelOpen(false);
+              setVoteMapOverlay(null);
+              setVoteOptionNumberById(null);
+            }}
+            onRequestCoordinatePick={handleRequestCoordinatePick}
+            onCoordinatePickSaved={clearPreviewPin}
+            referenceLocation={livePosition}
+            onVoteOverlayChange={handleVoteOverlayChange}
+            onRequestFitMap={handleRequestFitMap}
+            fallbackOrigin={routeVoteFallbackOrigin}
+            isPickingCoordinate={isPickingCoordinate}
+            pendingOpenVoteId={pendingOpenVoteId}
+            onClearPendingVoteId={() => setPendingOpenVoteId(null)}
+            onRequestOpenMissionDetail={handleNavigateToMissionDetail}
+            debugSource={votesDebugSource}
+          />
+        </Suspense>
       </FeatureBoundary>
 
       <AnimatePresence>
@@ -5124,38 +5169,42 @@ export default function TripMap({
               message="Try again, or close state and reopen it."
               fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
             >
-              <TravelerStateSheet
-                token={token}
-                onClose={() => {
-                  music.sfx("close");
-                  setIsTravelerStateOpen(false);
-                }}
-                onToast={showToast}
-                debugSource={stateDebugSource}
-              />
+              <Suspense fallback={null}>
+                <TravelerStateSheet
+                  token={token}
+                  onClose={() => {
+                    music.sfx("close");
+                    setIsTravelerStateOpen(false);
+                  }}
+                  onToast={showToast}
+                  debugSource={stateDebugSource}
+                />
+              </Suspense>
             </FeatureBoundary>
           </div>
         )}
       </AnimatePresence>
 
-      <MessagingSheet
-        open={isMessagingOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            music.sfx("close");
-            markMessagingRead();
-          }
-          setIsMessagingOpen(open);
-        }}
-        messages={messages}
-        token={token}
-        userId={currentUserId}
-        sessionId={currentSessionId}
-        role={role}
-        lastReadAt={lastReadAt}
-        onMarkRead={markMessagingRead}
-        onNavigateToItem={handleNavigateToMessageItem}
-      />
+      <Suspense fallback={null}>
+        <MessagingSheet
+          open={isMessagingOpen}
+          onOpenChange={(open) => {
+            if (!open) {
+              music.sfx("close");
+              markMessagingRead();
+            }
+            setIsMessagingOpen(open);
+          }}
+          messages={messages}
+          token={token}
+          userId={currentUserId}
+          sessionId={currentSessionId}
+          role={role}
+          lastReadAt={lastReadAt}
+          onMarkRead={markMessagingRead}
+          onNavigateToItem={handleNavigateToMessageItem}
+        />
+      </Suspense>
 
       <div
         ref={cardsWrapperRef}
@@ -5282,14 +5331,16 @@ export default function TripMap({
           </div>
           <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 pb-4 pt-3">
             {role === "traveler" && isTravelFundsSheetOpen && (
-              <TravelFundsSheet
-                token={token}
-                onClose={() => {
-                  music.sfx("close");
-                  setIsTravelFundsSheetOpen(false);
-                }}
-                debugSource={fundsDebugSource}
-              />
+              <Suspense fallback={null}>
+                <TravelFundsSheet
+                  token={token}
+                  onClose={() => {
+                    music.sfx("close");
+                    setIsTravelFundsSheetOpen(false);
+                  }}
+                  debugSource={fundsDebugSource}
+                />
+              </Suspense>
             )}
           </div>
         </SheetContent>
@@ -5335,40 +5386,42 @@ export default function TripMap({
         message="Try again, or close missions and reopen them."
         fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
       >
-        <MissionPanel
-          open={isMissionsPanelOpen}
-          token={token}
-          role={role}
-          onClose={() => {
-            music.sfx("close");
-            setIsMissionsPanelOpen(false);
-          }}
-          onStartMission={() => {
-            music.sfx("success");
-            setIsMissionsPanelOpen(false);
-          }}
-          onRequestCoordinatePick={handleRequestMissionCoordinatePick}
-          onCoordinatePickSaved={clearPreviewPin}
-          isPickingCoordinate={isPickingCoordinate}
-          pendingOpenMissionId={pendingOpenMissionId}
-          pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
-          onClearPendingMission={() => setPendingOpenMissionId(null)}
-          onClearPendingMysteryMission={() => setPendingOpenMysteryMissionId(null)}
-          onRequestNavigateToMission={handleNavigateToMission}
-          onCompleteAsStory={handleCompleteAsStory}
-          onMysteryMissionReveal={() => {
-            music.sfx("success");
-            showToast("Mystery Mission revealed.", "mystery");
-          }}
-          pendingOpenDetailMissionId={pendingOpenDetailMissionId}
-          prefilledCoordinate={missionPrefillCoordinate}
-          onClearPrefill={() => setMissionPrefillCoordinate(null)}
-          onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
-          onRequestNavigateToVote={handleNavigateToVote}
-          onOpenLinkedStory={handleOpenLinkedStory}
-          onDetailOpenChange={setIsMissionDetailOpen}
-          debugSource={missionsDebugSource}
-        />
+        <Suspense fallback={null}>
+          <MissionPanel
+            open={isMissionsPanelOpen}
+            token={token}
+            role={role}
+            onClose={() => {
+              music.sfx("close");
+              setIsMissionsPanelOpen(false);
+            }}
+            onStartMission={() => {
+              music.sfx("success");
+              setIsMissionsPanelOpen(false);
+            }}
+            onRequestCoordinatePick={handleRequestMissionCoordinatePick}
+            onCoordinatePickSaved={clearPreviewPin}
+            isPickingCoordinate={isPickingCoordinate}
+            pendingOpenMissionId={pendingOpenMissionId}
+            pendingOpenMysteryMissionId={pendingOpenMysteryMissionId}
+            onClearPendingMission={() => setPendingOpenMissionId(null)}
+            onClearPendingMysteryMission={() => setPendingOpenMysteryMissionId(null)}
+            onRequestNavigateToMission={handleNavigateToMission}
+            onCompleteAsStory={handleCompleteAsStory}
+            onMysteryMissionReveal={() => {
+              music.sfx("success");
+              showToast("Mystery Mission revealed.", "mystery");
+            }}
+            pendingOpenDetailMissionId={pendingOpenDetailMissionId}
+            prefilledCoordinate={missionPrefillCoordinate}
+            onClearPrefill={() => setMissionPrefillCoordinate(null)}
+            onClearPendingDetail={() => setPendingOpenDetailMissionId(null)}
+            onRequestNavigateToVote={handleNavigateToVote}
+            onOpenLinkedStory={handleOpenLinkedStory}
+            onDetailOpenChange={setIsMissionDetailOpen}
+            debugSource={missionsDebugSource}
+          />
+        </Suspense>
       </FeatureBoundary>
 
       <FeatureBoundary
@@ -5381,69 +5434,73 @@ export default function TripMap({
         message="Try again, or close journal and reopen it."
         fallbackClassName={BOTTOM_SHEET_ERROR_CLASS}
       >
-            <JournalSheet
-              open={isJournalOpen}
-              events={journalEvents}
-              token={token}
-              role={role}
-              onClose={() => {
-                music.sfx("close");
-                setIsJournalOpen(false);
-              }}
-              onStorySelect={(event) => {
-                music.sfx("page");
-                setIsJournalOpen(false);
-                setStoryOpenedFromJournal(true);
-                setStoryDebugSource({ source: "journal:story-select", sourceLabel: "Journal -> Story" });
-                setSelectedStoryDetail({
-                  eventId: event._id,
-                  checkpointId: event.checkpointId,
-                  fallbackEvent: event,
-                });
-              }}
-              onLocationFocus={handleHistoryLocationFocus}
-              onMarkAllRead={markAllRead}
-              onRequestCoordinatePick={handleRequestStoryCoordinatePick}
-              onCoordinatePickSaved={clearPreviewPin}
-              isPickingCoordinate={isPickingCoordinate}
-              debugSource={journalDebugSource}
-            />
+        <Suspense fallback={null}>
+          <JournalSheet
+            open={isJournalOpen}
+            events={journalEvents}
+            token={token}
+            role={role}
+            onClose={() => {
+              music.sfx("close");
+              setIsJournalOpen(false);
+            }}
+            onStorySelect={(event) => {
+              music.sfx("page");
+              setIsJournalOpen(false);
+              setStoryOpenedFromJournal(true);
+              setStoryDebugSource({ source: "journal:story-select", sourceLabel: "Journal -> Story" });
+              setSelectedStoryDetail({
+                eventId: event._id,
+                checkpointId: event.checkpointId,
+                fallbackEvent: event,
+              });
+            }}
+            onLocationFocus={handleHistoryLocationFocus}
+            onMarkAllRead={markAllRead}
+            onRequestCoordinatePick={handleRequestStoryCoordinatePick}
+            onCoordinatePickSaved={clearPreviewPin}
+            isPickingCoordinate={isPickingCoordinate}
+            debugSource={journalDebugSource}
+          />
+        </Suspense>
       </FeatureBoundary>
 
-      <StoryDetailSheet
-        event={selectedStoryEvent}
-        token={token}
-        role={role}
-        onClose={() => {
-          music.sfx(storyOpenedFromJournal ? "page" : "close");
-          const returnToJournal = storyOpenedFromJournal;
-          setSelectedStoryDetail(null);
-          setStoryOpenedFromJournal(false);
-          if (returnToJournal) setIsJournalOpen(true);
-        }}
-        onLocationFocus={handleStoryDetailLocationFocus}
-        missionTitle={
-          selectedStoryEvent?.missionId
-            ? (missionsForLookup ?? []).find((c) => c._id === selectedStoryEvent.missionId)?.title
-            : undefined
-        }
-        missionId={selectedStoryEvent?.missionId ?? undefined}
-        onNavigateToMission={handleOpenMissionFromStory}
-        onRequestCoordinatePick={handleRequestStoryCoordinatePick}
-        isPickingCoordinate={isPickingCoordinate}
-        navigation={
-          storyNavigation
-            ? {
-                currentIndex: storyNavigation.currentIndex,
-                total: storyNavigation.total,
-                hasPrevious: storyNavigation.hasPrevious,
-                hasNext: storyNavigation.hasNext,
-              }
-            : null
-        }
-        onNavigateStory={handleNavigateStoryDetail}
-        debugSource={storyDebugSource}
-      />
+      <Suspense fallback={null}>
+        <StoryDetailSheet
+          event={selectedStoryEvent}
+          token={token}
+          role={role}
+          onClose={() => {
+            music.sfx(storyOpenedFromJournal ? "page" : "close");
+            const returnToJournal = storyOpenedFromJournal;
+            setSelectedStoryDetail(null);
+            setStoryOpenedFromJournal(false);
+            if (returnToJournal) setIsJournalOpen(true);
+          }}
+          onLocationFocus={handleStoryDetailLocationFocus}
+          missionTitle={
+            selectedStoryEvent?.missionId
+              ? (missionsForLookup ?? []).find((c) => c._id === selectedStoryEvent.missionId)?.title
+              : undefined
+          }
+          missionId={selectedStoryEvent?.missionId ?? undefined}
+          onNavigateToMission={handleOpenMissionFromStory}
+          onRequestCoordinatePick={handleRequestStoryCoordinatePick}
+          isPickingCoordinate={isPickingCoordinate}
+          navigation={
+            storyNavigation
+              ? {
+                  currentIndex: storyNavigation.currentIndex,
+                  total: storyNavigation.total,
+                  hasPrevious: storyNavigation.hasPrevious,
+                  hasNext: storyNavigation.hasNext,
+                }
+              : null
+          }
+          onNavigateStory={handleNavigateStoryDetail}
+          debugSource={storyDebugSource}
+        />
+      </Suspense>
 
       </DesktopMapFrame>
     </section>
