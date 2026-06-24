@@ -149,6 +149,11 @@ const MessagingSheet = React.lazy(() => import("../messaging/MessagingSheet").th
 
 const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 
+// Max gap between a gesture-driven follow drop and the app backgrounding for us
+// to treat the drop as an accidental swipe-away graze and restore follow on
+// resume. A swipe-up-to-background fires both well within this window.
+const FOLLOW_RESTORE_GRACE_MS = 2000;
+
 function pickLatestCheckpointCenter(
   checkpoints: Checkpoint[] | undefined,
 ): [number, number] | null {
@@ -1343,6 +1348,12 @@ export default function TripMap({
   const mapLoadedRef = useRef(false);
   const didInitialCenterRef = useRef(false);
   const didLaunchFixRef = useRef(false);
+  // Follow-restore plumbing: an accidental pan while swiping the app away drops
+  // follow just before iOS backgrounds us. We remember a *gesture-driven* drop
+  // and, if the app backgrounds right after, re-engage follow on resume.
+  const isFollowingRef = useRef(false);
+  const lastGestureUnfollowAtRef = useRef<number>(0);
+  const restoreFollowOnResumeRef = useRef(false);
   // Ref-pattern for onMapLoaded: the map-init effect must NOT re-run when the
   // parent passes a fresh callback identity (would tear down + rebuild the
   // entire MapLibre instance). We capture the latest callback here so the
@@ -1482,6 +1493,13 @@ export default function TripMap({
   // control opened, resume it once the control closes. Captured at open time.
   const replayResumeAfterControlRef = useRef(false);
   const stopFollowing = useCallback(() => {
+    setIsFollowing(false);
+  }, []);
+  // Follow drop triggered by a map pan/zoom gesture (not a sheet/nav action).
+  // Stamps the time so the lifecycle handler can tell an accidental
+  // swipe-away pan from a deliberate one and restore follow on resume.
+  const stopFollowingFromGesture = useCallback(() => {
+    if (isFollowingRef.current) lastGestureUnfollowAtRef.current = Date.now();
     setIsFollowing(false);
   }, []);
   const canWrite = role === "traveler";
@@ -2894,7 +2912,6 @@ export default function TripMap({
 
     let touchTimer: ReturnType<typeof setTimeout> | null = null;
     map.on("touchstart", (e) => {
-      stopFollowing();
       if (e.points.length > 1) return;
       touchTimer = setTimeout(() => {
         const { lat, lng: lon } = e.lngLat;
@@ -2907,12 +2924,12 @@ export default function TripMap({
     map.on("touchmove", () => touchTimer && clearTimeout(touchTimer));
     map.on("mousedown", () => setContextMenu(null));
     map.on("dragstart", () => {
-      stopFollowing();
+      stopFollowingFromGesture();
       setContextMenu(null);
     });
     map.on("zoomstart", (event) => {
       if ((event as { originalEvent?: unknown }).originalEvent) {
-        stopFollowing();
+        stopFollowingFromGesture();
       }
       setContextMenu(null);
     });
@@ -3048,7 +3065,7 @@ export default function TripMap({
     mapInitRetryToken,
     recordMapResourceFailure,
     showToast,
-    stopFollowing,
+    stopFollowingFromGesture,
   ]);
 
   // When no focus-driving sheet is open, drop the active focus + observer so a
@@ -3069,6 +3086,10 @@ export default function TripMap({
   useEffect(() => {
     isLocationSharingRef.current = isLocationSharing;
   }, [isLocationSharing]);
+
+  useEffect(() => {
+    isFollowingRef.current = isFollowing;
+  }, [isFollowing]);
 
   useEffect(() => {
     livePositionRef.current = livePosition;
@@ -3155,7 +3176,11 @@ export default function TripMap({
         showToast("Map movement is paused until the map service resumes.");
         return;
       }
-      log.logInteraction("map:camera:move", { lat: coordinate.lat, lon: coordinate.lon, trigger: "center:location" });
+      log.logInteraction("map:camera:move", {
+        lat: roundedCoordinate(coordinate.lat),
+        lon: roundedCoordinate(coordinate.lon),
+        trigger: "center:location",
+      });
       // Reset any persistent padding set by handleNavigateToMission before easing
       map.easeTo({
         center: [coordinate.lon, coordinate.lat],
@@ -3207,8 +3232,12 @@ export default function TripMap({
     if (didInitialCenterRef.current) return;
     if (!mapInstance) return;
     let center: [number, number] | null = null;
+    let followAtLaunch = false;
     if (role === "traveler" && livePosition) {
       center = [livePosition.lon, livePosition.lat];
+      // Lock onto the Traveler's GPS from launch; the follow effect eases the
+      // camera in to zoom 14 on the next fix (launch jumpTo stays at zoom 11).
+      followAtLaunch = true;
     } else if (role === "follower" && isFiniteRouteCoordinate(storedTravelerLocation)) {
       center = [storedTravelerLocation.lon, storedTravelerLocation.lat];
     } else {
@@ -3216,6 +3245,7 @@ export default function TripMap({
     }
     if (!center) return;
     mapInstance.jumpTo({ center, zoom: 11 });
+    if (followAtLaunch) setIsFollowing(true);
     didInitialCenterRef.current = true;
   }, [mapInstance, livePosition, storedTravelerLocation, rawCheckpoints, role]);
 
@@ -3684,7 +3714,22 @@ export default function TripMap({
         liveTrail: liveTrailEnabledRef.current,
         movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
       });
-      if (nextActive) return; // foregrounded: watcher effect re-runs via dep
+      if (nextActive) {
+        // Re-engage follow if an accidental pan dropped it right before the
+        // swipe-away backgrounded us (see FOLLOW_RESTORE_GRACE_MS).
+        if (restoreFollowOnResumeRef.current) {
+          restoreFollowOnResumeRef.current = false;
+          const loc = livePositionRef.current;
+          if (loc) startFollowingTraveler(loc);
+          else setIsFollowing(true);
+        }
+        return; // foregrounded: watcher effect re-runs via dep
+      }
+      // Backgrounding: if follow was dropped by a pan/zoom moments ago, treat it
+      // as the accidental graze of a swipe-away and restore on resume.
+      if (Date.now() - lastGestureUnfollowAtRef.current < FOLLOW_RESTORE_GRACE_MS) {
+        restoreFollowOnResumeRef.current = true;
+      }
       if (isLocationSharingRef.current) return; // LIVE on: keep streaming
       forceStopAllWatchers("appstate-background");
     }
