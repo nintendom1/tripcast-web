@@ -22,6 +22,7 @@ export interface StatusCardMeter {
   max?: number;
   valueLabel?: string;
   color?: string;
+  overfillColor?: string;
 }
 
 export interface StatusCardProps {
@@ -117,6 +118,16 @@ export function StatusCard({
             const pct = Math.min(100, Math.max(0, (meter.value / max) * 100));
             const tier = tierFor((meter.value / max) * 100);
             const color = meter.color ?? TIER_COLORS[tier];
+
+            const hasOverfill = meter.overfillColor && meter.value > max;
+            const overfillPct = hasOverfill
+              ? Math.min(100, ((meter.value - max) / max) * 100)
+              : 0;
+
+            const background = hasOverfill
+              ? `linear-gradient(to right, ${meter.overfillColor} ${overfillPct}%, ${color} ${overfillPct}%)`
+              : color;
+
             return (
               <div key={meter.label} className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex min-w-0 items-center justify-between gap-1 font-[var(--font-mono)] text-[9px] font-bold uppercase leading-none tracking-[0.08em] text-[var(--ink-3)]">
@@ -130,7 +141,7 @@ export function StatusCard({
                 <div className="h-2 overflow-hidden rounded-full bg-[var(--meter-track)]">
                   <span
                     className="block h-full rounded-full transition-[width]"
-                    style={{ width: `${pct}%`, background: color }}
+                    style={{ width: `${pct}%`, background }}
                   />
                 </div>
               </div>

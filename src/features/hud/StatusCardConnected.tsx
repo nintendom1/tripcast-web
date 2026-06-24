@@ -383,9 +383,10 @@ export function StatusCardConnected({
           {
             label: "Fullness",
             value: stomachValue,
-            max: 150,
-            valueLabel: `${Math.round(stomachValue)}/150`,
+            max: 100,
+            valueLabel: formatPercent(stomachValue),
             color: "var(--green)",
+            overfillColor: "var(--flag)",
           },
           {
             label: "Calm",

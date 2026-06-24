@@ -11,7 +11,7 @@ describe("StatusCard", () => {
         clockLabel="9:52 AM"
         meters={[
           { label: "Energy", value: 60, valueLabel: "60%" },
-          { label: "Fullness", value: 70, max: 150, valueLabel: "70/150" },
+          { label: "Fullness", value: 70, max: 100, valueLabel: "70%" },
           { label: "Calm", value: 50, valueLabel: "50%" },
         ]}
       />,
@@ -19,7 +19,7 @@ describe("StatusCard", () => {
 
     expect(screen.getByText("9:52 AM")).toHaveClass("text-[10px]", "font-semibold", "text-[var(--ink-2)]");
     expect(screen.getByText("60%")).toBeInTheDocument();
-    expect(screen.getByText("70/150")).toBeInTheDocument();
+    expect(screen.getByText("70%")).toBeInTheDocument();
     expect(screen.getByText("50%")).toBeInTheDocument();
     expect(screen.getByText("Fullness")).toBeInTheDocument();
   });
