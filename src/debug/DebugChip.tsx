@@ -11,7 +11,7 @@ import {
 } from "./activeUiContext";
 
 const EDGE_PADDING = 12;
-const INITIAL_TOP = 48;
+const INITIAL_TOP = 281;
 const DRAG_THRESHOLD = 5;
 
 type SnappedEdge = "left" | "right" | "top" | "bottom";
@@ -316,7 +316,7 @@ export function DebugChip({ onOpen }: { onOpen: () => void }) {
       className="pointer-events-auto fixed z-[100] appearance-none border-none bg-transparent p-0"
       style={{
         right: EDGE_PADDING,
-        top: INITIAL_TOP, // Matches top-12 (12 * 4px = 48px)
+        top: INITIAL_TOP, // Launch below the mute button; chip is draggable afterward
       }}
     >
       {content}
