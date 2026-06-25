@@ -1,5 +1,5 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
-import type { BackgroundGeolocationPlugin } from "@capacitor-community/background-geolocation";
+import { Capacitor } from "@capacitor/core";
+import { nativeLocationManager } from "./nativeLocationManager";
 
 /**
  * Foreground-only, high-frequency location watcher used by the Movement
@@ -10,10 +10,6 @@ import type { BackgroundGeolocationPlugin } from "@capacitor-community/backgroun
  * so the OS stops delivering fixes the moment the app is backgrounded — both
  * properties bound the battery cost to an active calibration session.
  */
-
-const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
-  "BackgroundGeolocation",
-);
 
 export type CalibrationFix = {
   lat: number;
@@ -32,45 +28,22 @@ export function startCalibrationLocationWatch(
   onError: (error: unknown) => void,
 ): () => void {
   if (isNative()) {
-    let watcherId: string | null = null;
-    let cancelled = false;
-
-    BackgroundGeolocation.addWatcher(
+    const id = nativeLocationManager.addWatcher(
       {
         requestPermissions: true,
         distanceFilter: 0,
       },
-      (location, error) => {
-        if (error) {
-          onError(error);
-          return;
-        }
-        if (!location) return;
-        const speedRaw = (location as { speed?: number | null }).speed;
+      (fix) => {
         onFix({
-          lat: location.latitude,
-          lon: location.longitude,
-          accuracy: location.accuracy,
-          speed: typeof speedRaw === "number" && speedRaw >= 0 ? speedRaw : undefined,
+          ...fix,
           at: Date.now(),
         });
       },
-    )
-      .then((id) => {
-        if (cancelled) {
-          void BackgroundGeolocation.removeWatcher({ id });
-          return;
-        }
-        watcherId = id;
-      })
-      .catch(onError);
+      onError,
+    );
 
     return () => {
-      cancelled = true;
-      if (watcherId) {
-        void BackgroundGeolocation.removeWatcher({ id: watcherId });
-        watcherId = null;
-      }
+      nativeLocationManager.removeWatcher(id);
     };
   }
 
