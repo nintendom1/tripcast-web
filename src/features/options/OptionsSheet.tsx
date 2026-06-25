@@ -52,6 +52,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { useSamplerMode, setSamplerMode, SAMPLER_MODE_INFO, type SamplerMode } from "../../lib/samplerMode";
 import { useFixOverlayEnabled, setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 import { useEgressEstimateBytes } from "../../lib/egressMeter";
+import { BreadcrumbDeleteRow } from "./BreadcrumbDeleteRow";
 import type {
   CloakingPin,
   LiveTrailDeletePreview,
@@ -1400,25 +1401,20 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
             {deleteMode === "individual" && previewSamples.length > 0 ? (
               <div className="max-h-52 overflow-auto rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)]">
                 {previewSamples.map((sample, index) => (
-                  <label
+                  <BreadcrumbDeleteRow
                     key={sample._id}
-                    className="flex items-center gap-3 border-b border-[var(--line-soft)] px-3 py-2 text-sm last:border-b-0"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={individualSelection[sample._id] === true}
-                      onChange={(event) => {
-                        const checked = event.target.checked;
-                        setIndividualSelection((current) => ({
-                          ...current,
-                          [sample._id]: checked,
-                        }));
-                      }}
-                    />
-                    <span className="flex-1 text-[var(--ink-1)]">
-                      #{index + 1} · {dayjs(sample.sampledAt).tz(timeZone).format("MMM D, h:mm A")}
-                    </span>
-                  </label>
+                    index={index}
+                    sample={sample}
+                    prevSample={index > 0 ? previewSamples[index - 1] : null}
+                    timeZone={timeZone}
+                    checked={individualSelection[sample._id] === true}
+                    onToggle={(checked) =>
+                      setIndividualSelection((current) => ({
+                        ...current,
+                        [sample._id]: checked,
+                      }))
+                    }
+                  />
                 ))}
               </div>
             ) : null}
