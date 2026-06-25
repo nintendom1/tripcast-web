@@ -52,7 +52,7 @@ describe("OptionsSheet Breadcrumb Jitter Detection", () => {
     const samples = [
       { _id: "s1", lat: 45, lon: -122, sampledAt: 1000 * 60 * 10 },
       { _id: "s2", lat: 45.001, lon: -122, sampledAt: 1000 * 60 * 11 }, // ~111m away, 1m later
-      { _id: "s3", lat: 45.005, lon: -122, sampledAt: 1000 * 60 * 12 }, // ~444m away (isJumpy), 1m later
+      { _id: "s3", lat: 45.005, lon: -122, sampledAt: 1000 * 60 * 11 + 3000 }, // ~444m away in 3s -> ~148 m/s (isJumpy)
     ];
 
     (vi.mocked(convexReact.useQuery) as any).mockImplementation((ref: any) => {
@@ -88,23 +88,23 @@ describe("OptionsSheet Breadcrumb Jitter Detection", () => {
 
     await userEvent.selectOptions(screen.getByLabelText(/Delete mode/i), "individual");
 
-    const listContainer = screen.getByText(/#1/).closest(".overflow-auto")!;
+    const listContainer = screen.getByText(/#1/).closest<HTMLElement>(".overflow-auto")!;
     const items = within(listContainer).getAllByRole("checkbox");
 
     // Sample #1: No distance/time (first one)
-    const item1 = items[0].closest("label")!;
+    const item1 = items[0].closest<HTMLElement>("label")!;
     expect(within(item1).queryByText(/^\d+m$/)).not.toBeInTheDocument();
 
     // Sample #2: ~111m, 1m
-    const item2 = items[1].closest("label")!;
+    const item2 = items[1].closest<HTMLElement>("label")!;
     expect(within(item2).getByText(/^111m$/)).toBeInTheDocument();
     expect(within(item2).getByText(/\/ 1m/)).toBeInTheDocument();
-    expect(item2.className).not.toContain("bg-rose-50");
+    expect(item2.className).not.toContain("bg-[var(--bg-danger)]");
 
-    // Sample #3: ~445m, 1m -> Jumpy!
-    const item3 = items[2].closest("label")!;
+    // Sample #3: ~445m in 3s -> implausible speed -> Jumpy!
+    const item3 = items[2].closest<HTMLElement>("label")!;
     expect(within(item3).getByText(/^445m$/)).toBeInTheDocument();
-    expect(within(item3).getByText(/\/ 1m/)).toBeInTheDocument();
-    expect(item3.className).toContain("bg-rose-50");
+    expect(within(item3).getByText(/\/ 3s/)).toBeInTheDocument();
+    expect(item3.className).toContain("bg-[var(--bg-danger)]");
   });
 });
