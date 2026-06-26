@@ -41,6 +41,13 @@ npm run validate
 
 Validation runs typecheck, lint, terminology reporting, and tests. Unit/component tests use Vitest with `jsdom`, React Testing Library, and mocked `convex/react` hooks.
 
+## iOS / Native
+
+TripCast can be deployed as a native iOS app using Capacitor. This allows for background GPS tracking and Dynamic Island notifications.
+
+- [iOS Deployment & Troubleshooting](docs/ios-capacitor.md)
+- [Live Activities Setup](docs/ios-live-activities-setup.md)
+
 ## Dependency Installs
 
 Use npm 11.10.0 or newer. The committed `.npmrc` sets `min-release-age=7`, so npm waits 7 days before resolving newly published package versions during installs and dependency updates.

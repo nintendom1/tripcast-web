@@ -80,16 +80,32 @@ Each web change, or whenever the 7-day profile lapses — one command does build
 
 ```bash
 cd tripcast-web
-npm run ios:run                 # = build:cap → cap sync ios → cap run ios
-# or target a specific device:
-npm run ios:run -- --target <device-id>
+npm run ios:run
 ```
 
-- `npm run ios:sync` (build + sync, no launch) if you prefer to run from Xcode.
+### Understanding the Commands
+
+| Command | Purpose |
+|---|---|
+| `npm run build:cap` | Compiles the React app specifically for Capacitor. Uses `vite --mode capacitor` to ensure asset paths are relative (`./assets`) and loads `.env.capacitor.local`. |
+| `npm run ios:assets` | Generates required iOS App Icons and Splash Screens from the source files in `assets/`. |
+| `npx cap sync ios` | Copies the web build (`dist/`) into the iOS project and updates any native dependencies (CocoaPods). |
+| `npx cap run ios` | Compiles the native Swift code, signs the app, and installs/launches it on a connected device or simulator. |
+| `npm run ios:run` | A convenience script that runs `build:cap`, `sync ios`, and `run ios` in sequence. |
+
 - List devices: `npx cap run ios --list`.
 - First launch on device: **Settings → General → VPN & Device Management** → trust your dev cert.
 - When Live Trail location is wired (Phase 2), iOS will prompt for permission — choose
   **Allow Always** so it emits with the screen locked.
+
+## Troubleshooting
+
+### "TripCast is No Longer Available"
+If the app was working and suddenly shows this error on your iPhone, check these causes:
+1. **7-Day Expiry**: Free "Personal Team" provisioning profiles expire every 7 days. You must re-run `npm run ios:run` from your Mac to refresh the signature.
+2. **Device Trust**: If you just reinstalled, you may need to go to **Settings → General → VPN & Device Management** and "Trust" your Apple ID developer certificate again.
+3. **Build Mismatch**: If you manually edited files in Xcode and then ran `cap sync`, your changes might be in a broken state. Try `npm run ios:run` to do a clean web build and sync.
+4. **Network/Cloud URL**: If the app launches but hangs at "Still trying to finish this sign-in...", ensure `VITE_CONVEX_URL` in `.env.capacitor.local` is set to the **prod** URL, not localhost.
 
 ## Phase 1 test checklist
 
