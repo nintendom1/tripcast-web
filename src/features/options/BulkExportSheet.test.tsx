@@ -9,13 +9,20 @@ vi.mock("convex/react", () => ({
   useQuery: vi.fn(),
 }));
 
-// The sheet calls useQuery twice: travelerExportTripData (args include
-// includeMysteryMissions) and travelerExportTickerMessages (args has only token).
-// Discriminate by args shape so test ordering is robust to re-renders.
-function mockQueries(tripData: unknown, tickerData: unknown) {
+// The sheet calls useQuery up to three times. Discriminate by args shape so
+// test ordering is robust to re-renders:
+//  - travelerExportTripData       → args has "includeLiveTrail"
+//  - travelerCountExportEntries   → args has "includeMysteryMissions" but no "includeLiveTrail"
+//  - travelerExportTickerMessages → args has only "token"
+function mockQueries(
+  tripData: unknown,
+  tickerData: unknown,
+  countData: unknown = { otherCount: 1, breadcrumbCount: 5 },
+) {
   (useQuery as any).mockImplementation((_ref: unknown, args: any) => {
     if (!args || args === "skip") return undefined;
-    if ("includeMysteryMissions" in args) return tripData;
+    if ("includeLiveTrail" in args) return tripData;
+    if ("includeMysteryMissions" in args) return countData;
     return tickerData;
   });
 }
@@ -165,5 +172,68 @@ describe("BulkExportSheet", () => {
     const downloadButtons = screen.getAllByRole("button", { name: /Download .json/i });
     expect(copyButtons[1]).toBeDisabled();
     expect(downloadButtons[1]).toBeDisabled();
+  });
+
+  it("shows a checking state while the breadcrumb count is loading", async () => {
+    // Count query still resolving (undefined) while the others have data.
+    (useQuery as any).mockImplementation((_ref: unknown, args: any) => {
+      if (!args || args === "skip") return undefined;
+      if ("includeLiveTrail" in args) return mockData;
+      if ("includeMysteryMissions" in args) return undefined; // count not ready
+      return tickerData;
+    });
+    render(<BulkExportSheet open={true} token={token} onOpenChange={() => {}} />);
+
+    await userEvent.click(screen.getByLabelText(/Include Live Trail breadcrumbs/i));
+
+    expect(screen.getByText(/Checking breadcrumb count.../i)).toBeInTheDocument();
+  });
+
+  it("blocks the one-shot export and offers recent-N when over the cap", async () => {
+    mockQueries(mockData, tickerData, { otherCount: 10, breadcrumbCount: 9000 });
+    render(<BulkExportSheet open={true} token={token} onOpenChange={() => {}} />);
+
+    await userEvent.click(screen.getByLabelText(/Include Live Trail breadcrumbs/i));
+
+    expect(screen.getByText(/9,000 breadcrumbs recorded/i)).toBeInTheDocument();
+    expect(screen.getByText(/over the 8,000-entry safe limit/i)).toBeInTheDocument();
+    // recentN = SAFE_CAP - otherCount = 8000 - 10 = 7990.
+    expect(
+      screen.getByRole("button", { name: /Export most recent 7,990/i }),
+    ).toBeInTheDocument();
+    // The trip-data export query is gated off while blocked.
+    expect((useQuery as any).mock.calls).not.toContainEqual([
+      expect.anything(),
+      expect.objectContaining({ liveTrailLimit: expect.anything() }),
+    ]);
+    // The trip-data Copy/Download buttons are not rendered (only the ticker pair remains).
+    expect(screen.getAllByRole("button", { name: /Copy JSON/i })).toHaveLength(1);
+  });
+
+  it("runs a bounded export with liveTrailLimit after confirming recent-N", async () => {
+    mockQueries(mockData, tickerData, { otherCount: 10, breadcrumbCount: 9000 });
+    render(<BulkExportSheet open={true} token={token} onOpenChange={() => {}} />);
+
+    await userEvent.click(screen.getByLabelText(/Include Live Trail breadcrumbs/i));
+    await userEvent.click(screen.getByRole("button", { name: /Export most recent 7,990/i }));
+
+    // Export now requested with the bounded breadcrumb limit.
+    expect((useQuery as any).mock.calls).toContainEqual([
+      expect.anything(),
+      expect.objectContaining({ includeLiveTrail: true, liveTrailLimit: 7990 }),
+    ]);
+    expect(screen.getByText(/1 items ready for export/i)).toBeInTheDocument();
+    expect(screen.getByText(/Most recent 7,990 of 9,000 breadcrumbs/i)).toBeInTheDocument();
+  });
+
+  it("tells the user to narrow the range when other data already fills the cap", async () => {
+    // otherCount alone exceeds the cap → recentN clamps to 0, no recent-N button.
+    mockQueries(mockData, tickerData, { otherCount: 8500, breadcrumbCount: 100 });
+    render(<BulkExportSheet open={true} token={token} onOpenChange={() => {}} />);
+
+    await userEvent.click(screen.getByLabelText(/Include Live Trail breadcrumbs/i));
+
+    expect(screen.getByText(/Narrow the date range to make room/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Export most recent/i })).toBeNull();
   });
 });
