@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check, Copy, Download, Loader2 } from "lucide-react";
+import { AlertTriangle, Check, Copy, Download, Loader2 } from "lucide-react";
 import { useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -11,11 +11,18 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
+import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useTheme } from "../../providers/ThemeProvider";
 import { cn } from "@/lib/utils";
+
+// Convex caps query return arrays at 8192 elements. The export folds every
+// table (checkpoints, missions, votes, transactions, breadcrumbs) into one
+// array, so we keep the projected total under a margin below that hard limit
+// and trim breadcrumbs to fit. See tripcast-backend bulkImport.travelerExportTripData.
+const SAFE_CAP = 8000;
 
 type BulkExportSheetProps = {
   open: boolean;
@@ -50,22 +57,23 @@ function isTickerExportResult(value: unknown): value is TickerExportResult {
   );
 }
 
+type ExportCounts = { otherCount: number; breadcrumbCount: number };
+
+function isExportCounts(value: unknown): value is ExportCounts {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { otherCount?: unknown }).otherCount === "number" &&
+    typeof (value as { breadcrumbCount?: unknown }).breadcrumbCount === "number"
+  );
+}
+
 export default function BulkExportSheet({
   open,
   token,
   onOpenChange,
 }: BulkExportSheetProps) {
-  const [range, setRange] = useState<"all" | "custom">("all");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
-  const [includeMysteryMissions, setIncludeMysteryMissions] = useState(false);
-  const [includeLiveTrail, setIncludeLiveTrail] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [tickerCopied, setTickerCopied] = useState(false);
-  const music = useMusicSafe();
-  const { resolvedTheme } = useTheme();
   const log = useDebugLogger("BulkExportSheet", "src/features/options/BulkExportSheet.tsx");
-  const dateInputStyle = { colorScheme: resolvedTheme === "constellation" ? "dark" : "light" } as const;
 
   useEffect(() => {
     log.logUi(open ? "sheet:open" : "sheet:close");
@@ -80,13 +88,108 @@ export default function BulkExportSheet({
     file: "src/features/options/BulkExportSheet.tsx",
   }, { boundsSelector: "[data-role='bulk-export-sheet']" });
 
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="bottom"
+        data-role="bulk-export-sheet"
+        className="max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
+      >
+        <div className="flex items-start justify-between gap-2 px-5 pt-2">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
+              Bulk Export
+            </SheetTitle>
+          </div>
+          <SheetCloseButton aria-label="Close bulk export" />
+        </div>
+
+        {/* The query-driven body lives in a child so this boundary is a true
+            ancestor of its useQuery hooks — a useQuery throw renders in the
+            component that calls it, so it can only be caught from above. This
+            keeps an oversized export from reaching the app-level crash screen. */}
+        <FeatureBoundary
+          title="Export hit a snag."
+          message="The export couldn't be prepared. Try again, or close and reopen Bulk Export."
+          onClose={() => onOpenChange(false)}
+          resetKeys={[open]}
+        >
+          <BulkExportBody open={open} token={token} />
+        </FeatureBoundary>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function BulkExportBody({ open, token }: { open: boolean; token: string }) {
+  const [range, setRange] = useState<"all" | "custom">("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [includeMysteryMissions, setIncludeMysteryMissions] = useState(false);
+  const [includeLiveTrail, setIncludeLiveTrail] = useState(false);
+  const [confirmRecent, setConfirmRecent] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [tickerCopied, setTickerCopied] = useState(false);
+  const music = useMusicSafe();
+  const { resolvedTheme } = useTheme();
+  const log = useDebugLogger("BulkExportSheet", "src/features/options/BulkExportSheet.tsx");
+  const dateInputStyle = { colorScheme: resolvedTheme === "constellation" ? "dark" : "light" } as const;
+
   const startMs = startDate ? new Date(startDate).getTime() : undefined;
   const endMs = endDate ? new Date(endDate).getTime() + 86399999 : undefined;
 
-  const queryResult = useQuery(
-    tripcastApi.bulkImport.travelerExportTripData,
-    open ? { token, startMs, endMs, includeMysteryMissions, includeLiveTrail } : "skip"
+  // Any change to what would be exported invalidates a prior "most recent"
+  // confirmation so we never run a bounded export against stale inputs.
+  useEffect(() => {
+    setConfirmRecent(false);
+  }, [startMs, endMs, includeMysteryMissions, includeLiveTrail]);
+
+  // Preflight count only runs once breadcrumbs are requested (the default-off
+  // toggle), since breadcrumbs are the only realistic way to blow the cap.
+  const countResult = useQuery(
+    tripcastApi.bulkImport.travelerCountExportEntries,
+    open && includeLiveTrail ? { token, startMs, endMs, includeMysteryMissions } : "skip",
   );
+  const counts = isExportCounts(countResult) ? countResult : undefined;
+  const totalIfAll = counts ? counts.otherCount + counts.breadcrumbCount : undefined;
+  const overCap = totalIfAll !== undefined && totalIfAll > SAFE_CAP;
+  const recentN = counts ? Math.max(0, SAFE_CAP - counts.otherCount) : 0;
+  const countLoading = open && includeLiveTrail && counts === undefined;
+  const blocked = overCap && !confirmRecent;
+  const usedRecentLimit = includeLiveTrail && overCap && confirmRecent;
+
+  const exportArgs:
+    | {
+        token: string;
+        startMs?: number;
+        endMs?: number;
+        includeMysteryMissions: boolean;
+        includeLiveTrail: boolean;
+        liveTrailLimit?: number;
+      }
+    | "skip" = (() => {
+    if (!open) return "skip";
+    if (!includeLiveTrail) {
+      return { token, startMs, endMs, includeMysteryMissions, includeLiveTrail: false };
+    }
+    if (counts === undefined) return "skip";
+    if (!overCap) {
+      return { token, startMs, endMs, includeMysteryMissions, includeLiveTrail: true };
+    }
+    if (confirmRecent) {
+      return {
+        token,
+        startMs,
+        endMs,
+        includeMysteryMissions,
+        includeLiveTrail: true,
+        liveTrailLimit: recentN,
+      };
+    }
+    return "skip";
+  })();
+
+  const queryResult = useQuery(tripcastApi.bulkImport.travelerExportTripData, exportArgs);
   const data = isBulkExportResult(queryResult) ? queryResult : undefined;
 
   const tickerQueryResult = useQuery(
@@ -150,192 +253,213 @@ export default function BulkExportSheet({
   }
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        data-role="bulk-export-sheet"
-        className="max-h-[88dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
-      >
-        <div className="flex items-start justify-between gap-2 px-5 pt-2">
-          <div className="flex min-w-0 flex-col gap-1.5">
-            <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              Bulk Export
-            </SheetTitle>
-          </div>
-          <SheetCloseButton aria-label="Close bulk export" />
+    <SheetBody className="grid gap-6 px-5 py-4 text-[var(--ink-1)]">
+      <div className="grid gap-4">
+        <div className="flex rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => {
+              log.logUi("action:range:all");
+              setRange("all");
+            }}
+            className={cn(
+              "flex-1 rounded-lg py-2 text-sm font-semibold transition-colors",
+              range === "all"
+                ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
+                : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+            )}
+          >
+            Export All
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              log.logUi("action:range:custom");
+              setRange("custom");
+            }}
+            className={cn(
+              "flex-1 rounded-lg py-2 text-sm font-semibold transition-colors",
+              range === "custom"
+                ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
+                : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+            )}
+          >
+            Custom Range
+          </button>
         </div>
 
-        <SheetBody className="grid gap-6 px-5 py-4 text-[var(--ink-1)]">
-          <div className="grid gap-4">
-            <div className="flex rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1 shadow-sm">
-              <button
-                type="button"
-                onClick={() => {
-                  log.logUi("action:range:all");
-                  setRange("all");
-                }}
-                className={cn(
-                  "flex-1 rounded-lg py-2 text-sm font-semibold transition-colors",
-                  range === "all"
-                    ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
-                    : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
-                )}
-              >
-                Export All
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  log.logUi("action:range:custom");
-                  setRange("custom");
-                }}
-                className={cn(
-                  "flex-1 rounded-lg py-2 text-sm font-semibold transition-colors",
-                  range === "custom"
-                    ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
-                    : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
-                )}
-              >
-                Custom Range
-              </button>
+        {range === "custom" && (
+          <div className="grid grid-cols-2 gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
+            <label className="grid gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Start Date</span>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
+                style={dateInputStyle}
+              />
+            </label>
+            <label className="grid gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">End Date</span>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
+                style={dateInputStyle}
+              />
+            </label>
+          </div>
+        )}
+
+        <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
+          <input
+            type="checkbox"
+            checked={includeMysteryMissions}
+            onChange={(event) => {
+              log.logUi("action:include-mystery", { enabled: event.currentTarget.checked });
+              setIncludeMysteryMissions(event.currentTarget.checked);
+            }}
+            className="mt-1 h-4 w-4"
+            style={{ accentColor: "var(--ink-1)" }}
+          />
+          <span className="grid gap-1">
+            <span className="font-medium">Include Mystery Missions</span>
+            <span className="text-[var(--ink-2)]">
+              Adds full Mystery Mission definitions, including true intent and spoiler metadata.
+            </span>
+          </span>
+        </label>
+
+        <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
+          <input
+            type="checkbox"
+            checked={includeLiveTrail}
+            onChange={(event) => {
+              log.logUi("action:include-live-trail", { enabled: event.currentTarget.checked });
+              setIncludeLiveTrail(event.currentTarget.checked);
+            }}
+            className="mt-1 h-4 w-4"
+            style={{ accentColor: "var(--ink-1)" }}
+          />
+          <span className="grid gap-1">
+            <span className="font-medium">Include Live Trail breadcrumbs</span>
+            <span className="text-[var(--ink-2)]">
+              Adds sampled breadcrumb coordinates for dev fixtures and replay data round-trips.
+            </span>
+          </span>
+        </label>
+      </div>
+
+      <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
+        {countLoading ? (
+          <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-sm">Checking breadcrumb count...</span>
+          </div>
+        ) : blocked ? (
+          <div className="grid gap-3 py-2">
+            <div className="flex items-center justify-center gap-2 text-[var(--ink-danger)]">
+              <AlertTriangle className="h-5 w-5" />
+              <span className="text-sm font-semibold">
+                {(counts?.breadcrumbCount ?? 0).toLocaleString()} breadcrumbs recorded
+              </span>
             </div>
-
-            {range === "custom" && (
-              <div className="grid grid-cols-2 gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3">
-                <label className="grid gap-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Start Date</span>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
-                    style={dateInputStyle}
-                  />
-                </label>
-                <label className="grid gap-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">End Date</span>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] p-2 text-sm text-[var(--ink-1)] outline-none focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
-                    style={dateInputStyle}
-                  />
-                </label>
-              </div>
-            )}
-
-            <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
-              <input
-                type="checkbox"
-                checked={includeMysteryMissions}
-                onChange={(event) => {
-                  log.logUi("action:include-mystery", { enabled: event.currentTarget.checked });
-                  setIncludeMysteryMissions(event.currentTarget.checked);
+            <p className="text-xs text-[var(--ink-2)]">
+              That's over the {SAFE_CAP.toLocaleString()}-entry safe limit for a single export.
+            </p>
+            {recentN > 0 ? (
+              <Button
+                type="button"
+                onClick={() => {
+                  log.logUi("action:export-recent-breadcrumbs", { recentN });
+                  setConfirmRecent(true);
                 }}
-                className="mt-1 h-4 w-4"
-                style={{ accentColor: "var(--ink-1)" }}
-              />
-              <span className="grid gap-1">
-                <span className="font-medium">Include Mystery Missions</span>
-                <span className="text-[var(--ink-2)]">
-                  Adds full Mystery Mission definitions, including true intent and spoiler metadata.
-                </span>
-              </span>
-            </label>
-
-            <label className="grid grid-cols-[auto_1fr] items-start gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-1)]">
-              <input
-                type="checkbox"
-                checked={includeLiveTrail}
-                onChange={(event) => {
-                  log.logUi("action:include-live-trail", { enabled: event.currentTarget.checked });
-                  setIncludeLiveTrail(event.currentTarget.checked);
-                }}
-                className="mt-1 h-4 w-4"
-                style={{ accentColor: "var(--ink-1)" }}
-              />
-              <span className="grid gap-1">
-                <span className="font-medium">Include Live Trail breadcrumbs</span>
-                <span className="text-[var(--ink-2)]">
-                  Adds sampled breadcrumb coordinates for dev fixtures and replay data round-trips.
-                </span>
-              </span>
-            </label>
-          </div>
-
-          <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
-            {!data ? (
-              <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span className="text-sm">Preparing export...</span>
-              </div>
+                className="border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
+              >
+                Export most recent {recentN.toLocaleString()}
+              </Button>
             ) : (
-              <>
-                <p className="text-sm font-semibold text-[var(--ink-1)]">
-                  {data.entries.length} items ready for export
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleCopy}
-                    variant="outline"
-                    className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
-                  >
-                    {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                    {copied ? "Copied" : "Copy JSON"}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleDownload}
-                    className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Download .json
-                  </Button>
-                </div>
-              </>
+              <p className="text-xs text-[var(--ink-3)]">
+                Other trip data already fills the export. Narrow the date range to make room for breadcrumbs.
+              </p>
             )}
           </div>
-
-          <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Trip Ticker</p>
-            {!tickerData ? (
-              <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                <span className="text-sm">Loading ticker items...</span>
-              </div>
-            ) : (
-              <>
-                <p className="text-sm font-semibold text-[var(--ink-1)]">
-                  {tickerData.entries.length} ticker {tickerData.entries.length === 1 ? "item" : "items"} ready for export
-                </p>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    onClick={handleCopyTicker}
-                    disabled={tickerData.entries.length === 0}
-                    variant="outline"
-                    className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
-                  >
-                    {tickerCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                    {tickerCopied ? "Copied" : "Copy JSON"}
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleDownloadTicker}
-                    disabled={tickerData.entries.length === 0}
-                    className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Download .json
-                  </Button>
-                </div>
-              </>
-            )}
+        ) : !data ? (
+          <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-sm">Preparing export...</span>
           </div>
-        </SheetBody>
-      </SheetContent>
-    </Sheet>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-[var(--ink-1)]">
+              {data.entries.length} items ready for export
+            </p>
+            {usedRecentLimit ? (
+              <p className="text-xs text-[var(--ink-2)]">
+                Most recent {recentN.toLocaleString()} of {(counts?.breadcrumbCount ?? 0).toLocaleString()} breadcrumbs.
+              </p>
+            ) : null}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                onClick={handleCopy}
+                variant="outline"
+                className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
+              >
+                {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                {copied ? "Copied" : "Copy JSON"}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleDownload}
+                className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download .json
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Trip Ticker</p>
+        {!tickerData ? (
+          <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-sm">Loading ticker items...</span>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm font-semibold text-[var(--ink-1)]">
+              {tickerData.entries.length} ticker {tickerData.entries.length === 1 ? "item" : "items"} ready for export
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                onClick={handleCopyTicker}
+                disabled={tickerData.entries.length === 0}
+                variant="outline"
+                className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
+              >
+                {tickerCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                {tickerCopied ? "Copied" : "Copy JSON"}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleDownloadTicker}
+                disabled={tickerData.entries.length === 0}
+                className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download .json
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
+    </SheetBody>
   );
 }

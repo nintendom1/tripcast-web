@@ -1415,8 +1415,14 @@ export const tripcastApi = {
     travelerExportTripData: (anyApi as any).bulkImport.travelerExportTripData as FunctionReference<
       "query",
       "public",
-      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean; includeLiveTrail?: boolean },
+      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean; includeLiveTrail?: boolean; liveTrailLimit?: number },
       BulkImportPayload
+    >,
+    travelerCountExportEntries: (anyApi as any).bulkImport.travelerCountExportEntries as FunctionReference<
+      "query",
+      "public",
+      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean },
+      { otherCount: number; breadcrumbCount: number }
     >,
     travelerExportTickerFacts: (anyApi as any).bulkImport.travelerExportTickerFacts as FunctionReference<
       "query",
