@@ -15,6 +15,9 @@ iterate against measurements rather than vibes.
   wrong. Read `getBoundingClientRect()` for the elements that must not collide, and assert the
   numeric relationships (e.g. `card.bottom < pin.top`). Use screenshots to confirm composition,
   numbers to drive edits.
+- **Scope text assertions too.** Same rule for text: query *within* a container
+  (`page.locator("[data-role='…']").getByText(…)`) and wait on the most specific string — don't
+  `.first()` a substring that sibling nodes share.
 - **Add durable DOM hooks.** When you need to locate something repeatedly, add a stable
   `data-*` attribute in the source (e.g. `data-replay-poi`, `data-replay-hud`) rather than
   matching Tailwind classes. These double as test selectors later.
@@ -26,7 +29,8 @@ iterate against measurements rather than vibes.
 - The dev server must be running: **`npm run dev` is agent-restricted** — ask the human to start
   it and confirm the URL. Default is `http://localhost:5173/tripcast-web/` (note the
   `/tripcast-web/` base from `vite.config.ts`). Probe before driving:
-  `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/tripcast-web/`.
+  `curl -s -o /dev/null -w "%{http_code}" http://localhost:5173/tripcast-web/`. If the human says
+  it's already running, just probe and proceed — don't ask again.
 - Auth: sign in as **Traveler**. The default landing screen is a marketing page — the path is
   **"Sign in to TripCast"** (`.first()` — it appears in both header and footer) → **"Sign in as
   Traveler"** → fill **"Enter code"** → **"Sign in"**. The code lives in **`.local.auth.md` at the
@@ -145,6 +149,21 @@ This pinned the replay-exit trail bug in one run: post-exit the layer reported `
 `map.once("load", …)` only fires once — don't gate source `setData` on either. Remove the `__*` hook
 when done.
 
+## Data-dependent flows (non-map)
+
+Sheet/flow behavior that depends on live Convex data — preflight gates, over-limit errors, empty
+vs full states — only reproduces in the running app (Storybook can't), so it's valid Playwright
+territory. These runs need **no** `--use-gl` args; there's no map canvas to rasterize.
+
+- **Seed the precondition, don't click to it.** Reach a data state (e.g. >8192 rows) with a
+  dev-only `internalMutation` run via `npx convex run pkg:fn '{...}'`; batch large inserts
+  (~1k/call) to stay under per-mutation write limits, and ship a paired `clear*` mutation.
+- **Assert the crash fallback is absent.** It is `role="alert"` titled "TripCast hit a problem.";
+  `expect(count).toBe(0)` is the pass condition for resilience flows.
+- **Navigate by accessible name:** menus by `aria-label`, list rows by visible title; `data-*` for
+  scoping containers.
+- **Make the driver self-asserting** — non-zero exit on failure — so a run is verified, not eyeballed.
+
 ## Durable hooks already in place
 
 `data-replay-hud`, `data-replay-poi`, `data-finale-banner`, `data-finale-header`, and
@@ -182,6 +201,8 @@ and overlays render immediately, which is enough for layout/position/transition 
 
 - Keep ad-hoc driver scripts in a gitignored scratch dir (`.visual-tmp/`) and delete them when
   done, or promote a clean reusable one to `scripts/visual/` if the human wants it kept.
+- If you seeded backend (Convex) state, clear it before finishing (paired `clear*` mutation or
+  Emergency Reset) and tell the human what you left behind.
 - Capture console errors during runs: `page.on("console", m => /error/i.test(m.text()) && console.log(m.text()))`.
 - Storybook (`npm run storybook`) is the right place to verify a presentational component's
   states (e.g. photo vs text-only) without app state; reserve Playwright for behavior that only

@@ -12,6 +12,7 @@ Read only when touching the related area.
 ## React And Tests
 
 - Keep every hook call reachable on every render, before any early return.
+- A thrown `useQuery` error is caught only by an **ancestor** error boundary, never the component that calls the hook. To contain a sheet, put its queries in a child wrapped by `FeatureBoundary` (the `BulkExportSheet` / `BulkExportBody` split).
 - For `framer-motion` test mocks, use an explicit `motion: { div: ... }` object, not a Proxy.
 - Mock `convex/react` hooks in component tests.
 - Keep lazy `TripMap` declared at module scope in `App.tsx`.
