@@ -61,18 +61,24 @@ Or via GitHub web: repo → Settings → Secrets and variables → Actions → V
 
 ### One-time: env file for native builds
 
-Create `tripcast-web/.env.capacitor.local` (gitignored; loaded only by the `--mode capacitor`
-build, and **overrides** `.env.local`, so dev keeps using localhost):
+Create `tripcast-web/.env.capacitor.local` (gitignored; loaded only by native build scripts,
+and **overrides** `.env.local`, so dev keeps using localhost):
 
 ```
 VITE_CONVEX_URL=<value from the GitHub variable>
+DEVELOPMENT_TEAM=<your Apple Team ID>
 ```
 
-How it connects: Capacitor never reads env files. Only `vite build` does — and it bakes the URL
+Find your Team ID in Xcode: open `npx cap open ios`, select the **App** target, then check
+**Signing & Capabilities** → **Team**. It is the 10-character alphanumeric code next to your
+Personal Team.
+
+How it connects: Vite reads `VITE_CONVEX_URL` during `vite build --mode capacitor` and bakes the URL
 into `dist/`. The `npm run ios:*` scripts build with `--mode capacitor` (which loads
 `.env.capacitor.local` and sets the relative base), then `cap sync` copies `dist/` into the native
-project, then `cap run` compiles and launches it. So the env value reaches the phone purely through
-the built `dist/`. (Vite precedence: `.env.capacitor.local` > `.env.local`.)
+project. `npm run ios:run` also reads `DEVELOPMENT_TEAM` locally and passes it directly to
+`xcodebuild`, so your personal Apple Team ID does not need to be committed to the Xcode project.
+(Vite precedence: `.env.capacitor.local` > `.env.local`.)
 
 ## Routine deploy / weekly refresh (Mac)
 
@@ -80,14 +86,16 @@ Each web change, or whenever the 7-day profile lapses — one command does build
 
 ```bash
 cd tripcast-web
-npm run ios:run                 # = build:cap → cap sync ios → cap run ios
+npm run ios:run                 # = build:cap → cap sync ios → xcodebuild → native-run
 # or target a specific device:
 npm run ios:run -- --target <device-id>
 ```
 
 - `npm run ios:sync` (build + sync, no launch) if you prefer to run from Xcode.
-- List devices: `npx cap run ios --list`.
+- List devices: `npm run ios:run -- --list` or `npx cap run ios --list`.
 - First launch on device: **Settings → General → VPN & Device Management** → trust your dev cert.
+- If iOS asks you to trust the developer again, it usually means Xcode created or selected a new
+  signing certificate. Weekly profile refreshes should not normally require repeating this step.
 - When Live Trail location is wired (Phase 2), iOS will prompt for permission — choose
   **Allow Always** so it emits with the screen locked.
 
@@ -97,7 +105,7 @@ npm run ios:run -- --target <device-id>
 - [ ] `npx cap add ios && npx cap sync ios` complete with no errors (Mac).
 - [ ] App launches in the iOS Simulator and the existing TripCast web app renders unchanged
       (map, sheets, auth all work — backend reached over https).
-- [ ] App installs and launches on the physical iPhone via `cap run ios`.
+- [ ] App installs and launches on the physical iPhone via `npm run ios:run`.
 - [ ] `npm run validate` passes (regression guard).
 
 Background-GPS emission testing is **Phase 2** (needs the geolocation plugin + Info.plist modes).
