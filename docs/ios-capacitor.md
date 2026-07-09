@@ -73,6 +73,11 @@ Find your Team ID in Xcode: open `npx cap open ios`, select the **App** target, 
 **Signing & Capabilities** → **Team**. It is the 10-character alphanumeric code next to your
 Personal Team.
 
+If `npm run ios:run` fails with `No Account for Team`, the value in `.env.capacitor.local` does
+not match an Apple ID account in Xcode. Select your **Personal Team** in Xcode, copy that Team ID
+into `.env.capacitor.local`, and do not commit the `DEVELOPMENT_TEAM` line Xcode writes back into
+`ios/App/App.xcodeproj/project.pbxproj`.
+
 How it connects: Vite reads `VITE_CONVEX_URL` during `vite build --mode capacitor` and bakes the URL
 into `dist/`. The `npm run ios:*` scripts build with `--mode capacitor` (which loads
 `.env.capacitor.local` and sets the relative base), then `cap sync` copies `dist/` into the native

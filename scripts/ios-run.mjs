@@ -9,6 +9,7 @@ const nativeProjectDir = join(process.cwd(), "ios", "App");
 loadLocalEnv();
 
 const options = parseArgs(process.argv.slice(2));
+const localProjectTeamIds = readLocalProjectTeamIds();
 
 if (options.help) {
   printHelp();
@@ -61,10 +62,16 @@ const xcodebuildArgs = [
 
 if (teamId) {
   console.log(`\x1b[32mUsing Development Team: ${teamId}\x1b[0m`);
+  warnIfLocalProjectTeamDiffers(teamId, localProjectTeamIds);
   xcodebuildArgs.push(`DEVELOPMENT_TEAM=${teamId}`);
 } else {
   console.log("\x1b[33mWarning: DEVELOPMENT_TEAM is not set in .env.capacitor.local or the shell.\x1b[0m");
   console.log("Automatic signing may fail unless Xcode already has a valid local signing team.");
+  if (localProjectTeamIds.length > 0) {
+    console.log(
+      "\x1b[33mXcode has written a local DEVELOPMENT_TEAM into the project file. Move that value to .env.capacitor.local and remove the project-file change before committing.\x1b[0m",
+    );
+  }
 }
 
 run("xcrun", xcodebuildArgs, { cwd: nativeProjectDir });
@@ -180,6 +187,26 @@ function isSimulatorTarget(target) {
   } catch {
     return false;
   }
+}
+
+function readLocalProjectTeamIds() {
+  const projectFile = join(nativeProjectDir, "App.xcodeproj", "project.pbxproj");
+  if (!existsSync(projectFile)) return [];
+
+  const content = readFileSync(projectFile, "utf8");
+  return Array.from(content.matchAll(/DEVELOPMENT_TEAM = ([A-Z0-9]+);/g), match => match[1])
+    .filter((teamId, index, teamIds) => teamIds.indexOf(teamId) === index);
+}
+
+function warnIfLocalProjectTeamDiffers(teamId, projectTeamIds) {
+  if (projectTeamIds.length === 0 || projectTeamIds.includes(teamId)) return;
+
+  console.log(
+    "\x1b[33mWarning: .env.capacitor.local is using a different DEVELOPMENT_TEAM than the one Xcode just wrote into the project file.\x1b[0m",
+  );
+  console.log(
+    "\x1b[33mIf xcodebuild reports \"No Account for Team\", update DEVELOPMENT_TEAM to the Team ID shown for your Personal Team in Xcode.\x1b[0m",
+  );
 }
 
 function run(command, args, options = {}) {
