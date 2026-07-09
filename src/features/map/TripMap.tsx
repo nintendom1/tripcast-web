@@ -1431,6 +1431,7 @@ export default function TripMap({
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [selectedStoryDetail, setSelectedStoryDetail] = useState<SelectedStoryDetail | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deletingBreadcrumbId, setDeletingBreadcrumbId] = useState<string | null>(null);
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
@@ -4324,16 +4325,26 @@ export default function TripMap({
     if (!currentReplayPin || currentReplayPin.kind !== "breadcrumb" || !currentReplayPin.eventId) return;
 
     const sampleId = currentReplayPin.eventId;
+    let previousSamples: LiveTrailSample[] | null = null;
 
-    // Optimistic UI update
-    setReplayTrailSamples(prev => {
-      if (!prev) return null;
-      return prev.filter(s => s._id !== sampleId);
+    setDeletingBreadcrumbId(sampleId);
+    setReplayTrailSamples((prev) => {
+      previousSamples = prev;
+      return prev ? prev.filter((sample) => sample._id !== sampleId) : prev;
     });
 
-    deleteBreadcrumb({ token, sampleIds: [sampleId] })
+    void deleteBreadcrumb({ token, sampleIds: [sampleId] })
+      .then(({ deleted }) => {
+        if (deleted === 0 && previousSamples) {
+          setReplayTrailSamples(previousSamples);
+        }
+      })
       .catch((err) => {
+        if (previousSamples) setReplayTrailSamples(previousSamples);
         log.error("replay:delete-breadcrumb:error", "mutation", { message: err instanceof Error ? err.message : String(err) });
+      })
+      .finally(() => {
+        setDeletingBreadcrumbId((current) => (current === sampleId ? null : current));
       });
 
     music.sfx("close");
@@ -4771,10 +4782,11 @@ export default function TripMap({
             <button
               type="button"
               onClick={() => setIsDeleteConfirmOpen(true)}
-              className="pointer-events-auto flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-[var(--shadow-card)] hover:scale-105 active:scale-95"
+              disabled={deletingBreadcrumbId === currentReplayPin.eventId}
+              className="pointer-events-auto flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-[var(--shadow-card)] hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Trash2 className="h-4 w-4" aria-hidden="true" />
-              Delete
+              {deletingBreadcrumbId === currentReplayPin.eventId ? "Deleting…" : "Delete"}
             </button>
           </motion.div>
         )}
