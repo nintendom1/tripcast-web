@@ -4,15 +4,14 @@ Live Activities allow TripCast to show upload progress and status in the Dynamic
 
 ## 1. Prerequisites
 - A Mac with Xcode 15+.
-- The iOS project generated (`npx cap add ios`).
 - A paid Apple Developer account is **required** for Live Activities (they do not work with free "Personal Team" signing).
 
 ## 2. Add the Widget Extension Target
 1. Open the project in Xcode: `npx cap open ios`.
 2. Select **File > New > Target...**.
 3. Choose **Widget Extension**.
-4. Name it `TripCastWidget` (or similar).
-5. **Uncheck** "Include Configuration Intent" (we use a simple progress display).
+4. Name it `TripCastWidget`.
+5. **Uncheck** "Include Configuration Intent".
 6. Click **Finish**. When asked to "Activate TripCastWidgetExtension scheme", click **Activate**.
 
 ## 3. Configure Capabilities
@@ -29,7 +28,7 @@ In `ios/App/App/Info.plist`, ensure the following key is present:
 ```
 
 ## 5. Implement the Capacitor Bridge
-The frontend expects a plugin named `LiveActivity`. If `ios/App/App/LiveActivityPlugin.swift` is missing, you must recreate it.
+The frontend expects a plugin named `LiveActivity`. If the native bridge files are missing from `ios/App/App/`, you must recreate them.
 
 ### LiveActivityPlugin.swift
 Create this file in `ios/App/App/` and add it to the App target:
@@ -49,9 +48,6 @@ public class LiveActivityPlugin: CAPPlugin {
             call.resolve(["value": false])
         }
     }
-
-    // Note: You must define ActivityAttributes in a shared file
-    // accessible to both the App and the Widget target.
 
     @objc func startUploadActivity(_ call: CAPPluginCall) {
         // Implementation logic for ActivityKit start
@@ -86,7 +82,7 @@ CAP_PLUGIN(LiveActivityPlugin, "LiveActivity",
 ```
 
 ## 6. Shared Attributes
-You must define your `ActivityAttributes` in a way that both the main App and the Widget Extension can see them. Usually, this means creating a file like `UploadAttributes.swift` and checking both targets in the **File Inspector > Target Membership**.
+You must define your `ActivityAttributes` in a way that both the main App and the Widget Extension can see them. Create `UploadAttributes.swift` and check both targets in the **File Inspector > Target Membership**.
 
 ```swift
 import ActivityKit
@@ -102,7 +98,4 @@ struct UploadAttributes: ActivityAttributes {
 ```
 
 ## 7. Widget UI
-In your `TripCastWidget.swift`, implement the `ActivityConfiguration` to define how the Dynamic Island and Lock Screen look.
-
----
-**Note:** As of the current commit, the native bridge files (`.swift`/`.m`) may be missing from the repository. If you are a developer setting this up for the first time, you will need to implement the Swift logic to interact with `ActivityKit`.
+In your `TripCastWidget.swift`, implement the `ActivityConfiguration` to define the Dynamic Island and Lock Screen layouts.
