@@ -155,14 +155,9 @@ export type FollowerLiveTrailSample = {
 export type LiveTrailStatus = {
   enabled: boolean;
   visibleToFollowers: boolean;
-  sampleCount: number;
-  samples: LiveTrailSample[];
 };
 
-export type FollowerLiveTrail = {
-  visible: boolean;
-  samples: FollowerLiveTrailSample[];
-};
+export type LatestLiveTrailSample = LiveTrailSample | FollowerLiveTrailSample | null;
 
 export type LiveTrailPreviewSample = {
   _id: string;
@@ -1614,11 +1609,11 @@ export const tripcastApi = {
       { token: string },
       LiveTrailStatus
     >,
-    followerListLiveTrailSamples: (anyApi as any).liveTrail.followerListLiveTrailSamples as FunctionReference<
+    getLatestLiveTrailSample: (anyApi as any).liveTrail.getLatestLiveTrailSample as FunctionReference<
       "query",
       "public",
       { token: string },
-      FollowerLiveTrail
+      LatestLiveTrailSample
     >,
     listReplayLiveTrailSamples: (anyApi as any).liveTrail.listReplayLiveTrailSamples as FunctionReference<
       "query",

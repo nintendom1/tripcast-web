@@ -1563,9 +1563,9 @@ export default function TripMap({
     tripcastApi.liveTrail.travelerGetLiveTrailStatus,
     role === "traveler" ? { token } : "skip",
   );
-  const followerLiveTrail = useQuery(
-    tripcastApi.liveTrail.followerListLiveTrailSamples,
-    role === "follower" ? { token } : "skip",
+  const latestLiveTrailSample = useQuery(
+    tripcastApi.liveTrail.getLatestLiveTrailSample,
+    { token },
   );
   const liveTrailEnabled = role === "traveler" && travelerLiveTrailStatus?.enabled === true;
   const followerPreferences = useQuery(
@@ -1578,15 +1578,12 @@ export default function TripMap({
     : false;
 
   const liveTrailSamples = useMemo(() => {
-    const all =
-      role === "traveler"
-        ? (travelerLiveTrailStatus?.samples ?? [])
-        : (followerLiveTrail?.visible ? followerLiveTrail.samples : []);
+    const all = latestLiveTrailSample ? [latestLiveTrailSample] : [];
     const cutoffFiltered = cutoffPreview.cutoffAt
       ? all.filter((s) => s.sampledAt >= (cutoffPreview.cutoffAt as number))
       : all;
     return cutoffFiltered.filter((s) => inReplayWindow(s.sampledAt));
-  }, [role, travelerLiveTrailStatus, followerLiveTrail, cutoffPreview.cutoffAt, inReplayWindow]);
+  }, [latestLiveTrailSample, cutoffPreview.cutoffAt, inReplayWindow]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
   const replaySourceTrailSamples = replayTrailSamples ?? liveTrailSamples;
   // The path follows the replay-loaded sample set during replay; window it so the
@@ -3106,15 +3103,14 @@ export default function TripMap({
   useEffect(() => {
     liveTrailEnabledRef.current = liveTrailEnabled;
     liveTrailCanRecordRef.current = liveTrailEnabled;
-    if (!travelerLiveTrailStatus) return;
-    const latestSample = travelerLiveTrailStatus.samples.at(-1);
-    if (latestSample) {
+    if (!travelerLiveTrailStatus || latestLiveTrailSample === undefined) return;
+    if (latestLiveTrailSample) {
       breadcrumbSamplerStateRef.current = {
         ...breadcrumbSamplerStateRef.current,
         lastEmitted: {
-          lat: latestSample.lat,
-          lon: latestSample.lon,
-          sampledAt: latestSample.sampledAt,
+          lat: latestLiveTrailSample.lat,
+          lon: latestLiveTrailSample.lon,
+          sampledAt: latestLiveTrailSample.sampledAt,
           // Note: bearing is lost on refresh since the backend doesn't store it,
           // which is acceptable; the next segment will re-establish it.
         },
@@ -3122,7 +3118,7 @@ export default function TripMap({
     } else {
       breadcrumbSamplerStateRef.current = {};
     }
-  }, [liveTrailEnabled, travelerLiveTrailStatus]);
+  }, [latestLiveTrailSample, liveTrailEnabled, travelerLiveTrailStatus]);
 
   useEffect(() => {
     if (samplerModeRef.current !== samplerMode) {

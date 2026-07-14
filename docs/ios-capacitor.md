@@ -171,8 +171,8 @@ makes Info.plist versioned and editable from any checkout (including Windows).
 - [ ] Tap **LIVE** on the HUD; grant **Allow Always** when prompted (Always is required for locked
       emission — "While Using" stops when backgrounded).
 - [ ] Confirm the iOS location arrow appears; lock the phone, walk/drive a few hundred meters.
-- [ ] In Convex, `liveTrailSamples` rows accrue while locked; a Follower session sees moving points
-      via `followerListLiveTrailSamples`.
+- [ ] In Convex, `liveTrailSamples` rows accrue while locked; a Follower session sees the latest
+      permitted point via `getLatestLiveTrailSample`.
 - [ ] Tap **PAUSED** → emission stops (watcher removed). Server dedup (60s/200m) prevents flooding.
 - [ ] Debug log shows `live-trail:native-watch:start/stop` and `live-trail:permission:result`.
 

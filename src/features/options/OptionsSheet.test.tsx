@@ -140,8 +140,6 @@ function setupMocks({
   liveTrailStatus = {
     enabled: false,
     visibleToFollowers: false,
-    sampleCount: 0,
-    samples: [],
   },
   liveTrailPreview = {
     startMs: 0,
@@ -163,14 +161,6 @@ function setupMocks({
   liveTrailStatus?: {
     enabled: boolean;
     visibleToFollowers: boolean;
-    sampleCount: number;
-    samples: Array<{
-      _id: string;
-      lat: number;
-      lon: number;
-      sampledAt: number;
-      accuracy?: number;
-    }>;
   };
   liveTrailPreview?: {
     startMs: number;
@@ -482,8 +472,6 @@ describe("OptionsSheet Live Trail settings", () => {
       liveTrailStatus: {
         enabled: false,
         visibleToFollowers: false,
-        sampleCount: 0,
-        samples: [],
       },
     });
     renderOptions();
