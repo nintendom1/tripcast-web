@@ -348,6 +348,56 @@ function makeJournalEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
   };
 }
 
+function mockReplayQueries({
+  breadcrumbs = [],
+  stories = [],
+}: {
+  breadcrumbs?: Array<{ _id: string; lat: number; lon: number; sampledAt: number; accuracy?: number }>;
+  stories?: JournalEvent[];
+}) {
+  convexQuery.mockImplementation((query: unknown, args: { startAt?: number; endAt?: number; direction?: "asc" | "desc" }) => {
+    const startAt = args?.startAt ?? Number.NEGATIVE_INFINITY;
+    const endAt = args?.endAt ?? Number.POSITIVE_INFINITY;
+    const direction = args?.direction ?? "asc";
+    if (query === tripcastApi.liveTrail.listReplayLiveTrailSamples) {
+      const page = breadcrumbs
+        .filter((sample) => sample.sampledAt >= startAt && sample.sampledAt <= endAt)
+        .sort((a, b) => direction === "asc" ? a.sampledAt - b.sampledAt : b.sampledAt - a.sampledAt);
+      return Promise.resolve({
+        page,
+        hasMore: false,
+        reachedTrueEnd: true,
+        continueCursor: "done",
+        effectiveStartAt: Number.isFinite(startAt) ? startAt : null,
+        effectiveEndAt: Number.isFinite(endAt) ? endAt : null,
+        scanBoundaryAt: page.at(-1)?.sampledAt ?? (direction === "asc" ? endAt : startAt),
+      });
+    }
+    if (query === tripcastApi.journalEvents.listReplayStoryEvents) {
+      const page = stories
+        .filter((event) => event.occurredAt >= startAt && event.occurredAt <= endAt)
+        .sort((a, b) => direction === "asc" ? a.occurredAt - b.occurredAt : b.occurredAt - a.occurredAt);
+      return Promise.resolve({
+        page,
+        hasMore: false,
+        reachedTrueEnd: true,
+        continueCursor: "done",
+        effectiveStartAt: Number.isFinite(startAt) ? startAt : null,
+        effectiveEndAt: Number.isFinite(endAt) ? endAt : null,
+        scanBoundaryAt: page.at(-1)?.occurredAt ?? (direction === "asc" ? endAt : startAt),
+      });
+    }
+    if (query === tripcastApi.journalEvents.resolveReplayResumeTarget) return Promise.resolve(null);
+    return Promise.resolve(null);
+  });
+}
+
+async function startReplay(sourceName = "Start from beginning") {
+  await userEvent.click(screen.getByRole("button", { name: "Replay" }));
+  await userEvent.click(await screen.findByRole("button", { name: new RegExp(sourceName, "i") }));
+  return screen.findByRole("group", { name: "Trip Replay" });
+}
+
 function makeMysteryMission(overrides: Partial<MysteryMissionFeedItem> = {}): MysteryMissionFeedItem {
   return {
     kind: "mystery_mission",
@@ -394,7 +444,7 @@ beforeEach(() => {
   setLiveTrailVisibility.mockResolvedValue(null);
   recordLiveTrailSample.mockResolvedValue(null);
   deleteRecentLiveTrail.mockResolvedValue({ deleted: 0 });
-  convexQuery.mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+  mockReplayQueries({});
   nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(false);
   nativeLocationMocks.openNativeLocationSettings.mockClear();
   nativeLocationMocks.startNativeLocationWatch.mockReset();
@@ -568,7 +618,6 @@ describe("TripMap location marker", () => {
         }),
       ],
     });
-
     render(<TripMap token="test-token" role="traveler" />);
 
     await waitFor(() => {
@@ -646,10 +695,14 @@ describe("TripMap location marker", () => {
     });
 
     render(<TripMap token="test-token" role="traveler" />);
+    mockReplayQueries({
+      stories: [
+        makeJournalEvent({ _id: "event-old", checkpointId: "checkpoint-old", title: "Old story", occurredAt: 1000, lat: 47.61, lon: -122.31 }),
+        makeJournalEvent({ _id: "event-new", checkpointId: "checkpoint-new", title: "New story", occurredAt: 3000, lat: 47.63, lon: -122.33 }),
+      ],
+    });
 
-    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
-
-    const replayHud = await screen.findByRole("group", { name: "Trip Replay" });
+    const replayHud = await startReplay();
     expect(replayHud).toBeInTheDocument();
     expect(replayHud).toHaveClass("bottom-[88px]");
     await waitFor(() => {
@@ -661,16 +714,22 @@ describe("TripMap location marker", () => {
       );
     });
 
-    // Speed now lives in a dedicated bottom sheet opened from the HUD pill.
-    fireEvent.click(screen.getByRole("button", { name: /change replay speed/i }));
+    const queryCallsBeforeSettings = convexQuery.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: /open replay settings/i }));
+    expect(screen.getByRole("button", { name: /play replay/i })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /Speed/ }));
     const speedOption = await screen.findByRole("button", { name: "10x" });
     fireEvent.click(speedOption);
 
     await waitFor(() => {
-      expect(getLogs().some((entry) => entry.action === "replay:speed-sheet:open")).toBe(true);
       expect(getLogs().some((entry) => entry.action === "replay:speed-shift")).toBe(true);
       expect(getLogs().some((entry) => entry.action === "replay:coordinate-snap")).toBe(true);
+      expect(screen.getByRole("button", { name: "Restart Replay" })).toBeInTheDocument();
     });
+    expect(convexQuery).toHaveBeenCalledTimes(queryCallsBeforeSettings);
+    fireEvent.click(screen.getByRole("button", { name: "Restart Replay" }));
+    expect(await screen.findByRole("button", { name: /pause replay/i })).toBeInTheDocument();
+    expect(convexQuery).toHaveBeenCalledTimes(queryCallsBeforeSettings);
 
     const callsBeforeClose = mapEaseTo.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: /close trip replay/i }));
@@ -727,17 +786,24 @@ describe("TripMap location marker", () => {
         }),
       ],
     });
+    mockReplayQueries({
+      stories: [
+        makeJournalEvent({ _id: "event-old", occurredAt: 1000, lat: 47.5, lon: -122.5 }),
+        makeJournalEvent({ _id: "event-mid", occurredAt: 3000, lat: 47.6, lon: -122.6 }),
+        makeJournalEvent({ _id: "event-new", occurredAt: 4000, lat: 47.7, lon: -122.7 }),
+      ],
+    });
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await startReplay();
 
     // The replay trail fetch carries the Traveler's cutoff so the server filters
     // breadcrumbs the same way the map does.
     await waitFor(() => {
       expect(convexQuery).toHaveBeenCalledWith(
         tripcastApi.liveTrail.listReplayLiveTrailSamples,
-        expect.objectContaining({ token: "test-token", cutoffAt: 2000 }),
+        expect.objectContaining({ token: "test-token", startAt: 2000, direction: "asc" }),
       );
     });
 
@@ -750,6 +816,22 @@ describe("TripMap location marker", () => {
     expect(mapEaseTo).not.toHaveBeenCalledWith(
       expect.objectContaining({ center: [-122.5, 47.5] }),
     );
+  });
+
+  it("starts finale Replay without opening the source menu and stops when the finale ends", async () => {
+    const stories = [
+      makeJournalEvent({ _id: "finale-1", occurredAt: 1000, lat: 47.61, lon: -122.31 }),
+      makeJournalEvent({ _id: "finale-2", occurredAt: 2000, lat: 47.62, lon: -122.32 }),
+    ];
+    setupQueries({ journalEvents: stories });
+    mockReplayQueries({ stories });
+    const { rerender } = render(<TripMap token="test-token" role="traveler" finaleReplayActive />);
+
+    expect(await screen.findByRole("group", { name: "Trip Replay" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Start Trip Replay")).not.toBeInTheDocument();
+
+    rerender(<TripMap token="test-token" role="traveler" finaleReplayActive={false} />);
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Trip Replay" })).not.toBeInTheDocument());
   });
 
   it("keeps Funds off the Dock but closes its sheet when another Dock sheet opens", async () => {
@@ -1945,11 +2027,7 @@ describe("TripMap location marker", () => {
       { _id: "older-2", lat: 47.602, lon: -122.302, sampledAt: 60_100 },
       { _id: "recent-1", lat: 47.615, lon: -122.335, sampledAt: 120_100 },
     ];
-    convexQuery.mockResolvedValueOnce({
-      page: replaySamples,
-      isDone: true,
-      continueCursor: "",
-    });
+    mockReplayQueries({ breadcrumbs: replaySamples });
 
     render(<TripMap token="test-token" role="traveler" />);
 
@@ -1967,15 +2045,16 @@ describe("TripMap location marker", () => {
     });
     expect(convexQuery).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole("button", { name: /Replay/i }));
+    await startReplay();
 
     await waitFor(() => {
       expect(convexQuery).toHaveBeenCalledWith(
         tripcastApi.liveTrail.listReplayLiveTrailSamples,
         expect.objectContaining({
           token: "test-token",
-          cutoffAt: undefined,
-          paginationOpts: expect.objectContaining({ cursor: null, numItems: 500 }),
+          startAt: undefined,
+          direction: "asc",
+          paginationOpts: expect.objectContaining({ cursor: null, numItems: 64 }),
         }),
       );
       expect(useTripPath).toHaveBeenLastCalledWith(
@@ -1997,11 +2076,7 @@ describe("TripMap location marker", () => {
       { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
       { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
     ];
-    convexQuery.mockResolvedValueOnce({
-      page: breadcrumbs,
-      isDone: true,
-      continueCursor: "",
-    });
+    mockReplayQueries({ breadcrumbs });
     setupQueries({
       journalEvents: [], // No stories, only breadcrumbs
     });
@@ -2009,10 +2084,7 @@ describe("TripMap location marker", () => {
     render(<TripMap token="test-token" role="traveler" />);
 
     // Start Replay
-    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
-
-    // Replay HUD should appear
-    const replayHud = await screen.findByRole("group", { name: "Trip Replay" });
+    const replayHud = await startReplay();
     expect(replayHud).toBeInTheDocument();
 
     // Pause replay to show Check In button
@@ -2050,17 +2122,12 @@ describe("TripMap location marker", () => {
       { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
       { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
     ];
-    convexQuery.mockResolvedValueOnce({
-      page: breadcrumbs,
-      isDone: true,
-      continueCursor: "",
-    });
+    mockReplayQueries({ breadcrumbs });
     setupQueries({ journalEvents: [] });
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
-    await screen.findByRole("group", { name: "Trip Replay" });
+    await startReplay();
 
     // Replay starts playing — Check In should NOT be visible.
     expect(screen.queryByRole("button", { name: "Check In" })).toBeNull();
@@ -2073,11 +2140,7 @@ describe("TripMap location marker", () => {
       { _id: "bc-1", lat: 47.61, lon: -122.31, sampledAt: 1000 },
       { _id: "bc-2", lat: 47.62, lon: -122.32, sampledAt: 10000 },
     ];
-    convexQuery.mockResolvedValueOnce({
-      page: breadcrumbs,
-      isDone: true,
-      continueCursor: "",
-    });
+    mockReplayQueries({ breadcrumbs });
     setupQueries({
       journalEvents: [],
       latestLiveTrailSample: breadcrumbs.at(-1),
@@ -2086,8 +2149,7 @@ describe("TripMap location marker", () => {
 
     render(<TripMap token="test-token" role="follower" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
-    await screen.findByRole("group", { name: "Trip Replay" });
+    await startReplay();
     const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
     fireEvent.click(pauseBtn);
 
@@ -2097,7 +2159,6 @@ describe("TripMap location marker", () => {
 
   it("hides Check In when paused on a story (checkpoint) pin", async () => {
     setEnabled(true);
-    convexQuery.mockResolvedValueOnce({ page: [], isDone: true, continueCursor: "" });
     // Two story pins so canReplayTrip (pins.length > 1) lets the Replay HUD open;
     // the playhead starts on a checkpoint, which is exactly what we want to assert against.
     const storyEvents = [
@@ -2105,11 +2166,11 @@ describe("TripMap location marker", () => {
       makeJournalEvent({ _id: "story-2", occurredAt: 2000, lat: 47.62, lon: -122.32, title: "Pioneer Square" }),
     ];
     setupQueries({ journalEvents: storyEvents });
+    mockReplayQueries({ stories: storyEvents });
 
     render(<TripMap token="test-token" role="traveler" />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Replay" }));
-    await screen.findByRole("group", { name: "Trip Replay" });
+    await startReplay();
     const pauseBtn = screen.getByRole("button", { name: /pause replay/i });
     fireEvent.click(pauseBtn);
 

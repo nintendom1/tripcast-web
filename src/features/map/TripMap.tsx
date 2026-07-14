@@ -14,8 +14,6 @@ import {
   type Checkpoint,
   type CloakingPin,
   type JournalEvent,
-  type LiveTrailReplayPage,
-  type LiveTrailSample,
   type Role,
   type RouteVoteMapOverlay as RouteVoteMapOverlayType,
   type Transaction,
@@ -26,6 +24,21 @@ import type {
 } from "./AddCheckpointSheet";
 import ReplayPoiCard from "./ReplayPoiCard";
 import { TripReplayHud, formatReplayTime } from "./TripReplayHud";
+import {
+  ProgressiveReplaySession,
+  REPLAY_PREFETCH_SECONDS,
+  REPLAY_TARGET_BUFFER_SECONDS,
+  clearReplayResume,
+  estimateReplayBufferMs,
+  readLegacyReplayResume,
+  readReplayResume,
+  setReplayCacheIdentity,
+  writeReplayResume,
+  type ReplayPin,
+  type ReplaySessionSnapshot,
+  type ReplaySource,
+  type ReplaySourceMode,
+} from "./replaySession";
 import RouteVoteMapOverlay from "./RouteVoteMapOverlay";
 import {
   MapPickerConfirmPanel,
@@ -139,6 +152,8 @@ import {
 const AddCheckpointSheet = React.lazy(() => import("./AddCheckpointSheet"));
 const ReplaySpeedSheet = React.lazy(() => import("./ReplaySpeedSheet"));
 const ReplayDateRangeSheet = React.lazy(() => import("./ReplayDateRangeSheet"));
+const ReplayStartSheet = React.lazy(() => import("./ReplayStartSheet"));
+const ReplaySettingsSheet = React.lazy(() => import("./ReplaySettingsSheet"));
 const MissionPanel = React.lazy(() => import("../missions/MissionPanel"));
 const RouteVotePanel = React.lazy(() => import("../routevote/RouteVotePanel"));
 const TravelerStateSheet = React.lazy(() => import("../travelstate/TravelerStateSheet"));
@@ -179,8 +194,6 @@ const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 const FIX_OVERLAY_DEBUG_POLL_MS = 4_000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 50;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 120_000;
-const REPLAY_TRAIL_PAGE_SIZE = 500;
-const REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE = 106;
 const REPLAY_BASE_BEAT_MS = 200;
 // Checkpoint pins dwell longer than the base beat so the POI overlay has room to
 // slide in, be read, and slide out. Scales with replaySpeed like the base beat, but
@@ -225,51 +238,12 @@ export function advanceReplayIndex(
   }
   return target;
 }
-const REPLAY_LAST_PIN_KEY_PREFIX = "tripcast.replay.lastPin.";
 const FINALE_FIT_MAX_ZOOM = 18;
 // Discrete playback speeds offered in the Speed sheet. 20x/30x clamp at the
 // 60ms beat floor in the beat-scheduling effect, so they top out near 16x of
 // visible cadence — kept for parity with the design's fast-shuttle affordance.
 const REPLAY_SPEED_OPTIONS = [0.5, 1, 2, 5, 10, 20, 30] as const;
 
-type ReplayResume = { eventId: string; index: number };
-
-function readReplayResume(token: string): ReplayResume | null {
-  try {
-    const raw = localStorage.getItem(`${REPLAY_LAST_PIN_KEY_PREFIX}${token}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<ReplayResume>;
-    if (typeof parsed.eventId !== "string" || typeof parsed.index !== "number") return null;
-    return { eventId: parsed.eventId, index: parsed.index };
-  } catch {
-    return null;
-  }
-}
-
-function writeReplayResume(token: string, value: ReplayResume) {
-  try {
-    localStorage.setItem(`${REPLAY_LAST_PIN_KEY_PREFIX}${token}`, JSON.stringify(value));
-  } catch {
-    // Quota or private-mode — silently swallow; resume is best-effort.
-  }
-}
-
-function clearReplayResume(token: string) {
-  try {
-    localStorage.removeItem(`${REPLAY_LAST_PIN_KEY_PREFIX}${token}`);
-  } catch {
-    // ignore
-  }
-}
-
-function resolveReplayResumeIndex(token: string, pins: ReplayPin[]): number {
-  if (pins.length === 0) return 0;
-  const stored = readReplayResume(token);
-  if (!stored) return 0;
-  const byId = pins.findIndex((p) => p.eventId === stored.eventId);
-  if (byId >= 0) return byId;
-  return Math.min(Math.max(0, stored.index), pins.length - 1);
-}
 
 const BOTTOM_SHEET_ERROR_CLASS =
   "absolute inset-x-0 bottom-0 z-[4] grid gap-3 border-t bg-background p-4 text-sm shadow-lg";
@@ -309,16 +283,6 @@ type DebugOpenSource = {
   sourceLabel: string;
 };
 
-type ReplayPin = {
-  eventId: string;
-  occurredAt: number;
-  lat: number;
-  lon: number;
-  kind: "checkpoint" | "breadcrumb";
-  title?: string;
-  imageId?: string;
-  checkpointId?: string;
-};
 
 type FocusEntry = {
   coord: { lat: number; lon: number };
@@ -380,52 +344,6 @@ function getString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function isFiniteReplayCoordinate(event: JournalEvent): event is JournalEvent & { lat: number; lon: number } {
-  return (
-    typeof event.lat === "number" &&
-    Number.isFinite(event.lat) &&
-    typeof event.lon === "number" &&
-    Number.isFinite(event.lon)
-  );
-}
-
-function buildReplayPins(
-  journalEvents: JournalEvent[],
-  liveTrailSamples: Array<{ _id?: string; lat: number; lon: number; sampledAt: number }>,
-) {
-  const checkpointPins: ReplayPin[] = journalEvents
-    .filter(isFiniteReplayCoordinate)
-    .filter((e) => e.type === "story")
-    .map((event) => ({
-      eventId: event._id,
-      occurredAt: event.occurredAt,
-      lat: event.lat,
-      lon: event.lon,
-      kind: "checkpoint" as const,
-      title: event.title,
-      imageId: event.imageId,
-      checkpointId: event.checkpointId,
-    }));
-
-  const MIN_REPLAY_BC_INTERVAL_MS = 5_000;
-  let lastKeptAt = -Infinity;
-  const breadcrumbPins: ReplayPin[] = [];
-  for (const s of [...liveTrailSamples].sort((a, b) => a.sampledAt - b.sampledAt)) {
-    if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) continue;
-    if (s.sampledAt - lastKeptAt >= MIN_REPLAY_BC_INTERVAL_MS) {
-      breadcrumbPins.push({
-        eventId: s._id ?? `bc-${s.sampledAt}`,
-        occurredAt: s.sampledAt,
-        lat: s.lat,
-        lon: s.lon,
-        kind: "breadcrumb" as const,
-      });
-      lastKeptAt = s.sampledAt;
-    }
-  }
-
-  return [...checkpointPins, ...breadcrumbPins].sort((a, b) => a.occurredAt - b.occurredAt);
-}
 
 function formatReplayDate(timestamp: number) {
   return new Date(timestamp).toLocaleDateString([], {
@@ -1476,15 +1394,13 @@ export default function TripMap({
   const effectiveReplaySpeed = finaleReplayActive ? FINALE_REPLAY_SPEED : replaySpeed;
   const [replayPaused, setReplayPaused] = useState(false);
   const [currentOverlayPin, setCurrentOverlayPin] = useState<ReplayPin | null>(null);
-  const [replayTrailSamples, setReplayTrailSamples] = useState<LiveTrailSample[] | null>(null);
-  const [replayTrailLoad, setReplayTrailLoad] = useState<{
-    status: "idle" | "loading" | "loaded" | "error";
-    pages: number;
-    samples: number;
-    durationMs?: number;
-    error?: string;
-  }>({ status: "idle", pages: 0, samples: 0 });
-  const replayTrailLoadSeqRef = useRef(0);
+  const [replaySessionState, setReplaySessionState] = useState<ReplaySessionSnapshot>({
+    pins: [], stories: [], breadcrumbs: [], hasMore: false, reachedTrueEnd: false, loading: false, error: null,
+  });
+  const replaySessionRef = useRef<ProgressiveReplaySession | null>(null);
+  const [replaySource, setReplaySource] = useState<ReplaySource | null>(null);
+  const [replayBuffering, setReplayBuffering] = useState(false);
+  const replayIntendedToPlayRef = useRef(false);
   // Replay-only date window. Null = full trip (no narrowing). While active and
   // set, it filters all timestamped map state (checkpoints, journal, breadcrumbs,
   // missions, cloaking) and rebuilds the replay pins so the scrubber is bounded
@@ -1492,6 +1408,9 @@ export default function TripMap({
   const [replayWindow, setReplayWindow] = useState<{ startAt: number; endAt: number } | null>(null);
   const [isReplaySpeedSheetOpen, setIsReplaySpeedSheetOpen] = useState(false);
   const [isReplayDateSheetOpen, setIsReplayDateSheetOpen] = useState(false);
+  const [isReplayStartSheetOpen, setIsReplayStartSheetOpen] = useState(false);
+  const [replayStartError, setReplayStartError] = useState<string | null>(null);
+  const [isReplaySettingsSheetOpen, setIsReplaySettingsSheetOpen] = useState(false);
   // Opening a replay control (speed/date) pauses playback; if it was playing when the
   // control opened, resume it once the control closes. Captured at open time.
   const replayResumeAfterControlRef = useRef(false);
@@ -1576,6 +1495,11 @@ export default function TripMap({
   const travelerAllowsFollowerPath = followerPreferences?.visible
     ? (followerPreferences.allowFollowersTripPath ?? false)
     : false;
+  const replayTimeZone = (role === "traveler"
+    ? movementPrefs?.travelerTimeZone
+    : followerPreferences?.visible ? followerPreferences.travelerTimeZone : undefined)
+    ?? Intl.DateTimeFormat().resolvedOptions().timeZone
+    ?? "UTC";
 
   const liveTrailSamples = useMemo(() => {
     const all = latestLiveTrailSample ? [latestLiveTrailSample] : [];
@@ -1585,14 +1509,13 @@ export default function TripMap({
     return cutoffFiltered.filter((s) => inReplayWindow(s.sampledAt));
   }, [latestLiveTrailSample, cutoffPreview.cutoffAt, inReplayWindow]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
-  const replaySourceTrailSamples = replayTrailSamples ?? liveTrailSamples;
-  // The path follows the replay-loaded sample set during replay; window it so the
-  // drawn trail matches the selected slice (both sources are already cutoff-filtered:
-  // liveTrailSamples client-side, replayTrailSamples via loadReplayTrailSamples).
+  const replaySourceTrailSamples = replaySessionState.breadcrumbs.length > 0
+    ? replaySessionState.breadcrumbs
+    : liveTrailSamples;
   const pathTrailSamples = useMemo(() => {
-    const base = replayActive && replayTrailSamples ? replayTrailSamples : liveTrailSamples;
+    const base = replayActive ? replaySessionState.breadcrumbs : liveTrailSamples;
     return base.filter((s) => inReplayWindow(s.sampledAt));
-  }, [replayActive, replayTrailSamples, liveTrailSamples, inReplayWindow]);
+  }, [replayActive, replaySessionState.breadcrumbs, liveTrailSamples, inReplayWindow]);
   const pathTrailVisible = pathTrailSamples.length >= 1;
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
@@ -1612,13 +1535,12 @@ export default function TripMap({
   const showPath = role === "traveler"
     ? (finaleReplayActive || showTripPathLocal)
     : travelerAllowsFollowerPath && (finaleReplayActive || showTripPathLocal);
-  const replayTrailLoading = replayTrailLoad.status === "loading";
-  const canAttemptReplay = showPath && !replayTrailLoading;
+  const canAttemptReplay = showPath;
 
   useEffect(() => {
-    replayTrailLoadSeqRef.current += 1;
-    setReplayTrailSamples(null);
-    setReplayTrailLoad({ status: "idle", pages: 0, samples: 0 });
+    setReplayCacheIdentity(token, role, cutoffPreview.cutoffAt ?? null);
+    replaySessionRef.current = null;
+    setReplaySessionState({ pins: [], stories: [], breadcrumbs: [], hasMore: false, reachedTrueEnd: false, loading: false, error: null });
   }, [token, role, cutoffPreview.cutoffAt]);
 
   const handleCloakingPinClick = useCallback(
@@ -1667,7 +1589,6 @@ export default function TripMap({
   // replay never visits pins hidden by the Follower content cutoff. "Show all"
   // nulls the cutoff (in useFollowerCutoffPreview), restoring the full trip for
   // both the map and replay. Followers are already filtered server-side.
-  const replayJournalEvents = journalEvents;
   // Full (pre-window) time span of the trip's timestamped data — the domain for
   // the date-range slider. Built from un-windowed sources so the slider keeps its
   // full range even while a window narrows the map.
@@ -1685,86 +1606,10 @@ export default function TripMap({
     for (const s of replaySourceTrailSamples) consider(s.sampledAt);
     return min <= max ? { min, max } : null;
   }, [rawCheckpoints, queriedJournalEvents, replaySourceTrailSamples]);
-  const loadReplayTrailSamples = useCallback(async () => {
-    if (replayTrailSamples) return replayTrailSamples;
-    const seq = ++replayTrailLoadSeqRef.current;
-    const startedAt = performance.now();
-    // Apply the cutoff for both roles so the Traveler's replay trail matches the
-    // map. For Followers the server enforces its own cutoff regardless; for the
-    // Traveler this is null unless a content cutoff is set and "Show all" is off.
-    const cutoffAt = cutoffPreview.cutoffAt ?? undefined;
-    let cursor: string | null = null;
-    let pages = 0;
-    const samples: LiveTrailSample[] = [];
-    setReplayTrailLoad({ status: "loading", pages: 0, samples: 0 });
-    log.logInteraction("live-trail:replay-fetch:start", { role, cutoffApplied: cutoffAt ?? null });
-
-    try {
-      for (;;) {
-        const page: LiveTrailReplayPage = await convex.query(tripcastApi.liveTrail.listReplayLiveTrailSamples, {
-          token,
-          cutoffAt,
-          paginationOpts: {
-            numItems: REPLAY_TRAIL_PAGE_SIZE,
-            cursor,
-            maximumRowsRead: REPLAY_TRAIL_PAGE_SIZE * 2,
-            maximumBytesRead: 256_000,
-          },
-        });
-        pages += 1;
-        samples.push(...page.page);
-        const durationMs = Math.round(performance.now() - startedAt);
-        log.logInteraction("live-trail:replay-fetch:page", {
-          role,
-          page: pages,
-          pageSamples: page.page.length,
-          samples: samples.length,
-          durationMs,
-        });
-        if (seq === replayTrailLoadSeqRef.current) {
-          setReplayTrailLoad({ status: "loading", pages, samples: samples.length, durationMs });
-        }
-        if (page.isDone) break;
-        cursor = page.continueCursor;
-      }
-
-      const durationMs = Math.round(performance.now() - startedAt);
-      const estimatedPayloadBytes = samples.length * REPLAY_TRAIL_ESTIMATED_BYTES_PER_SAMPLE;
-      log.logInteraction("live-trail:replay-fetch:complete", {
-        role,
-        pages,
-        samples: samples.length,
-        durationMs,
-        estimatedPayloadBytes,
-        cutoffApplied: cutoffAt ?? null,
-        firstSampleTs: samples[0]?.sampledAt ?? null,
-        lastSampleTs: samples.at(-1)?.sampledAt ?? null,
-      });
-      if (seq === replayTrailLoadSeqRef.current) {
-        setReplayTrailSamples(samples);
-        setReplayTrailLoad({ status: "loaded", pages, samples: samples.length, durationMs });
-      }
-      return samples;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const durationMs = Math.round(performance.now() - startedAt);
-      log.error("live-trail:replay-fetch:error", "query", { role, pages, samples: samples.length, durationMs, message });
-      if (seq === replayTrailLoadSeqRef.current) {
-        setReplayTrailLoad({ status: "error", pages, samples: samples.length, durationMs, error: message });
-      }
-      throw error;
-    }
-  }, [convex, cutoffPreview.cutoffAt, log, replayTrailSamples, role, token]);
-  const replayPins = useMemo<ReplayPin[]>(
-    () =>
-      buildReplayPins(
-        replayJournalEvents.filter((e) => inReplayWindow(e.occurredAt)),
-        replaySourceTrailSamples.filter((s) => inReplayWindow(s.sampledAt)),
-      ),
-    [replayJournalEvents, replaySourceTrailSamples, inReplayWindow],
-  );
-  const replayEndIndex = replayPins.length;
-  const canReplayTrip = replayPins.length > 1;
+  const replayPins = replaySessionState.pins;
+  const replayEndIndex = replaySessionState.reachedTrueEnd
+    ? replayPins.length
+    : Math.max(0, replayPins.length - 1);
   const isReplayWindowActive = replayActive && replayWindow !== null;
   const replayWindowLabel = replayWindow
     ? `${formatReplayDate(replayWindow.startAt)} – ${formatReplayDate(replayWindow.endAt)}`
@@ -1913,6 +1758,13 @@ export default function TripMap({
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
 
+    if (replaySessionState.hasMore && replayPlayheadIndex >= replayPins.length - 1) {
+      replayIntendedToPlayRef.current = true;
+      setReplayBuffering(true);
+      setReplayPaused(true);
+      return;
+    }
+
     // Variable beat: breadcrumb beats tick at REPLAY_BASE_BEAT_MS; checkpoint
     // beats dwell longer so the POI overlay can breathe. Both scale by replaySpeed.
     const pin = replayPlayheadIndex < replayPins.length ? replayPins[replayPlayheadIndex] : null;
@@ -1936,7 +1788,102 @@ export default function TripMap({
       });
     }, beatMs);
     return () => window.clearTimeout(timeout);
-  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, effectiveReplaySpeed, replayPaused]);
+  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, replaySessionState.hasMore, effectiveReplaySpeed, replayPaused]);
+
+  const requestReplayMore = useCallback(async () => {
+    const session = replaySessionRef.current;
+    if (!session || !session.snapshot().hasMore) return;
+    let next = session.snapshot();
+    do {
+      next = await session.loadMore();
+      setReplaySessionState({ ...next });
+      if (next.error) {
+        setReplayBuffering(false);
+        setReplayPaused(true);
+        return;
+      }
+    } while (
+      next.hasMore &&
+      estimateReplayBufferMs(
+        next.pins,
+        replayPlayheadIndex ?? 0,
+        effectiveReplaySpeed,
+        replayBeatMs,
+        replayPinStep,
+      ) < REPLAY_TARGET_BUFFER_SECONDS * 1_000
+    );
+    setReplayBuffering(false);
+    if (replayIntendedToPlayRef.current) {
+      replayIntendedToPlayRef.current = false;
+      setReplayPaused(false);
+    }
+  }, [effectiveReplaySpeed, replayPlayheadIndex]);
+
+  const startReplaySession = useCallback(async (
+    source: ReplaySource,
+    resume?: { eventId: string; occurredAt?: number; fallbackIndex: number },
+  ) => {
+    const sessionKey = `${source.mode}:${source.startAt ?? ""}:${source.endAt}`;
+    const session = new ProgressiveReplaySession(sessionKey, source, {
+      breadcrumbs: (args) => convex.query(tripcastApi.liveTrail.listReplayLiveTrailSamples, {
+        token,
+        startAt: args.startAt,
+        endAt: args.endAt,
+        direction: args.direction,
+        paginationOpts: { numItems: 64, cursor: args.cursor, maximumRowsRead: 128, maximumBytesRead: 256_000 },
+      }),
+      stories: (args) => convex.query(tripcastApi.journalEvents.listReplayStoryEvents, {
+        token,
+        startAt: args.startAt,
+        endAt: args.endAt,
+        direction: args.direction,
+        paginationOpts: { numItems: 64, cursor: args.cursor, maximumRowsRead: 128, maximumBytesRead: 256_000 },
+      }),
+    }, resume?.occurredAt, resume !== undefined && resume.occurredAt === undefined);
+    replaySessionRef.current = session;
+    setReplaySessionState({ pins: [], stories: [], breadcrumbs: [], hasMore: true, reachedTrueEnd: false, loading: true, error: null });
+    let next = await session.start(replaySpeed, replayBeatMs, replayPinStep);
+    while (
+      resume &&
+      !next.error &&
+      next.hasMore &&
+      !next.pins.some((pin) => pin.eventId === resume.eventId) &&
+      next.pins.length <= resume.fallbackIndex
+    ) {
+      next = await session.loadMore();
+    }
+    setReplaySessionState({ ...next });
+    if (next.error) return false;
+    if (next.pins.length <= 1) {
+      showToast("Trip Replay needs at least two located breadcrumbs or stories.");
+      return false;
+    }
+    const byId = resume ? next.pins.findIndex((pin) => pin.eventId === resume.eventId) : -1;
+    const startIndex = byId >= 0
+      ? byId
+      : resume ? Math.min(Math.max(0, resume.fallbackIndex), next.pins.length - 1) : 0;
+    setReplaySource(source);
+    setReplayWindow(source.startAt !== undefined ? { startAt: source.startAt, endAt: source.endAt } : null);
+    setReplayPlayheadIndex(startIndex);
+    setReplayPaused(false);
+    setReplayBuffering(false);
+    replayIntendedToPlayRef.current = false;
+    setReplayActive(true);
+    setCurrentOverlayPin(null);
+    return true;
+  }, [convex, replaySpeed, showToast, token]);
+
+  useEffect(() => {
+    if (!replayActive || replayPlayheadIndex === null || !replaySessionState.hasMore || replaySessionState.loading) return;
+    const bufferedMs = estimateReplayBufferMs(
+      replayPins,
+      replayPlayheadIndex,
+      effectiveReplaySpeed,
+      replayBeatMs,
+      replayPinStep,
+    );
+    if (replayBuffering || bufferedMs < REPLAY_PREFETCH_SECONDS * 1_000) void requestReplayMore();
+  }, [replayActive, replayPlayheadIndex, replayPins, replaySessionState.hasMore, replaySessionState.loading, replayBuffering, effectiveReplaySpeed, requestReplayMore]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPins.length === 0) return;
@@ -1990,7 +1937,15 @@ export default function TripMap({
     snappedReplayEventRef.current = snapKey;
 
     // Persist the resume point on every successful pin transition (not End).
-    writeReplayResume(token, { eventId: target.eventId, index: replayPlayheadIndex });
+    if (replaySource) {
+      writeReplayResume(token, {
+        version: 2,
+        eventId: target.eventId,
+        index: replayPlayheadIndex,
+        occurredAt: target.occurredAt,
+        source: replaySource,
+      });
+    }
 
     if (!map || mapServiceUnavailableRef.current) {
       log.logInteraction("replay:coordinate-snap:blocked", {
@@ -2067,7 +2022,7 @@ export default function TripMap({
       easing,
       padding: geometry.padding,
     });
-  }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, token, effectiveReplaySpeed]);
+  }, [log, finaleReplayActive, replayActive, replayPins, replayPlayheadIndex, replaySource, token, effectiveReplaySpeed]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2086,29 +2041,46 @@ export default function TripMap({
       return;
     }
 
-    if (!canAttemptReplay) return;
-    void loadReplayTrailSamples().then((samples) => {
-      if (cancelled) return;
-      const pins = buildReplayPins(replayJournalEvents, samples);
-      if (pins.length <= 1) return;
-      const resumeIndex = resolveReplayResumeIndex(token, pins);
-      if (!finaleReplayStartedRef.current) {
-        snappedReplayEventRef.current = null;
-        finaleReplayStartedRef.current = true;
-        // Finale plays at FINALE_REPLAY_SPEED via effectiveReplaySpeed; we no longer
-        // mutate replaySpeed here so the 0.5x doesn't persist after the finale.
-        log.logInteraction("finale:map-replay:start", {
-          totalPins: pins.length,
-          resumeIndex,
+    if (!canAttemptReplay || finaleReplayStartedRef.current) return;
+    finaleReplayStartedRef.current = true;
+    const saved = readReplayResume(token);
+    const legacy = readLegacyReplayResume(token);
+    void (async () => {
+      let started = false;
+      if (legacy) {
+        const target = await convex.query(tripcastApi.journalEvents.resolveReplayResumeTarget, {
+          token,
+          eventId: legacy.eventId,
+        });
+        if (target && !cancelled) {
+          const source = saved?.source ?? {
+            mode: "beginning" as const,
+            startAt: cutoffPreview.cutoffAt ?? undefined,
+            endAt: Date.now(),
+          };
+          started = await startReplaySession(source, {
+            eventId: target.eventId,
+            occurredAt: target.occurredAt,
+            fallbackIndex: legacy.index,
+          });
+        }
+      }
+      if (!started && !cancelled) {
+        await startReplaySession({
+          mode: "beginning",
+          startAt: cutoffPreview.cutoffAt ?? undefined,
+          endAt: Date.now(),
         });
       }
-      setReplayActive(true);
-      setReplayPlayheadIndex(resumeIndex);
-    }).catch(() => {});
+      if (!cancelled) {
+        snappedReplayEventRef.current = null;
+        log.logInteraction("finale:map-replay:start");
+      }
+    })().catch(() => { finaleReplayStartedRef.current = false; });
     return () => {
       cancelled = true;
     };
-  }, [canAttemptReplay, finaleReplayActive, loadReplayTrailSamples, log, replayJournalEvents, token]);
+  }, [canAttemptReplay, convex, cutoffPreview.cutoffAt, finaleReplayActive, log, startReplaySession, token]);
 
   // Drive the POI overlay off the playhead. Every beat change first clears the
   // current card so it animates *out* (during the camera ease and before the
@@ -2129,12 +2101,12 @@ export default function TripMap({
   // playing when the control opened. Covers every close path (dismiss, select speed,
   // apply/reset window) since they all flip the open flag back to false.
   useEffect(() => {
-    if (isReplaySpeedSheetOpen || isReplayDateSheetOpen) return;
-    if (replayResumeAfterControlRef.current) {
+    if (isReplaySpeedSheetOpen || isReplayDateSheetOpen || isReplaySettingsSheetOpen || isReplayStartSheetOpen) return;
+    if (replayResumeAfterControlRef.current && !replayBuffering && !replaySessionState.error) {
       replayResumeAfterControlRef.current = false;
       setReplayPaused(false);
     }
-  }, [isReplaySpeedSheetOpen, isReplayDateSheetOpen]);
+  }, [isReplaySpeedSheetOpen, isReplayDateSheetOpen, isReplaySettingsSheetOpen, isReplayStartSheetOpen, replayBuffering, replaySessionState.error]);
 
   // Close replay if any sheet/panel/menu opens. Pin taps, dock taps, and the
   // right-click context menu all funnel through these states, so a single effect
@@ -2162,8 +2134,13 @@ export default function TripMap({
     setReplayPaused(false);
     setCurrentOverlayPin(null);
     setReplayWindow(null);
+    setReplaySource(null);
+    replaySessionRef.current = null;
+    setReplaySessionState({ pins: [], stories: [], breadcrumbs: [], hasMore: false, reachedTrueEnd: false, loading: false, error: null });
     setIsReplaySpeedSheetOpen(false);
     setIsReplayDateSheetOpen(false);
+    setIsReplayStartSheetOpen(false);
+    setIsReplaySettingsSheetOpen(false);
     log.logInteraction("replay:close", { reason: "ui-opened", speed: replaySpeed });
   }, [
     replayActive,
@@ -3931,29 +3908,26 @@ export default function TripMap({
     }
   }
 
-  async function handleStartReplay() {
+  function handleStartReplay() {
     stopFollowing();
     if (!canAttemptReplay) {
-      log.logInteraction("replay:start:boundary", { reason: replayTrailLoading ? "loading" : "path-hidden" });
-      showToast(replayTrailLoading ? "Trip Replay is loading breadcrumbs." : "Trip path is hidden.");
-      return;
-    }
-    let nextTrailSamples: LiveTrailSample[];
-    try {
-      nextTrailSamples = await loadReplayTrailSamples();
-    } catch {
-      showToast("Trip Replay could not load breadcrumbs. Try again.");
-      return;
-    }
-    const nextReplayPins = buildReplayPins(replayJournalEvents, nextTrailSamples);
-    if (nextReplayPins.length <= 1) {
-      log.logInteraction("replay:start:boundary", { reason: "no-coordinate-pins", trailSamples: nextTrailSamples.length });
-      showToast("Trip Replay needs at least two located breadcrumbs or journal events.");
+      log.logInteraction("replay:start:boundary", { reason: "path-hidden" });
+      showToast("Trip path is hidden.");
       return;
     }
     music.sfx("page");
-    // Close any UI that the close-on-interaction effect would otherwise treat as
-    // a reason to immediately close the replay we're about to start.
+    setReplayStartError(null);
+    setIsReplayStartSheetOpen(true);
+  }
+
+  async function handleSelectReplaySource(mode: ReplaySourceMode | "continue") {
+    setReplayStartError(null);
+    if (mode === "custom") {
+      setIsReplayStartSheetOpen(false);
+      setIsReplaySettingsSheetOpen(false);
+      setIsReplayDateSheetOpen(true);
+      return;
+    }
     setSelectedStoryDetail(null);
     setIsJournalOpen(false);
     setIsMessagingOpen(false);
@@ -3966,16 +3940,33 @@ export default function TripMap({
     setContextMenu(null);
     setStoryPrefill(null);
     snappedReplayEventRef.current = null;
-    const resumeIndex = resolveReplayResumeIndex(token, nextReplayPins);
-    setReplayActive(true);
-    setReplayPlayheadIndex(resumeIndex);
-    setCurrentOverlayPin(null);
-    log.logInteraction("replay:start", {
-      totalPins: nextReplayPins.length,
-      trailSamples: nextTrailSamples.length,
-      resumeIndex,
-      speed: replaySpeed,
-    });
+    setIsReplaySettingsSheetOpen(false);
+    const frozenEndAt = Date.now();
+    const permittedStartAt = cutoffPreview.cutoffAt ?? undefined;
+    let source: ReplaySource = { mode: mode === "recent" ? "recent" : "beginning", startAt: permittedStartAt, endAt: frozenEndAt };
+    let resume: { eventId: string; occurredAt?: number; fallbackIndex: number } | undefined;
+    try {
+      if (mode === "continue") {
+        const saved = readReplayResume(token);
+        const legacy = readLegacyReplayResume(token);
+        if (!legacy) return;
+        const target = await convex.query(tripcastApi.journalEvents.resolveReplayResumeTarget, { token, eventId: legacy.eventId });
+        if (saved) source = saved.source;
+        if (target) {
+          resume = { eventId: target.eventId, occurredAt: target.occurredAt, fallbackIndex: legacy.index };
+        } else {
+          resume = { eventId: legacy.eventId, fallbackIndex: legacy.index };
+        }
+      }
+      const started = await startReplaySession(source, resume);
+      if (started) setIsReplayStartSheetOpen(false);
+      else setReplayStartError(replaySessionRef.current?.snapshot().error ?? "No replayable located activity was found for this source.");
+      log.logInteraction(started ? "replay:start" : "replay:start:failed", { mode, speed: replaySpeed });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setReplayStartError(`Replay could not start: ${message}`);
+      log.error("replay:start:error", "query", { mode, message });
+    }
   }
 
   function handleReplayScrub(index: number) {
@@ -4008,13 +3999,14 @@ export default function TripMap({
       return nextSpeed;
     });
     setIsReplaySpeedSheetOpen(false);
+    if (replayActive) setIsReplaySettingsSheetOpen(true);
   }
 
   function handleApplyReplayWindow(startAt: number, endAt: number) {
-    setReplayWindow({ startAt, endAt });
-    setReplayPlayheadIndex(0);
     snappedReplayEventRef.current = null;
     setIsReplayDateSheetOpen(false);
+    setIsReplaySettingsSheetOpen(false);
+    void startReplaySession({ mode: "custom", startAt: Math.max(startAt, cutoffPreview.cutoffAt ?? Number.NEGATIVE_INFINITY), endAt });
     log.logInteraction("replay:window:apply", {
       startAt,
       endAt,
@@ -4023,10 +4015,10 @@ export default function TripMap({
   }
 
   function handleResetReplayWindow() {
-    setReplayWindow(null);
-    setReplayPlayheadIndex(0);
     snappedReplayEventRef.current = null;
     setIsReplayDateSheetOpen(false);
+    setIsReplaySettingsSheetOpen(false);
+    void startReplaySession({ mode: "beginning", startAt: cutoffPreview.cutoffAt ?? undefined, endAt: Date.now() });
     log.logInteraction("replay:window:reset");
   }
 
@@ -4036,14 +4028,19 @@ export default function TripMap({
     setReplayActive(false);
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
+    setReplayBuffering(false);
     setCurrentOverlayPin(null);
     setReplayWindow(null);
+    setReplaySource(null);
     setIsReplaySpeedSheetOpen(false);
     setIsReplayDateSheetOpen(false);
+    setIsReplayStartSheetOpen(false);
+    setIsReplaySettingsSheetOpen(false);
     log.logInteraction("replay:close", { speed: replaySpeed });
   }
 
   function handleToggleReplayPause() {
+    replayIntendedToPlayRef.current = replayPaused;
     setReplayPaused((prev) => {
       log.logInteraction(prev ? "replay:resume" : "replay:pause", {
         index: replayPlayheadIndex,
@@ -4321,22 +4318,26 @@ export default function TripMap({
     if (!currentReplayPin || currentReplayPin.kind !== "breadcrumb" || !currentReplayPin.eventId) return;
 
     const sampleId = currentReplayPin.eventId;
-    let previousSamples: LiveTrailSample[] | null = null;
+    let previousState: ReplaySessionSnapshot | null = null;
 
     setDeletingBreadcrumbId(sampleId);
-    setReplayTrailSamples((prev) => {
-      previousSamples = prev;
-      return prev ? prev.filter((sample) => sample._id !== sampleId) : prev;
+    setReplaySessionState((prev) => {
+      previousState = prev;
+      return {
+        ...prev,
+        breadcrumbs: prev.breadcrumbs.filter((sample) => sample._id !== sampleId),
+        pins: prev.pins.filter((pin) => pin.eventId !== sampleId),
+      };
     });
 
     void deleteBreadcrumb({ token, sampleIds: [sampleId] })
       .then(({ deleted }) => {
-        if (deleted === 0 && previousSamples) {
-          setReplayTrailSamples(previousSamples);
+        if (deleted === 0 && previousState) {
+          setReplaySessionState(previousState);
         }
       })
       .catch((err) => {
-        if (previousSamples) setReplayTrailSamples(previousSamples);
+        if (previousState) setReplaySessionState(previousState);
         log.error("replay:delete-breadcrumb:error", "mutation", { message: err instanceof Error ? err.message : String(err) });
       })
       .finally(() => {
@@ -4738,11 +4739,13 @@ export default function TripMap({
             pin={currentOverlayPin}
             note={
               currentOverlayPin.eventId
-                ? journalEvents.find((e) => e._id === currentOverlayPin.eventId)?.body
+                ? (replaySessionState.stories.find((e) => e._id === currentOverlayPin.eventId)
+                  ?? journalEvents.find((e) => e._id === currentOverlayPin.eventId))?.body
                 : undefined
             }
             onClick={() => {
-              const event = journalEvents.find((e) => e._id === currentOverlayPin.eventId);
+              const event = replaySessionState.stories.find((e) => e._id === currentOverlayPin.eventId)
+                ?? journalEvents.find((e) => e._id === currentOverlayPin.eventId);
               if (event) {
                 setSelectedStoryDetail({
                   eventId: event._id,
@@ -4936,9 +4939,17 @@ export default function TripMap({
             speed={replaySpeed}
             windowLabel={replayWindowLabel}
             isPaused={replayPaused}
+            isBuffering={replayBuffering || (replaySessionState.loading && replayActive)}
+            loadError={replaySessionState.error}
             onTogglePause={handleToggleReplayPause}
             onRestart={handleRestartReplay}
             onNext={() => {
+              if (replaySessionState.hasMore && replayPlayheadIndex >= replayPins.length - 1) {
+                replayIntendedToPlayRef.current = false;
+                setReplayBuffering(true);
+                void requestReplayMore();
+                return;
+              }
               if (!replayPaused) setReplayPaused(true);
               handleReplayScrub((replayPlayheadIndex ?? 0) + 1);
             }}
@@ -4947,13 +4958,6 @@ export default function TripMap({
               handleReplayScrub((replayPlayheadIndex ?? 0) - 1);
             }}
             onScrub={handleReplayScrub}
-            onOpenSpeedSheet={() => {
-              music.sfx("tap");
-              replayResumeAfterControlRef.current = !replayPaused;
-              setReplayPaused(true);
-              setIsReplaySpeedSheetOpen(true);
-              log.logInteraction("replay:speed-sheet:open", { speed: replaySpeed });
-            }}
             onOpenDateSheet={() => {
               music.sfx("tap");
               replayResumeAfterControlRef.current = !replayPaused;
@@ -4963,11 +4967,51 @@ export default function TripMap({
                 windowed: replayWindow !== null,
               });
             }}
+            onOpenSettings={() => {
+              music.sfx("tap");
+              replayResumeAfterControlRef.current = !replayPaused;
+              setReplayPaused(true);
+              setIsReplaySettingsSheetOpen(true);
+            }}
+            onRetry={() => void requestReplayMore()}
             onClose={handleCloseReplay}
           />
         ) : null}
       </AnimatePresence>
 
+      <Suspense fallback={null}>
+        <ReplayStartSheet
+          open={isReplayStartSheetOpen}
+          hasResume={readLegacyReplayResume(token) !== null}
+          loading={replaySessionState.loading && !replayActive}
+          error={replayStartError}
+          onSelect={(mode) => void handleSelectReplaySource(mode)}
+          onClose={() => {
+            setReplayStartError(null);
+            setIsReplayStartSheetOpen(false);
+          }}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <ReplaySettingsSheet
+          open={isReplaySettingsSheetOpen}
+          speed={replaySpeed}
+          onChangeSource={() => {
+            setIsReplaySettingsSheetOpen(false);
+            setIsReplayStartSheetOpen(true);
+          }}
+          onChangeSpeed={() => {
+            setIsReplaySettingsSheetOpen(false);
+            setIsReplaySpeedSheetOpen(true);
+          }}
+          onRestart={() => {
+            handleRestartReplay();
+            setIsReplaySettingsSheetOpen(false);
+          }}
+          onExit={handleCloseReplay}
+          onClose={() => setIsReplaySettingsSheetOpen(false)}
+        />
+      </Suspense>
       <Suspense fallback={null}>
         <ReplaySpeedSheet
           open={isReplaySpeedSheetOpen}
@@ -4982,6 +5026,7 @@ export default function TripMap({
           open={isReplayDateSheetOpen}
           bounds={tripTimeBounds}
           window={replayWindow}
+          timeZone={replayTimeZone}
           onApply={handleApplyReplayWindow}
           onReset={handleResetReplayWindow}
           onClose={() => setIsReplayDateSheetOpen(false)}
@@ -5352,21 +5397,14 @@ export default function TripMap({
             <button
               type="button"
               data-replay-toggle=""
-              onClick={() => (replayActive ? handleCloseReplay() : void handleStartReplay())}
+              onClick={() => (replayActive ? handleCloseReplay() : handleStartReplay())}
               disabled={!replayActive && !canAttemptReplay}
               aria-pressed={replayActive}
               className="pointer-events-auto inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-[var(--bg-card)] px-3 font-[var(--font-mono)] text-[10px] font-bold uppercase tracking-[0.08em] text-[var(--ink-2)] shadow-[var(--shadow-card)] transition-colors hover:text-[var(--ink-1)] disabled:cursor-not-allowed disabled:opacity-45"
             >
               <Play className="h-3.5 w-3.5" aria-hidden="true" />
-              {replayTrailLoading
-                ? `Loading ${replayTrailLoad.samples}`
-                : replayActive ? `${replaySpeed}x Replay` : "Replay"}
+              {replayActive ? `${replaySpeed}x Replay` : "Replay"}
             </button>
-            {replayTrailLoad.status === "error" ? (
-              <p className="pointer-events-auto max-w-[12rem] rounded-md bg-[var(--bg-card)] px-2 py-1 text-right text-[10px] font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]">
-                Replay breadcrumbs failed to load.
-              </p>
-            ) : null}
             <MusicMuteIndicator className="pointer-events-auto" />
           </div>
         </div>

@@ -1,145 +1,128 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Sheet, SheetContent, SheetTitle } from "../../components/ui/sheet";
-import { DualRangeSlider } from "../../components/ui/DualRangeSlider";
 
 export interface ReplayDateRangeSheetProps {
   open: boolean;
-  /** Full (pre-window) time span of the trip, or null when no data exists. */
   bounds: { min: number; max: number } | null;
-  /** Currently applied window, or null for the full trip. */
   window: { startAt: number; endAt: number } | null;
+  timeZone: string;
   onApply: (startAt: number, endAt: number) => void;
   onReset: () => void;
   onClose: () => void;
 }
 
-const SLIDER_STEP_MS = 60_000; // 1-minute granularity keeps the handles smooth.
+const LAST_RANGE_KEY = "tripcast.replay.lastCustomRange";
 
-function formatDateTime(ts: number) {
-  return new Date(ts).toLocaleString([], {
-    month: "short",
-    day: "numeric",
+function partsInZone(timestamp: number, timeZone: string) {
+  const values = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    hourCycle: "h23",
     year: "numeric",
-    hour: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
     minute: "2-digit",
-  });
+    second: "2-digit",
+  }).formatToParts(new Date(timestamp)).map((part) => [part.type, part.value]));
+  return values as Record<"year" | "month" | "day" | "hour" | "minute" | "second", string>;
 }
 
-/**
- * Bottom sheet for selecting the Replay date-range window via a double slider.
- * Drafts the selection locally and only commits on Apply, matching the mockup's
- * Cancel / Apply header. "Reset to full trip" clears the window.
- */
+function inputValue(timestamp: number, timeZone: string) {
+  const p = partsInZone(timestamp, timeZone);
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
+function zoneOffsetMs(timestamp: number, timeZone: string) {
+  const p = partsInZone(timestamp, timeZone);
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - timestamp;
+}
+
+function parseInput(value: string, timeZone: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) return null;
+  const local = Date.UTC(+match[1], +match[2] - 1, +match[3], +match[4], +match[5]);
+  const first = local - zoneOffsetMs(local, timeZone);
+  const timestamp = local - zoneOffsetMs(first, timeZone);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function startOfZonedDay(timestamp: number, timeZone: string) {
+  const p = partsInZone(timestamp, timeZone);
+  return parseInput(`${p.year}-${p.month}-${p.day}T00:00`, timeZone) ?? timestamp;
+}
+
 export default function ReplayDateRangeSheet({
   open,
   bounds,
   window,
+  timeZone,
   onApply,
   onReset,
   onClose,
 }: ReplayDateRangeSheetProps) {
-  const [draft, setDraft] = useState<{ start: number; end: number } | null>(null);
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
 
-  // Re-seed the draft from the applied window (or full bounds) whenever the sheet
-  // opens, so each visit starts from the current truth.
   useEffect(() => {
-    if (!open || !bounds) return;
-    setDraft({
-      start: window?.startAt ?? bounds.min,
-      end: window?.endAt ?? bounds.max,
-    });
-  }, [open, bounds, window]);
+    if (!open) return;
+    let saved: { startAt: number; endAt: number } | null = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(LAST_RANGE_KEY) ?? "null") as typeof saved;
+    } catch {
+      saved = null;
+    }
+    const range = window ?? saved ?? (bounds ? { startAt: bounds.min, endAt: bounds.max } : null);
+    if (!range) return;
+    setStart(inputValue(range.startAt, timeZone));
+    setEnd(inputValue(range.endAt, timeZone));
+  }, [open, bounds, window, timeZone]);
 
-  const effectiveDraft =
-    draft ?? (bounds ? { start: bounds.min, end: bounds.max } : null);
+  const parsed = useMemo(() => {
+    const startAt = parseInput(start, timeZone);
+    const endAt = parseInput(end, timeZone);
+    return startAt !== null && endAt !== null && startAt <= endAt ? { startAt, endAt } : null;
+  }, [start, end, timeZone]);
+
+  const applyShortcut = (kind: "today" | "yesterday" | "last24") => {
+    const now = Date.now();
+    const today = startOfZonedDay(now, timeZone);
+    const startAt = kind === "today" ? today : kind === "yesterday" ? today - 86_400_000 : now - 86_400_000;
+    const endAt = kind === "yesterday" ? today - 1 : now;
+    setStart(inputValue(Math.max(bounds?.min ?? startAt, startAt), timeZone));
+    setEnd(inputValue(Math.min(bounds?.max ?? endAt, endAt), timeZone));
+  };
 
   return (
-    <Sheet
-      open={open}
-      modal={false}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-    >
-      <SheetContent
-        side="bottom"
-        showBackdrop={false}
-        className="z-[60] mx-auto max-w-md gap-6 rounded-t-xl px-5 pb-8 pt-3"
-        aria-label="Replay date range"
-      >
+    <Sheet open={open} modal={false} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <SheetContent side="bottom" showBackdrop={false} className="z-[60] mx-auto max-w-md gap-5 rounded-t-xl px-5 pb-8 pt-3" aria-label="Replay date range">
         <div className="mx-auto h-1 w-12 rounded-full bg-[var(--line-soft)]" aria-hidden="true" />
-
         <div className="flex items-center justify-between">
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-sm font-medium text-[var(--ink-2)] transition-colors hover:text-[var(--ink-1)]"
-          >
-            Cancel
-          </button>
-          <SheetTitle className="text-base font-semibold text-[var(--ink-1)]">
-            Select Date Range
-          </SheetTitle>
-          <button
-            type="button"
-            disabled={!effectiveDraft}
-            onClick={() => {
-              if (effectiveDraft) onApply(effectiveDraft.start, effectiveDraft.end);
-            }}
-            className="text-sm font-semibold text-[var(--flag)] transition-opacity hover:opacity-80 disabled:opacity-40"
-          >
-            Apply
-          </button>
+          <button type="button" onClick={onClose} className="text-sm font-medium text-[var(--ink-2)]">Cancel</button>
+          <SheetTitle className="text-base font-semibold text-[var(--ink-1)]">Custom Date Range</SheetTitle>
+          <button type="button" disabled={!parsed} onClick={() => {
+            if (!parsed) return;
+            try { localStorage.setItem(LAST_RANGE_KEY, JSON.stringify(parsed)); } catch { /* best effort */ }
+            onApply(parsed.startAt, parsed.endAt);
+          }} className="text-sm font-semibold text-[var(--flag)] disabled:opacity-40">Apply</button>
         </div>
 
-        {!bounds || !effectiveDraft ? (
-          <p className="py-6 text-center text-sm text-[var(--ink-3)]">
-            No trip data to filter yet.
-          </p>
-        ) : (
-          <>
-            <div className="flex gap-3">
-              <div className="flex-1 rounded-lg bg-[var(--meter-track)] p-3 text-center">
-                <span className="mb-1 block text-xs text-[var(--ink-3)]">Start</span>
-                <span className="text-sm font-semibold text-[var(--ink-1)]">
-                  {formatDateTime(effectiveDraft.start)}
-                </span>
-              </div>
-              <div className="flex-1 rounded-lg bg-[var(--meter-track)] p-3 text-center">
-                <span className="mb-1 block text-xs text-[var(--ink-3)]">End</span>
-                <span className="text-sm font-semibold text-[var(--ink-1)]">
-                  {formatDateTime(effectiveDraft.end)}
-                </span>
-              </div>
-            </div>
-
-            <DualRangeSlider
-              min={bounds.min}
-              max={bounds.max}
-              step={SLIDER_STEP_MS}
-              value={effectiveDraft}
-              onChange={setDraft}
-              startLabel="Replay window start"
-              endLabel="Replay window end"
-            />
-
-            <div className="flex items-center justify-between text-xs text-[var(--ink-3)]">
-              <span>{formatDateTime(bounds.min)}</span>
-              <span>{formatDateTime(bounds.max)}</span>
-            </div>
-
-            {window ? (
-              <button
-                type="button"
-                onClick={onReset}
-                className="w-full rounded-full bg-[var(--meter-track)] py-2.5 text-sm font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
-              >
-                Reset to full trip
-              </button>
-            ) : null}
-          </>
-        )}
+        <p className="text-center text-xs text-[var(--ink-3)]">Times use {timeZone}.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-xs font-medium text-[var(--ink-2)]">Start
+            <input type="datetime-local" value={start} onChange={(event) => setStart(event.currentTarget.value)} className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--ink-1)]" />
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-[var(--ink-2)]">End
+            <input type="datetime-local" value={end} onChange={(event) => setEnd(event.currentTarget.value)} className="rounded-lg border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--ink-1)]" />
+          </label>
+        </div>
+        {!parsed && start && end ? <p role="alert" className="text-xs text-[var(--ink-danger)]">End must be at or after start.</p> : null}
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" onClick={() => applyShortcut("today")} className="rounded-full bg-[var(--meter-track)] py-2 text-xs font-semibold">Today</button>
+          <button type="button" onClick={() => applyShortcut("yesterday")} className="rounded-full bg-[var(--meter-track)] py-2 text-xs font-semibold">Yesterday</button>
+          <button type="button" onClick={() => applyShortcut("last24")} className="rounded-full bg-[var(--meter-track)] py-2 text-xs font-semibold">Last 24 hours</button>
+          <button type="button" onClick={onReset} disabled={!bounds} className="rounded-full bg-[var(--meter-track)] py-2 text-xs font-semibold disabled:opacity-40">Full trip</button>
+        </div>
       </SheetContent>
     </Sheet>
   );
