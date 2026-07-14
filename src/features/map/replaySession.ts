@@ -348,7 +348,7 @@ export class ProgressiveReplaySession {
     if (this.breadcrumbScan.hasMore) {
       const args = argsFor(this.breadcrumbScan.cursor);
       tasks.push(cachedPage(this.sessionKey, "breadcrumbs", args, () => this.queries.breadcrumbs(args)).then(({ value: page, cache }) => {
-        this.breadcrumbScan.rows.push(...page.page);
+        this.breadcrumbScan.rows = [...this.breadcrumbScan.rows, ...page.page];
         this.breadcrumbScan.cursor = page.continueCursor;
         this.breadcrumbScan.hasMore = page.hasMore;
         this.breadcrumbScan.trueEnd = page.reachedTrueEnd;
@@ -365,7 +365,7 @@ export class ProgressiveReplaySession {
     if (this.storyScan.hasMore) {
       const args = argsFor(this.storyScan.cursor);
       tasks.push(cachedPage(this.sessionKey, "stories", args, () => this.queries.stories(args)).then(({ value: page, cache }) => {
-        this.storyScan.rows.push(...page.page);
+        this.storyScan.rows = [...this.storyScan.rows, ...page.page];
         this.storyScan.cursor = page.continueCursor;
         this.storyScan.hasMore = page.hasMore;
         this.storyScan.trueEnd = page.reachedTrueEnd;

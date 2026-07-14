@@ -351,23 +351,34 @@ function makeJournalEvent(overrides: Partial<JournalEvent> = {}): JournalEvent {
 function mockReplayQueries({
   breadcrumbs = [],
   stories = [],
+  breadcrumbPageSize,
 }: {
   breadcrumbs?: Array<{ _id: string; lat: number; lon: number; sampledAt: number; accuracy?: number }>;
   stories?: JournalEvent[];
+  breadcrumbPageSize?: number;
 }) {
-  convexQuery.mockImplementation((query: unknown, args: { startAt?: number; endAt?: number; direction?: "asc" | "desc" }) => {
+  convexQuery.mockImplementation((query: unknown, args: {
+    startAt?: number;
+    endAt?: number;
+    direction?: "asc" | "desc";
+    paginationOpts?: { cursor?: string | null };
+  }) => {
     const startAt = args?.startAt ?? Number.NEGATIVE_INFINITY;
     const endAt = args?.endAt ?? Number.POSITIVE_INFINITY;
     const direction = args?.direction ?? "asc";
     if (query === tripcastApi.liveTrail.listReplayLiveTrailSamples) {
-      const page = breadcrumbs
+      const matching = breadcrumbs
         .filter((sample) => sample.sampledAt >= startAt && sample.sampledAt <= endAt)
         .sort((a, b) => direction === "asc" ? a.sampledAt - b.sampledAt : b.sampledAt - a.sampledAt);
+      const offset = breadcrumbPageSize === undefined ? 0 : Number(args.paginationOpts?.cursor ?? 0);
+      const page = breadcrumbPageSize === undefined ? matching : matching.slice(offset, offset + breadcrumbPageSize);
+      const nextOffset = offset + page.length;
+      const hasMore = nextOffset < matching.length;
       return Promise.resolve({
         page,
-        hasMore: false,
-        reachedTrueEnd: true,
-        continueCursor: "done",
+        hasMore,
+        reachedTrueEnd: !hasMore,
+        continueCursor: hasMore ? String(nextOffset) : "done",
         effectiveStartAt: Number.isFinite(startAt) ? startAt : null,
         effectiveEndAt: Number.isFinite(endAt) ? endAt : null,
         scanBoundaryAt: page.at(-1)?.sampledAt ?? (direction === "asc" ? endAt : startAt),
@@ -2067,6 +2078,31 @@ describe("TripMap location marker", () => {
         replaySamples,
         true,
       );
+    });
+  });
+
+  it("updates the rendered path when progressive Replay loads a second breadcrumb page", async () => {
+    const replaySamples = Array.from({ length: 70 }, (_, index) => ({
+      _id: `page-sample-${index + 1}`,
+      lat: 47.6 + index / 10_000,
+      lon: -122.3 - index / 10_000,
+      sampledAt: 1_000 + index * 5_000,
+    }));
+    mockReplayQueries({ breadcrumbs: replaySamples, breadcrumbPageSize: 51 });
+
+    render(<TripMap token="test-token" role="traveler" />);
+    await startReplay();
+
+    await waitFor(() => {
+      expect(convexQuery).toHaveBeenCalledWith(
+        tripcastApi.liveTrail.listReplayLiveTrailSamples,
+        expect.objectContaining({
+          paginationOpts: expect.objectContaining({ cursor: "51" }),
+        }),
+      );
+      expect(vi.mocked(useTripPath).mock.calls.some((call) =>
+        Array.isArray(call[6]) && call[6].length === replaySamples.length
+      )).toBe(true);
     });
   });
 

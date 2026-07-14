@@ -115,9 +115,15 @@ describe("replaySession", () => {
       },
     });
 
+    const initialBreadcrumbs = initial.breadcrumbs;
+    const initialStories = initial.stories;
     const complete = await session.loadMore();
     expect(complete.pins.map((pin) => pin.occurredAt)).toEqual([1_000, 2_000, 7_000, 8_000]);
     expect(complete.reachedTrueEnd).toBe(true);
+    expect(complete.breadcrumbs).not.toBe(initialBreadcrumbs);
+    expect(complete.stories).not.toBe(initialStories);
+    expect(initialBreadcrumbs.map((sample) => sample.sampledAt)).toEqual([1_000, 7_000]);
+    expect(initialStories.map((event) => event.occurredAt)).toEqual([2_000]);
   });
 
   it("selects the latest 50 merged pins for Recent activity", async () => {
