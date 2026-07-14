@@ -24,8 +24,6 @@ const MockHydrator = ({ children }: { children: React.ReactNode }) => {
     setQueryMock(tripcastApi.liveTrail.travelerGetLiveTrailStatus, {
       enabled: true,
       visibleToFollowers: false,
-      sampleCount: 4,
-      samples: [],
     });
     setQueryMock(tripcastApi.travelerAutoState.travelerGetAutoState, {
       autoStateEnabled: false,

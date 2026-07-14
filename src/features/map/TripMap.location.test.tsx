@@ -237,13 +237,8 @@ function setupQueries({
   liveTrailStatus = {
     enabled: false,
     visibleToFollowers: false,
-    sampleCount: 0,
-    samples: [],
   },
-  followerLiveTrail = {
-    visible: false,
-    samples: [],
-  },
+  latestLiveTrailSample = null,
 }: {
   checkpoints?: Array<{
     _id: string;
@@ -271,24 +266,14 @@ function setupQueries({
   liveTrailStatus?: {
     enabled: boolean;
     visibleToFollowers: boolean;
-    sampleCount: number;
-    samples: Array<{
-      _id: string;
-      lat: number;
-      lon: number;
-      sampledAt: number;
-      accuracy?: number;
-    }>;
   };
-  followerLiveTrail?: {
-    visible: boolean;
-    samples: Array<{
-      _id: string;
-      lat: number;
-      lon: number;
-      sampledAt: number;
-    }>;
-  };
+  latestLiveTrailSample?: {
+    _id: string;
+    lat: number;
+    lon: number;
+    sampledAt: number;
+    accuracy?: number;
+  } | null;
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((query: unknown) => {
     if (query === tripcastApi.checkpoints.listCheckpoints) return checkpoints;
@@ -298,8 +283,8 @@ function setupQueries({
     if (query === tripcastApi.liveTrail.travelerGetLiveTrailStatus) {
       return liveTrailStatus;
     }
-    if (query === tripcastApi.liveTrail.followerListLiveTrailSamples) {
-      return followerLiveTrail;
+    if (query === tripcastApi.liveTrail.getLatestLiveTrailSample) {
+      return latestLiveTrailSample;
     }
     if (query === tripcastApi.travelerPreferences.followerGetPreferences) {
       return { visible: true, allowFollowersTripPath };
@@ -1552,11 +1537,6 @@ describe("TripMap location marker", () => {
       liveTrailStatus: {
         enabled: true,
         visibleToFollowers: true,
-        sampleCount: 2,
-        samples: [
-          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
-          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
-        ],
       },
     });
 
@@ -1575,8 +1555,6 @@ describe("TripMap location marker", () => {
       liveTrailStatus: {
         enabled: true,
         visibleToFollowers: true,
-        sampleCount: 0,
-        samples: [],
       },
     });
 
@@ -1605,8 +1583,6 @@ describe("TripMap location marker", () => {
       liveTrailStatus: {
         enabled: false,
         visibleToFollowers: false,
-        sampleCount: 0,
-        samples: [],
       },
     });
 
@@ -1640,8 +1616,6 @@ describe("TripMap location marker", () => {
       liveTrailStatus: {
         enabled: true,
         visibleToFollowers: false,
-        sampleCount: 0,
-        samples: [],
       },
     });
 
@@ -1687,8 +1661,6 @@ describe("TripMap location marker", () => {
       liveTrailStatus: {
         enabled: true,
         visibleToFollowers: false,
-        sampleCount: 0,
-        samples: [],
       },
     });
 
@@ -1767,8 +1739,6 @@ describe("TripMap location marker", () => {
       liveTrailStatus: {
         enabled: true,
         visibleToFollowers: true,
-        sampleCount: 0,
-        samples: [],
       },
     });
 
@@ -1804,16 +1774,8 @@ describe("TripMap location marker", () => {
     });
   });
 
-  it("renders follower Live Trail breadcrumbs only when visible", async () => {
-    setupQueries({
-      followerLiveTrail: {
-        visible: false,
-        samples: [
-          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
-          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
-        ],
-      },
-    });
+  it("renders only the latest permitted follower Live Trail sample", async () => {
+    setupQueries({ latestLiveTrailSample: null });
 
     const { rerender } = render(<TripMap token="test-token" role="follower" />);
 
@@ -1831,13 +1793,7 @@ describe("TripMap location marker", () => {
     });
 
     setupQueries({
-      followerLiveTrail: {
-        visible: true,
-        samples: [
-          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
-          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
-        ],
-      },
+      latestLiveTrailSample: { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
     });
     rerender(<TripMap token="test-token" role="follower" />);
 
@@ -1849,10 +1805,7 @@ describe("TripMap location marker", () => {
         false,
         null,
         "#444444",
-        [
-          { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: 1 },
-          { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
-        ],
+        [{ _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 }],
         true,
       );
     });
@@ -1958,9 +1911,8 @@ describe("TripMap location marker", () => {
       liveTrailStatus: {
         enabled: true,
         visibleToFollowers: true,
-        sampleCount: 1,
-        samples: [{ _id: "bc-1", lat: 47.615, lon: -122.335, sampledAt: 500 }],
       },
+      latestLiveTrailSample: { _id: "bc-1", lat: 47.615, lon: -122.335, sampledAt: 500 },
     });
 
     render(<TripMap token="test-token" role="traveler" />);
@@ -1985,9 +1937,8 @@ describe("TripMap location marker", () => {
       liveTrailStatus: {
         enabled: true,
         visibleToFollowers: true,
-        sampleCount: 1,
-        samples: [{ _id: "recent-1", lat: 47.615, lon: -122.335, sampledAt: 500 }],
       },
+      latestLiveTrailSample: { _id: "recent-1", lat: 47.615, lon: -122.335, sampledAt: 500 },
     });
     const replaySamples = [
       { _id: "older-1", lat: 47.601, lon: -122.301, sampledAt: 100 },
@@ -2129,8 +2080,7 @@ describe("TripMap location marker", () => {
     });
     setupQueries({
       journalEvents: [],
-      // Follower needs the Traveler to opt-in to live-trail visibility for replay to show breadcrumbs.
-      followerLiveTrail: { visible: true, samples: breadcrumbs },
+      latestLiveTrailSample: breadcrumbs.at(-1),
       allowFollowersTripPath: true,
     });
 
@@ -2361,7 +2311,7 @@ describe("TripMap fix overlay debug densifier", () => {
       onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
     });
     setupQueries({
-      liveTrailStatus: { enabled: true, visibleToFollowers: false, sampleCount: 0, samples: [] },
+      liveTrailStatus: { enabled: true, visibleToFollowers: false },
     });
 
     render(<TripMap token="test-token" role="traveler" />);
@@ -2386,7 +2336,7 @@ describe("TripMap fix overlay debug densifier", () => {
       return 42;
     });
     setupQueries({
-      liveTrailStatus: { enabled: true, visibleToFollowers: false, sampleCount: 0, samples: [] },
+      liveTrailStatus: { enabled: true, visibleToFollowers: false },
     });
 
     render(<TripMap token="test-token" role="traveler" />);
@@ -2413,7 +2363,7 @@ describe("TripMap fix overlay debug densifier", () => {
       onSuccess({ coords: { latitude: 47.62, longitude: -122.34, accuracy: 9 } });
     });
     setupQueries({
-      liveTrailStatus: { enabled: true, visibleToFollowers: false, sampleCount: 0, samples: [] },
+      liveTrailStatus: { enabled: true, visibleToFollowers: false },
     });
 
     render(<TripMap token="test-token" role="traveler" />);
