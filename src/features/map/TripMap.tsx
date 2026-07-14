@@ -61,6 +61,7 @@ import {
   SheetContent,
   SheetTitle,
 } from "../../components/ui/sheet";
+import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import { useImagePrefetch } from "../journal/useImagePrefetch";
 import { useEgressMeter } from "../journal/useEgressMeter";
 import { uploadStoryImage } from "../journal/storyImageUpload";
@@ -1429,6 +1430,8 @@ export default function TripMap({
   });
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [selectedStoryDetail, setSelectedStoryDetail] = useState<SelectedStoryDetail | null>(null);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deletingBreadcrumbId, setDeletingBreadcrumbId] = useState<string | null>(null);
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
   const [isTravelFundsSheetOpen, setIsTravelFundsSheetOpen] = useState(false);
@@ -1532,6 +1535,7 @@ export default function TripMap({
   const movementDebugRef = useRef({ records: movementDebugRecords, speed: movementDebugSpeed });
   movementDebugRef.current = { records: movementDebugRecords, speed: movementDebugSpeed };
   const addCloakingPin = useMutation(tripcastApi.cloakingPins.travelerAddCloakingPin);
+  const deleteBreadcrumb = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailSamples);
   const cloakingPinsData = useQuery(
     tripcastApi.cloakingPins.travelerListCloakingPins,
     role === "traveler" ? { token } : "skip",
@@ -4317,6 +4321,36 @@ export default function TripMap({
     });
   }, [currentReplayPin, music, focusCoordinate]);
 
+  const handleDeleteBreadcrumb = useCallback(() => {
+    if (!currentReplayPin || currentReplayPin.kind !== "breadcrumb" || !currentReplayPin.eventId) return;
+
+    const sampleId = currentReplayPin.eventId;
+    let previousSamples: LiveTrailSample[] | null = null;
+
+    setDeletingBreadcrumbId(sampleId);
+    setReplayTrailSamples((prev) => {
+      previousSamples = prev;
+      return prev ? prev.filter((sample) => sample._id !== sampleId) : prev;
+    });
+
+    void deleteBreadcrumb({ token, sampleIds: [sampleId] })
+      .then(({ deleted }) => {
+        if (deleted === 0 && previousSamples) {
+          setReplayTrailSamples(previousSamples);
+        }
+      })
+      .catch((err) => {
+        if (previousSamples) setReplayTrailSamples(previousSamples);
+        log.error("replay:delete-breadcrumb:error", "mutation", { message: err instanceof Error ? err.message : String(err) });
+      })
+      .finally(() => {
+        setDeletingBreadcrumbId((current) => (current === sampleId ? null : current));
+      });
+
+    music.sfx("close");
+    log.logInteraction("replay:breadcrumb-delete", { sampleId });
+  }, [currentReplayPin, deleteBreadcrumb, token, log, music]);
+
   function handleNavigateStoryDetail(direction: StoryNavigationDirection) {
     if (!storyNavigation) {
       log.logInteraction("story:navigate:boundary", { direction, reason: "navigation-unavailable" });
@@ -4730,12 +4764,12 @@ export default function TripMap({
         )}
         {replayActive && replayPaused && role === "traveler" && currentReplayPin?.kind === "breadcrumb" && (
           <motion.div
-            key="breadcrumb-checkin"
+            key="breadcrumb-actions"
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.8, opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="pointer-events-none absolute inset-x-0 bottom-[56%] z-[19] flex justify-center px-4"
+            className="pointer-events-none absolute inset-x-0 bottom-[56%] z-[19] flex flex-col items-center gap-2 px-4"
           >
             <button
               type="button"
@@ -4744,6 +4778,15 @@ export default function TripMap({
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Check In
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsDeleteConfirmOpen(true)}
+              disabled={deletingBreadcrumbId === currentReplayPin.eventId}
+              className="pointer-events-auto flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-[var(--shadow-card)] hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+              {deletingBreadcrumbId === currentReplayPin.eventId ? "Deleting…" : "Delete"}
             </button>
           </motion.div>
         )}
@@ -5509,6 +5552,17 @@ export default function TripMap({
           />
         </Suspense>
       </FeatureBoundary>
+
+      <ConfirmModal
+        open={isDeleteConfirmOpen}
+        onOpenChange={setIsDeleteConfirmOpen}
+        title="Delete trail sample?"
+        description="Are you sure you want to delete this breadcrumb? This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Keep"
+        onConfirm={handleDeleteBreadcrumb}
+        variant="danger"
+      />
 
       <Suspense fallback={null}>
         <StoryDetailSheet
