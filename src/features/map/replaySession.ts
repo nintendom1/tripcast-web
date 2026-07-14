@@ -49,6 +49,14 @@ export type ReplaySessionSnapshot = {
   error: string | null;
 };
 
+export type ReplayLoadReason = "initial" | "low-buffer" | "loaded-edge" | "next" | "retry" | "resume-search" | "resume-forward" | "manual";
+export type ReplayLoadLogEntry = {
+  action: "replay:load:session-start" | "replay:load:batch" | "replay:load:ready" | "replay:load:error";
+  level: "info" | "error";
+  details: Record<string, unknown>;
+};
+export type ReplayLoadLogger = (entry: ReplayLoadLogEntry) => void;
+
 type Direction = "asc" | "desc";
 type PageArgs = {
   startAt?: number;
@@ -175,8 +183,10 @@ export function estimateReplayBufferMs(
 }
 
 type CacheEntry = { value: unknown; touchedAt: number; sessionKey: string };
+type CacheResult<T> = { value: T; cache: "hit" | "miss" };
 const pageCache = new Map<string, CacheEntry>();
 let cacheIdentity = "";
+let nextReplayLogSessionId = 1;
 
 export function setReplayCacheIdentity(token: string, role: Role, cutoffAt: number | null) {
   const next = `${token}:${role}:${cutoffAt ?? "none"}`;
@@ -190,12 +200,12 @@ function cacheKey(sessionKey: string, source: string, args: PageArgs) {
   return `${cacheIdentity}:${sessionKey}:${source}:${args.startAt ?? ""}:${args.endAt ?? ""}:${args.direction}:${args.cursor ?? ""}`;
 }
 
-async function cachedPage<T>(sessionKey: string, source: string, args: PageArgs, load: () => Promise<T>) {
+async function cachedPage<T>(sessionKey: string, source: string, args: PageArgs, load: () => Promise<T>): Promise<CacheResult<T>> {
   const key = cacheKey(sessionKey, source, args);
   const cached = pageCache.get(key);
   if (cached) {
     cached.touchedAt = Date.now();
-    return cached.value as T;
+    return { value: cached.value as T, cache: "hit" };
   }
   const value = await load();
   pageCache.set(key, { value, touchedAt: Date.now(), sessionKey });
@@ -206,7 +216,7 @@ async function cachedPage<T>(sessionKey: string, source: string, args: PageArgs,
   for (const [entryKey, entry] of pageCache) {
     if (!retained.has(entry.sessionKey)) pageCache.delete(entryKey);
   }
-  return value;
+  return { value, cache: "miss" };
 }
 
 export class ProgressiveReplaySession {
@@ -216,6 +226,8 @@ export class ProgressiveReplaySession {
   private direction: Direction;
   private fetchStartAt?: number;
   private fetchEndAt: number;
+  private batch = 0;
+  private readonly logSessionId = nextReplayLogSessionId++;
   private state: ReplaySessionSnapshot = {
     pins: [], stories: [], breadcrumbs: [], hasMore: true, reachedTrueEnd: false, loading: false, error: null,
   };
@@ -226,6 +238,7 @@ export class ProgressiveReplaySession {
     private queries: ReplayQueries,
     private resumeAt?: number,
     legacyFallback = false,
+    private readonly loadLogger?: ReplayLoadLogger,
   ) {
     this.direction = legacyFallback ? "asc" : source.mode === "recent" || resumeAt !== undefined ? "desc" : "asc";
     this.fetchStartAt = source.startAt;
@@ -235,11 +248,21 @@ export class ProgressiveReplaySession {
   snapshot() { return this.state; }
 
   async start(speed: number, beatMs: (kind: ReplayPin["kind"], speed: number) => number, pinStep: (speed: number) => number) {
+    const startedAt = performance.now();
+    this.emit("replay:load:session-start", "info", {
+      sourceMode: this.source.mode,
+      direction: this.direction,
+      resume: this.resumeAt !== undefined,
+      rangeSpanMs: this.source.startAt === undefined ? null : Math.max(0, this.source.endAt - this.source.startAt),
+      speed,
+      initialBufferMs: REPLAY_INITIAL_BUFFER_SECONDS * 1_000,
+      prefetchBufferMs: REPLAY_PREFETCH_SECONDS * 1_000,
+      targetBufferMs: REPLAY_TARGET_BUFFER_SECONDS * 1_000,
+    });
     this.state = { ...this.state, loading: true, error: null };
     try {
       do {
-        await this.fetchPair();
-        this.rebuild();
+        await this.fetchPair("initial");
       } while (
         this.state.hasMore &&
         (this.direction === "desc"
@@ -258,39 +281,62 @@ export class ProgressiveReplaySession {
         this.storyScan.hasMore = true;
         this.breadcrumbScan.trueEnd = false;
         this.storyScan.trueEnd = false;
-        await this.fetchPair();
-        this.rebuild();
+        await this.fetchPair("resume-forward");
       }
       if (this.source.mode === "recent" && this.resumeAt === undefined && this.direction === "desc") {
         this.state = { ...this.state, hasMore: false, reachedTrueEnd: true };
       }
       this.state = { ...this.state, loading: false };
+      this.emit("replay:load:ready", "info", {
+        durationMs: Math.round(performance.now() - startedAt),
+        batches: this.batch,
+        pins: this.state.pins.length,
+        bufferedMs: estimateReplayBufferMs(this.state.pins, 0, speed, beatMs, pinStep),
+        hasMore: this.state.hasMore,
+        reachedTrueEnd: this.state.reachedTrueEnd,
+      });
       return this.state;
     } catch (error) {
-      this.state = { ...this.state, loading: false, error: error instanceof Error ? error.message : String(error) };
+      const message = error instanceof Error ? error.message : String(error);
+      this.state = { ...this.state, loading: false, error: message };
+      this.emit("replay:load:error", "error", {
+        phase: "start",
+        durationMs: Math.round(performance.now() - startedAt),
+        batches: this.batch,
+        message,
+      });
       return this.state;
     }
   }
 
-  loadMore() {
+  loadMore(reason: ReplayLoadReason = "manual") {
     if (this.forwardRequest) return this.forwardRequest;
     if (!this.state.hasMore) return Promise.resolve(this.state);
     this.state = { ...this.state, loading: true, error: null };
-    this.forwardRequest = this.fetchPair()
+    const startedAt = performance.now();
+    this.forwardRequest = this.fetchPair(reason)
       .then(() => {
-        this.rebuild();
         this.state = { ...this.state, loading: false };
         return this.state;
       })
       .catch((error) => {
-        this.state = { ...this.state, loading: false, error: error instanceof Error ? error.message : String(error) };
+        const message = error instanceof Error ? error.message : String(error);
+        this.state = { ...this.state, loading: false, error: message };
+        this.emit("replay:load:error", "error", {
+          phase: reason,
+          durationMs: Math.round(performance.now() - startedAt),
+          batches: this.batch,
+          message,
+        });
         return this.state;
       })
       .finally(() => { this.forwardRequest = null; });
     return this.forwardRequest;
   }
 
-  private async fetchPair() {
+  private async fetchPair(reason: ReplayLoadReason) {
+    const startedAt = performance.now();
+    const batch = ++this.batch;
     const argsFor = (cursor: string | null): PageArgs => ({
       startAt: this.fetchStartAt,
       endAt: this.fetchEndAt,
@@ -298,27 +344,56 @@ export class ProgressiveReplaySession {
       cursor,
     });
     const tasks: Array<Promise<void>> = [];
+    const sources: Record<string, Record<string, unknown>> = {};
     if (this.breadcrumbScan.hasMore) {
       const args = argsFor(this.breadcrumbScan.cursor);
-      tasks.push(cachedPage(this.sessionKey, "breadcrumbs", args, () => this.queries.breadcrumbs(args)).then((page) => {
+      tasks.push(cachedPage(this.sessionKey, "breadcrumbs", args, () => this.queries.breadcrumbs(args)).then(({ value: page, cache }) => {
         this.breadcrumbScan.rows.push(...page.page);
         this.breadcrumbScan.cursor = page.continueCursor;
         this.breadcrumbScan.hasMore = page.hasMore;
         this.breadcrumbScan.trueEnd = page.reachedTrueEnd;
         this.breadcrumbScan.boundary = page.scanBoundaryAt;
+        sources.breadcrumbs = {
+          returned: page.page.length,
+          total: this.breadcrumbScan.rows.length,
+          cache,
+          hasMore: page.hasMore,
+          reachedTrueEnd: page.reachedTrueEnd,
+        };
       }));
     }
     if (this.storyScan.hasMore) {
       const args = argsFor(this.storyScan.cursor);
-      tasks.push(cachedPage(this.sessionKey, "stories", args, () => this.queries.stories(args)).then((page) => {
+      tasks.push(cachedPage(this.sessionKey, "stories", args, () => this.queries.stories(args)).then(({ value: page, cache }) => {
         this.storyScan.rows.push(...page.page);
         this.storyScan.cursor = page.continueCursor;
         this.storyScan.hasMore = page.hasMore;
         this.storyScan.trueEnd = page.reachedTrueEnd;
         this.storyScan.boundary = page.scanBoundaryAt;
+        sources.stories = {
+          returned: page.page.length,
+          total: this.storyScan.rows.length,
+          cache,
+          hasMore: page.hasMore,
+          reachedTrueEnd: page.reachedTrueEnd,
+        };
       }));
     }
     await Promise.all(tasks);
+    const rebuild = this.rebuild();
+    this.emit("replay:load:batch", "info", {
+      batch,
+      reason,
+      direction: this.direction,
+      durationMs: Math.round(performance.now() - startedAt),
+      sources,
+      candidatePins: rebuild.candidatePins,
+      exposedPins: this.state.pins.length,
+      withheldPins: rebuild.withheldPins,
+      frontierDistanceFromEndMs: rebuild.frontierDistanceFromEndMs,
+      hasMore: this.state.hasMore,
+      reachedTrueEnd: this.state.reachedTrueEnd,
+    });
   }
 
   private rebuild() {
@@ -342,5 +417,14 @@ export class ProgressiveReplaySession {
       loading: this.state.loading,
       error: null,
     };
+    return {
+      candidatePins: allPins.length,
+      withheldPins: allPins.length - pins.length,
+      frontierDistanceFromEndMs: Number.isFinite(frontier) ? Math.max(0, this.fetchEndAt - frontier) : null,
+    };
+  }
+
+  private emit(action: ReplayLoadLogEntry["action"], level: ReplayLoadLogEntry["level"], details: Record<string, unknown>) {
+    this.loadLogger?.({ action, level, details: { sessionId: this.logSessionId, ...details } });
   }
 }

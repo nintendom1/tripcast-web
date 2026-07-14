@@ -10,6 +10,7 @@ import {
   setReplayCacheIdentity,
   writeReplayResume,
   type ReplaySource,
+  type ReplayLoadLogEntry,
 } from "./replaySession";
 
 const source: ReplaySource = { mode: "beginning", startAt: 0, endAt: 10_000 };
@@ -79,24 +80,43 @@ describe("replaySession", () => {
   });
 
   it("exposes pins only through the frontier scanned by both sources", async () => {
+    const logs: ReplayLoadLogEntry[] = [];
     const breadcrumbs = vi.fn()
-      .mockResolvedValueOnce(breadcrumbPage([breadcrumb(1), breadcrumb(3)], {
-        hasMore: true, reachedTrueEnd: false, continueCursor: "b1", scanBoundaryAt: 3_000,
+      .mockResolvedValueOnce(breadcrumbPage([breadcrumb(1), breadcrumb(3, 7_000)], {
+        hasMore: true, reachedTrueEnd: false, continueCursor: "b1", scanBoundaryAt: 7_000,
       }))
-      .mockResolvedValueOnce(breadcrumbPage([breadcrumb(5)], { scanBoundaryAt: 5_000 }));
+      .mockResolvedValueOnce(breadcrumbPage([breadcrumb(5, 9_000)], { scanBoundaryAt: 9_000 }));
     const stories = vi.fn()
       .mockResolvedValueOnce(storyPage([story(2)], {
         hasMore: true, reachedTrueEnd: false, continueCursor: "s1", scanBoundaryAt: 2_000,
       }))
-      .mockResolvedValueOnce(storyPage([story(4)], { scanBoundaryAt: 4_000 }));
-    const session = new ProgressiveReplaySession("frontier", source, { breadcrumbs, stories });
+      .mockResolvedValueOnce(storyPage([story(4, 8_000)], { scanBoundaryAt: 8_000 }));
+    const session = new ProgressiveReplaySession("frontier", source, { breadcrumbs, stories }, undefined, false, (entry) => logs.push(entry));
 
     const initial = await session.start(1, () => 10_000, () => 1);
     expect(initial.pins.map((pin) => pin.occurredAt)).toEqual([1_000, 2_000]);
     expect(initial.hasMore).toBe(true);
+    expect(logs.map((entry) => entry.action)).toEqual([
+      "replay:load:session-start",
+      "replay:load:batch",
+      "replay:load:ready",
+    ]);
+    expect(logs[1].details).toMatchObject({
+      batch: 1,
+      reason: "initial",
+      direction: "asc",
+      candidatePins: 3,
+      exposedPins: 2,
+      withheldPins: 1,
+      frontierDistanceFromEndMs: 8_000,
+      sources: {
+        breadcrumbs: { returned: 2, cache: "miss", hasMore: true },
+        stories: { returned: 1, cache: "miss", hasMore: true },
+      },
+    });
 
     const complete = await session.loadMore();
-    expect(complete.pins.map((pin) => pin.occurredAt)).toEqual([1_000, 2_000, 4_000]);
+    expect(complete.pins.map((pin) => pin.occurredAt)).toEqual([1_000, 2_000, 7_000, 8_000]);
     expect(complete.reachedTrueEnd).toBe(true);
   });
 
@@ -126,17 +146,42 @@ describe("replaySession", () => {
   });
 
   it("reuses cached pages and clears them when token, role, or cutoff identity changes", async () => {
+    const cachedLogs: ReplayLoadLogEntry[] = [];
     const breadcrumbs = vi.fn().mockResolvedValue(breadcrumbPage([breadcrumb(1), breadcrumb(2)]));
     const stories = vi.fn().mockResolvedValue(storyPage([]));
     const first = new ProgressiveReplaySession("cache", source, { breadcrumbs, stories });
-    const second = new ProgressiveReplaySession("cache", source, { breadcrumbs, stories });
+    const second = new ProgressiveReplaySession("cache", source, { breadcrumbs, stories }, undefined, false, (entry) => cachedLogs.push(entry));
     await first.start(1, () => 10_000, () => 1);
     await second.start(1, () => 10_000, () => 1);
     expect(breadcrumbs).toHaveBeenCalledTimes(1);
+    expect(cachedLogs.find((entry) => entry.action === "replay:load:batch")?.details).toMatchObject({
+      sources: {
+        breadcrumbs: { cache: "hit" },
+        stories: { cache: "hit" },
+      },
+    });
     setReplayCacheIdentity("different-token", "traveler", null);
     const third = new ProgressiveReplaySession("cache", source, { breadcrumbs, stories });
     await third.start(1, () => 10_000, () => 1);
     expect(breadcrumbs).toHaveBeenCalledTimes(2);
+  });
+
+  it("logs progressive load errors without request cursors or row data", async () => {
+    const logs: ReplayLoadLogEntry[] = [];
+    const session = new ProgressiveReplaySession("error", source, {
+      breadcrumbs: vi.fn().mockRejectedValue(new Error("offline")),
+      stories: vi.fn().mockResolvedValue(storyPage([])),
+    }, undefined, false, (entry) => logs.push(entry));
+
+    await session.start(1, () => 10_000, () => 1);
+
+    const error = logs.at(-1);
+    expect(error).toMatchObject({
+      action: "replay:load:error",
+      level: "error",
+      details: { phase: "start", batches: 1, message: "offline" },
+    });
+    expect(JSON.stringify(error)).not.toMatch(/cursor|token|latitude|longitude|breadcrumb-/);
   });
 
   it("persists versioned resume metadata while still reading legacy values", () => {

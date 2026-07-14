@@ -1400,6 +1400,7 @@ export default function TripMap({
   const replaySessionRef = useRef<ProgressiveReplaySession | null>(null);
   const [replaySource, setReplaySource] = useState<ReplaySource | null>(null);
   const [replayBuffering, setReplayBuffering] = useState(false);
+  const replayBufferStartedAtRef = useRef<number | null>(null);
   const replayIntendedToPlayRef = useRef(false);
   // Replay-only date window. Null = full trip (no narrowing). While active and
   // set, it filters all timestamped map state (checkpoints, journal, breadcrumbs,
@@ -1760,6 +1761,14 @@ export default function TripMap({
 
     if (replaySessionState.hasMore && replayPlayheadIndex >= replayPins.length - 1) {
       replayIntendedToPlayRef.current = true;
+      if (replayBufferStartedAtRef.current === null) {
+        replayBufferStartedAtRef.current = performance.now();
+        log.logMap("replay:buffer:start", {
+          reason: "loaded-edge",
+          playhead: replayPlayheadIndex,
+          pins: replayPins.length,
+        });
+      }
       setReplayBuffering(true);
       setReplayPaused(true);
       return;
@@ -1788,20 +1797,29 @@ export default function TripMap({
       });
     }, beatMs);
     return () => window.clearTimeout(timeout);
-  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, replaySessionState.hasMore, effectiveReplaySpeed, replayPaused]);
+  }, [replayActive, replayPlayheadIndex, replayEndIndex, replayPins, replaySessionState.hasMore, effectiveReplaySpeed, replayPaused, log]);
 
-  const requestReplayMore = useCallback(async () => {
+  const requestReplayMore = useCallback(async (reason: "low-buffer" | "loaded-edge" | "next" | "retry") => {
     const session = replaySessionRef.current;
     if (!session || !session.snapshot().hasMore) return;
+    const bufferBeforeMs = estimateReplayBufferMs(
+      session.snapshot().pins,
+      replayPlayheadIndex ?? 0,
+      effectiveReplaySpeed,
+      replayBeatMs,
+      replayPinStep,
+    );
+    log.logMap("replay:load:trigger", {
+      reason,
+      playhead: replayPlayheadIndex,
+      pins: session.snapshot().pins.length,
+      bufferBeforeMs,
+    });
     let next = session.snapshot();
     do {
-      next = await session.loadMore();
+      next = await session.loadMore(reason);
       setReplaySessionState({ ...next });
-      if (next.error) {
-        setReplayBuffering(false);
-        setReplayPaused(true);
-        return;
-      }
+      if (next.error) break;
     } while (
       next.hasMore &&
       estimateReplayBufferMs(
@@ -1812,12 +1830,27 @@ export default function TripMap({
         replayPinStep,
       ) < REPLAY_TARGET_BUFFER_SECONDS * 1_000
     );
+    if (replayBufferStartedAtRef.current !== null) {
+      log.logMap("replay:buffer:end", {
+        reason,
+        durationMs: Math.round(performance.now() - replayBufferStartedAtRef.current),
+        playhead: replayPlayheadIndex,
+        pins: next.pins.length,
+        bufferAfterMs: estimateReplayBufferMs(next.pins, replayPlayheadIndex ?? 0, effectiveReplaySpeed, replayBeatMs, replayPinStep),
+        error: next.error !== null,
+      });
+      replayBufferStartedAtRef.current = null;
+    }
     setReplayBuffering(false);
+    if (next.error) {
+      setReplayPaused(true);
+      return;
+    }
     if (replayIntendedToPlayRef.current) {
       replayIntendedToPlayRef.current = false;
       setReplayPaused(false);
     }
-  }, [effectiveReplaySpeed, replayPlayheadIndex]);
+  }, [effectiveReplaySpeed, log, replayPlayheadIndex]);
 
   const startReplaySession = useCallback(async (
     source: ReplaySource,
@@ -1839,7 +1872,10 @@ export default function TripMap({
         direction: args.direction,
         paginationOpts: { numItems: 64, cursor: args.cursor, maximumRowsRead: 128, maximumBytesRead: 256_000 },
       }),
-    }, resume?.occurredAt, resume !== undefined && resume.occurredAt === undefined);
+    }, resume?.occurredAt, resume !== undefined && resume.occurredAt === undefined, (entry) => {
+      if (entry.level === "error") log.error(entry.action, "error", entry.details);
+      else log.logMap(entry.action, entry.details);
+    });
     replaySessionRef.current = session;
     setReplaySessionState({ pins: [], stories: [], breadcrumbs: [], hasMore: true, reachedTrueEnd: false, loading: true, error: null });
     let next = await session.start(replaySpeed, replayBeatMs, replayPinStep);
@@ -1850,7 +1886,7 @@ export default function TripMap({
       !next.pins.some((pin) => pin.eventId === resume.eventId) &&
       next.pins.length <= resume.fallbackIndex
     ) {
-      next = await session.loadMore();
+      next = await session.loadMore("resume-search");
     }
     setReplaySessionState({ ...next });
     if (next.error) return false;
@@ -1871,7 +1907,7 @@ export default function TripMap({
     setReplayActive(true);
     setCurrentOverlayPin(null);
     return true;
-  }, [convex, replaySpeed, showToast, token]);
+  }, [convex, log, replaySpeed, showToast, token]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || !replaySessionState.hasMore || replaySessionState.loading) return;
@@ -1882,7 +1918,9 @@ export default function TripMap({
       replayBeatMs,
       replayPinStep,
     );
-    if (replayBuffering || bufferedMs < REPLAY_PREFETCH_SECONDS * 1_000) void requestReplayMore();
+    if (replayBuffering || bufferedMs < REPLAY_PREFETCH_SECONDS * 1_000) {
+      void requestReplayMore(replayBuffering ? "loaded-edge" : "low-buffer");
+    }
   }, [replayActive, replayPlayheadIndex, replayPins, replaySessionState.hasMore, replaySessionState.loading, replayBuffering, effectiveReplaySpeed, requestReplayMore]);
 
   useEffect(() => {
@@ -4029,6 +4067,7 @@ export default function TripMap({
     setReplayPlayheadIndex(null);
     setReplayPaused(false);
     setReplayBuffering(false);
+    replayBufferStartedAtRef.current = null;
     setCurrentOverlayPin(null);
     setReplayWindow(null);
     setReplaySource(null);
@@ -4946,8 +4985,14 @@ export default function TripMap({
             onNext={() => {
               if (replaySessionState.hasMore && replayPlayheadIndex >= replayPins.length - 1) {
                 replayIntendedToPlayRef.current = false;
+                replayBufferStartedAtRef.current = performance.now();
+                log.logMap("replay:buffer:start", {
+                  reason: "next",
+                  playhead: replayPlayheadIndex,
+                  pins: replayPins.length,
+                });
                 setReplayBuffering(true);
-                void requestReplayMore();
+                void requestReplayMore("next");
                 return;
               }
               if (!replayPaused) setReplayPaused(true);
@@ -4973,7 +5018,7 @@ export default function TripMap({
               setReplayPaused(true);
               setIsReplaySettingsSheetOpen(true);
             }}
-            onRetry={() => void requestReplayMore()}
+            onRetry={() => void requestReplayMore("retry")}
             onClose={handleCloseReplay}
           />
         ) : null}
