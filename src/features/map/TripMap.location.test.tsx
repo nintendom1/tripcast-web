@@ -2488,3 +2488,45 @@ describe("TripMap fix overlay debug densifier", () => {
     vi.useRealTimers();
   });
 });
+
+describe("TripMap live location sharing persistence", () => {
+  it("persists live sharing state to localStorage when toggled", () => {
+    setupQueries({
+      liveTrailStatus: { enabled: false, visibleToFollowers: false },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    // Initially localStorage should have the enabled flag as "false" (due to the mount sync effect)
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+
+    // Toggle sharing ON
+    const startButton = screen.getByRole("button", { name: /Start sharing live location/i });
+    fireEvent.click(startButton);
+
+    // It should now be stored as "true"
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("true");
+
+    // Toggle sharing OFF
+    const stopButton = screen.getByRole("button", { name: /Stop sharing live location/i });
+    fireEvent.click(stopButton);
+
+    // It should now be stored as "false"
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+  });
+
+  it("initializes live sharing state from localStorage on mount", () => {
+    // Seed localStorage with true
+    localStorage.setItem("tripcast.live-sharing.enabled", "true");
+
+    setupQueries({
+      liveTrailStatus: { enabled: false, visibleToFollowers: false },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    // Since it was stored as true, it should start in active sharing mode
+    // (i.e. the button shown should be "Stop sharing live location")
+    expect(screen.getByRole("button", { name: /Stop sharing live location/i })).toBeInTheDocument();
+  });
+});
