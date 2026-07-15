@@ -184,9 +184,29 @@ export type PaginationOpts = {
 
 export type LiveTrailReplayPage = {
   page: LiveTrailSample[];
-  isDone: boolean;
+  hasMore: boolean;
+  reachedTrueEnd: boolean;
   continueCursor: string;
+  effectiveStartAt: number | null;
+  effectiveEndAt: number | null;
+  scanBoundaryAt: number | null;
 };
+
+export type ReplayStoryPage = {
+  page: JournalEvent[];
+  hasMore: boolean;
+  reachedTrueEnd: boolean;
+  continueCursor: string;
+  effectiveStartAt: number | null;
+  effectiveEndAt: number | null;
+  scanBoundaryAt: number | null;
+};
+
+export type ReplayResumeTarget = {
+  eventId: string;
+  occurredAt: number;
+  kind: "checkpoint" | "breadcrumb";
+} | null;
 
 export type LinkedMissionAction = "planned" | "visible" | "leave";
 
@@ -1618,7 +1638,13 @@ export const tripcastApi = {
     listReplayLiveTrailSamples: (anyApi as any).liveTrail.listReplayLiveTrailSamples as FunctionReference<
       "query",
       "public",
-      { token: string; paginationOpts: PaginationOpts; cutoffAt?: number },
+      {
+        token: string;
+        paginationOpts: PaginationOpts;
+        startAt?: number;
+        endAt?: number;
+        direction: "asc" | "desc";
+      },
       LiveTrailReplayPage
     >,
   },
@@ -2174,6 +2200,24 @@ export const tripcastApi = {
       "public",
       { token: string },
       JournalEvent[]
+    >,
+    listReplayStoryEvents: (anyApi as any).journalEvents.listReplayStoryEvents as FunctionReference<
+      "query",
+      "public",
+      {
+        token: string;
+        paginationOpts: PaginationOpts;
+        startAt?: number;
+        endAt?: number;
+        direction: "asc" | "desc";
+      },
+      ReplayStoryPage
+    >,
+    resolveReplayResumeTarget: (anyApi as any).journalEvents.resolveReplayResumeTarget as FunctionReference<
+      "query",
+      "public",
+      { token: string; eventId: string },
+      ReplayResumeTarget
     >,
   },
   endTrip: {

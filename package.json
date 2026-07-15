@@ -20,6 +20,7 @@
     "lint:terms:baseline": "node scripts/lintTerms.mjs --mode=baseline",
     "lint:terms": "node scripts/lintTerms.mjs --mode=enforce",
     "lint:fix": "eslint . --fix",
+    "fixture:replay": "node scripts/generate-replay-stress-fixture.mjs",
     "preview": "vite preview",
     "test": "vitest run",
     "test:ci": "vitest run --project=node",

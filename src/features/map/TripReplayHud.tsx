@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pause, Play, RotateCcw, Settings, X } from "lucide-react";
 
 export function formatReplayTime(timestamp: number) {
   return new Date(timestamp).toLocaleString([], {
@@ -19,13 +19,16 @@ export type TripReplayHudProps = {
   /** "Full trip" or a formatted start–end label for the active replay window. */
   windowLabel: string;
   isPaused: boolean;
+  isBuffering?: boolean;
+  loadError?: string | null;
   onTogglePause: () => void;
   onRestart: () => void;
   onNext: () => void;
   onPrevious: () => void;
   onScrub: (index: number) => void;
-  onOpenSpeedSheet: () => void;
   onOpenDateSheet: () => void;
+  onOpenSettings: () => void;
+  onRetry?: () => void;
   onClose: () => void;
 };
 
@@ -37,13 +40,16 @@ export function TripReplayHud({
   speed,
   windowLabel,
   isPaused,
+  isBuffering = false,
+  loadError = null,
   onTogglePause,
   onRestart,
   onNext,
   onPrevious,
   onScrub,
-  onOpenSpeedSheet,
   onOpenDateSheet,
+  onOpenSettings,
+  onRetry,
   onClose,
 }: TripReplayHudProps) {
   const isEnd = currentPinKind === "end";
@@ -64,11 +70,11 @@ export function TripReplayHud({
       <div className="flex items-center justify-between gap-2">
         <button
           type="button"
-          onClick={onOpenSpeedSheet}
-          aria-label="Change replay speed"
+          onClick={onOpenSettings}
+          aria-label="Open replay settings"
           className="flex min-w-[72px] flex-col items-center justify-center rounded-full bg-[var(--meter-track)] px-3 py-2 text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper)]"
         >
-          <span className="text-[11px] font-semibold leading-tight">Speed</span>
+          <Settings className="h-4 w-4" aria-hidden="true" />
           <span className="text-[10px] text-[var(--ink-3)]">{speed}x</span>
         </button>
 
@@ -96,6 +102,7 @@ export function TripReplayHud({
             <button
               type="button"
               onClick={onTogglePause}
+              disabled={isBuffering || Boolean(loadError)}
               aria-label={isPaused ? "Play replay" : "Pause replay"}
               className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-[var(--shadow-card)] transition-transform hover:scale-105 active:scale-95"
             >
@@ -144,6 +151,16 @@ export function TripReplayHud({
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
+        {isBuffering ? <p role="status" className="text-xs font-semibold text-[var(--ink-2)]">Buffering replay…</p> : null}
+        {loadError ? (
+          <div role="alert" className="flex items-center justify-between gap-2 text-xs text-[var(--ink-danger)]">
+            <span>Replay loading failed.</span>
+            <div className="flex gap-2">
+              {onRetry ? <button type="button" onClick={onRetry} className="font-semibold underline">Retry</button> : null}
+              <button type="button" onClick={onClose} className="font-semibold underline">End Replay</button>
+            </div>
+          </div>
+        ) : null}
         <input
           type="range"
           min={0}

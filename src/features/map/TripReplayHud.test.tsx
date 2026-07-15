@@ -18,8 +18,8 @@ function makeProps(overrides: Partial<TripReplayHudProps> = {}): TripReplayHudPr
     onNext: vi.fn(),
     onPrevious: vi.fn(),
     onScrub: vi.fn(),
-    onOpenSpeedSheet: vi.fn(),
     onOpenDateSheet: vi.fn(),
+    onOpenSettings: vi.fn(),
     onClose: vi.fn(),
     ...overrides,
   };
@@ -56,5 +56,30 @@ describe("TripReplayHud", () => {
     expect(screen.queryByRole("button", { name: /pause replay/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /play replay/i })).toBeNull();
     expect(screen.getByText("End of replay")).toBeInTheDocument();
+  });
+
+  it("opens settings from the cog", async () => {
+    const onOpenSettings = vi.fn();
+    const user = userEvent.setup();
+    render(<TripReplayHud {...makeProps({ onOpenSettings })} />);
+    await user.click(screen.getByRole("button", { name: "Open replay settings" }));
+    expect(onOpenSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables playback and reports buffering", () => {
+    render(<TripReplayHud {...makeProps({ isBuffering: true })} />);
+    expect(screen.getByText("Buffering replay…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Play replay" })).toBeDisabled();
+  });
+
+  it("offers Retry and End Replay after loading fails", async () => {
+    const onRetry = vi.fn();
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    render(<TripReplayHud {...makeProps({ loadError: "offline", onRetry, onClose })} />);
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await user.click(screen.getByRole("button", { name: "End Replay" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

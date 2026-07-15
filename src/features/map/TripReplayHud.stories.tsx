@@ -27,8 +27,8 @@ const meta: Meta<typeof TripReplayHud> = {
     onNext: () => {},
     onPrevious: () => {},
     onScrub: () => {},
-    onOpenSpeedSheet: () => {},
     onOpenDateSheet: () => {},
+    onOpenSettings: () => {},
     onClose: () => {},
   },
 };
@@ -55,4 +55,12 @@ export const EndOfReplay: Story = {
     currentPinKind: "end",
     playheadIndex: 100,
   },
+};
+
+export const Buffering: Story = {
+  args: { isPaused: true, isBuffering: true },
+};
+
+export const LoadFailed: Story = {
+  args: { isPaused: true, loadError: "Network unavailable", onRetry: () => {} },
 };

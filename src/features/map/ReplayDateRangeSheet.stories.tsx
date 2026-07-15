@@ -33,6 +33,7 @@ export const Default: StoryObj = {
           open={open}
           bounds={BOUNDS}
           window={window}
+          timeZone="Asia/Tokyo"
           onApply={(startAt, endAt) => {
             setWindow({ startAt, endAt });
             setOpen(false);
