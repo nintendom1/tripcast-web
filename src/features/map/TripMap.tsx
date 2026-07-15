@@ -1227,6 +1227,15 @@ export default function TripMap({
   onMapLoaded,
   onPickerActiveChange,
 }: TripMapProps) {
+  const initialLiveSharing = (() => {
+    if (role !== "traveler") return false;
+    try {
+      return localStorage.getItem("tripcast.live-sharing.enabled") === "true";
+    } catch {
+      return false;
+    }
+  })();
+
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const activeMapStyleUrlRef = useRef<string | null>(null);
@@ -1246,7 +1255,7 @@ export default function TripMap({
     typeof document === "undefined" || document.visibilityState !== "hidden",
   );
   const lastGpsFixLogAtRef = useRef<number>(0);
-  const isLocationSharingRef = useRef(false);
+  const isLocationSharingRef = useRef(initialLiveSharing);
   const liveTrailEnabledRef = useRef(false);
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
@@ -1324,7 +1333,7 @@ export default function TripMap({
   const { dismissSave } = useBackgroundSave();
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
-  const [isLocationSharing, setIsLocationSharing] = useState(false);
+  const [isLocationSharing, setIsLocationSharing] = useState(initialLiveSharing);
   // Mirrors document.visibilityState. Drives the foreground-only browser
   // watcher gate so it does not survive backgrounding (and to re-arm on
   // foreground without churning the native watcher when LIVE is on).
@@ -3157,6 +3166,11 @@ export default function TripMap({
 
   useEffect(() => {
     isLocationSharingRef.current = isLocationSharing;
+    try {
+      localStorage.setItem("tripcast.live-sharing.enabled", isLocationSharing ? "true" : "false");
+    } catch {
+      // storage unavailable or full
+    }
   }, [isLocationSharing]);
 
   useEffect(() => {
