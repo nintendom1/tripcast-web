@@ -7,6 +7,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
 import { ThemeProvider } from "../../providers/ThemeProvider";
 import * as mapService from "../map/mapService";
+import { getLiveTrailCache, resetLiveTrailCachesForTests } from "../map/liveTrailCache";
 import OptionsSheet from "./OptionsSheet";
 
 vi.mock("convex/react", () => ({
@@ -280,7 +281,8 @@ function optionSectionLabels() {
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await resetLiveTrailCachesForTests();
   vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
@@ -523,6 +525,11 @@ describe("OptionsSheet Live Trail settings", () => {
   });
 
   it("previews a deletion range and confirms only when breadcrumbs are selected", async () => {
+    const cache = getLiveTrailCache("test-token", "traveler");
+    cache.replaceReplay([
+      { _id: "sample-1", lat: 47.61, lon: -122.33, sampledAt: Date.UTC(2026, 4, 1, 16) },
+      { _id: "outside", lat: 47.7, lon: -122.4, sampledAt: Date.UTC(2026, 4, 3, 16) },
+    ]);
     const { deleteLiveTrailRangeFn } = setupMocks({
       travelerTimeZone: "America/Los_Angeles",
       liveTrailPreview: {
@@ -549,9 +556,17 @@ describe("OptionsSheet Live Trail settings", () => {
       endDate: expect.stringContaining("T"),
       timeZone: "America/Los_Angeles",
     });
+    expect(cache.snapshot().samples.map((sample) => sample._id)).toEqual(["outside"]);
   });
 
   it("deletes every other breadcrumb by explicit sample id", async () => {
+    const cache = getLiveTrailCache("test-token", "traveler");
+    cache.replaceReplay(Array.from({ length: 5 }, (_, index) => ({
+      _id: `sample-${index + 1}`,
+      lat: 47.61 + index / 100,
+      lon: -122.31 - index / 100,
+      sampledAt: Date.UTC(2026, 4, 1, 16 + index),
+    })));
     const { deleteLiveTrailSamplesFn } = setupMocks({
       travelerTimeZone: "America/Los_Angeles",
       liveTrailPreview: {
@@ -579,6 +594,9 @@ describe("OptionsSheet Live Trail settings", () => {
       token: "test-token",
       sampleIds: ["sample-2", "sample-4"],
     });
+    expect(cache.snapshot().samples.map((sample) => sample._id)).toEqual([
+      "sample-1", "sample-3", "sample-5",
+    ]);
   });
 
   it("lets the traveler select individual breadcrumbs before deleting", async () => {

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import * as authLib from "./lib/auth";
 import App from "./App";
+import { getLiveTrailCache, resetLiveTrailCachesForTests } from "./features/map/liveTrailCache";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -34,7 +35,8 @@ function setupSessionMocks(role: "traveler" | "follower") {
   vi.mocked(convexReact.useMutation).mockReturnValue(vi.fn() as any);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await resetLiveTrailCachesForTests();
   vi.clearAllMocks();
 });
 
@@ -54,6 +56,8 @@ describe("App: Options button and Emergency Reset location", () => {
   });
 
   it("returns to the map and shows a toast after confirming shared data deletion via Options", async () => {
+    const cache = getLiveTrailCache("test-token", "traveler");
+    cache.addRecent({ _id: "private", lat: 1, lon: 2, sampledAt: 3 });
     setupSessionMocks("traveler");
     render(<App convexReady={true} />);
 
@@ -73,5 +77,6 @@ describe("App: Options button and Emergency Reset location", () => {
     });
     expect(await screen.findByTestId("trip-map")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Shared trip data deletion started.");
+    expect(cache.snapshot().samples).toEqual([]);
   });
 });

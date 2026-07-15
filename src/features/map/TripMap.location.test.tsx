@@ -10,6 +10,7 @@ import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
 import { useTripPath } from "./useTripPath";
 import { setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
+import { dropLiveTrailCacheRuntimeForTests, getLiveTrailCache, resetLiveTrailCachesForTests } from "./liveTrailCache";
 
 const mapEaseTo = vi.fn();
 const mapFitBounds = vi.fn();
@@ -24,6 +25,7 @@ const setLiveTrailEnabled = vi.fn();
 const setLiveTrailVisibility = vi.fn();
 const recordLiveTrailSample = vi.fn();
 const deleteRecentLiveTrail = vi.fn();
+const deleteBreadcrumb = vi.fn();
 const fetchMock = vi.fn();
 const convexMocks = vi.hoisted(() => ({
   query: vi.fn(),
@@ -233,6 +235,7 @@ function setupQueries({
   mysteryPins = [],
   mysteryPinsLoading = false,
   allowFollowersTripPath = false,
+  followerPreferences,
   travelerPreferences = { travelerTimeZone: "UTC" },
   liveTrailStatus = {
     enabled: false,
@@ -255,6 +258,12 @@ function setupQueries({
   mysteryPins?: MysteryMissionFeedItem[];
   mysteryPinsLoading?: boolean;
   allowFollowersTripPath?: boolean;
+  followerPreferences?: {
+    visible: boolean;
+    allowFollowersTripPath?: boolean;
+    liveTrailVisibleToFollowers: boolean;
+    followerContentCutoffAt?: number;
+  } | null;
   travelerPreferences?: {
     travelerTimeZone?: string;
     followerContentCutoffEnabled?: boolean;
@@ -287,7 +296,9 @@ function setupQueries({
       return latestLiveTrailSample;
     }
     if (query === tripcastApi.travelerPreferences.followerGetPreferences) {
-      return { visible: true, allowFollowersTripPath };
+      return followerPreferences === null
+        ? undefined
+        : (followerPreferences ?? { visible: true, allowFollowersTripPath, liveTrailVisibleToFollowers: true });
     }
     if (query === tripcastApi.travelerState.travelerGetState) {
       return { state: null, visibility: null };
@@ -436,7 +447,8 @@ function ThemeToggleTripMap() {
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await resetLiveTrailCachesForTests();
   vi.clearAllMocks();
   localStorage.clear();
   sessionStorage.clear();
@@ -455,6 +467,7 @@ beforeEach(() => {
   setLiveTrailVisibility.mockResolvedValue(null);
   recordLiveTrailSample.mockResolvedValue(null);
   deleteRecentLiveTrail.mockResolvedValue({ deleted: 0 });
+  deleteBreadcrumb.mockResolvedValue({ deleted: 1 });
   mockReplayQueries({});
   nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(false);
   nativeLocationMocks.openNativeLocationSettings.mockClear();
@@ -484,6 +497,9 @@ beforeEach(() => {
     }
     if (mutation === tripcastApi.liveTrail.travelerDeleteRecentLiveTrail) {
       return deleteRecentLiveTrail;
+    }
+    if (mutation === tripcastApi.liveTrail.travelerDeleteLiveTrailSamples) {
+      return deleteBreadcrumb;
     }
     return vi.fn().mockResolvedValue(null);
   });
@@ -1868,7 +1884,7 @@ describe("TripMap location marker", () => {
   });
 
   it("renders only the latest permitted follower Live Trail sample", async () => {
-    setupQueries({ latestLiveTrailSample: null });
+    setupQueries({ latestLiveTrailSample: null, allowFollowersTripPath: true });
 
     const { rerender } = render(<TripMap token="test-token" role="follower" />);
 
@@ -1877,7 +1893,7 @@ describe("TripMap location marker", () => {
         expect.anything(),
         [],
         null,
-        false,
+        true,
         null,
         "#444444",
         [],
@@ -1887,6 +1903,7 @@ describe("TripMap location marker", () => {
 
     setupQueries({
       latestLiveTrailSample: { _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 },
+      allowFollowersTripPath: true,
     });
     rerender(<TripMap token="test-token" role="follower" />);
 
@@ -1895,7 +1912,7 @@ describe("TripMap location marker", () => {
         expect.anything(),
         [],
         null,
-        false,
+        true,
         null,
         "#444444",
         [{ _id: "sample-2", lat: 47.62, lon: -122.34, sampledAt: 2 }],
@@ -2024,6 +2041,48 @@ describe("TripMap location marker", () => {
     });
   });
 
+  it("hides follower cache while permission is unresolved and clears it after revocation", async () => {
+    const cache = getLiveTrailCache("test-token", "follower");
+    cache.addRecent({ _id: "private-follower", lat: 47.6, lon: -122.3, sampledAt: 500 });
+    setupQueries({
+      latestLiveTrailSample: null,
+      followerPreferences: null,
+    });
+    const rendered = render(<TripMap token="test-token" role="follower" />);
+    await waitFor(() => expect(useTripPath).toHaveBeenLastCalledWith(
+      expect.anything(), expect.anything(), null, expect.anything(), null, "#444444", [], false,
+    ));
+    expect(cache.snapshot().samples).toHaveLength(1);
+
+    setupQueries({
+      followerPreferences: {
+        visible: true,
+        allowFollowersTripPath: false,
+        liveTrailVisibleToFollowers: true,
+      },
+    });
+    rendered.rerender(<TripMap token="test-token" role="follower" />);
+    await waitFor(() => expect(cache.snapshot().samples).toEqual([]));
+  });
+
+  it("permanently prunes follower cache below a newly restrictive cutoff", async () => {
+    const cache = getLiveTrailCache("test-token", "follower");
+    cache.replaceReplay([
+      { _id: "old", lat: 47.6, lon: -122.3, sampledAt: 500 },
+      { _id: "allowed", lat: 47.7, lon: -122.4, sampledAt: 1_500 },
+    ]);
+    setupQueries({
+      followerPreferences: {
+        visible: true,
+        allowFollowersTripPath: true,
+        liveTrailVisibleToFollowers: true,
+        followerContentCutoffAt: 1_000,
+      },
+    });
+    render(<TripMap token="test-token" role="follower" />);
+    await waitFor(() => expect(cache.snapshot().samples.map((sample) => sample._id)).toEqual(["allowed"]));
+  });
+
   it("keeps recent breadcrumbs on normal map load and switches to replay snapshot after Replay starts", async () => {
     localStorage.setItem("tripcast.showTripPath", "true");
     setupQueries({
@@ -2104,6 +2163,105 @@ describe("TripMap location marker", () => {
         Array.isArray(call[6]) && call[6].length === replaySamples.length
       )).toBe(true);
     });
+  });
+
+  it("keeps the downloaded Replay trail after manual close and restores it after remount without history traffic", async () => {
+    setupQueries();
+    const replaySamples = [
+      { _id: "persist-1", lat: 47.601, lon: -122.301, sampledAt: 1_000 },
+      { _id: "persist-2", lat: 47.602, lon: -122.302, sampledAt: 7_000 },
+    ];
+    mockReplayQueries({ breadcrumbs: replaySamples });
+    const rendered = render(<TripMap token="test-token" role="traveler" />);
+    await startReplay();
+    fireEvent.click(screen.getByRole("button", { name: /close trip replay/i }));
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(), expect.anything(), null, expect.anything(), null, "#444444", replaySamples, true,
+      );
+    });
+    await new Promise((resolve) => setTimeout(resolve, 180));
+    rendered.unmount();
+    dropLiveTrailCacheRuntimeForTests("test-token", "traveler");
+    convexQuery.mockClear();
+    setupQueries({ latestLiveTrailSample: null });
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(useTripPath).toHaveBeenLastCalledWith(
+        expect.anything(), expect.anything(), null, expect.anything(), null, "#444444", replaySamples, true,
+      );
+    });
+    expect(convexQuery).not.toHaveBeenCalledWith(
+      tripcastApi.liveTrail.listReplayLiveTrailSamples,
+      expect.anything(),
+    );
+  });
+
+  it("accumulates latest samples in cache without starting Replay history queries", async () => {
+    const first = { _id: "latest-1", lat: 47.61, lon: -122.31, sampledAt: 1_000 };
+    const second = { _id: "latest-2", lat: 47.62, lon: -122.32, sampledAt: 2_000 };
+    setupQueries({ latestLiveTrailSample: first });
+    const rendered = render(<TripMap token="test-token" role="traveler" />);
+    await waitFor(() => expect(vi.mocked(useTripPath).mock.calls.some((call) =>
+      Array.isArray(call[6]) && call[6].some((row) => (row as { _id?: string })._id === first._id)
+    )).toBe(true));
+
+    setupQueries({ latestLiveTrailSample: second });
+    rendered.rerender(<TripMap token="test-token" role="traveler" />);
+    await waitFor(() => expect(useTripPath).toHaveBeenLastCalledWith(
+      expect.anything(), expect.anything(), null, expect.anything(), null, "#444444", [first, second], true,
+    ));
+    expect(convexQuery).not.toHaveBeenCalledWith(
+      tripcastApi.liveTrail.listReplayLiveTrailSamples,
+      expect.anything(),
+    );
+  });
+
+  it("removes a successfully deleted Replay breadcrumb from the persistent cache", async () => {
+    setupQueries();
+    const breadcrumbs = [
+      { _id: "delete-1", lat: 47.61, lon: -122.31, sampledAt: 1_000 },
+      { _id: "delete-2", lat: 47.62, lon: -122.32, sampledAt: 7_000 },
+    ];
+    mockReplayQueries({ breadcrumbs });
+    render(<TripMap token="test-token" role="traveler" />);
+    await startReplay();
+    fireEvent.click(screen.getByRole("button", { name: /pause replay/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
+
+    await waitFor(() => expect(deleteBreadcrumb).toHaveBeenCalledWith({
+      token: "test-token",
+      sampleIds: ["delete-1"],
+    }));
+    await waitFor(() => expect(
+      getLiveTrailCache("test-token", "traveler").snapshot().samples.map((sample) => sample._id),
+    ).toEqual(["delete-2"]));
+  });
+
+  it("rolls Replay state back and leaves the persistent cache unchanged when deletion throws", async () => {
+    setupQueries();
+    deleteBreadcrumb.mockRejectedValueOnce(new Error("offline"));
+    const breadcrumbs = [
+      { _id: "rollback-1", lat: 47.61, lon: -122.31, sampledAt: 1_000 },
+      { _id: "rollback-2", lat: 47.62, lon: -122.32, sampledAt: 7_000 },
+    ];
+    mockReplayQueries({ breadcrumbs });
+    render(<TripMap token="test-token" role="traveler" />);
+    await startReplay();
+    fireEvent.click(screen.getByRole("button", { name: /pause replay/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
+
+    await waitFor(() => expect(deleteBreadcrumb).toHaveBeenCalled());
+    await waitFor(() => expect(useTripPath).toHaveBeenLastCalledWith(
+      expect.anything(), expect.anything(), null, expect.anything(), expect.any(Number), "#444444", breadcrumbs, true,
+    ));
+    expect(getLiveTrailCache("test-token", "traveler").snapshot().samples.map((sample) => sample._id)).toEqual([
+      "rollback-1", "rollback-2",
+    ]);
   });
 
   it("turns a breadcrumb into a story during paused replay", async () => {

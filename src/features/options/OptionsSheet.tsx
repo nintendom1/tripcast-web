@@ -53,6 +53,7 @@ import { useSamplerMode, setSamplerMode, SAMPLER_MODE_INFO, type SamplerMode } f
 import { useFixOverlayEnabled, setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 import { useEgressEstimateBytes } from "../../lib/egressMeter";
 import { BreadcrumbDeleteRow } from "./BreadcrumbDeleteRow";
+import { getLiveTrailCache } from "../map/liveTrailCache";
 import type {
   CloakingPin,
   LiveTrailDeletePreview,
@@ -1112,6 +1113,7 @@ function FollowerAttributionToggle({ token }: { token: string }) {
 }
 
 function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogger }) {
+  const liveTrailCache = useMemo(() => getLiveTrailCache(token, "traveler"), [token]);
   const samplerMode = useSamplerMode();
   const fixOverlayEnabled = useFixOverlayEnabled();
   const fallbackTimeZone = detectBrowserTimeZone() ?? "UTC";
@@ -1251,6 +1253,11 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
         ok: true,
         deleteMode,
       });
+      if (deleteMode === "range" && preview) {
+        liveTrailCache.removeRange(preview.startMs, preview.endExclusiveMs);
+      } else {
+        liveTrailCache.removeIds(selectedSampleIds);
+      }
       setIndividualSelection({});
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

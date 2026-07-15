@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 import * as authLib from "./lib/auth";
 import App from "./App";
+import { getLiveTrailCache, resetLiveTrailCachesForTests } from "./features/map/liveTrailCache";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -27,7 +28,8 @@ function setOnlineStatus(value: boolean) {
   });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  await resetLiveTrailCachesForTests();
   vi.clearAllMocks();
   vi.useRealTimers();
   setOnlineStatus(true);
@@ -86,6 +88,8 @@ describe("App resilience", () => {
   });
 
   it("signs out from delayed session recovery without treating pending verification as invalid", async () => {
+    const cache = getLiveTrailCache("test-token", "traveler");
+    cache.addRecent({ _id: "private", lat: 1, lon: 2, sampledAt: 3 });
     vi.useFakeTimers();
     vi.mocked(convexReact.useQuery).mockReturnValue(undefined);
     const signOut = vi.fn(() => new Promise(() => {}));
@@ -102,5 +106,6 @@ describe("App resilience", () => {
 
     expect(vi.mocked(authLib.clearStoredSession)).toHaveBeenCalledTimes(1);
     expect(signOut).toHaveBeenCalledWith({ token: "test-token" });
+    expect(cache.snapshot().samples).toEqual([]);
   });
 });

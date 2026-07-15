@@ -29,6 +29,7 @@ import { CrashOnDemand, disarmCrash } from "./debug/crashTrigger";
 import { log as debugLog } from "./debug/debugLogger";
 import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 import { BackgroundSaveProvider } from "./providers/BackgroundSaveProvider";
+import { clearLiveTrailCachesForToken } from "./features/map/liveTrailCache";
 
 import OptionsSheet from "./features/options/OptionsSheet";
 
@@ -207,6 +208,7 @@ function ConnectedApp() {
 
   useEffect(() => {
     if (session !== null && activeSessionCheck === null) {
+      void clearLiveTrailCachesForToken(session.token);
       clearStoredSession();
       setSession(null);
       setIsLoginModalOpen(false);
@@ -281,6 +283,7 @@ function ConnectedApp() {
   }
 
   async function handleSignOut() {
+    if (session) void clearLiveTrailCachesForToken(session.token);
     if (session) {
       try {
         if (session.sessionType === "follower") {
@@ -300,6 +303,7 @@ function ConnectedApp() {
   }
 
   function handleLocalSignOut() {
+    if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
     setSession(null);
     setIsLoginModalOpen(false);
@@ -317,6 +321,7 @@ function ConnectedApp() {
   }
 
   function handleLoggedOut() {
+    if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
     setSession(null);
     setIsLoginModalOpen(false);
@@ -526,7 +531,10 @@ function ConnectedApp() {
           }}
           onLoggedOut={handleLoggedOut}
           onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
-          onTripDataDeleted={() => setTripDataResetNonce((value) => value + 1)}
+          onTripDataDeleted={() => {
+            void clearLiveTrailCachesForToken(session.token);
+            setTripDataResetNonce((value) => value + 1);
+          }}
           onResetStarted={showResetToast}
           onTriggerTestToast={handleTriggerTestToast}
           onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); setIsEndTripOpen(true); } : undefined}
