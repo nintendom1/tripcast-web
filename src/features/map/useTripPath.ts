@@ -178,8 +178,12 @@ export function useTripPath(
 
     const sourceId = "trip-path";
     const layerId = "trip-path-layer";
+    const coordinateCount = pathData?.features.reduce(
+      (count, feature) => count + feature.geometry.coordinates.length,
+      0,
+    ) ?? 0;
 
-    const addLayer = () => {
+    const addLayer = (trigger: string) => {
       map.addSource(sourceId, { type: "geojson", data: pathData! });
       map.addLayer({
         id: layerId,
@@ -197,14 +201,30 @@ export function useTripPath(
         },
       });
       logMapEvent("map:route-path:re-add", { layerId, lineColor });
+      logMapEvent("map:route-path:sync", {
+        result: "addLayer",
+        trigger,
+        styleLoaded: map.isStyleLoaded(),
+        featureCount: pathData?.features.length ?? 0,
+        coordinateCount,
+      });
     };
 
     // Apply the latest pathData. Runs on every pathData change (effect body) — NOT on
     // map style events, so it never redundantly re-parses unchanged data.
     const apply = () => {
       if (!pathData) {
-        if (map.getLayer(layerId)) map.removeLayer(layerId);
-        if (map.getSource(sourceId)) map.removeSource(sourceId);
+        const hadLayer = !!map.getLayer(layerId);
+        const hadSource = !!map.getSource(sourceId);
+        if (hadLayer) map.removeLayer(layerId);
+        if (hadSource) map.removeSource(sourceId);
+        logMapEvent("map:route-path:sync", {
+          result: hadLayer || hadSource ? "removed" : "noop",
+          trigger: "effect",
+          styleLoaded: map.isStyleLoaded(),
+          featureCount: 0,
+          coordinateCount: 0,
+        });
         return;
       }
       const existing = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
@@ -218,15 +238,28 @@ export function useTripPath(
         // applied (partial) state.
         existing.setData(pathData);
         map.setPaintProperty(layerId, "line-color", lineColor);
+        logMapEvent("map:route-path:sync", {
+          result: "setData",
+          trigger: "effect",
+          styleLoaded: map.isStyleLoaded(),
+          featureCount: pathData.features.length,
+          coordinateCount,
+        });
         return;
       }
       // Source missing: create it. addSource/addLayer throw if the style isn't ready
       // yet; if so, the style listeners below retry until it succeeds. Don't gate on
       // isStyleLoaded() — it under-reports readiness in some environments.
       try {
-        addLayer();
+        addLayer("effect");
       } catch {
-        /* style not ready; a style event will retry */
+        logMapEvent("map:route-path:sync", {
+          result: "deferred",
+          trigger: "effect",
+          styleLoaded: map.isStyleLoaded(),
+          featureCount: pathData.features.length,
+          coordinateCount,
+        });
       }
     };
 
@@ -234,10 +267,10 @@ export function useTripPath(
     // setStyle on a theme toggle wiped it, or the style wasn't ready on first apply).
     // Only creates — updates to an existing source flow through `apply` on pathData
     // change, so this never re-parses unchanged data on the frequent styledata/idle.
-    const ensureAfterStyle = () => {
+    const ensureAfterStyle = (event?: { type?: string }) => {
       if (!pathData || map.getSource(sourceId)) return;
       try {
-        addLayer();
+        addLayer(event?.type ?? "style-event");
       } catch {
         /* style still not ready; a later style event will retry */
       }

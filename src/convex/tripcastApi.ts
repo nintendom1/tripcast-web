@@ -835,9 +835,10 @@ export type TravelerPreferences = {
 };
 
 export type TravelerPreferencesForFollower =
-  | { visible: false }
+  | { visible: false; liveTrailVisibleToFollowers: boolean }
   | {
       visible: true;
+      liveTrailVisibleToFollowers: boolean;
       travelerTimeZone?: string;
       allowFollowersTripPath: boolean;
       followerContentCutoffAt?: number;

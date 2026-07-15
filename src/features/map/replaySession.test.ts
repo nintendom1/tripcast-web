@@ -138,6 +138,38 @@ describe("replaySession", () => {
     expect(snapshot.reachedTrueEnd).toBe(true);
   });
 
+  it("keeps an active progressive Replay uncapped beyond the persistent cache limit", async () => {
+    const rows = Array.from({ length: 1_101 }, (_, index) => breadcrumb(index + 1, (index + 1) * 5_000));
+    const breadcrumbs = vi.fn(async ({ cursor }: { cursor: string | null }) => {
+      const start = cursor ? Number(cursor) : 0;
+      const page = rows.slice(start, start + 64);
+      const next = start + page.length;
+      return breadcrumbPage(page, {
+        hasMore: next < rows.length,
+        reachedTrueEnd: next >= rows.length,
+        continueCursor: String(next),
+        effectiveEndAt: rows.at(-1)!.sampledAt,
+        scanBoundaryAt: page.at(-1)?.sampledAt ?? rows.at(-1)!.sampledAt,
+      });
+    });
+    const session = new ProgressiveReplaySession(
+      "uncapped",
+      { mode: "beginning", startAt: 0, endAt: rows.at(-1)!.sampledAt },
+      {
+        breadcrumbs,
+        stories: vi.fn().mockResolvedValue(storyPage([], {
+          effectiveEndAt: rows.at(-1)!.sampledAt,
+          scanBoundaryAt: rows.at(-1)!.sampledAt,
+        })),
+      },
+    );
+    let snapshot = await session.start(1, () => 10_000, () => 1);
+    while (snapshot.hasMore) snapshot = await session.loadMore("manual");
+
+    expect(snapshot.breadcrumbs).toHaveLength(1_101);
+    expect(snapshot.pins).toHaveLength(1_101);
+  });
+
   it("retries a failed forward request and retains the playhead data", async () => {
     const breadcrumbs = vi.fn()
       .mockRejectedValueOnce(new Error("offline"))

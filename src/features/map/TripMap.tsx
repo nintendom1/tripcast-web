@@ -50,6 +50,10 @@ import MysteryMissionMarkers from "./MysteryMissionMarkers";
 import VoteTimeSplash from "../routevote/VoteTimeSplash";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import {
+  getLiveTrailCache,
+  type LiveTrailCacheSnapshot,
+} from "./liveTrailCache";
+import {
   Dock,
   type DockTab,
   FanMenu,
@@ -1398,6 +1402,7 @@ export default function TripMap({
     pins: [], stories: [], breadcrumbs: [], hasMore: false, reachedTrueEnd: false, loading: false, error: null,
   });
   const replaySessionRef = useRef<ProgressiveReplaySession | null>(null);
+  const replayWasActiveRef = useRef(false);
   const [replaySource, setReplaySource] = useState<ReplaySource | null>(null);
   const [replayBuffering, setReplayBuffering] = useState(false);
   const replayBufferStartedAtRef = useRef<number | null>(null);
@@ -1483,10 +1488,6 @@ export default function TripMap({
     tripcastApi.liveTrail.travelerGetLiveTrailStatus,
     role === "traveler" ? { token } : "skip",
   );
-  const latestLiveTrailSample = useQuery(
-    tripcastApi.liveTrail.getLatestLiveTrailSample,
-    { token },
-  );
   const liveTrailEnabled = role === "traveler" && travelerLiveTrailStatus?.enabled === true;
   const followerPreferences = useQuery(
     tripcastApi.travelerPreferences.followerGetPreferences,
@@ -1496,6 +1497,48 @@ export default function TripMap({
   const travelerAllowsFollowerPath = followerPreferences?.visible
     ? (followerPreferences.allowFollowersTripPath ?? false)
     : false;
+  const followerPermissionResolved = followerPreferences !== undefined;
+  const followerCacheCutoffAt = followerPreferences?.visible
+    ? followerPreferences.followerContentCutoffAt
+    : undefined;
+  const followerCacheAuthorized = role === "follower"
+    && followerPermissionResolved
+    && followerPreferences.visible
+    && travelerAllowsFollowerPath
+    && followerPreferences.liveTrailVisibleToFollowers;
+  const cacheAuthorized = role === "traveler" || followerCacheAuthorized;
+  const latestLiveTrailSample = useQuery(
+    tripcastApi.liveTrail.getLatestLiveTrailSample,
+    cacheAuthorized ? { token } : "skip",
+  );
+  const liveTrailCache = useMemo(() => getLiveTrailCache(token, role), [token, role]);
+  const [cachedLiveTrail, setCachedLiveTrail] = useState<LiveTrailCacheSnapshot>(() =>
+    liveTrailCache.snapshot(),
+  );
+
+  useEffect(() => {
+    setCachedLiveTrail(liveTrailCache.snapshot());
+    const unsubscribe = liveTrailCache.subscribe(() => {
+      setCachedLiveTrail(liveTrailCache.snapshot());
+    });
+    if (cacheAuthorized) void liveTrailCache.hydrate();
+    return unsubscribe;
+  }, [cacheAuthorized, liveTrailCache]);
+
+  useEffect(() => {
+    if (role !== "follower" || !followerPermissionResolved) return;
+    if (!followerCacheAuthorized) void liveTrailCache.clear();
+  }, [followerCacheAuthorized, followerPermissionResolved, liveTrailCache, role]);
+
+  useEffect(() => {
+    if (followerCacheAuthorized && followerCacheCutoffAt !== undefined) {
+      liveTrailCache.pruneBefore(followerCacheCutoffAt);
+    }
+  }, [followerCacheAuthorized, followerCacheCutoffAt, liveTrailCache]);
+
+  useEffect(() => {
+    if (cacheAuthorized && latestLiveTrailSample) liveTrailCache.addRecent(latestLiveTrailSample);
+  }, [cacheAuthorized, latestLiveTrailSample, liveTrailCache]);
   const replayTimeZone = (role === "traveler"
     ? movementPrefs?.travelerTimeZone
     : followerPreferences?.visible ? followerPreferences.travelerTimeZone : undefined)
@@ -1503,12 +1546,12 @@ export default function TripMap({
     ?? "UTC";
 
   const liveTrailSamples = useMemo(() => {
-    const all = latestLiveTrailSample ? [latestLiveTrailSample] : [];
+    const all = cacheAuthorized ? cachedLiveTrail.samples : [];
     const cutoffFiltered = cutoffPreview.cutoffAt
       ? all.filter((s) => s.sampledAt >= (cutoffPreview.cutoffAt as number))
       : all;
     return cutoffFiltered.filter((s) => inReplayWindow(s.sampledAt));
-  }, [latestLiveTrailSample, cutoffPreview.cutoffAt, inReplayWindow]);
+  }, [cacheAuthorized, cachedLiveTrail.samples, cutoffPreview.cutoffAt, inReplayWindow]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
   const replaySourceTrailSamples = replaySessionState.breadcrumbs.length > 0
     ? replaySessionState.breadcrumbs
@@ -1518,6 +1561,18 @@ export default function TripMap({
     return base.filter((s) => inReplayWindow(s.sampledAt));
   }, [replayActive, replaySessionState.breadcrumbs, liveTrailSamples, inReplayWindow]);
   const pathTrailVisible = pathTrailSamples.length >= 1;
+
+  useEffect(() => {
+    if (!cacheAuthorized) return;
+    if (replaySessionState.loading || replayActive || replaySessionState.breadcrumbs.length > 0) {
+      liveTrailCache.replaceReplay(replaySessionState.breadcrumbs);
+    }
+  }, [cacheAuthorized, liveTrailCache, replayActive, replaySessionState.breadcrumbs, replaySessionState.loading]);
+
+  useEffect(() => {
+    if (replayWasActiveRef.current && !replayActive) void liveTrailCache.flush("replay-exit");
+    replayWasActiveRef.current = replayActive;
+  }, [liveTrailCache, replayActive]);
 
   const [showTripPathLocal, setShowTripPathLocal] = useState(() => {
     const val = localStorage.getItem("tripcast.showTripPath");
@@ -1856,6 +1911,7 @@ export default function TripMap({
     source: ReplaySource,
     resume?: { eventId: string; occurredAt?: number; fallbackIndex: number },
   ) => {
+    if (cacheAuthorized) liveTrailCache.replaceReplay([]);
     const sessionKey = `${source.mode}:${source.startAt ?? ""}:${source.endAt}`;
     const session = new ProgressiveReplaySession(sessionKey, source, {
       breadcrumbs: (args) => convex.query(tripcastApi.liveTrail.listReplayLiveTrailSamples, {
@@ -1907,7 +1963,7 @@ export default function TripMap({
     setReplayActive(true);
     setCurrentOverlayPin(null);
     return true;
-  }, [convex, log, replaySpeed, showToast, token]);
+  }, [cacheAuthorized, convex, liveTrailCache, log, replaySpeed, showToast, token]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || !replaySessionState.hasMore || replaySessionState.loading) return;
@@ -3179,8 +3235,27 @@ export default function TripMap({
       role,
       sampleCount: liveTrailSamples.length,
       visible: true,
+      renderSource: replayActive ? "active-replay" : "cache",
+      cacheAuthorized,
+      cacheHydrated: cachedLiveTrail.hydrated,
+      cacheRecentCount: cachedLiveTrail.recent.length,
+      cacheReplayCount: cachedLiveTrail.replay.length,
+      cacheUniqueCount: cachedLiveTrail.samples.length,
+      followerPermissionResolved,
     });
-  }, [liveTrailPathVisible, liveTrailSamples.length, log, role]);
+  }, [
+    cacheAuthorized,
+    cachedLiveTrail.hydrated,
+    cachedLiveTrail.recent.length,
+    cachedLiveTrail.replay.length,
+    cachedLiveTrail.samples.length,
+    followerPermissionResolved,
+    liveTrailPathVisible,
+    liveTrailSamples.length,
+    log,
+    replayActive,
+    role,
+  ]);
 
   const centerMapOnCoordinate = useCallback(
     (coordinate: { lat: number; lon: number }) => {
@@ -3775,6 +3850,7 @@ export default function TripMap({
 
   useEffect(() => {
     if (tripDataResetNonce === 0) return;
+    void liveTrailCache.clear();
     setIsVotePanelOpen(false);
     stopFollowing();
     setVoteMapOverlay(null);
@@ -3795,7 +3871,7 @@ export default function TripMap({
     setIsReplayDateSheetOpen(false);
     clearReplayResume(token);
     breadcrumbSamplerStateRef.current = {};
-  }, [tripDataResetNonce, stopFollowing, token]);
+  }, [liveTrailCache, tripDataResetNonce, stopFollowing, token]);
 
   function publishTravelerLocation(
     position: { lat: number; lon: number },
@@ -4370,10 +4446,8 @@ export default function TripMap({
     });
 
     void deleteBreadcrumb({ token, sampleIds: [sampleId] })
-      .then(({ deleted }) => {
-        if (deleted === 0 && previousState) {
-          setReplaySessionState(previousState);
-        }
+      .then(() => {
+        liveTrailCache.removeIds([sampleId]);
       })
       .catch((err) => {
         if (previousState) setReplaySessionState(previousState);
@@ -4385,7 +4459,7 @@ export default function TripMap({
 
     music.sfx("close");
     log.logInteraction("replay:breadcrumb-delete", { sampleId });
-  }, [currentReplayPin, deleteBreadcrumb, token, log, music]);
+  }, [currentReplayPin, deleteBreadcrumb, token, log, music, liveTrailCache]);
 
   function handleNavigateStoryDetail(direction: StoryNavigationDirection) {
     if (!storyNavigation) {
