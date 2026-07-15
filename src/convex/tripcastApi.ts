@@ -1342,6 +1342,81 @@ export type BulkImportResult = {
   idsByRef: Record<string, string>;
 };
 
+export type PhotoCompanionPageItem = {
+  pinRef: string;
+  imageId: string;
+  url: string | null;
+  contentType: string | null;
+  bytes: number | null;
+  sha256: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+  imageSize: StoryImageSize | null;
+  missingReason: "storage_missing" | "url_unavailable" | null;
+};
+
+export type PhotoCompanionPage = {
+  page: PhotoCompanionPageItem[];
+  continueCursor: string;
+  isDone: boolean;
+};
+
+export type PhotoResolutionResult = {
+  pinRef: string;
+  status: "ready" | "already_has_photo" | "unmatched" | "ambiguous";
+  checkpointId?: string;
+};
+
+export type ResolvePhotoCompanionRefsResult = PhotoResolutionResult[];
+
+export type PhotoAttachmentInput = {
+  ref: string;
+  imageId: string;
+  sha256: string;
+  bytes: number;
+  contentType: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageSize?: StoryImageSize;
+};
+
+export type PhotoAttachmentResult = {
+  pinRef: string;
+  imageId: string;
+  status:
+    | "attached"
+    | "already_has_photo"
+    | "unmatched"
+    | "ambiguous"
+    | "duplicate_input"
+    | "duplicate_target"
+    | "image_already_attached"
+    | "invalid_storage"
+    | "metadata_mismatch";
+  message?: string;
+};
+
+export type AttachPhotoCompanionBatchResult = PhotoAttachmentResult[];
+
+export type OrphanPhotoItem = {
+  imageId: string;
+  contentType: string | null;
+  bytes: number;
+  sha256: string;
+  creationTime: number;
+};
+
+export type AuditOrphanPhotoPageResult = {
+  page: OrphanPhotoItem[];
+  continueCursor: string;
+  isDone: boolean;
+};
+
+export type PruneOrphanResult = {
+  imageId: string;
+  status: "deleted" | "now_referenced" | "missing" | "rejected";
+};
+
 export type TickerFactExportEntry = {
   kind: "ticker_fact";
   ref: string;
@@ -1415,6 +1490,44 @@ export type FollowerInfo = {
 // ---------------------------------------------------------------------------
 
 export const tripcastApi = {
+  photoCompanion: {
+    travelerListPhotoCompanionPage: (anyApi as any).photoCompanion.travelerListPhotoCompanionPage as FunctionReference<
+      "query",
+      "public",
+      { token: string; paginationOpts: PaginationOpts; startMs?: number; endMs?: number },
+      PhotoCompanionPage
+    >,
+    travelerResolvePhotoCompanionRefs: (anyApi as any).photoCompanion.travelerResolvePhotoCompanionRefs as FunctionReference<
+      "query",
+      "public",
+      { token: string; refs: string[] },
+      ResolvePhotoCompanionRefsResult
+    >,
+    travelerGeneratePhotoImportUploadUrls: (anyApi as any).photoCompanion.travelerGeneratePhotoImportUploadUrls as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; count: number },
+      string[]
+    >,
+    travelerAttachPhotoCompanionBatch: (anyApi as any).photoCompanion.travelerAttachPhotoCompanionBatch as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; attachments: PhotoAttachmentInput[] },
+      AttachPhotoCompanionBatchResult
+    >,
+    travelerAuditOrphanPhotoPage: (anyApi as any).photoCompanion.travelerAuditOrphanPhotoPage as FunctionReference<
+      "query",
+      "public",
+      { token: string; paginationOpts: PaginationOpts },
+      AuditOrphanPhotoPageResult
+    >,
+    travelerPruneOrphanPhotos: (anyApi as any).photoCompanion.travelerPruneOrphanPhotos as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; imageIds: string[] },
+      PruneOrphanResult[]
+    >,
+  },
   bulkImport: {
     previewBulkImport: (anyApi as any).bulkImport.previewBulkImport as FunctionReference<
       "query",

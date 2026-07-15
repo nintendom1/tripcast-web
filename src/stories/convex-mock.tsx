@@ -15,6 +15,16 @@ export const useMutation = (mutation: any) => {
   }
   return async () => null;
 };
+export const useConvex = () => {
+  const context = useContext(ConvexMockContext);
+  return {
+    query: async (query: any, args: any) => {
+      if (args === "skip") return undefined;
+      if (context.queries.has(query)) return context.queries.get(query);
+      return undefined;
+    }
+  };
+};
 export const useQueries = (queries: Record<string, any>) => {
     const context = useContext(ConvexMockContext);
     const results: Record<string, any> = {};
