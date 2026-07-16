@@ -12,12 +12,11 @@ import {
   Info
 } from "lucide-react";
 
-import { tripcastApi } from "../../convex/tripcastApi";
+import { tripcastApi, type OrphanPhotoItem } from "../../convex/tripcastApi";
 import {
+  inspectArchiveZip,
   validateArchiveZip,
-  computeSha256,
-  type ValidatedCompanionZip,
-  type PhotoCompanionArchivePhoto
+  type InspectedCompanionZip,
 } from "./photoCompanionArchive";
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
@@ -28,9 +27,9 @@ import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
 type ImportState =
   | { type: "idle" }
   | { type: "scanning"; progress: number }
-  | { type: "oversized_warning"; totalBytes: number; file: File }
+  | { type: "oversized_warning"; totalBytes: number; file: File; inspection: InspectedCompanionZip }
   | { type: "resolving" }
-  | { type: "matching_summary"; zip: ValidatedCompanionZip; resolutions: Map<string, string> }
+  | { type: "matching_summary"; file: File; inspection: InspectedCompanionZip; resolutions: Map<string, string> }
   | { type: "importing"; currentStep: string; progressPercent: number }
   | {
       type: "completed";
@@ -48,7 +47,7 @@ async function runWithLimit<T, R>(
   fn: (item: T) => Promise<R>
 ): Promise<R[]> {
   const results: R[] = [];
-  const executing = new Set<Promise<any>>();
+  const executing = new Set<Promise<void>>();
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const index = i;
@@ -84,11 +83,12 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
 
   // Orphan state
   const [orphanCursor, setOrphanCursor] = useState<string | null>(null);
-  const [scannedOrphans, setScannedOrphans] = useState<any[]>([]);
+  const [scannedOrphans, setScannedOrphans] = useState<OrphanPhotoItem[]>([]);
   const [totalOrphanBytes, setTotalOrphanBytes] = useState(0);
   const [orphanScanStatus, setOrphanScanStatus] = useState<"idle" | "scanning" | "scanned">("idle");
   const [pruningStatus, setPruningStatus] = useState<"idle" | "pruning" | "done">("idle");
   const [isConfirmPruneOpen, setIsConfirmPruneOpen] = useState(false);
+  const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
 
   // Queries for Orphans
   const orphanResult = useQuery(
@@ -118,12 +118,14 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
     setScannedOrphans([]);
     setTotalOrphanBytes(0);
     setOrphanCursor(null);
+    setMaintenanceError(null);
     setOrphanScanStatus("scanning");
   };
 
   const handlePruneConfirm = async () => {
     log.logUi("action:prune-orphans:confirm");
     setPruningStatus("pruning");
+    setMaintenanceError(null);
     music.sfx("tap");
     try {
       const imageIdsToPrune = scannedOrphans.map(o => o.imageId);
@@ -147,6 +149,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
       handleStartOrphanScan();
     } catch (err) {
       log.error("prune-orphans:error", "error", { err });
+      setMaintenanceError(err instanceof Error ? err.message : String(err));
       setPruningStatus("idle");
     }
   };
@@ -180,46 +183,19 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
   const processSelectedFile = async (file: File) => {
     log.logUi("action:select-zip", { name: file.name, size: file.size });
     music.sfx("tap");
-
-    // Check local warning threshold (250 MiB)
-    const sizeWarningThreshold = 250 * 1024 * 1024;
-    if (file.size > sizeWarningThreshold) {
-      setImportState({ type: "oversized_warning", totalBytes: file.size, file });
-    } else {
-      await runZipValidation(file);
-    }
-  };
-
-  const runZipValidation = async (file: File) => {
     setImportState({ type: "scanning", progress: 0 });
     try {
-      // 1. Run local validation
-      const zip = await validateArchiveZip(file);
-
-      // 2. Resolve references in the backend
-      setImportState({ type: "resolving" });
-      const pinRefs = zip.manifest.photos.map(p => p.pinRef);
-
-      // Batch references (at most 100 per call)
-      const batches: string[][] = [];
-      for (let i = 0; i < pinRefs.length; i += 100) {
-        batches.push(pinRefs.slice(i, i + 100));
+      const inspection = await inspectArchiveZip(file);
+      if (inspection.totalPhotoBytes > 250 * 1024 * 1024) {
+        setImportState({
+          type: "oversized_warning",
+          totalBytes: inspection.totalPhotoBytes,
+          file,
+          inspection,
+        });
+        return;
       }
-
-      const resolutionsMap = new Map<string, string>();
-      for (const batch of batches) {
-        const batchResults = await convex.query(tripcastApi.photoCompanion.travelerResolvePhotoCompanionRefs, { token, refs: batch });
-        for (const res of batchResults) {
-          resolutionsMap.set(res.pinRef, res.status);
-        }
-      }
-
-      setImportState({
-        type: "matching_summary",
-        zip,
-        resolutions: resolutionsMap
-      });
-      music.sfx("page");
+      await resolveInspectedArchive(file, inspection);
     } catch (err) {
       log.error("zip-validation:error", "error", { err });
       setImportState({
@@ -230,23 +206,56 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
     }
   };
 
-  const handleStartImport = async (zip: ValidatedCompanionZip, resolutions: Map<string, string>) => {
-    log.logUi("action:start-import", { totalPhotos: zip.manifest.photos.length });
+  const resolveInspectedArchive = async (file: File, inspection: InspectedCompanionZip) => {
+    setImportState({ type: "resolving" });
+    try {
+      const pinRefs = inspection.manifest.photos.map((photo) => photo.pinRef);
+      const resolutionsMap = new Map<string, string>();
+      for (let index = 0; index < pinRefs.length; index += 100) {
+        const batchResults = await convex.query(
+          tripcastApi.photoCompanion.travelerResolvePhotoCompanionRefs,
+          { token, refs: pinRefs.slice(index, index + 100) },
+        );
+        for (const result of batchResults) resolutionsMap.set(result.pinRef, result.status);
+      }
+      const readyCount = inspection.manifest.photos.filter(
+        (photo) => resolutionsMap.get(photo.pinRef) === "ready",
+      ).length;
+      if (readyCount > 500) {
+        throw new Error(
+          `This ZIP has ${readyCount} attachable photos. Photo Companion imports support at most 500 attachable photos at a time.`,
+        );
+      }
+      setImportState({ type: "matching_summary", file, inspection, resolutions: resolutionsMap });
+      music.sfx("page");
+    } catch (err) {
+      log.error("zip-resolution:error", "error", { err });
+      setImportState({ type: "error", message: err instanceof Error ? err.message : String(err) });
+      music.sfx("success");
+    }
+  };
+
+  const handleStartImport = async (
+    file: File,
+    inspection: InspectedCompanionZip,
+    resolutions: Map<string, string>,
+  ) => {
+    log.logUi("action:start-import", { totalPhotos: inspection.manifest.photos.length });
     music.sfx("tap");
 
-    // Filter down to photos resolved as ready
-    const photosToUpload = zip.manifest.photos.filter(p => resolutions.get(p.pinRef) === "ready");
+    const photosToUpload = inspection.manifest.photos.filter(
+      (photo) => resolutions.get(photo.pinRef) === "ready",
+    );
     const totalToUpload = photosToUpload.length;
 
     let attachedCount = 0;
-    let skippedCount = zip.manifest.photos.length - totalToUpload;
+    const skippedCount = inspection.manifest.photos.length - totalToUpload;
     let failedCount = 0;
 
     const skippedItems: Array<{ pinRef: string; path: string; status: string; message?: string }> = [];
     const failedItems: Array<{ pinRef: string; path: string; status: string; message?: string }> = [];
 
-    // Log the initial skips (unmatched, ambiguous, already_has_photo)
-    for (const photo of zip.manifest.photos) {
+    for (const photo of inspection.manifest.photos) {
       const status = resolutions.get(photo.pinRef);
       if (status && status !== "ready") {
         skippedItems.push({
@@ -274,106 +283,98 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
 
     setImportState({
       type: "importing",
-      currentStep: `Preparing upload URLs for ${totalToUpload} photos...`,
+      currentStep: `Extracting and verifying ${totalToUpload} photos...`,
       progressPercent: 0
     });
 
     try {
-      // 1. Generate upload URLs in batches of 10
-      const uploadUrls: string[] = [];
-      const generateBatchesCount = Math.ceil(totalToUpload / 10);
-      for (let i = 0; i < generateBatchesCount; i++) {
-        const count = Math.min(10, totalToUpload - i * 10);
-        const batchUrls = await generateUploadUrls({ token, count });
-        uploadUrls.push(...batchUrls);
-      }
-
-      // 2. Upload photos in parallel with bounded concurrency of 4
-      setImportState({
-        type: "importing",
-        currentStep: "Uploading photos...",
-        progressPercent: 10
+      const selectedPinRefs = new Set(photosToUpload.map((photo) => photo.pinRef));
+      const zip = await validateArchiveZip(file, selectedPinRefs);
+      const importablePhotos = photosToUpload.filter((photo) => {
+        const integrityError = zip.photoErrors.get(photo.pinRef);
+        if (!integrityError) return true;
+        failedItems.push({
+          pinRef: photo.pinRef,
+          path: photo.path,
+          status: "integrity_failed",
+          message: integrityError,
+        });
+        failedCount++;
+        return false;
       });
 
-      const uploadsToRun = photosToUpload.map((photo, index) => ({
-        photo,
-        uploadUrl: uploadUrls[index]
-      }));
-
-      let completedUploadsCount = 0;
-      const uploadedFileMap = new Map<string, string>(); // pinRef -> storageId
-
-      await runWithLimit(4, uploadsToRun, async ({ photo, uploadUrl }) => {
-        const { blob } = zip.photoBlobs.get(photo.pinRef)!;
-        try {
-          const response = await fetch(uploadUrl, {
-            method: "POST",
-            headers: { "Content-Type": photo.contentType },
-            body: blob
-          });
-          if (!response.ok) {
-            throw new Error(`HTTP error ${response.status}`);
-          }
-          const result = await response.json();
-          if (result.storageId) {
-            uploadedFileMap.set(photo.pinRef, result.storageId);
-          } else {
-            throw new Error("No storageId returned from upload.");
-          }
-        } catch (err) {
-          log.error("upload-photo:error", "error", { err });
-          failedItems.push({
-            pinRef: photo.pinRef,
-            path: photo.path,
-            status: "upload_failed",
-            message: err instanceof Error ? err.message : String(err)
-          });
-          failedCount++;
-        }
-
-        completedUploadsCount++;
+      for (let start = 0; start < importablePhotos.length; start += 10) {
+        const wave = importablePhotos.slice(start, start + 10);
         setImportState({
           type: "importing",
-          currentStep: `Uploading photos (${completedUploadsCount}/${totalToUpload})...`,
-          progressPercent: Math.round(10 + (completedUploadsCount / totalToUpload) * 50)
+          currentStep: `Preparing photos ${start + 1}-${start + wave.length} of ${totalToUpload}...`,
+          progressPercent: Math.round((start / totalToUpload) * 100),
         });
-      });
 
-      // 3. Attach photos in batches of up to 10
-      setImportState({
-        type: "importing",
-        currentStep: "Attaching photos to checkpoints...",
-        progressPercent: 70
-      });
-
-      const photosWithStorageId = photosToUpload.filter(p => uploadedFileMap.has(p.pinRef));
-      const attachBatches: any[][] = [];
-      for (let i = 0; i < photosWithStorageId.length; i += 10) {
-        attachBatches.push(photosWithStorageId.slice(i, i + 10));
-      }
-
-      let attachedBatchCount = 0;
-      const cleanUpStorageIds: string[] = [];
-
-      for (const batch of attachBatches) {
-        const attachmentsInput = batch.map(p => ({
-          ref: p.pinRef,
-          imageId: uploadedFileMap.get(p.pinRef)!,
-          sha256: p.sha256,
-          bytes: p.bytes,
-          contentType: p.contentType,
-          imageWidth: p.imageWidth ?? undefined,
-          imageHeight: p.imageHeight ?? undefined,
-          imageSize: p.imageSize ?? undefined
-        }));
-
+        let uploadUrls: string[];
         try {
-          const results = await attachPhotoBatch({ token, attachments: attachmentsInput });
+          uploadUrls = await generateUploadUrls({ token, count: wave.length });
+        } catch (err) {
+          for (const photo of importablePhotos.slice(start)) {
+            failedItems.push({
+              pinRef: photo.pinRef,
+              path: photo.path,
+              status: "interrupted",
+              message: `Import stopped before upload: ${err instanceof Error ? err.message : String(err)}`,
+            });
+          }
+          failedCount += importablePhotos.length - start;
+          break;
+        }
+
+        const uploadedFileMap = new Map<string, string>();
+        await runWithLimit(4, wave, async (photo) => {
+          const blob = zip.photoBlobs.get(photo.pinRef)!.blob;
+          const uploadUrl = uploadUrls[wave.indexOf(photo)];
+          try {
+            const response = await fetch(uploadUrl, {
+              method: "POST",
+              headers: { "Content-Type": photo.contentType },
+              body: blob,
+            });
+            if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+            const result = await response.json() as { storageId?: string };
+            if (!result.storageId) throw new Error("No storageId returned from upload.");
+            uploadedFileMap.set(photo.pinRef, result.storageId);
+          } catch (err) {
+            log.error("upload-photo:error", "error", { err });
+            failedItems.push({
+              pinRef: photo.pinRef,
+              path: photo.path,
+              status: "upload_failed",
+              message: err instanceof Error ? err.message : String(err),
+            });
+            failedCount++;
+          }
+        });
+
+        const uploadedPhotos = wave.filter((photo) => uploadedFileMap.has(photo.pinRef));
+        const cleanUpStorageIds: string[] = [];
+        try {
+          const results = uploadedPhotos.length === 0
+            ? []
+            : await attachPhotoBatch({
+                token,
+                attachments: uploadedPhotos.map((photo) => ({
+                  ref: photo.pinRef,
+                  imageId: uploadedFileMap.get(photo.pinRef)!,
+                  sha256: photo.sha256,
+                  bytes: photo.bytes,
+                  contentType: photo.contentType,
+                  imageWidth: photo.imageWidth ?? undefined,
+                  imageHeight: photo.imageHeight ?? undefined,
+                  imageSize: photo.imageSize ?? undefined,
+                })),
+              });
           for (const res of results) {
             if (res.status === "attached") {
               attachedCount++;
             } else {
-              // Attachment failed, queue file for cleanup
               cleanUpStorageIds.push(res.imageId);
               failedItems.push({
                 pinRef: res.pinRef,
@@ -386,12 +387,11 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
           }
         } catch (err) {
           log.error("attach-batch:error", "error", { err });
-          // If the batch failed, all uploaded images in this batch are candidates for cleanup
-          for (const p of batch) {
-            cleanUpStorageIds.push(uploadedFileMap.get(p.pinRef)!);
+          for (const photo of uploadedPhotos) {
+            cleanUpStorageIds.push(uploadedFileMap.get(photo.pinRef)!);
             failedItems.push({
-              pinRef: p.pinRef,
-              path: p.path,
+              pinRef: photo.pinRef,
+              path: photo.path,
               status: "batch_failed",
               message: err instanceof Error ? err.message : String(err)
             });
@@ -399,22 +399,35 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
           }
         }
 
-        attachedBatchCount++;
+        for (let cleanupStart = 0; cleanupStart < cleanUpStorageIds.length; cleanupStart += 50) {
+          const cleanupBatch = cleanUpStorageIds.slice(cleanupStart, cleanupStart + 50);
+          try {
+            const cleanupResults = await pruneOrphans({ token, imageIds: cleanupBatch });
+            for (const result of cleanupResults) {
+              if (result.status === "deleted" || result.status === "missing") continue;
+              failedItems.push({
+                pinRef: `storage:${result.imageId}`,
+                path: result.imageId,
+                status: `cleanup_${result.status}`,
+                message: "The upload could not be removed automatically. Run orphan cleanup after active uploads finish.",
+              });
+            }
+          } catch (cleanupErr) {
+            log.error("cleanup-unattached:error", "error", { cleanupErr });
+            failedItems.push({
+              pinRef: "storage:cleanup",
+              path: `${cleanupBatch.length} uploaded file(s)`,
+              status: "cleanup_failed",
+              message: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+            });
+          }
+        }
+
         setImportState({
           type: "importing",
-          currentStep: `Attaching photos (${attachedCount} attached, ${failedCount} failed)...`,
-          progressPercent: Math.round(70 + (attachedBatchCount / attachBatches.length) * 30)
+          currentStep: `Importing photos (${Math.min(start + wave.length, totalToUpload)}/${totalToUpload})...`,
+          progressPercent: Math.round((Math.min(start + wave.length, totalToUpload) / totalToUpload) * 100),
         });
-      }
-
-      // 4. Server-side cleanup of uploaded-but-unattached blobs
-      if (cleanUpStorageIds.length > 0) {
-        try {
-          log.logUi("action:cleanup-unattached", { count: cleanUpStorageIds.length });
-          await pruneOrphans({ token, imageIds: cleanUpStorageIds });
-        } catch (cleanupErr) {
-          log.error("cleanup-unattached:error", "error", { cleanupErr });
-        }
       }
 
       setImportState({
@@ -478,8 +491,8 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
       {importState.type === "scanning" && (
         <div className="flex flex-col items-center justify-center p-8 text-center rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)]">
           <Loader2 className="h-10 w-10 animate-spin text-[var(--flag)] mb-4" />
-          <p className="font-semibold text-sm text-[var(--ink-1)]">Extracting & verifying ZIP archive...</p>
-          <p className="text-xs text-[var(--ink-3)] mt-2">Checking paths, sizes, and integrity.</p>
+          <p className="font-semibold text-sm text-[var(--ink-1)]">Inspecting ZIP archive...</p>
+          <p className="text-xs text-[var(--ink-3)] mt-2">Checking paths, manifest data, and declared sizes.</p>
         </div>
       )}
 
@@ -489,8 +502,8 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
           <AlertTriangle className="h-10 w-10 text-[var(--ink-danger)] mx-auto mb-3" />
           <p className="font-bold text-sm text-[var(--ink-1)]">ZIP archive is very large</p>
           <p className="text-xs text-[var(--ink-2)] mt-2">
-            The selected ZIP is {(importState.totalBytes / (1024 * 1024)).toFixed(1)} MiB.
-            ZIP construction and extraction are memory-intensive on mobile devices.
+            The selected ZIP contains {(importState.totalBytes / (1024 * 1024)).toFixed(1)} MiB of uncompressed photo data.
+            ZIP extraction is memory-intensive on mobile devices.
             We recommend a desktop browser or narrowing the export date range first.
           </p>
           <div className="mt-4 flex gap-2 justify-center">
@@ -499,7 +512,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
             </Button>
             <Button
               className="bg-[var(--flag)] text-white"
-              onClick={() => runZipValidation(importState.file)}
+              onClick={() => resolveInspectedArchive(importState.file, importState.inspection)}
             >
               Continue Anyway
             </Button>
@@ -525,12 +538,12 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
           </div>
 
           <p className="text-xs text-[var(--ink-2)] mb-4">
-            Successfully scanned <strong>{importState.zip.manifest.photos.length}</strong> photo entries from manifest.json.
+            Successfully scanned <strong>{importState.inspection.manifest.photos.length}</strong> photo entries from manifest.json.
           </p>
 
           {/* Resolutions metrics */}
           {(() => {
-            const photos = importState.zip.manifest.photos;
+            const photos = importState.inspection.manifest.photos;
             const ready = photos.filter(p => importState.resolutions.get(p.pinRef) === "ready");
             const conflict = photos.filter(p => importState.resolutions.get(p.pinRef) === "already_has_photo");
             const unmatched = photos.filter(p => importState.resolutions.get(p.pinRef) === "unmatched");
@@ -578,7 +591,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
             </Button>
             <Button
               className="flex-1 bg-[var(--flag)] text-white"
-              onClick={() => handleStartImport(importState.zip, importState.resolutions)}
+              onClick={() => handleStartImport(importState.file, importState.inspection, importState.resolutions)}
             >
               Start Import
             </Button>
@@ -685,6 +698,12 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
           Orphaned photos are uploaded image files in storage that are not connected to any Story checkpoint.
           Scanning allows you to free up unused cloud storage.
         </p>
+
+        {maintenanceError && (
+          <p className="mb-4 rounded-lg border border-[var(--ink-danger)] bg-[var(--bg-danger)]/20 p-3 text-xs text-[var(--ink-danger)]">
+            Orphan cleanup failed: {maintenanceError}
+          </p>
+        )}
 
         {orphanScanStatus === "idle" && (
           <Button variant="outline" className="w-full" onClick={handleStartOrphanScan}>

@@ -81,7 +81,8 @@ describe("photoCompanionArchive Core Validator", () => {
     it("successfully validates a conformant photo companion zip", async () => {
       const imgData = new Uint8Array([1, 2, 3, 4]);
       const imgBlob = new Blob([imgData], { type: "image/jpeg" });
-      const sha256 = await computeSha256(await imgBlob.arrayBuffer());
+      const sha256 = "n2SnR+G5fxMfq7a0Rylsm28CAeefs8U1bmx36JtqgGo=";
+      expect(await computeSha256(await imgBlob.arrayBuffer())).toBe(sha256);
 
       const manifest: PhotoCompanionArchiveManifest = {
         format: "tripcast-photo-companion",
@@ -134,19 +135,24 @@ describe("photoCompanionArchive Core Validator", () => {
       const manifest = {
         format: "tripcast-photo-companion",
         version: 1,
+        exportedAt: "2026-07-15T12:00:00.000Z",
+        selection: { startMs: null, endMs: null },
         photos: [
           {
             pinRef: "checkin:pin-1",
             path: "photos/pin-1.jpg",
             contentType: "image/jpeg",
             bytes: imgBlob.size,
-            sha256: "incorrect-sha-hash"
+            sha256: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
           }
-        ]
+        ],
+        missing: []
       };
 
       const zipBlob = await createMockZip(manifest, { "photos/pin-1.jpg": imgBlob });
-      await expect(validateArchiveZip(zipBlob)).rejects.toThrow("SHA-256 checksum mismatch");
+      const result = await validateArchiveZip(zipBlob);
+      expect(result.photoErrors.get("checkin:pin-1")).toContain("SHA-256 checksum mismatch");
+      expect(result.photoBlobs.size).toBe(0);
     });
 
     it("rejects when extra unexpected files exist in ZIP", async () => {
@@ -155,6 +161,8 @@ describe("photoCompanionArchive Core Validator", () => {
       const manifest = {
         format: "tripcast-photo-companion",
         version: 1,
+        exportedAt: "2026-07-15T12:00:00.000Z",
+        selection: { startMs: null, endMs: null },
         photos: [
           {
             pinRef: "checkin:pin-1",
@@ -163,7 +171,8 @@ describe("photoCompanionArchive Core Validator", () => {
             bytes: imgBlob.size,
             sha256: sha256
           }
-        ]
+        ],
+        missing: []
       };
 
       const zipBlob = await createMockZip(manifest, {
@@ -171,6 +180,90 @@ describe("photoCompanionArchive Core Validator", () => {
         "photos/unexpected.jpg": new Blob(["data2"])
       });
       await expect(validateArchiveZip(zipBlob)).rejects.toThrow("Unexpected file in ZIP not listed in manifest");
+    });
+
+    it("rejects malformed manifest fields before extracting photos", async () => {
+      const zipBlob = await createMockZip({
+        format: "tripcast-photo-companion",
+        version: 1,
+        exportedAt: "not-a-date",
+        selection: { startMs: null, endMs: null },
+        photos: {},
+        missing: [],
+      }, {});
+
+      await expect(validateArchiveZip(zipBlob)).rejects.toThrow('field "exportedAt"');
+    });
+
+    it("rejects encrypted manifests", async () => {
+      const writer = new ZipWriter(new BlobWriter("application/zip"));
+      await writer.add(
+        "manifest.json",
+        new BlobReader(new Blob(["{}"], { type: "application/json" })),
+        { password: "secret" },
+      );
+      const zipBlob = await writer.close();
+
+      await expect(validateArchiveZip(zipBlob)).rejects.toThrow("Encrypted entries are not supported");
+    });
+
+    it("rejects Unix symbolic-link entries", async () => {
+      const writer = new ZipWriter(new BlobWriter("application/zip"));
+      const manifest = {
+        format: "tripcast-photo-companion",
+        version: 1,
+        exportedAt: "2026-07-15T12:00:00.000Z",
+        selection: { startMs: null, endMs: null },
+        photos: [],
+        missing: [],
+      };
+      await writer.add(
+        "manifest.json",
+        new BlobReader(new Blob([JSON.stringify(manifest)], { type: "application/json" })),
+      );
+      await writer.add("photos/link.jpg", new BlobReader(new Blob(["target"])), {
+        msDosCompatible: false,
+        versionMadeBy: (3 << 8) | 20,
+        externalFileAttribute: (0o120777 << 16) >>> 0,
+      });
+      const zipBlob = await writer.close();
+
+      await expect(validateArchiveZip(zipBlob)).rejects.toThrow("Symbolic links are not supported");
+    });
+
+    it("extracts only selected pin references", async () => {
+      const selectedBlob = new Blob([new Uint8Array([1, 2, 3, 4])], { type: "image/jpeg" });
+      const skippedBlob = new Blob(["corrupt but unmatched"], { type: "image/jpeg" });
+      const manifest: PhotoCompanionArchiveManifest = {
+        format: "tripcast-photo-companion",
+        version: 1,
+        exportedAt: "2026-07-15T12:00:00.000Z",
+        selection: { startMs: null, endMs: null },
+        photos: [
+          {
+            pinRef: "checkin:selected",
+            path: "photos/selected.jpg",
+            contentType: "image/jpeg",
+            bytes: selectedBlob.size,
+            sha256: "n2SnR+G5fxMfq7a0Rylsm28CAeefs8U1bmx36JtqgGo=",
+          },
+          {
+            pinRef: "checkin:skipped",
+            path: "photos/skipped.jpg",
+            contentType: "image/jpeg",
+            bytes: skippedBlob.size,
+            sha256: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+          },
+        ],
+        missing: [],
+      };
+      const zipBlob = await createMockZip(manifest, {
+        "photos/selected.jpg": selectedBlob,
+        "photos/skipped.jpg": skippedBlob,
+      });
+
+      const result = await validateArchiveZip(zipBlob, new Set(["checkin:selected"]));
+      expect([...result.photoBlobs.keys()]).toEqual(["checkin:selected"]);
     });
   });
 });

@@ -24,7 +24,7 @@ const MockHydrator = ({
     });
 
     // Mock mutations
-    setMutationMock(tripcastApi.photoCompanion.travelerResolvePhotoCompanionRefs, [
+    setQueryMock(tripcastApi.photoCompanion.travelerResolvePhotoCompanionRefs, [
       { pinRef: "checkin:pin-1", status: "ready" },
       { pinRef: "checkin:pin-2", status: "already_has_photo" },
       { pinRef: "checkin:pin-3", status: "unmatched" }

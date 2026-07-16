@@ -19,7 +19,14 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useTheme } from "../../providers/ThemeProvider";
 import { cn } from "@/lib/utils";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
-import { PHOTO_MIME_EXTENSIONS } from "./photoCompanionArchive";
+import {
+  PHOTO_MIME_EXTENSIONS,
+  computeSha256Base64,
+  type PhotoCompanionArchiveManifest,
+  type PhotoCompanionArchiveMissing,
+  type PhotoCompanionArchivePhoto,
+  type PhotoCompanionContentType,
+} from "./photoCompanionArchive";
 
 // Convex caps query return arrays at 8192 elements. The export folds every
 // table (checkpoints, missions, votes, transactions, breadcrumbs) into one
@@ -77,7 +84,7 @@ async function runWithLimit<T, R>(
   fn: (item: T) => Promise<R>
 ): Promise<R[]> {
   const results: R[] = [];
-  const executing = new Set<Promise<any>>();
+  const executing = new Set<Promise<void>>();
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const index = i;
@@ -94,13 +101,8 @@ async function runWithLimit<T, R>(
   return results;
 }
 
-function getExtensionForMime(mime: string | null): string {
-  if (!mime) return ".jpg";
-  const norm = mime.trim().toLowerCase();
-  if (norm in PHOTO_MIME_EXTENSIONS) {
-    return PHOTO_MIME_EXTENSIONS[norm as keyof typeof PHOTO_MIME_EXTENSIONS][0];
-  }
-  return ".jpg";
+function getExtensionForMime(mime: PhotoCompanionContentType): string {
+  return PHOTO_MIME_EXTENSIONS[mime][0];
 }
 
 export default function BulkExportSheet({
@@ -360,6 +362,8 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
   async function executePhotoZipDownload(totalCount: number, totalBytes: number) {
     log.logUi("action:download-photo-zip:execute");
     setPhotoZipState({ type: "downloading", progress: "Starting fetches...", percent: 0 });
+    let zipWriter: ZipWriter<Blob> | null = null;
+    let zipWriterClosed = false;
 
     try {
       let currentCursor: string | null = null;
@@ -380,36 +384,47 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
         currentCursor = res.continueCursor;
       }
 
-      const zipWriter = new ZipWriter(new BlobWriter("application/zip"));
-      const finalPhotos: any[] = [];
-      const finalMissing: any[] = [];
+      const writer = new ZipWriter(new BlobWriter("application/zip"));
+      zipWriter = writer;
+      const finalPhotos: PhotoCompanionArchivePhoto[] = [];
+      const finalMissing: PhotoCompanionArchiveMissing[] = [];
 
       let fetchedCount = 0;
+      const markFetched = () => {
+        fetchedCount++;
+        setPhotoZipState({
+          type: "downloading",
+          progress: `Processing photos (${fetchedCount}/${allItems.length})...`,
+          percent: Math.round((fetchedCount / allItems.length) * 100),
+        });
+      };
 
       // Download images with bounded concurrency (4)
       await runWithLimit(4, allItems, async (item: PhotoCompanionPageItem) => {
-        const ext = getExtensionForMime(item.contentType);
-        const checkpointId = item.pinRef.split(":")[1] || item.imageId;
-        const targetPath = `photos/${checkpointId}${ext}`;
-
-        // Validate MIME support
-        const normalizedMime = item.contentType?.trim().toLowerCase() || "";
-        const isMimeSupported = normalizedMime in PHOTO_MIME_EXTENSIONS;
-
-        if (!isMimeSupported) {
+        if (!item.contentType || !(item.contentType in PHOTO_MIME_EXTENSIONS)) {
           finalMissing.push({
             pinRef: item.pinRef,
             reason: "unsupported_content_type",
             contentType: item.contentType
           });
-          fetchedCount++;
-          setPhotoZipState({
-            type: "downloading",
-            progress: `Processing (${fetchedCount}/${allItems.length})...`,
-            percent: Math.round((fetchedCount / allItems.length) * 100)
-          });
+          markFetched();
           return;
         }
+
+        const contentType = item.contentType as PhotoCompanionContentType;
+        const checkpointId = item.pinRef.startsWith("checkin:")
+          ? item.pinRef.slice("checkin:".length)
+          : "";
+        if (!/^[A-Za-z0-9_-]{1,160}$/.test(checkpointId) || item.bytes === null || !item.sha256) {
+          finalMissing.push({
+            pinRef: item.pinRef,
+            reason: "metadata_mismatch",
+            contentType: item.contentType,
+          });
+          markFetched();
+          return;
+        }
+        const targetPath = `photos/${checkpointId}${getExtensionForMime(contentType)}`;
 
         if (!item.url) {
           finalMissing.push({
@@ -417,12 +432,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
             reason: item.missingReason || "url_unavailable",
             contentType: item.contentType
           });
-          fetchedCount++;
-          setPhotoZipState({
-            type: "downloading",
-            progress: `Processing (${fetchedCount}/${allItems.length})...`,
-            percent: Math.round((fetchedCount / allItems.length) * 100)
-          });
+          markFetched();
           return;
         }
 
@@ -433,15 +443,25 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
           }
           const blob = await response.blob();
 
-          // Add to ZIP writer directly
-          await zipWriter.add(targetPath, new BlobReader(blob));
+          const downloadedSha256 = await computeSha256Base64(await blob.arrayBuffer());
+          if (blob.size !== item.bytes || downloadedSha256 !== item.sha256) {
+            finalMissing.push({
+              pinRef: item.pinRef,
+              reason: "metadata_mismatch",
+              contentType: item.contentType,
+            });
+            markFetched();
+            return;
+          }
+
+          await writer.add(targetPath, new BlobReader(blob));
 
           // Record valid metadata (never include the signed URL!)
           finalPhotos.push({
             pinRef: item.pinRef,
             path: targetPath,
-            contentType: item.contentType,
-            bytes: item.bytes || blob.size,
+            contentType,
+            bytes: item.bytes,
             sha256: item.sha256,
             imageWidth: item.imageWidth,
             imageHeight: item.imageHeight,
@@ -451,41 +471,37 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
           log.error("photo-zip-fetch:error", "error", { pinRef: item.pinRef, fetchErr });
           finalMissing.push({
             pinRef: item.pinRef,
-            reason: "storage_missing",
+            reason: "download_failed",
             contentType: item.contentType
           });
         }
 
-        fetchedCount++;
-        setPhotoZipState({
-          type: "downloading",
-          progress: `Downloading photos (${fetchedCount}/${allItems.length})...`,
-          percent: Math.round((fetchedCount / allItems.length) * 100)
-        });
+        markFetched();
       });
 
       // Write manifest.json
       setPhotoZipState({ type: "archiving", percent: 90 });
-      const manifest = {
+      const manifest: PhotoCompanionArchiveManifest = {
         format: "tripcast-photo-companion",
         version: 1,
         exportedAt: new Date().toISOString(),
         selection: {
-          startMs: startMs || null,
-          endMs: endMs || null
+          startMs: startMs ?? null,
+          endMs: endMs ?? null
         },
         photos: finalPhotos,
         missing: finalMissing
       };
 
-      await zipWriter.add(
+      await writer.add(
         "manifest.json",
         new BlobReader(new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" }))
       );
 
       // Finalize ZIP
       setPhotoZipState({ type: "archiving", percent: 98 });
-      const finalZipBlob = await zipWriter.close();
+      const finalZipBlob = await writer.close();
+      zipWriterClosed = true;
 
       // Download ZIP trigger
       const url = URL.createObjectURL(finalZipBlob);
@@ -503,6 +519,9 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
       });
       music.sfx("success");
     } catch (err) {
+      if (zipWriter && !zipWriterClosed) {
+        await zipWriter.close().catch(() => undefined);
+      }
       log.error("photo-zip-generation:error", "error", { err });
       setPhotoZipState({
         type: "error",

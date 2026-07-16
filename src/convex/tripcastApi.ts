@@ -1374,7 +1374,14 @@ export type PhotoAttachmentInput = {
   imageId: string;
   sha256: string;
   bytes: number;
-  contentType: string;
+  contentType:
+    | "image/jpeg"
+    | "image/png"
+    | "image/webp"
+    | "image/gif"
+    | "image/avif"
+    | "image/heic"
+    | "image/heif";
   imageWidth?: number;
   imageHeight?: number;
   imageSize?: StoryImageSize;
