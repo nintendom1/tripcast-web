@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, Copy, Download, Loader2 } from "lucide-react";
-import { useQuery } from "convex/react";
+import { AlertTriangle, Check, Copy, Download, Loader2, FileArchive } from "lucide-react";
+import { useQuery, useConvex } from "convex/react";
+import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js";
 
-import { tripcastApi } from "../../convex/tripcastApi";
+import { tripcastApi, type PhotoCompanionPage, type PhotoCompanionPageItem } from "../../convex/tripcastApi";
 import {
   Sheet,
   SheetBody,
@@ -17,6 +18,15 @@ import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useTheme } from "../../providers/ThemeProvider";
 import { cn } from "@/lib/utils";
+import { ConfirmModal } from "../../components/ui/ConfirmModal";
+import {
+  PHOTO_MIME_EXTENSIONS,
+  computeSha256Base64,
+  type PhotoCompanionArchiveManifest,
+  type PhotoCompanionArchiveMissing,
+  type PhotoCompanionArchivePhoto,
+  type PhotoCompanionContentType,
+} from "./photoCompanionArchive";
 
 // Convex caps query return arrays at 8192 elements. The export folds every
 // table (checkpoints, missions, votes, transactions, breadcrumbs) into one
@@ -66,6 +76,33 @@ function isExportCounts(value: unknown): value is ExportCounts {
     typeof (value as { otherCount?: unknown }).otherCount === "number" &&
     typeof (value as { breadcrumbCount?: unknown }).breadcrumbCount === "number"
   );
+}
+
+async function runWithLimit<T, R>(
+  limit: number,
+  items: T[],
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  const executing = new Set<Promise<void>>();
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const index = i;
+    const p = Promise.resolve().then(() => fn(item)).then((res) => {
+      results[index] = res;
+      executing.delete(p);
+    });
+    executing.add(p);
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
+  return results;
+}
+
+function getExtensionForMime(mime: PhotoCompanionContentType): string {
+  return PHOTO_MIME_EXTENSIONS[mime][0];
 }
 
 export default function BulkExportSheet({
@@ -121,6 +158,15 @@ export default function BulkExportSheet({
   );
 }
 
+type PhotoZipState =
+  | { type: "idle" }
+  | { type: "scanning"; count: number; bytes: number }
+  | { type: "warning"; count: number; bytes: number }
+  | { type: "downloading"; progress: string; percent: number }
+  | { type: "archiving"; percent: number }
+  | { type: "complete"; fileCount: number; missingCount: number }
+  | { type: "error"; message: string };
+
 function BulkExportBody({ open, token }: { open: boolean; token: string }) {
   const [range, setRange] = useState<"all" | "custom">("all");
   const [startDate, setStartDate] = useState("");
@@ -138,11 +184,21 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
   const startMs = startDate ? new Date(startDate).getTime() : undefined;
   const endMs = endDate ? new Date(endDate).getTime() + 86399999 : undefined;
 
+  // Photo ZIP State
+  const convex = useConvex();
+  const [photoZipState, setPhotoZipState] = useState<PhotoZipState>({ type: "idle" });
+  const [isConfirmZipWarningOpen, setIsConfirmZipWarningOpen] = useState(false);
+
   // Any change to what would be exported invalidates a prior "most recent"
   // confirmation so we never run a bounded export against stale inputs.
   useEffect(() => {
     setConfirmRecent(false);
   }, [startMs, endMs, includeMysteryMissions, includeLiveTrail]);
+
+  // Reset Photo ZIP state when range or date changes
+  useEffect(() => {
+    setPhotoZipState({ type: "idle" });
+  }, [startMs, endMs]);
 
   // Preflight count only runs once breadcrumbs are requested (the default-off
   // toggle), since breadcrumbs are the only realistic way to blow the cap.
@@ -207,7 +263,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
       setTimeout(() => setCopied(false), 2000);
       log.logUi("action:copy-export");
     } catch (err) {
-      log.error("copy:error", "ui", { err });
+      log.error("copy:error", "error", { err });
     }
   }
 
@@ -234,7 +290,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
       setTimeout(() => setTickerCopied(false), 2000);
       log.logUi("action:copy-ticker-export");
     } catch (err) {
-      log.error("copy-ticker:error", "ui", { err });
+      log.error("copy-ticker:error", "error", { err });
     }
   }
 
@@ -250,6 +306,228 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
     URL.revokeObjectURL(url);
     music.sfx("page");
     log.logUi("action:download-ticker-export");
+  }
+
+  // --- Photo Companion ZIP Export Logic ---
+
+  async function handleScanPhotoZip() {
+    log.logUi("action:scan-photo-zip:start");
+    music.sfx("tap");
+    setPhotoZipState({ type: "scanning", count: 0, bytes: 0 });
+
+    try {
+      let currentCursor: string | null = null;
+      let totalPhotosCount = 0;
+      let totalBytesSize = 0;
+
+      while (true) {
+        const res: PhotoCompanionPage = await convex.query(tripcastApi.photoCompanion.travelerListPhotoCompanionPage, {
+          token,
+          paginationOpts: { numItems: 50, cursor: currentCursor },
+          startMs,
+          endMs,
+        });
+
+        // Sum size of non-missing photos
+        const pagePhotos: PhotoCompanionPageItem[] = res.page || [];
+        totalPhotosCount += pagePhotos.length;
+        totalBytesSize += pagePhotos.reduce((sum: number, item: PhotoCompanionPageItem) => sum + (item.bytes || 0), 0);
+
+        setPhotoZipState({ type: "scanning", count: totalPhotosCount, bytes: totalBytesSize });
+
+        if (res.isDone || !res.continueCursor) {
+          break;
+        }
+        currentCursor = res.continueCursor;
+      }
+
+      log.logUi("action:scan-photo-zip:scanned", { totalPhotosCount, totalBytesSize });
+
+      const warningLimitBytes = 250 * 1024 * 1024;
+      if (totalBytesSize > warningLimitBytes) {
+        setPhotoZipState({ type: "warning", count: totalPhotosCount, bytes: totalBytesSize });
+        setIsConfirmZipWarningOpen(true);
+      } else {
+        await executePhotoZipDownload(totalPhotosCount, totalBytesSize);
+      }
+    } catch (err) {
+      log.error("photo-zip-scan:error", "error", { err });
+      setPhotoZipState({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to scan photo companion pages."
+      });
+    }
+  }
+
+  async function executePhotoZipDownload(totalCount: number, totalBytes: number) {
+    log.logUi("action:download-photo-zip:execute");
+    setPhotoZipState({ type: "downloading", progress: "Starting fetches...", percent: 0 });
+    let zipWriter: ZipWriter<Blob> | null = null;
+    let zipWriterClosed = false;
+
+    try {
+      let currentCursor: string | null = null;
+      const allItems: PhotoCompanionPageItem[] = [];
+
+      // Re-fetch items to get fresh URLs if needed
+      while (true) {
+        const res: PhotoCompanionPage = await convex.query(tripcastApi.photoCompanion.travelerListPhotoCompanionPage, {
+          token,
+          paginationOpts: { numItems: 50, cursor: currentCursor },
+          startMs,
+          endMs,
+        });
+        allItems.push(...(res.page || []));
+        if (res.isDone || !res.continueCursor) {
+          break;
+        }
+        currentCursor = res.continueCursor;
+      }
+
+      const writer = new ZipWriter(new BlobWriter("application/zip"));
+      zipWriter = writer;
+      const finalPhotos: PhotoCompanionArchivePhoto[] = [];
+      const finalMissing: PhotoCompanionArchiveMissing[] = [];
+
+      let fetchedCount = 0;
+      const markFetched = () => {
+        fetchedCount++;
+        setPhotoZipState({
+          type: "downloading",
+          progress: `Processing photos (${fetchedCount}/${allItems.length})...`,
+          percent: Math.round((fetchedCount / allItems.length) * 100),
+        });
+      };
+
+      // Download images with bounded concurrency (4)
+      await runWithLimit(4, allItems, async (item: PhotoCompanionPageItem) => {
+        if (!item.contentType || !(item.contentType in PHOTO_MIME_EXTENSIONS)) {
+          finalMissing.push({
+            pinRef: item.pinRef,
+            reason: "unsupported_content_type",
+            contentType: item.contentType
+          });
+          markFetched();
+          return;
+        }
+
+        const contentType = item.contentType as PhotoCompanionContentType;
+        const checkpointId = item.pinRef.startsWith("checkin:")
+          ? item.pinRef.slice("checkin:".length)
+          : "";
+        if (!/^[A-Za-z0-9_-]{1,160}$/.test(checkpointId) || item.bytes === null || !item.sha256) {
+          finalMissing.push({
+            pinRef: item.pinRef,
+            reason: "metadata_mismatch",
+            contentType: item.contentType,
+          });
+          markFetched();
+          return;
+        }
+        const targetPath = `photos/${checkpointId}${getExtensionForMime(contentType)}`;
+
+        if (!item.url) {
+          finalMissing.push({
+            pinRef: item.pinRef,
+            reason: item.missingReason || "url_unavailable",
+            contentType: item.contentType
+          });
+          markFetched();
+          return;
+        }
+
+        try {
+          const response = await fetch(item.url);
+          if (!response.ok) {
+            throw new Error(`HTTP error ${response.status}`);
+          }
+          const blob = await response.blob();
+
+          const downloadedSha256 = await computeSha256Base64(await blob.arrayBuffer());
+          if (blob.size !== item.bytes || downloadedSha256 !== item.sha256) {
+            finalMissing.push({
+              pinRef: item.pinRef,
+              reason: "metadata_mismatch",
+              contentType: item.contentType,
+            });
+            markFetched();
+            return;
+          }
+
+          await writer.add(targetPath, new BlobReader(blob));
+
+          // Record valid metadata (never include the signed URL!)
+          finalPhotos.push({
+            pinRef: item.pinRef,
+            path: targetPath,
+            contentType,
+            bytes: item.bytes,
+            sha256: item.sha256,
+            imageWidth: item.imageWidth,
+            imageHeight: item.imageHeight,
+            imageSize: item.imageSize
+          });
+        } catch (fetchErr) {
+          log.error("photo-zip-fetch:error", "error", { pinRef: item.pinRef, fetchErr });
+          finalMissing.push({
+            pinRef: item.pinRef,
+            reason: "download_failed",
+            contentType: item.contentType
+          });
+        }
+
+        markFetched();
+      });
+
+      // Write manifest.json
+      setPhotoZipState({ type: "archiving", percent: 90 });
+      const manifest: PhotoCompanionArchiveManifest = {
+        format: "tripcast-photo-companion",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        selection: {
+          startMs: startMs ?? null,
+          endMs: endMs ?? null
+        },
+        photos: finalPhotos,
+        missing: finalMissing
+      };
+
+      await writer.add(
+        "manifest.json",
+        new BlobReader(new Blob([JSON.stringify(manifest, null, 2)], { type: "application/json" }))
+      );
+
+      // Finalize ZIP
+      setPhotoZipState({ type: "archiving", percent: 98 });
+      const finalZipBlob = await writer.close();
+      zipWriterClosed = true;
+
+      // Download ZIP trigger
+      const url = URL.createObjectURL(finalZipBlob);
+      const a = document.createElement("a");
+      const timestamp = new Date().toISOString().split("T")[0];
+      a.href = url;
+      a.download = `tripcast-photos-${timestamp}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setPhotoZipState({
+        type: "complete",
+        fileCount: finalPhotos.length,
+        missingCount: finalMissing.length
+      });
+      music.sfx("success");
+    } catch (err) {
+      if (zipWriter && !zipWriterClosed) {
+        await zipWriter.close().catch(() => undefined);
+      }
+      log.error("photo-zip-generation:error", "error", { err });
+      setPhotoZipState({
+        type: "error",
+        message: err instanceof Error ? err.message : "Failed to generate Photo Companion ZIP."
+      });
+    }
   }
 
   return (
@@ -352,7 +630,9 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
         </label>
       </div>
 
+      {/* JSON DATA EXPORT CARD */}
       <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">JSON Data</p>
         {countLoading ? (
           <div className="flex items-center justify-center gap-2 py-4 text-[var(--ink-3)]">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -423,6 +703,109 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
           </>
         )}
       </div>
+
+      {/* PHOTO COMPANION ZIP EXPORT CARD */}
+      <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Photo Companion ZIP</p>
+
+        {photoZipState.type === "idle" && (
+          <Button
+            type="button"
+            onClick={handleScanPhotoZip}
+            className="w-full border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
+          >
+            <FileArchive className="mr-2 h-4 w-4" />
+            Prepare Photo ZIP
+          </Button>
+        )}
+
+        {photoZipState.type === "scanning" && (
+          <div className="flex flex-col items-center justify-center py-2 gap-2 text-sm text-[var(--ink-3)]">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>Scanning companion pages... ({photoZipState.count} photos found, {(photoZipState.bytes / (1024 * 1024)).toFixed(1)} MB)</span>
+          </div>
+        )}
+
+        {(photoZipState.type === "warning" || photoZipState.type === "complete" || photoZipState.type === "error") && (
+          <div className="grid gap-3">
+            {photoZipState.type === "warning" && (
+              <div className="text-amber-500 text-xs font-semibold flex items-center justify-center gap-1.5 bg-amber-500/10 p-2 rounded-lg">
+                <AlertTriangle className="h-4 w-4" />
+                <span>Oversized: {photoZipState.count} photos ({(photoZipState.bytes / (1024 * 1024)).toFixed(1)} MiB)</span>
+              </div>
+            )}
+
+            {photoZipState.type === "complete" && (
+              <div className="text-green-600 dark:text-green-400 text-sm font-semibold flex flex-col items-center justify-center gap-1 bg-green-500/10 p-3 rounded-lg">
+                <Check className="h-5 w-5" />
+                <span>Photo ZIP ready!</span>
+                <span className="text-xs font-normal text-[var(--ink-2)]">
+                  Exported {photoZipState.fileCount} photos. {photoZipState.missingCount > 0 ? `${photoZipState.missingCount} missing/unsupported listed in missing.` : ""}
+                </span>
+              </div>
+            )}
+
+            {photoZipState.type === "error" && (
+              <div className="text-rose-500 text-xs font-semibold bg-rose-500/10 p-3 rounded-lg">
+                {photoZipState.message}
+              </div>
+            )}
+
+            <Button
+              type="button"
+              onClick={handleScanPhotoZip}
+              variant="outline"
+              className="w-full"
+            >
+              Re-scan / Export again
+            </Button>
+          </div>
+        )}
+
+        {photoZipState.type === "downloading" && (
+          <div className="grid gap-2 py-2">
+            <div className="flex items-center justify-center gap-2 text-sm text-[var(--ink-3)]">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>{photoZipState.progress}</span>
+            </div>
+            <div className="w-full bg-[var(--meter-track)] rounded-full h-2">
+              <div className="bg-[var(--flag)] h-2 rounded-full" style={{ width: `${photoZipState.percent}%` }} />
+            </div>
+          </div>
+        )}
+
+        {photoZipState.type === "archiving" && (
+          <div className="flex flex-col items-center justify-center py-2 gap-2 text-sm text-[var(--ink-3)]">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span>Building ZIP archive... {photoZipState.percent}%</span>
+          </div>
+        )}
+      </div>
+
+      {/* OVERSIZED EXPORT CONFIRMATION MODAL */}
+      <ConfirmModal
+        open={isConfirmZipWarningOpen}
+        onOpenChange={setIsConfirmZipWarningOpen}
+        title="Export Large Photo ZIP?"
+        description={
+          <div className="space-y-2">
+            <p>
+              Your selection contains <strong>{photoZipState.type === "warning" ? photoZipState.count : 0} photos</strong>, totaling{" "}
+              <strong>{photoZipState.type === "warning" ? (photoZipState.bytes / (1024 * 1024)).toFixed(1) : 0} MiB</strong> of uncompressed data.
+            </p>
+            <p>
+              Constructing archives over 250 MiB in the browser is memory-intensive and can crash low-end mobile devices. We recommend using a desktop browser or narrowing the date range.
+            </p>
+          </div>
+        }
+        confirmLabel="Continue Download"
+        cancelLabel="Cancel"
+        onConfirm={() => {
+          if (photoZipState.type === "warning") {
+            void executePhotoZipDownload(photoZipState.count, photoZipState.bytes);
+          }
+        }}
+      />
 
       <div className="grid gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4 text-center shadow-sm">
         <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-3)]">Trip Ticker</p>

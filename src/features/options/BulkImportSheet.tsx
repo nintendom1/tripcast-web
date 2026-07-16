@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import PhotoCompanionImportPanel from "./PhotoCompanionImportPanel";
 
 const SAMPLE_JSON = `{
   "timeZone": "America/Los_Angeles",
@@ -406,6 +407,7 @@ type BulkImportSheetProps = {
 };
 
 type Stage = "paste" | "preview" | "done";
+type ImportMode = "json" | "photo_zip";
 
 function parsePayload(text: string): BulkImportPayload {
   const parsed = JSON.parse(text) as unknown;
@@ -439,6 +441,7 @@ export default function BulkImportSheet({
   onOpenChange,
   onImported,
 }: BulkImportSheetProps) {
+  const [importMode, setImportMode] = useState<ImportMode>("json");
   const [stage, setStage] = useState<Stage>("paste");
   const [text, setText] = useState("");
   const [entries, setEntries] = useState<BulkImportPayload | null>(null);
@@ -472,6 +475,7 @@ export default function BulkImportSheet({
 
   useEffect(() => {
     if (!open) {
+      setImportMode("json");
       setStage("paste");
       setEntries(null);
       setParseError(null);
@@ -543,150 +547,191 @@ export default function BulkImportSheet({
         </div>
 
         <SheetBody className="grid gap-4 px-5 text-[var(--ink-1)]">
-          {stage === "paste" ? (
-            <>
-              <p className="text-sm leading-relaxed text-[var(--ink-2)]">
-                Paste a JSON array or {"{ timeZone, entries }"} object with up to 100 entries.
-                Supported kinds are checkin, story, transaction, mission, Mystery Mission, route vote, ticker fact, ticker tip, and live trail breadcrumb.
-                Timestamps can be epoch milliseconds, ISO strings with an offset, or YYYY-MM-DD dates.
-              </p>
-              <textarea
-                className="min-h-64 w-full resize-y rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--ink-1)] shadow-sm outline-none placeholder:text-[var(--ink-3)] focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                spellCheck={false}
-                aria-label="Bulk import JSON"
-              />
-              {parseError ? (
-                <p role="alert" className="rounded-xl border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]">
-                  {parseError}
-                </p>
-              ) : null}
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={outlineButtonClass}
-                  onClick={() => {
-                    music.sfx("tap");
-                    log.logUi("action:insert-sample");
-                    setText(SAMPLE_JSON);
-                  }}
-                >
-                  <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                  Insert Sample
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={outlineButtonClass}
-                  onClick={copySchema}
-                >
-                  {isSchemaCopied ? (
-                    <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <FileJson className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                  )}
-                  {isSchemaCopied ? "Copied!" : "Copy Schema"}
-                </Button>
-                <Button
-                  type="button"
-                  className={primaryButtonClass}
-                  onClick={() => {
-                    music.sfx("page");
-                    log.logUi("action:validate-preview");
-                    validate();
-                  }}
-                >
-                  <ClipboardList className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                  Validate & Preview
-                </Button>
-              </div>
-            </>
-          ) : null}
+          {stage !== "done" && (
+            <div className="flex rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1 shadow-sm mb-2">
+              <button
+                type="button"
+                onClick={() => {
+                  music.sfx("tap");
+                  setImportMode("json");
+                }}
+                className={cn(
+                  "flex-1 rounded-lg py-2 text-sm font-semibold transition-colors",
+                  importMode === "json"
+                    ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
+                    : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+                )}
+              >
+                JSON Data
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  music.sfx("tap");
+                  setImportMode("photo_zip");
+                }}
+                className={cn(
+                  "flex-1 rounded-lg py-2 text-sm font-semibold transition-colors",
+                  importMode === "photo_zip"
+                    ? "bg-[var(--flag)] text-[var(--ink-on-brand)] shadow-sm"
+                    : "text-[var(--ink-2)] hover:bg-[var(--meter-track)]",
+                )}
+              >
+                Photo ZIP
+              </button>
+            </div>
+          )}
 
-          {stage === "preview" ? (
+          {importMode === "photo_zip" && stage !== "done" ? (
+            <PhotoCompanionImportPanel token={token} />
+          ) : (
             <>
-              <PreviewSummary preview={preview} />
-              {preview?.valid ? (
-                <div className="grid gap-2">
-                  {preview.rows.map((row) => (
-                    <div
-                      key={`${row.index}-${row.ref ?? row.title}`}
-                      className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-sm"
+              {stage === "paste" ? (
+                <>
+                  <p className="text-sm leading-relaxed text-[var(--ink-2)]">
+                    Paste a JSON array or {"{ timeZone, entries }"} object with up to 100 entries.
+                    Supported kinds are checkin, story, transaction, mission, Mystery Mission, route vote, ticker fact, ticker tip, and live trail breadcrumb.
+                    Timestamps can be epoch milliseconds, ISO strings with an offset, or YYYY-MM-DD dates.
+                  </p>
+                  <textarea
+                    className="min-h-64 w-full resize-y rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 font-[var(--font-mono)] text-xs leading-relaxed text-[var(--ink-1)] shadow-sm outline-none placeholder:text-[var(--ink-3)] focus:border-[var(--flag)] focus:ring-1 focus:ring-[var(--flag)]"
+                    value={text}
+                    onChange={(event) => setText(event.target.value)}
+                    spellCheck={false}
+                    aria-label="Bulk import JSON"
+                  />
+                  {parseError ? (
+                    <p role="alert" className="rounded-xl border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]">
+                      {parseError}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={outlineButtonClass}
+                      onClick={() => {
+                        music.sfx("tap");
+                        log.logUi("action:insert-sample");
+                        setText(SAMPLE_JSON);
+                      }}
                     >
-                      <div className="flex items-start gap-2">
-                        <span className="rounded-full bg-[var(--meter-track)] px-2 py-0.5 font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-2)]">
-                          {row.kind}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-[var(--ink-1)]">{row.title}</p>
-                          {row.detail ? <p className="text-xs text-[var(--ink-3)]">{row.detail}</p> : null}
-                          {row.links.length > 0 ? (
-                            <p className="mt-1 text-xs text-[var(--teal)]">{row.links.join(" · ")}</p>
-                          ) : null}
+                      <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      Insert Sample
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={outlineButtonClass}
+                      onClick={copySchema}
+                    >
+                      {isSchemaCopied ? (
+                        <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <FileJson className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      )}
+                      {isSchemaCopied ? "Copied!" : "Copy Schema"}
+                    </Button>
+                    <Button
+                      type="button"
+                      className={primaryButtonClass}
+                      onClick={() => {
+                        music.sfx("page");
+                        log.logUi("action:validate-preview");
+                        validate();
+                      }}
+                    >
+                      <ClipboardList className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      Validate & Preview
+                    </Button>
+                  </div>
+                </>
+              ) : null}
+
+              {stage === "preview" ? (
+                <>
+                  <PreviewSummary preview={preview} />
+                  {preview?.valid ? (
+                    <div className="grid gap-2">
+                      {preview.rows.map((row) => (
+                        <div
+                          key={`${row.index}-${row.ref ?? row.title}`}
+                          className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 shadow-sm"
+                        >
+                          <div className="flex items-start gap-2">
+                            <span className="rounded-full bg-[var(--meter-track)] px-2 py-0.5 font-[var(--font-mono)] text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--ink-2)]">
+                              {row.kind}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold text-[var(--ink-1)]">{row.title}</p>
+                              {row.detail ? <p className="text-xs text-[var(--ink-3)]">{row.detail}</p> : null}
+                              {row.links.length > 0 ? (
+                                <p className="mt-1 text-xs text-[var(--teal)]">{row.links.join(" · ")}</p>
+                              ) : null}
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
+                  ) : null}
+                  {commitError ? (
+                    <p role="alert" className="rounded-xl border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]">
+                      {commitError}
+                    </p>
+                  ) : null}
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className={outlineButtonClass}
+                      onClick={() => {
+                        music.sfx("page");
+                        log.logUi("action:back-to-paste");
+                        setStage("paste");
+                      }}
+                    >
+                      <ChevronLeft className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      Back
+                    </Button>
+                    <Button type="button" disabled={!preview?.valid || isCommitting} className={primaryButtonClass} onClick={commit}>
+                      <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
+                      {isCommitting ? "Importing..." : `Commit ${preview?.rows.length ?? 0} Entries`}
+                    </Button>
+                  </div>
+                </>
+              ) : null}
+
+              {stage === "done" && result ? (
+                <div className="grid gap-4 py-8 text-center">
+                  <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[color-mix(in_oklab,var(--green)_16%,transparent)] text-[var(--green)]">
+                    <Check className="h-8 w-8" aria-hidden="true" />
+                  </div>
+                  <div>
+                    <p className="font-[var(--font-display)] text-2xl font-extrabold text-[var(--ink-1)]">
+                      {result.imported} entries imported
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--ink-2)]">
+                      {result.counts.checkins} check-ins, {result.counts.transactions} transactions,{" "}
+                      {result.counts.missions} missions, {result.counts.mysteryMissions} mystery missions,{" "}
+                      {result.counts.routeVotes} route votes, {result.counts.tickerFacts} ticker facts,{" "}
+                      {result.counts.tickerTips} ticker tips, {result.counts.liveTrailSamples} breadcrumbs.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    className={primaryButtonClass}
+                    onClick={() => {
+                      music.sfx("page");
+                      log.logUi("action:close-import-done");
+                      onOpenChange(false);
+                    }}
+                  >
+                    Back to Options
+                  </Button>
                 </div>
               ) : null}
-              {commitError ? (
-                <p role="alert" className="rounded-xl border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]">
-                  {commitError}
-                </p>
-              ) : null}
-              <div className="flex flex-wrap justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className={outlineButtonClass}
-                  onClick={() => {
-                    music.sfx("page");
-                    log.logUi("action:back-to-paste");
-                    setStage("paste");
-                  }}
-                >
-                  <ChevronLeft className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                  Back
-                </Button>
-                <Button type="button" disabled={!preview?.valid || isCommitting} className={primaryButtonClass} onClick={commit}>
-                  <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                  {isCommitting ? "Importing..." : `Commit ${preview?.rows.length ?? 0} Entries`}
-                </Button>
-              </div>
             </>
-          ) : null}
-
-          {stage === "done" && result ? (
-            <div className="grid gap-4 py-8 text-center">
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[color-mix(in_oklab,var(--green)_16%,transparent)] text-[var(--green)]">
-                <Check className="h-8 w-8" aria-hidden="true" />
-              </div>
-              <div>
-                <p className="font-[var(--font-display)] text-2xl font-extrabold text-[var(--ink-1)]">
-                  {result.imported} entries imported
-                </p>
-                <p className="mt-1 text-sm text-[var(--ink-2)]">
-                  {result.counts.checkins} check-ins, {result.counts.transactions} transactions,{" "}
-                  {result.counts.missions} missions, {result.counts.mysteryMissions} mystery missions,{" "}
-                  {result.counts.routeVotes} route votes, {result.counts.tickerFacts} ticker facts,{" "}
-                  {result.counts.tickerTips} ticker tips, {result.counts.liveTrailSamples} breadcrumbs.
-                </p>
-              </div>
-              <Button
-                type="button"
-                className={primaryButtonClass}
-                onClick={() => {
-                  music.sfx("page");
-                  log.logUi("action:close-import-done");
-                  onOpenChange(false);
-                }}
-              >
-                Back to Options
-              </Button>
-            </div>
-          ) : null}
+          )}
         </SheetBody>
       </SheetContent>
     </Sheet>

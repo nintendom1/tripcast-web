@@ -7,6 +7,9 @@ import BulkExportSheet from "./BulkExportSheet";
 // Mock Convex
 vi.mock("convex/react", () => ({
   useQuery: vi.fn(),
+  useConvex: vi.fn(() => ({
+    query: vi.fn().mockResolvedValue({ page: [], isDone: true }),
+  })),
 }));
 
 // The sheet calls useQuery up to three times. Discriminate by args shape so

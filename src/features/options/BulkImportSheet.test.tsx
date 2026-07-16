@@ -23,6 +23,11 @@ vi.mock("../../debug/useActiveUiContext", () => ({
 vi.mock("../../debug/useDebugLogger", () => ({
   useDebugLogger: vi.fn(() => ({
     logUi: vi.fn(),
+    error: vi.fn(),
+  })),
+  debugLoggerFor: vi.fn(() => ({
+    warn: vi.fn(),
+    logPerformance: vi.fn(),
   })),
 }));
 
