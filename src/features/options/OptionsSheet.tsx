@@ -71,6 +71,7 @@ import {
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
 import type { StoredSession } from "../../lib/auth";
+import { Capacitor } from "@capacitor/core";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useReadingSpeedSafe } from "../../providers/ReadingSpeedProvider";
@@ -2021,6 +2022,7 @@ function OptionsHome({
     <OptionsSection label="Developer">
       <OptionsGroup>
         <ConvexUsageRow />
+        <IosExpirationCountdown role={role} />
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
         {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
         <OptionsRow
@@ -2593,6 +2595,69 @@ function OptionsSegmentedControl({
   );
 }
 
+function IosExpirationCountdown({ role }: { role: "traveler" | "follower" }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000 * 30);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (role !== "traveler") return null;
+
+  const isIosNative = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+  if (!isIosNative) return null;
+
+  const expirationTime = __BUILD_TIMESTAMP__ + 7 * 24 * 60 * 60 * 1000;
+  const diff = expirationTime - now;
+
+  if (diff <= 0) {
+    return (
+      <InfoRow
+        icon={Clock}
+        title="Sideload Profile"
+        detail={
+          <span className="text-[var(--danger)] font-semibold">
+            Expired
+          </span>
+        }
+      />
+    );
+  }
+
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+  const hours = Math.floor((diff % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  const minutes = Math.floor((diff % (60 * 60 * 1000)) / (60 * 1000));
+
+  let colorClass = "text-[var(--green-2)]";
+  if (diff <= 24 * 60 * 60 * 1000) {
+    colorClass = "text-[var(--danger)] font-semibold";
+  } else if (diff <= 48 * 60 * 60 * 1000) {
+    colorClass = "text-[var(--amber-2)] font-semibold";
+  }
+
+  const parts = [];
+  if (days > 0) parts.push(`${days} day${days !== 1 ? "s" : ""}`);
+  if (hours > 0 || days > 0) parts.push(`${hours} hour${hours !== 1 ? "s" : ""}`);
+  parts.push(`${minutes} minute${minutes !== 1 ? "s" : ""}`);
+
+  const formattedRemaining = parts.join(", ");
+
+  return (
+    <InfoRow
+      icon={Clock}
+      title="Sideload Profile"
+      detail={
+        <span className={cn("font-medium", colorClass)}>
+          {`Expires in: ${formattedRemaining}`}
+        </span>
+      }
+    />
+  );
+}
+
 function InfoRow({
   icon: Icon,
   title,
@@ -2600,7 +2665,7 @@ function InfoRow({
 }: {
   icon: LucideIcon;
   title: string;
-  detail?: string;
+  detail?: React.ReactNode;
 }) {
   return (
     <div className="flex min-h-16 items-center gap-4 px-4 py-3 sm:px-5">
