@@ -88,6 +88,7 @@ import { triggerMapCooldown } from "../map/mapService";
 import { triggerCrash } from "../../debug/crashTrigger";
 import { getMapStyleResolution } from "../map/mapService";
 import { computeAutoState } from "../travelstate/autoStateCalc";
+import { IosSideloadProfileCountdown } from "./SideloadProfileCountdownRow";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -2021,6 +2022,7 @@ function OptionsHome({
     <OptionsSection label="Developer">
       <OptionsGroup>
         <ConvexUsageRow />
+        <IosSideloadProfileCountdown role={role} />
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
         {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
         <OptionsRow

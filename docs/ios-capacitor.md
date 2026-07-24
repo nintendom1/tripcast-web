@@ -2,15 +2,14 @@
 
 Native iOS shell around the existing web app, so a Traveler can **emit GPS while the phone is
 locked / in a pocket**. Built around **free Apple ID signing** (no $99/yr fee), which means the
-app is **device-only** and the provisioning profile **expires every 7 days** — re-deploy from
-Xcode to keep it alive.
+app is **device-only** and the provisioning profile **expires every 7 days** — renew and re-deploy
+it before the countdown reaches zero.
 
-> Capacitor is pinned to the **7.x** line (core/cli/ios 7.6.5, status-bar 7.0.6) to match
-> `@capacitor-community/background-geolocation`, whose Swift PM dependency targets Capacitor 7.
-> Do not bump to Capacitor 8 until the geolocation plugin ships a Cap 8 build.
+> Capacitor core, CLI, and iOS are pinned to **8.4.0**. Background location uses
+> `@capgo/background-geolocation` 8.0.40. Keep those versions aligned when upgrading the native
+> toolchain.
 >
-> Phase 1 (this commit) adds Capacitor config on Windows. The `ios/` native project is generated
-> on the Mac (Phase 1 finish) because `cap add ios` requires macOS + Xcode + CocoaPods.
+> The `ios/` native project is versioned. Do not run `npx cap add ios` in an existing checkout.
 
 ## Prerequisites (Mac)
 
@@ -26,16 +25,15 @@ First create `.env.capacitor.local` (see "Pointing at prod" below), then:
 ```bash
 cd tripcast-web
 npm install
-npm run build:cap                # vite --mode capacitor → dist/ with relative paths + prod URL
-npx cap add ios                  # generates ios/ native project (macOS only)
-npx cap sync ios                 # copies web build + installs pods
+npm run ios:sync                 # build:cap → copy web assets → install/update pods
 ```
 
 In Xcode (`npx cap open ios`):
 1. Select the **App** target → **Signing & Capabilities**.
 2. Team = your Personal Team (free Apple ID). Bundle id matches `capacitor.config.ts`
    (`com.tripcast.app`) — change if Xcode says it is taken.
-3. Phase 2 will add the **Location** background mode and Info.plist usage strings here.
+3. Confirm the committed **Location updates** background mode and location usage strings remain
+   present after syncing.
 
 ## Pointing at prod (required — the phone can't reach localhost)
 
@@ -85,9 +83,9 @@ project. `npm run ios:run` also reads `DEVELOPMENT_TEAM` locally and passes it d
 `xcodebuild`, so your personal Apple Team ID does not need to be committed to the Xcode project.
 (Vite precedence: `.env.capacitor.local` > `.env.local`.)
 
-## Routine deploy / weekly refresh (Mac)
+## Routine deploy and profile renewal (Mac)
 
-Each web change, or whenever the 7-day profile lapses — one command does build + sync + run:
+For ordinary web changes, one command builds, syncs, signs, and deploys:
 
 ```bash
 cd tripcast-web
@@ -96,32 +94,51 @@ npm run ios:run                 # = build:cap → cap sync ios → xcodebuild �
 npm run ios:run -- --target <device-id>
 ```
 
+Xcode normally reuses a still-valid cached provisioning profile. An ordinary rebuild therefore
+does **not** reset its lifetime to seven days. On native iOS, open Traveler options → Developer and
+check **Sideload Profile** for the remaining time and exact expiration embedded in the installed
+app. The row is intentionally absent on web, Android, and Follower views.
+
+To deliberately request a new profile and deploy it:
+
+```bash
+npm run ios:run -- --refresh-profile --target <device-id>
+```
+
+`--refresh-profile` selects only the cached profile matching
+`<DEVELOPMENT_TEAM>.com.tripcast.app`, moves it out of Xcode's profile cache during signing, and
+restores it automatically if the native build fails. After a successful renewal, the installed
+app should report approximately seven days remaining. Use this option near expiration rather than
+on every routine build, because renewal requires Apple's provisioning service.
+
 - `npm run ios:sync` (build + sync, no launch) if you prefer to run from Xcode.
 - List devices: `npm run ios:run -- --list` or `npx cap run ios --list`.
 - First launch on device: **Settings → General → VPN & Device Management** → trust your dev cert.
 - If iOS asks you to trust the developer again, it usually means Xcode created or selected a new
   signing certificate. Weekly profile refreshes should not normally require repeating this step.
-- When Live Trail location is wired (Phase 2), iOS will prompt for permission — choose
-  **Allow Always** so it emits with the screen locked.
+- If you manually retain an old profile, move it outside
+  `~/Library/Developer/Xcode/UserData/Provisioning Profiles/`; Xcode tries to parse every file in
+  that directory, including files renamed with a `.backup` suffix.
+- On first Live Trail use, iOS prompts for location permission — choose **Allow Always** so it
+  emits with the screen locked.
 
-## Phase 1 test checklist
+## Native test checklist
 
 - [ ] `npm run build:cap` succeeds; `dist/index.html` uses `./assets/...` paths.
-- [ ] `npx cap add ios && npx cap sync ios` complete with no errors (Mac).
+- [ ] `npm run ios:sync` completes with no errors (Mac).
 - [ ] App launches in the iOS Simulator and the existing TripCast web app renders unchanged
       (map, sheets, auth all work — backend reached over https).
 - [ ] App installs and launches on the physical iPhone via `npm run ios:run`.
+- [ ] Traveler Developer options show the embedded profile's actual expiration on physical iOS.
+- [ ] `--refresh-profile` renews the profile to approximately seven days and deploys it.
 - [ ] `npm run validate` passes (regression guard).
 
-Background-GPS emission testing is **Phase 2** (needs the geolocation plugin + Info.plist modes).
+## Background GPS emission
 
-## Phase 2 — Background GPS emission
-
-The web code is done: `src/native/locationWatcher.ts` wraps the
-`@capacitor-community/background-geolocation` plugin behind a platform guard, and the existing
-Traveler location-sharing effect in `src/features/map/TripMap.tsx` uses it on native (web still
-uses `navigator.geolocation`). The **LivePill** "LIVE / PAUSED" toggle is the control surface — no
-new UI. Remaining work is iOS native config, all on the Mac.
+`src/native/nativeLocationManager.ts` wraps `@capgo/background-geolocation` behind a platform
+guard, and the Traveler location-sharing effect in `src/features/map/TripMap.tsx` uses it on native
+(web still uses `navigator.geolocation`). The **LivePill** "LIVE / PAUSED" toggle is the control
+surface.
 
 ### ⚠️ Info.plist keys are MANDATORY — missing them crashes the app
 
@@ -134,33 +151,31 @@ adds it after the first successful request). If the LIVE toggle crashes to home,
 Simulators → device → Open Console), tap LIVE, and read the log — it names the missing key
 explicitly ("…must contain an NSLocationWhenInUseUsageDescription key").
 
-### iOS native setup (Mac, one-time)
+### iOS native configuration
 
-1. `npx cap sync ios` (installs the plugin pod after `npm install`).
-2. In Xcode → **App** target → **Signing & Capabilities** → **+ Capability** → **Background Modes**,
-   then check **Location updates**. (Allowed under free signing — it is a background *mode*, not a
-   paid entitlement.)
-3. Add Info.plist usage strings (Xcode → Info, or edit `ios/App/App/Info.plist`) — paste inside the
-   top-level `<dict>`:
-   ```xml
-   <key>NSLocationWhenInUseUsageDescription</key>
-   <string>TripCast shows your live location on the trip map.</string>
-   <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-   <string>TripCast keeps sharing your live location with followers while the app is in the background.</string>
-   <key>UIBackgroundModes</key>
-   <array>
-     <string>location</string>
-   </array>
-   ```
-   (Step 2's capability adds the `UIBackgroundModes`/`location` entry; keep it if already present.)
-4. Reinstall: `npm run ios:run`. First LIVE tap now shows the iOS prompt → choose **Allow Always**.
+The native project already commits the plugin pod, **Location updates** background mode, and these
+Info.plist entries:
 
-### Commit the native project
+```xml
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>TripCast shows your live location on the trip map.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>TripCast keeps sharing your live location with followers while the app is in the background.</string>
+<key>UIBackgroundModes</key>
+<array>
+  <string>location</string>
+</array>
+```
 
-`ios/` is currently Mac-local only, so the Info.plist fix would be lost on regen. After it works:
-`git add ios/ && git commit`. Capacitor's generated `ios/App/.gitignore` plus the repo `.gitignore`
-already exclude `Pods/`, `build/`, copied web assets, `Podfile.lock`, and `*.xcuserstate`. Pushing
-makes Info.plist versioned and editable from any checkout (including Windows).
+After dependency changes, run `npm run ios:sync` and confirm this configuration remains present.
+Reinstall with `npm run ios:run`; the first LIVE tap shows the iOS prompt → choose
+**Allow Always**.
+
+### Native project commits
+
+Review native diffs after Xcode or `cap sync` changes. Commit intentional project, plist, pod, or
+asset updates, but do not commit a personal `DEVELOPMENT_TEAM` value written into
+`ios/App/App.xcodeproj/project.pbxproj`. Generated build products and user state remain ignored.
 
 > If location is later **denied**, the app now detects `NOT_AUTHORIZED` and opens Settings once
 > (via `BackgroundGeolocation.openSettings()`) so you can re-enable it — see `TripMap.tsx`
@@ -176,10 +191,10 @@ makes Info.plist versioned and editable from any checkout (including Windows).
 - [ ] Tap **PAUSED** → emission stops (watcher removed). Server dedup (60s/200m) prevents flooding.
 - [ ] Debug log shows `live-trail:native-watch:start/stop` and `live-trail:permission:result`.
 
-## App icon & splash (Phase 3)
+## Regenerating the app icon and splash
 
-The native project currently uses the generic Capacitor scaffold icon. To brand it: drop a
-**1024×1024** `assets/icon.png` (no transparency) — see `assets/README.md` — then on the Mac:
+The versioned sources are in `assets/`; see `assets/README.md`. To regenerate the iOS asset
+catalog on the Mac:
 
 ```bash
 cd tripcast-web
@@ -190,8 +205,8 @@ git add assets/ ios/App/App/Assets.xcassets   # commit sources + generated icons
 
 ## Notes
 
-- Web deploy is unaffected: a plain `npm run build` (no `CAPACITOR=1`) keeps the
-  `/tripcast-web/` GitHub Pages base.
+- Web deploy is unaffected: a plain `npm run build` uses the `/tripcast-web/` GitHub Pages base;
+  `build:cap` selects Capacitor mode and a relative asset base.
 - Free-signing limits: app expires after 7 days, max 3 sideloaded apps per Apple ID, 10 app IDs
   per 7 days. Fine for one personal device.
 - If iOS ever blocks background location under free signing (not expected — it is an Info.plist

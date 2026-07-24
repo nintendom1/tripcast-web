@@ -1,10 +1,25 @@
 import { existsSync, readFileSync } from "fs";
-import { join, resolve } from "path";
+import { homedir } from "os";
+import { basename, join, resolve } from "path";
 import { spawnSync } from "child_process";
+import {
+  finishProvisioningProfileRefresh,
+  prepareProvisioningProfileRefresh,
+  restoreProvisioningProfiles,
+} from "./ios-profile-refresh.mjs";
 
 const envFile = join(process.cwd(), ".env.capacitor.local");
 const workspace = "App.xcworkspace";
 const nativeProjectDir = join(process.cwd(), "ios", "App");
+const appBundleId = "com.tripcast.app";
+const provisioningProfileDir = join(
+  homedir(),
+  "Library",
+  "Developer",
+  "Xcode",
+  "UserData",
+  "Provisioning Profiles",
+);
 
 loadLocalEnv();
 
@@ -38,6 +53,16 @@ const appPath = join(
   `${configuration}-${productSdk}`,
   `${scheme}.app`,
 );
+
+if (options.refreshProfile && buildsForSimulator) {
+  console.error("--refresh-profile is only available for physical iOS device builds.");
+  process.exit(1);
+}
+
+if (options.refreshProfile && !teamId) {
+  console.error("--refresh-profile requires DEVELOPMENT_TEAM in .env.capacitor.local or the shell.");
+  process.exit(1);
+}
 
 console.log("\x1b[32m[TripCast iOS] Building web app and syncing Capacitor...\x1b[0m");
 run("npm", ["run", "build:cap"]);
@@ -74,7 +99,48 @@ if (teamId) {
   }
 }
 
-run("xcrun", xcodebuildArgs, { cwd: nativeProjectDir });
+const profileRefresh = options.refreshProfile
+  ? prepareProvisioningProfileRefresh({
+      applicationIdentifier: `${teamId}.${appBundleId}`,
+      profileDir: provisioningProfileDir,
+    })
+  : undefined;
+if (profileRefresh) {
+  if (profileRefresh.movedProfiles.length === 0) {
+    console.log(
+      `\x1b[33mNo cached profile matched ${profileRefresh.applicationIdentifier}; Xcode will request one.\x1b[0m`,
+    );
+  } else {
+    console.log(
+      `\x1b[32mRefreshing ${profileRefresh.applicationIdentifier}: temporarily moved ${profileRefresh.movedProfiles.length} cached profile(s).\x1b[0m`,
+    );
+  }
+}
+const buildResult = run("xcrun", xcodebuildArgs, {
+  cwd: nativeProjectDir,
+  exitOnFailure: !profileRefresh,
+});
+
+if (buildResult.status !== 0) {
+  restoreProvisioningProfiles(profileRefresh);
+  console.error(
+    "\x1b[33mNative build failed; restored the cached TripCast provisioning profile(s).\x1b[0m",
+  );
+  process.exit(buildResult.status ?? 1);
+}
+
+if (profileRefresh) {
+  let replacementProfile;
+  try {
+    replacementProfile = finishProvisioningProfileRefresh(profileRefresh);
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
+  console.log(
+    `\x1b[32mProvisioning profile refreshed: ${basename(replacementProfile)}\x1b[0m`,
+  );
+}
 
 console.log("\x1b[32m[TripCast iOS] Deploying to device...\x1b[0m");
 
@@ -119,6 +185,7 @@ function parseArgs(args) {
     device: false,
     virtual: false,
     connect: false,
+    refreshProfile: false,
     target: undefined,
     scheme: undefined,
     configuration: undefined,
@@ -133,6 +200,7 @@ function parseArgs(args) {
     else if (arg === "--device") parsed.device = true;
     else if (arg === "--virtual") parsed.virtual = true;
     else if (arg === "--connect") parsed.connect = true;
+    else if (arg === "--refresh-profile") parsed.refreshProfile = true;
     else if (arg === "--target") parsed.target = readValue(args, ++index, "--target");
     else if (arg.startsWith("--target=")) parsed.target = arg.slice("--target=".length);
     else if (arg === "--scheme") parsed.scheme = readValue(args, ++index, "--scheme");
@@ -210,12 +278,15 @@ function warnIfLocalProjectTeamDiffers(teamId, projectTeamIds) {
 }
 
 function run(command, args, options = {}) {
+  const { exitOnFailure = true, ...spawnOptions } = options;
   console.log(`\x1b[36m> ${command} ${args.join(" ")}\x1b[0m`);
-  const result = spawnSync(command, args, { stdio: "inherit", ...options });
+  const result = spawnSync(command, args, { stdio: "inherit", ...spawnOptions });
 
-  if (result.status !== 0) {
+  if (result.status !== 0 && exitOnFailure) {
     process.exit(result.status ?? 1);
   }
+
+  return result;
 }
 
 function printHelp() {
@@ -231,6 +302,7 @@ Options:
   --device                   Prefer a physical iOS device.
   --virtual                  Build and deploy to a simulator.
   --connect                  Tie native-run to the app process.
+  --refresh-profile          Request a fresh TripCast profile before a physical-device build.
   --scheme <name>            Xcode scheme. Defaults to App.
   --configuration <name>     Xcode configuration. Defaults to Debug.
   -h, --help                 Show this help.
