@@ -17,11 +17,10 @@ vi.mock("convex/react", () => ({
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
-(globalThis as any).__BUILD_TIMESTAMP__ = Date.now();
-
 const capacitorMocks = {
   isNativePlatform: vi.fn().mockReturnValue(false),
   getPlatform: vi.fn().mockReturnValue("web"),
+  getExpiration: vi.fn().mockResolvedValue({}),
 };
 
 vi.mock("@capacitor/core", async (importOriginal) => {
@@ -33,6 +32,9 @@ vi.mock("@capacitor/core", async (importOriginal) => {
       isNativePlatform: () => capacitorMocks.isNativePlatform(),
       getPlatform: () => capacitorMocks.getPlatform(),
     },
+    registerPlugin: () => ({
+      getExpiration: () => capacitorMocks.getExpiration(),
+    }),
   };
 });
 
@@ -996,6 +998,7 @@ describe("OptionsSheet IosExpirationCountdown", () => {
   beforeEach(() => {
     capacitorMocks.isNativePlatform.mockReturnValue(false);
     capacitorMocks.getPlatform.mockReturnValue("web");
+    capacitorMocks.getExpiration.mockResolvedValue({});
   });
 
   it("is completely hidden when not on native iOS", () => {
@@ -1012,31 +1015,45 @@ describe("OptionsSheet IosExpirationCountdown", () => {
     expect(screen.queryByText("Sideload Profile")).not.toBeInTheDocument();
   });
 
-  it("shows active countdown with remaining time when on native iOS for Travelers", () => {
-    const buildTime = Date.now() - 1.5 * 24 * 60 * 60 * 1000;
-    (globalThis as any).__BUILD_TIMESTAMP__ = buildTime;
-
+  it("shows the actual profile countdown when on native iOS for Travelers", async () => {
     capacitorMocks.isNativePlatform.mockReturnValue(true);
     capacitorMocks.getPlatform.mockReturnValue("ios");
+    capacitorMocks.getExpiration.mockResolvedValue({
+      expiresAtMs: Date.now() + 5 * 24 * 60 * 60 * 1000,
+    });
 
     setupMocks();
     renderOptions();
 
-    expect(screen.getByText("Sideload Profile")).toBeInTheDocument();
-    expect(screen.getByText(/Expires in: 5 days/)).toBeInTheDocument();
+    expect(await screen.findByText("Sideload Profile")).toBeInTheDocument();
+    expect(screen.getByText(/5 days.*remaining/)).toBeInTheDocument();
   });
 
-  it("shows 'Expired' when the 7 days have lapsed", () => {
-    const buildTime = Date.now() - 8 * 24 * 60 * 60 * 1000;
-    (globalThis as any).__BUILD_TIMESTAMP__ = buildTime;
-
+  it("shows 'Expired' when the profile expiration has lapsed", async () => {
     capacitorMocks.isNativePlatform.mockReturnValue(true);
     capacitorMocks.getPlatform.mockReturnValue("ios");
+    capacitorMocks.getExpiration.mockResolvedValue({
+      expiresAtMs: Date.now() - 60 * 1000,
+    });
 
     setupMocks();
     renderOptions();
 
-    expect(screen.getByText("Sideload Profile")).toBeInTheDocument();
-    expect(screen.getByText("Expired")).toBeInTheDocument();
+    expect(await screen.findByText("Sideload Profile")).toBeInTheDocument();
+    expect(screen.getByText("Expired", { selector: ".text-sm" })).toBeInTheDocument();
+  });
+
+  it("stays hidden when native iOS has no embedded profile", async () => {
+    capacitorMocks.isNativePlatform.mockReturnValue(true);
+    capacitorMocks.getPlatform.mockReturnValue("ios");
+    capacitorMocks.getExpiration.mockResolvedValue({});
+
+    setupMocks();
+    renderOptions();
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Sideload Profile")).not.toBeInTheDocument();
   });
 });

@@ -8,9 +8,6 @@ export default defineConfig(({ mode }) => ({
   // `.env.capacitor.local` (where the prod VITE_CONVEX_URL lives) and serves
   // assets from the app-bundle root. Web deploy keeps the GitHub Pages subpath.
   base: mode === "capacitor" ? "./" : "/tripcast-web/",
-  define: {
-    __BUILD_TIMESTAMP__: Date.now(),
-  },
   plugins: [tailwindcss(), react()],
   resolve: {
     alias: {
