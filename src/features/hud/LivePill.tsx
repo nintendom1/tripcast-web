@@ -1,5 +1,4 @@
-import * as React from "react";
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { Compass, Route } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSamplerMode, setSamplerMode, type SamplerMode } from "../../lib/samplerMode";
@@ -12,18 +11,32 @@ export interface LivePillProps {
 }
 
 const OPTIONS: Array<{ value: SamplerMode; label: string }> = [
-  { value: "precise", label: "Precise" },
-  { value: "relevant", label: "Relevant" },
   { value: "legacy", label: "Legacy" },
+  { value: "relevant", label: "Relevant" },
+  { value: "precise", label: "Precise" },
 ];
+
+const LONG_PRESS_MS = 200;
+const MOVE_CANCEL_THRESHOLD_PX = 8;
+const CLICK_SUPPRESSION_MS = 500;
+
+type GesturePhase = "idle" | "pending" | "active" | "cancelled";
+
+function vibrate(duration: number): void {
+  try {
+    navigator.vibrate?.(duration);
+  } catch {
+    // Haptics are optional.
+  }
+}
 
 /**
  * Slim LIVE / PAUSED pill, Traveler only. Replaces the bottom-right Share-Location
  * button — collocating the toggle with the HUD reduces map-chrome density and makes
  * the broadcasting state easy to read at a glance.
  *
- * Supports a hold-and-reveal gesture: long-press (250ms) to display a vertical menu fanning
- * out above the pill to quickly change the GPS precision. Glide finger to select, or release
+ * Supports a hold-and-reveal gesture: long-press (200ms) to display a vertical menu fanning
+ * out below the pill to quickly change the GPS precision. Glide finger to select, or release
  * and tap.
  */
 export function LivePill({ on, onToggle, trailEnabled = false, className }: LivePillProps) {
@@ -32,25 +45,60 @@ export function LivePill({ on, onToggle, trailEnabled = false, className }: Live
   const [hoveredMode, setHoveredMode] = useState<SamplerMode | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const isLongPressActiveRef = useRef(false);
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clickSuppressionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gesturePhaseRef = useRef<GesturePhase>("idle");
+  const activePointerIdRef = useRef<number | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
   const hasMovedRef = useRef(false);
-  const isPointerDownRef = useRef(false);
+  const suppressNextClickRef = useRef(false);
 
-  // Clean up timer on unmount
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const clearClickSuppression = () => {
+    suppressNextClickRef.current = false;
+    if (clickSuppressionTimerRef.current !== null) {
+      clearTimeout(clickSuppressionTimerRef.current);
+      clickSuppressionTimerRef.current = null;
+    }
+  };
+
+  const suppressNextClick = () => {
+    clearClickSuppression();
+    suppressNextClickRef.current = true;
+    clickSuppressionTimerRef.current = setTimeout(() => {
+      suppressNextClickRef.current = false;
+      clickSuppressionTimerRef.current = null;
+    }, CLICK_SUPPRESSION_MS);
+  };
+
+  const resetPointerGesture = () => {
+    clearLongPressTimer();
+    gesturePhaseRef.current = "idle";
+    activePointerIdRef.current = null;
+    touchStartRef.current = null;
+    hasMovedRef.current = false;
+  };
+
   useEffect(() => {
     return () => {
-      if (longPressTimerRef.current) {
+      if (longPressTimerRef.current !== null) {
         clearTimeout(longPressTimerRef.current);
+      }
+      if (clickSuppressionTimerRef.current !== null) {
+        clearTimeout(clickSuppressionTimerRef.current);
       }
     };
   }, []);
 
-  // Handle outside clicks to close the menu
   useEffect(() => {
     if (!isMenuOpen) return;
-    const handleOutside = (e: PointerEvent) => {
+    const handleOutside = (e: globalThis.PointerEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsMenuOpen(false);
         setHoveredMode(null);
@@ -62,119 +110,111 @@ export function LivePill({ on, onToggle, trailEnabled = false, className }: Live
     };
   }, [isMenuOpen]);
 
-  const handlePointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    // Only handle primary button
-    if (e.button !== 0) return;
+  const releasePointer = (e: PointerEvent<HTMLButtonElement>) => {
+    if (typeof e.currentTarget.releasePointerCapture !== "function") return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // The browser may already have released the pointer.
+    }
+  };
 
-    isPointerDownRef.current = true;
+  const handlePointerDown = (e: PointerEvent<HTMLButtonElement>) => {
+    if (e.button !== 0 || activePointerIdRef.current !== null) return;
+
+    clearClickSuppression();
+    activePointerIdRef.current = e.pointerId;
+    gesturePhaseRef.current = "pending";
     hasMovedRef.current = false;
-    isLongPressActiveRef.current = false;
     touchStartRef.current = { x: e.clientX, y: e.clientY };
 
-    // Capture the pointer to receive events even if the finger moves off-button
     if (typeof e.currentTarget.setPointerCapture === "function") {
       try {
         e.currentTarget.setPointerCapture(e.pointerId);
-      } catch (err) {}
+      } catch {
+        // Pointer capture is an enhancement; document hit-testing still works without it.
+      }
     }
 
     longPressTimerRef.current = setTimeout(() => {
-      isLongPressActiveRef.current = true;
+      longPressTimerRef.current = null;
+      if (
+        gesturePhaseRef.current !== "pending" ||
+        activePointerIdRef.current !== e.pointerId
+      ) {
+        return;
+      }
+      gesturePhaseRef.current = "active";
       setIsMenuOpen(true);
       setHoveredMode(null);
-
-      try {
-        if (typeof window !== "undefined" && navigator.vibrate) {
-          navigator.vibrate(15);
-        }
-      } catch (err) {
-        // Ignore haptic errors
-      }
-    }, 250);
+      vibrate(15);
+    }, LONG_PRESS_MS);
   };
 
-  const handlePointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!isPointerDownRef.current) return;
+  const handlePointerMove = (e: PointerEvent<HTMLButtonElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
 
     const start = touchStartRef.current;
     if (start) {
-      const dx = e.clientX - start.x;
-      const dy = e.clientY - start.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist > 8) {
+      const distance = Math.hypot(e.clientX - start.x, e.clientY - start.y);
+      if (distance > MOVE_CANCEL_THRESHOLD_PX) {
         hasMovedRef.current = true;
-        // If they drag significantly before long press active, cancel the timer
-        if (!isLongPressActiveRef.current && longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
+        if (gesturePhaseRef.current === "pending") {
+          gesturePhaseRef.current = "cancelled";
+          clearLongPressTimer();
         }
       }
     }
 
-    if (isLongPressActiveRef.current) {
-      // Find what element is currently under the pointer
+    if (gesturePhaseRef.current === "active") {
       const element = document.elementFromPoint(e.clientX, e.clientY);
-      const optionEl = element?.closest("[data-mode]");
-      if (optionEl) {
-        const mode = optionEl.getAttribute("data-mode") as SamplerMode;
-        setHoveredMode(mode);
-      } else {
-        setHoveredMode(null);
-      }
+      const optionEl = element?.closest<HTMLElement>("[data-mode]");
+      const mode = optionEl?.getAttribute("data-mode");
+      const validMode = OPTIONS.find((option) => option.value === mode)?.value ?? null;
+      const isOwnOption = Boolean(
+        optionEl && containerRef.current?.contains(optionEl) && validMode,
+      );
+      setHoveredMode(isOwnOption ? validMode : null);
     }
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (!isPointerDownRef.current) return;
-    isPointerDownRef.current = false;
+  const handlePointerUp = (e: PointerEvent<HTMLButtonElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
 
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-    }
+    const phase = gesturePhaseRef.current;
+    const moved = hasMovedRef.current;
+    clearLongPressTimer();
+    releasePointer(e);
 
-    if (typeof e.currentTarget.releasePointerCapture === "function") {
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch (err) {}
-    }
-
-    if (isLongPressActiveRef.current) {
+    if (phase === "cancelled") {
+      suppressNextClick();
+    } else if (phase === "active") {
+      suppressNextClick();
       if (hoveredMode) {
         setSamplerMode(hoveredMode);
         setIsMenuOpen(false);
         setHoveredMode(null);
-        try {
-          if (typeof window !== "undefined" && navigator.vibrate) {
-            navigator.vibrate(10);
-          }
-        } catch (err) {}
-      } else {
-        // Released outside any option
-        // If they dragged significantly, close the menu (standard release-outside dismiss)
-        // If they did not drag, keep the menu open so they can tap
-        if (hasMovedRef.current) {
-          setIsMenuOpen(false);
-        }
+        vibrate(10);
+      } else if (moved) {
+        setIsMenuOpen(false);
+        setHoveredMode(null);
       }
     }
+
+    resetPointerGesture();
   };
 
-  const handlePointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
-    isPointerDownRef.current = false;
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-    }
-    if (typeof e.currentTarget.releasePointerCapture === "function") {
-      try {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      } catch (err) {}
-    }
+  const handlePointerCancel = (e: PointerEvent<HTMLButtonElement>) => {
+    if (activePointerIdRef.current !== e.pointerId) return;
+    releasePointer(e);
+    resetPointerGesture();
     setIsMenuOpen(false);
     setHoveredMode(null);
   };
 
-  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    // If long press was active, ignore the trailing click event
-    if (isLongPressActiveRef.current) {
+  const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
+    if (suppressNextClickRef.current) {
+      clearClickSuppression();
       e.preventDefault();
       e.stopPropagation();
       return;
@@ -194,7 +234,8 @@ export function LivePill({ on, onToggle, trailEnabled = false, className }: Live
         <div
           role="menu"
           aria-label="GPS Precision options"
-          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 flex flex-col gap-1 w-36 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1.5 shadow-[var(--shadow-card)] z-50 animate-in fade-in slide-in-from-bottom-2 duration-150 pointer-events-auto touch-none"
+          style={{ top: "calc(100% + 0.5rem)" }}
+          className="pointer-events-auto absolute left-0 z-50 flex w-36 touch-none flex-col gap-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1.5 shadow-[var(--shadow-card)] animate-in fade-in slide-in-from-top-2 duration-150"
         >
           {OPTIONS.map((option) => {
             const isSelected = option.value === samplerMode;
@@ -211,7 +252,7 @@ export function LivePill({ on, onToggle, trailEnabled = false, className }: Live
                   setHoveredMode(null);
                 }}
                 className={cn(
-                  "w-full min-h-11 px-3 py-2 text-xs font-bold rounded-lg transition-all text-center select-none pointer-events-auto",
+                  "pointer-events-auto min-h-11 w-full select-none rounded-lg px-3 py-2 text-center text-xs font-bold transition-all",
                   isSelected
                     ? "bg-[var(--flag)] text-white shadow-sm"
                     : isHovered
@@ -246,7 +287,7 @@ export function LivePill({ on, onToggle, trailEnabled = false, className }: Live
               : "Start sharing live location"
         }
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] shadow-[var(--shadow-card)] transition-colors select-none touch-none",
+          "inline-flex touch-none select-none items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] shadow-[var(--shadow-card)] transition-colors",
           on
             ? "bg-[var(--flag)] text-white"
             : "bg-[var(--bg-card)] text-[var(--ink-2)]",

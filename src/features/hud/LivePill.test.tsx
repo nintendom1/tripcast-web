@@ -1,152 +1,229 @@
-import { render, screen, fireEvent, act } from "@testing-library/react";
-import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LivePill } from "./LivePill";
-import { getSamplerMode, setSamplerMode } from "../../lib/samplerMode";
+import { getSamplerMode, setSamplerMode, type SamplerMode } from "../../lib/samplerMode";
+
+const LONG_PRESS_MS = 200;
+const POINTER_ID = 1;
+const START = { clientX: 20, clientY: 20 };
+
+function getPill() {
+  return screen.getByRole("button", { name: /sharing live location/i });
+}
+
+function pressDown(button: HTMLElement) {
+  fireEvent.pointerDown(button, {
+    button: 0,
+    pointerId: POINTER_ID,
+    ...START,
+  });
+}
+
+function release(button: HTMLElement, coords = START) {
+  fireEvent.pointerUp(button, {
+    button: 0,
+    pointerId: POINTER_ID,
+    ...coords,
+  });
+}
+
+function openMenu(button: HTMLElement) {
+  pressDown(button);
+  act(() => {
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+  });
+  return screen.getByRole("menu", { name: /gps precision options/i });
+}
 
 describe("LivePill hold-and-reveal gesture", () => {
-  const mockOnToggle = vi.fn();
+  const onToggle = vi.fn();
+  let vibrate: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    mockOnToggle.mockClear();
-    setSamplerMode("relevant"); // reset to default
-    // Mock navigator.vibrate if it doesn't exist
-    if (typeof window !== "undefined") {
-      Object.defineProperty(window.navigator, "vibrate", {
-        value: vi.fn(),
-        writable: true,
-        configurable: true,
-      });
-    }
+    onToggle.mockClear();
+    setSamplerMode("relevant");
+    vibrate = vi.fn();
+    Object.defineProperty(window.navigator, "vibrate", {
+      value: vibrate,
+      writable: true,
+      configurable: true,
+    });
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
+    vi.restoreAllMocks();
+    Reflect.deleteProperty(document, "elementFromPoint");
     vi.useRealTimers();
   });
 
-  it("handles a normal quick click to toggle location sharing", () => {
-    render(<LivePill on={false} onToggle={mockOnToggle} />);
+  it("handles a complete quick pointer tap without opening the menu", () => {
+    render(<LivePill on={false} onToggle={onToggle} />);
+    const pill = getPill();
 
-    const button = screen.getByRole("button", { name: /start sharing live location/i });
+    pressDown(pill);
+    act(() => {
+      vi.advanceTimersByTime(LONG_PRESS_MS - 1);
+    });
+    release(pill);
+    fireEvent.click(pill, { detail: 1 });
 
-    // Quick tap is handled by onClick in hybrid mode
-    fireEvent.click(button);
-
-    expect(mockOnToggle).toHaveBeenCalledTimes(1);
+    expect(onToggle).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("opens the menu after long press (250ms)", () => {
-    render(<LivePill on={true} onToggle={mockOnToggle} />);
+  it("opens at 200ms, not before, and suppresses the trailing click", () => {
+    render(<LivePill on={true} onToggle={onToggle} />);
+    const pill = getPill();
 
-    const button = screen.getByRole("button", { name: /stop sharing live location/i });
-
-    // Press down
-    fireEvent.pointerDown(button, { button: 0, clientX: 10, clientY: 10 });
-
-    // Advance timers by 250ms
+    pressDown(pill);
     act(() => {
-      vi.advanceTimersByTime(250);
+      vi.advanceTimersByTime(LONG_PRESS_MS - 1);
     });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 
-    // The menu should now be open
+    act(() => {
+      vi.advanceTimersByTime(1);
+    });
     const menu = screen.getByRole("menu", { name: /gps precision options/i });
     expect(menu).toBeInTheDocument();
+    expect(vibrate).toHaveBeenCalledWith(15);
 
-    // Verify option elements are shown
-    expect(screen.getByText("Precise")).toBeInTheDocument();
-    expect(screen.getByText("Relevant")).toBeInTheDocument();
-    expect(screen.getByText("Legacy")).toBeInTheDocument();
+    release(pill);
+    fireEvent.click(pill, { detail: 1 });
 
-    // Relevant is currently active, so check that it has selected highlight class
-    const relevantBtn = screen.getByRole("menuitem", { name: "Relevant" });
-    expect(relevantBtn).toHaveClass("bg-[var(--flag)]", "text-white");
-
-    // Release pointer without drag (should keep menu open for tap)
-    fireEvent.pointerUp(button, { clientX: 10, clientY: 10 });
-    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(menu).toBeInTheDocument();
   });
 
-  it("allows selecting a mode by tapping/clicking on an option", () => {
-    render(<LivePill on={true} onToggle={mockOnToggle} />);
+  it("orders modes consistently and supports stationary release followed by tap selection", () => {
+    render(<LivePill on={true} onToggle={onToggle} />);
+    const pill = getPill();
 
-    const button = screen.getByRole("button", { name: /stop sharing live location/i });
-
-    // Long press to open menu
-    fireEvent.pointerDown(button, { button: 0, clientX: 10, clientY: 10 });
-    act(() => {
-      vi.advanceTimersByTime(250);
-    });
-
-    // Tap the "Precise" option
-    const preciseBtn = screen.getByRole("menuitem", { name: "Precise" });
-    fireEvent.click(preciseBtn);
-
-    // Verify state updated and menu closed
-    expect(getSamplerMode()).toBe("precise");
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-  });
-
-  it("allows selecting a mode by dragging (gliding) and releasing over the option", () => {
-    render(<LivePill on={true} onToggle={mockOnToggle} />);
-
-    const button = screen.getByRole("button", { name: /stop sharing live location/i });
-
-    // Mock document.elementFromPoint to return our target button on move
-    const preciseBtnSpy = document.createElement("button");
-    preciseBtnSpy.setAttribute("data-mode", "precise");
-
-    const originalElementFromPoint = document.elementFromPoint;
-    document.elementFromPoint = vi.fn().mockReturnValue(preciseBtnSpy);
-
-    try {
-      // Long press
-      fireEvent.pointerDown(button, { button: 0, clientX: 10, clientY: 10 });
-      act(() => {
-        vi.advanceTimersByTime(250);
-      });
-
-      // Move finger up to hover over the option
-      fireEvent.pointerMove(button, { clientX: 10, clientY: -30 });
-
-      // Precise option should now show hovered style (assert class/state)
-      // Since it's a simulated move, document.elementFromPoint returned preciseBtnSpy,
-      // setting hoveredMode to "precise"
-
-      // Release finger
-      fireEvent.pointerUp(button, { clientX: 10, clientY: -30 });
-
-      // Precision mode is changed and menu closes
-      expect(getSamplerMode()).toBe("precise");
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-    } finally {
-      document.elementFromPoint = originalElementFromPoint;
-    }
-  });
-
-  it("dismisses the menu when clicking/tapping outside", () => {
-    render(
-      <div>
-        <div data-testid="outside">Outside</div>
-        <LivePill on={true} onToggle={mockOnToggle} />
-      </div>
+    openMenu(pill);
+    expect(screen.getAllByRole("menuitem").map((option) => option.textContent)).toEqual([
+      "Legacy",
+      "Relevant",
+      "Precise",
+    ]);
+    expect(screen.getByRole("menuitem", { name: "Relevant" })).toHaveClass(
+      "bg-[var(--flag)]",
+      "text-white",
     );
 
-    const button = screen.getByRole("button", { name: /stop sharing live location/i });
+    release(pill);
+    fireEvent.click(pill, { detail: 1 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Precise" }));
 
-    // Open menu
-    fireEvent.pointerDown(button, { button: 0, clientX: 10, clientY: 10 });
-    act(() => {
-      vi.advanceTimersByTime(250);
+    expect(getSamplerMode()).toBe("precise");
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it.each<SamplerMode>(["legacy", "relevant", "precise"])(
+    "selects %s by gliding over the rendered option and releasing",
+    (mode) => {
+      setSamplerMode(mode === "relevant" ? "legacy" : "relevant");
+      render(<LivePill on={true} onToggle={onToggle} />);
+      const pill = getPill();
+
+      openMenu(pill);
+      const option = screen.getByRole("menuitem", {
+        name: mode[0].toUpperCase() + mode.slice(1),
+      });
+      Object.defineProperty(document, "elementFromPoint", {
+        configurable: true,
+        value: vi.fn().mockReturnValue(option),
+      });
+
+      const glidePoint = { clientX: 20, clientY: 80 };
+      fireEvent.pointerMove(pill, {
+        pointerId: POINTER_ID,
+        ...glidePoint,
+      });
+      expect(option).toHaveClass("bg-[var(--line-soft)]");
+
+      release(pill, glidePoint);
+      fireEvent.click(pill, { detail: 1 });
+
+      expect(getSamplerMode()).toBe(mode);
+      expect(vibrate).toHaveBeenCalledWith(10);
+      expect(onToggle).not.toHaveBeenCalled();
+      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    },
+  );
+
+  it("cancels movement before 200ms without accidentally toggling sharing", () => {
+    render(<LivePill on={true} onToggle={onToggle} />);
+    const pill = getPill();
+
+    pressDown(pill);
+    fireEvent.pointerMove(pill, {
+      pointerId: POINTER_ID,
+      clientX: START.clientX + 9,
+      clientY: START.clientY,
     });
-    fireEvent.pointerUp(button, { clientX: 10, clientY: 10 });
-
-    expect(screen.getByRole("menu")).toBeInTheDocument();
-
-    // Click outside
-    const outsideEl = screen.getByTestId("outside");
-    fireEvent.pointerDown(outsideEl);
+    act(() => {
+      vi.advanceTimersByTime(LONG_PRESS_MS);
+    });
+    release(pill, { clientX: START.clientX + 9, clientY: START.clientY });
+    fireEvent.click(pill, { detail: 1 });
 
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(onToggle).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    fireEvent.click(pill);
+    expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+
+  it("resets without changing mode or sharing when the pointer is cancelled", () => {
+    render(<LivePill on={true} onToggle={onToggle} />);
+    const pill = getPill();
+
+    openMenu(pill);
+    fireEvent.pointerCancel(pill, {
+      pointerId: POINTER_ID,
+      ...START,
+    });
+
+    expect(getSamplerMode()).toBe("relevant");
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("dismisses the open menu when pressing outside", () => {
+    render(
+      <div>
+        <button type="button">Outside</button>
+        <LivePill on={true} onToggle={onToggle} />
+      </div>,
+    );
+    const pill = getPill();
+
+    openMenu(pill);
+    release(pill);
+    fireEvent.click(pill, { detail: 1 });
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Outside" }));
+
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("clears a pending long-press timer when unmounted", () => {
+    const { unmount } = render(<LivePill on={true} onToggle={onToggle} />);
+
+    pressDown(getPill());
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => {
+      vi.advanceTimersByTime(LONG_PRESS_MS);
+    });
+    expect(vibrate).not.toHaveBeenCalled();
   });
 });
