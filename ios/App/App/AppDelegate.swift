@@ -1,5 +1,29 @@
 import UIKit
 import Capacitor
+import CoreLocation
+
+extension CLLocationManager {
+    @objc func swizzled_setPausesLocationUpdatesAutomatically(_ pauses: Bool) {
+        // Force the value to always be false, ignoring any attempt to set it to true.
+        // Calling swizzled_setPausesLocationUpdatesAutomatically actually calls the original implementation
+        // due to method exchange.
+        self.swizzled_setPausesLocationUpdatesAutomatically(false)
+    }
+
+    static let swizzlePausesLocation: Void = {
+        let originalSelector = #selector(setter: CLLocationManager.pausesLocationUpdatesAutomatically)
+        let swizzledSelector = #selector(CLLocationManager.swizzled_setPausesLocationUpdatesAutomatically(_:))
+
+        guard let originalMethod = class_getInstanceMethod(CLLocationManager.self, originalSelector),
+              let swizzledMethod = class_getInstanceMethod(CLLocationManager.self, swizzledSelector) else {
+            print("TripCast: CLLocationManager swizzling failed!")
+            return
+        }
+
+        method_exchangeImplementations(originalMethod, swizzledMethod)
+        print("TripCast: CLLocationManager swizzled successfully! pausesLocationUpdatesAutomatically is now globally forced to false.")
+    }()
+}
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -7,7 +31,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // Trigger the CLLocationManager swizzling to prevent iOS from pausing background updates
+        _ = CLLocationManager.swizzlePausesLocation
+
         return true
     }
 
