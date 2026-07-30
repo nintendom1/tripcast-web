@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
 
 import { tripcastApi, type JournalEvent, type MysteryMissionFeedItem } from "../../convex/tripcastApi";
-import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
+import { clearLogs, getLogs, setEnabled, setPreset } from "../../debug/debugLogger";
 import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
 import TripMap from "./TripMap";
 import { useTripPath } from "./useTripPath";
@@ -1711,6 +1711,7 @@ describe("TripMap location marker", () => {
 
   it("logs Live Trail permission without precise raw location payloads", async () => {
     setEnabled(true);
+    setPreset("gps-trace");
     geolocationWatchPosition.mockImplementation((onSuccess) => {
       onSuccess({
         coords: {
@@ -1743,8 +1744,8 @@ describe("TripMap location marker", () => {
     });
 
     const actions = getLogs().map((entry) => entry.action);
-    expect(actions).toContain("live-trail:permission:request");
-    expect(actions).toContain("live-trail:permission:result");
+    expect(actions).toContain("gps:permission:request");
+    expect(actions).toContain("gps:permission:result");
     const serializedLogs = JSON.stringify(getLogs());
     expect(serializedLogs).not.toContain("47.621234");
     expect(serializedLogs).not.toContain("-122.345678");

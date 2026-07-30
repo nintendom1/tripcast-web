@@ -7,7 +7,9 @@ TripCast includes a local-only debug logger surfaced through Options -> Develope
 ## Rules
 
 - Never log auth tokens, passwords, secrets, API keys, email addresses, phone numbers, raw typed titles, notes, captions, Convex payloads, or backend responses.
-- Keep redaction and caps intact: depth 4, arrays 10 items, strings 200 chars, buffer 500 entries.
+- Keep redaction and caps intact: depth 4, arrays 10 items, strings 200 chars,
+  buffer 1,500 entries, and serialized storage 256 KiB. The byte cap may evict
+  older entries before the entry cap and is the primary storage safety bound.
 - Logs stay local unless the user explicitly copies or downloads them.
 - Preserve "Copy LLM Summary" as the compact debugging artifact for agent conversations.
 

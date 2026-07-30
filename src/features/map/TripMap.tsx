@@ -1255,6 +1255,11 @@ export default function TripMap({
     typeof document === "undefined" || document.visibilityState !== "hidden",
   );
   const lastGpsFixLogAtRef = useRef<number>(0);
+  const lastHandledFixAtRef = useRef<number | null>(null);
+  const lastSamplerRejectionLogAtRef = useRef<number>(0);
+  const suppressedSamplerRejectionsRef = useRef(0);
+  const currentLocationPublishIdRef = useRef(0);
+  const liveTrailPublishIdRef = useRef(0);
   const isLocationSharingRef = useRef(initialLiveSharing);
   const liveTrailEnabledRef = useRef(false);
   const liveTrailCanRecordRef = useRef(false);
@@ -3316,6 +3321,9 @@ export default function TripMap({
     if (role !== "traveler") return;
     if (typeof navigator === "undefined" || !navigator.geolocation) return;
     didLaunchFixRef.current = true;
+    log.logGps("gps:launch-probe:request", {
+      reason: "initial-centering",
+    });
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const accuracy = pos.coords.accuracy ?? undefined;
@@ -3323,11 +3331,18 @@ export default function TripMap({
         livePositionRef.current = next;
         lastLocationFixAtRef.current = Date.now();
         setLivePosition(next);
+        log.logGps("gps:launch-probe:ack", {
+          hasAccuracy: typeof accuracy === "number",
+        });
       },
-      () => { /* silent: launch-center will fall through to pin/Seattle */ },
+      (error) => {
+        log.error("gps:launch-probe:failure", "error", {
+          code: error.code,
+        });
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 60_000 },
     );
-  }, [role]);
+  }, [log, role]);
 
   // One-shot launch centering: live GPS → most recent pin → no-op (stays at
   // SEATTLE_CENTER from map constructor). Re-runs as async inputs resolve but
@@ -3390,28 +3405,41 @@ export default function TripMap({
     let candidateStreak = 0;
     const MOVEMENT_MIN_CONSECUTIVE_FIXES = 2;
 
-    const handleFix = (lat: number, lon: number, accuracy?: number, speed?: number) => {
-      lastLocationFixAtRef.current = Date.now();
+    const handleFix = (
+      lat: number,
+      lon: number,
+      accuracy?: number,
+      speed?: number,
+      source: "native-watch" | "browser-watch" | "stale-probe" | "overlay-probe" = "browser-watch",
+    ) => {
+      const fixAt = Date.now();
+      const callbackGapMs =
+        lastHandledFixAtRef.current === null ? null : fixAt - lastHandledFixAtRef.current;
+      lastHandledFixAtRef.current = fixAt;
+      lastLocationFixAtRef.current = fixAt;
       setLocationStale(false);
       // Debounced "who is delivering fixes" log so the user can correlate
       // background GPS usage with the watcher that produced it. Throttled to
       // once per 30s to keep the debug overlay legible. No coords or accuracy
       // by design — those are guarded by the privacy assertion in
       // TripMap.location.test.tsx; speed is a magnitude only.
-      const fixLogElapsed = Date.now() - lastGpsFixLogAtRef.current;
+      const fixLogElapsed = fixAt - lastGpsFixLogAtRef.current;
       if (fixLogElapsed >= 30_000) {
-        lastGpsFixLogAtRef.current = Date.now();
+        lastGpsFixLogAtRef.current = fixAt;
         const owner = gpsOwnerRef.current;
-        log.logUi("gps:fix", {
+        log.logGps("gps:fix:handled", {
+          source,
+          callbackGapMs,
           ownerKind: owner?.kind ?? "unknown",
           ownerReason: owner?.reason ?? null,
           isAppActive: isAppActiveRef.current,
-          speed,
+          hasAccuracy: typeof accuracy === "number",
+          hasSpeed: typeof speed === "number",
         });
       }
       if (liveTrailEnabledRef.current && !liveTrailPermissionLoggedRef.current) {
         liveTrailPermissionLoggedRef.current = true;
-        log.logInteraction("live-trail:permission:result", { result: "granted" });
+        log.logGps("gps:permission:result", { result: "granted" });
       }
       const nextPosition = { lat, lon, accuracy };
       livePositionRef.current = nextPosition;
@@ -3599,6 +3627,11 @@ export default function TripMap({
         typeof error === "object" && error !== null && "code" in error
           ? (error as { code?: unknown }).code
           : undefined;
+      log.error("gps:watcher:callback:error", "error", {
+        code,
+        ownerKind: gpsOwnerRef.current?.kind ?? "unknown",
+        isAppActive: isAppActiveRef.current,
+      });
       // Native/Web: location was denied. Toast once per session, but do not let
       // passive foreground GPS consume the native settings handoff for Live.
       if (code === "NOT_AUTHORIZED" || code === 1) {
@@ -3616,14 +3649,13 @@ export default function TripMap({
         }
       }
       if (!liveTrailEnabledRef.current) return;
-      log.logInteraction("live-trail:permission:result", { result: "denied", code });
+      log.logGps("gps:permission:result", { result: "denied", code });
     };
 
     let cleanup: () => void = () => {};
 
     if (isLocationSharing && isNativeLocationAvailable()) {
-      log.logInteraction("live-trail:native-watch:start", {});
-      log.logInteraction("gps:watcher:start", {
+      log.logGps("gps:watcher:start", {
         kind: "native",
         reason: "live-pill",
         liveSharing: true,
@@ -3633,16 +3665,17 @@ export default function TripMap({
       });
       gpsOwnerRef.current = { kind: "native", reason: "live-pill", startedAt: Date.now() };
       const stop = startNativeLocationWatch(
-        (fix) => handleFix(fix.lat, fix.lon, fix.accuracy, fix.speed),
+        (fix) => handleFix(fix.lat, fix.lon, fix.accuracy, fix.speed, "native-watch"),
         handleError,
       );
       cleanup = () => {
-        log.logInteraction("live-trail:native-watch:stop", {});
-        log.logInteraction("gps:watcher:stop", {
-          kind: "native",
-          reason: "live-pill",
-          trigger: "effect-cleanup",
-        });
+        if (gpsOwnerRef.current?.kind === "native") {
+          log.logGps("gps:watcher:stop", {
+            kind: "native",
+            reason: "live-pill",
+            trigger: "effect-cleanup",
+          });
+        }
         gpsOwnerRef.current = null;
         stop();
       };
@@ -3650,7 +3683,7 @@ export default function TripMap({
       // Foreground-only fallback. Skipped while backgrounded so the WKWebView
       // geolocation cannot keep CLLocationManager alive after the user swiped
       // home with the LIVE pill off (the reported leak).
-      log.logInteraction("gps:watcher:start", {
+      log.logGps("gps:watcher:start", {
         kind: "browser",
         reason: "map-foreground",
         liveSharing: false,
@@ -3660,22 +3693,31 @@ export default function TripMap({
       });
       gpsOwnerRef.current = { kind: "browser", reason: "map-foreground", startedAt: Date.now() };
       const watchId = navigator.geolocation.watchPosition(
-        (pos) => handleFix(
-          pos.coords.latitude,
-          pos.coords.longitude,
-          pos.coords.accuracy ?? undefined,
-          typeof pos.coords.speed === "number" && pos.coords.speed >= 0 ? pos.coords.speed : undefined,
-        ),
+        (pos) => {
+          log.logGps("gps:browser:callback:received", {
+            hasAccuracy: typeof pos.coords.accuracy === "number",
+            hasSpeed: typeof pos.coords.speed === "number" && pos.coords.speed >= 0,
+          });
+          handleFix(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            pos.coords.accuracy ?? undefined,
+            typeof pos.coords.speed === "number" && pos.coords.speed >= 0 ? pos.coords.speed : undefined,
+            "browser-watch",
+          );
+        },
         handleError,
         { enableHighAccuracy: true },
       );
       browserLocationWatchRef.current = watchId;
       cleanup = () => {
-        log.logInteraction("gps:watcher:stop", {
-          kind: "browser",
-          reason: "map-foreground",
-          trigger: "effect-cleanup",
-        });
+        if (gpsOwnerRef.current?.kind === "browser") {
+          log.logGps("gps:watcher:stop", {
+            kind: "browser",
+            reason: "map-foreground",
+            trigger: "effect-cleanup",
+          });
+        }
         gpsOwnerRef.current = null;
         navigator.geolocation.clearWatch(watchId);
         if (browserLocationWatchRef.current === watchId) {
@@ -3696,9 +3738,33 @@ export default function TripMap({
       if (!isNativeLocationAvailable()) return;
       const last = lastLocationFixAtRef.current;
       if (last !== null && Date.now() - last > STALE_AFTER_MS) {
+        const staleForMs = Date.now() - last;
+        log.logGps("gps:stale-probe:request", {
+          staleForMs,
+          ownerKind: gpsOwnerRef.current?.kind ?? "unknown",
+          isAppActive: isAppActiveRef.current,
+        }, "warn");
         navigator.geolocation.getCurrentPosition(
-          (pos) => handleFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy ?? undefined),
-          () => setLocationStale(true),
+          (pos) => {
+            log.logGps("gps:stale-probe:ack", {
+              staleForMs,
+              hasAccuracy: typeof pos.coords.accuracy === "number",
+            });
+            handleFix(
+              pos.coords.latitude,
+              pos.coords.longitude,
+              pos.coords.accuracy ?? undefined,
+              undefined,
+              "stale-probe",
+            );
+          },
+          (error) => {
+            setLocationStale(true);
+            log.error("gps:stale-probe:failure", "error", {
+              staleForMs,
+              code: error.code,
+            });
+          },
           { timeout: 10000 },
         );
       }
@@ -3730,8 +3796,13 @@ export default function TripMap({
             typeof pos.coords.speed === "number" && pos.coords.speed >= 0
               ? pos.coords.speed
               : undefined,
+            "overlay-probe",
           ),
-        () => {},
+        (error) => {
+          log.error("gps:overlay-probe:failure", "error", {
+            code: error.code,
+          });
+        },
         { enableHighAccuracy: true, maximumAge: 0 },
       );
     }, FIX_OVERLAY_DEBUG_POLL_MS);
@@ -3779,7 +3850,7 @@ export default function TripMap({
     const owner = gpsOwnerRef.current;
     const fn = gpsCleanupRef.current;
     if (owner) {
-      log.logInteraction("gps:watcher:stop", {
+      log.logGps("gps:watcher:stop", {
         kind: owner.kind,
         reason: owner.reason,
         trigger,
@@ -3810,7 +3881,7 @@ export default function TripMap({
       const nextActive = document.visibilityState !== "hidden";
       isAppActiveRef.current = nextActive;
       setIsAppActive(nextActive);
-      log.logInteraction("gps:appstate:change", {
+      log.logGps("gps:visibility:change", {
         isActive: nextActive,
         owner: gpsOwnerRef.current?.kind ?? "none",
         reason: gpsOwnerRef.current?.reason ?? null,
@@ -3851,6 +3922,10 @@ export default function TripMap({
       // Tear down the watcher before the WebView disappears. iOS's
       // appstate-background path also covers this, but pagehide is the
       // PWA/Safari path and must work without Capacitor.
+      log.logGps("gps:pagehide:cleanup", {
+        owner: gpsOwnerRef.current?.kind ?? "none",
+        liveSharing: isLocationSharingRef.current,
+      });
       forceStopAllWatchers("pagehide");
       if (!isLocationSharingRef.current) return;
       stopTravelerLocationSharing({ token }).catch(() => {});
@@ -3905,12 +3980,34 @@ export default function TripMap({
       lon: position.lon,
       sentAt: now,
     };
-    updateTravelerLocation({
+    const publishId = ++currentLocationPublishIdRef.current;
+    const startedAt = performance.now();
+    log.logGps("gps:current-location:publish:attempt", {
+      publishId,
+      hasAccuracy: typeof accuracy === "number",
+      elapsedSincePreviousMs: Number.isFinite(elapsed) ? elapsed : null,
+      moved,
+      isAppActive: isAppActiveRef.current,
+    });
+    void updateTravelerLocation({
       token,
       lat: position.lat,
       lon: position.lon,
       accuracy,
-    }).catch(() => {});
+    })
+      .then(() => {
+        log.logGps("gps:current-location:publish:ack", {
+          publishId,
+          latencyMs: Math.round(performance.now() - startedAt),
+        });
+      })
+      .catch((error) => {
+        log.error("gps:current-location:publish:failure", "error", {
+          publishId,
+          latencyMs: Math.round(performance.now() - startedAt),
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+      });
   }
 
   function publishLiveTrailSample(
@@ -3945,29 +4042,57 @@ export default function TripMap({
     setRecentFixes(recentFixesRef.current);
 
     if (!shouldEmit) {
-      log.logInteraction("live-trail:sample:rejected", { mode });
+      suppressedSamplerRejectionsRef.current += 1;
+      if (fix.sampledAt - lastSamplerRejectionLogAtRef.current >= 30_000) {
+        log.logGps("gps:live-trail:sampler:rejected", {
+          mode,
+          reason,
+          rejectedSinceLastLog: suppressedSamplerRejectionsRef.current,
+          force,
+        });
+        lastSamplerRejectionLogAtRef.current = fix.sampledAt;
+        suppressedSamplerRejectionsRef.current = 0;
+      }
       return;
     }
 
-    log.logInteraction("live-trail:sample:emitted", { mode, reason });
+    log.logGps("gps:live-trail:sampler:emitted", { mode, reason, force });
 
     if (reason === "turn" && nextState.lastEmitted?.bearing !== undefined) {
-      log.logInteraction("live-trail:sample:relevant-turn", {
+      log.logGps("gps:live-trail:sampler:turn", {
         bearing: Math.round(nextState.lastEmitted.bearing),
       });
     }
 
-    recordLiveTrailSample({
+    const publishId = ++liveTrailPublishIdRef.current;
+    const startedAt = performance.now();
+    log.logGps("gps:live-trail:publish:attempt", {
+      publishId,
+      mode,
+      reason,
+      hasAccuracy: typeof accuracy === "number",
+      isAppActive: isAppActiveRef.current,
+    });
+    void recordLiveTrailSample({
       token,
       lat: position.lat,
       lon: position.lon,
       accuracy,
       sampledAt: fix.sampledAt,
-    }).catch((error) => {
-      log.error("live-trail:sample:error", "mutation", {
-        message: error instanceof Error ? error.message : String(error),
+    })
+      .then(() => {
+        log.logGps("gps:live-trail:publish:ack", {
+          publishId,
+          latencyMs: Math.round(performance.now() - startedAt),
+        });
+      })
+      .catch((error) => {
+        log.error("gps:live-trail:publish:failure", "error", {
+          publishId,
+          latencyMs: Math.round(performance.now() - startedAt),
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
       });
-    });
   }
 
   function stopLocationSharing() {
@@ -4017,7 +4142,7 @@ export default function TripMap({
     } else {
       if (liveTrailEnabledRef.current) {
         liveTrailPermissionLoggedRef.current = false;
-        log.logInteraction("live-trail:permission:request", {
+        log.logGps("gps:permission:request", {
           available: Boolean(navigator.geolocation),
         });
       }

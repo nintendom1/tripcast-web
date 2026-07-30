@@ -71,6 +71,16 @@ function downloadJson(filename: string, data: unknown): void {
   URL.revokeObjectURL(url);
 }
 
+function downloadText(filename: string, data: string): void {
+  const blob = new Blob([data], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ---------------------------------------------------------------------------
 // Entry display
 // ---------------------------------------------------------------------------
@@ -97,6 +107,7 @@ const CATEGORY_COLORS: Partial<Record<DebugCategory, string>> = {
   performance: "bg-cyan-100 text-cyan-700",
   debug:       "bg-gray-100 text-gray-600",
   route:       "bg-blue-100 text-blue-700",
+  gps:         "bg-green-100 text-green-700",
 };
 
 function CategoryBadge({ category }: { category: DebugCategory }) {
@@ -152,6 +163,7 @@ const CATEGORY_LABELS: Array<{ cat: DebugCategory; label: string }> = [
   { cat: "performance", label: "Performance" },
   { cat: "debug",       label: "Debug" },
   { cat: "route",       label: "Route" },
+  { cat: "gps",         label: "GPS" },
 ];
 
 const PRESET_LABELS: Array<{ preset: DebugPreset; label: string }> = [
@@ -159,6 +171,7 @@ const PRESET_LABELS: Array<{ preset: DebugPreset; label: string }> = [
   { preset: "normal",            label: "Normal" },
   { preset: "verbose",           label: "Verbose" },
   { preset: "interaction-trace", label: "Trace" },
+  { preset: "gps-trace",         label: "GPS Trace" },
 ];
 
 const BUTTON_MODE_LABELS: Array<{ mode: FloatingDebugButtonMode; label: string }> = [
@@ -225,7 +238,7 @@ function CategoryOverrides({ disabled, onRefresh }: { disabled: boolean; onRefre
         </summary>
         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
           {CATEGORY_LABELS.map(({ cat, label }) => {
-            const isAlwaysOn = cat === "error";
+            const isAlwaysOn = cat === "error" || currentPreset === "gps-trace";
             const checked = isCategoryEnabled(cat);
             return (
               <label
@@ -432,9 +445,9 @@ export default function DebugPanel({ onBack, token }: { onBack: () => void; toke
     const summary = buildLlmSummary();
     try {
       await copyToClipboard(summary);
-      showCopyStatus("Copied debug summary!");
+      showCopyStatus("Copied LLM summary!");
     } catch {
-      downloadJson(`tripcast-debug-summary-${getSessionId()}.md`, summary);
+      downloadText(`tripcast-debug-summary-${getSessionId()}.md`, summary);
       showCopyStatus("Downloaded summary (clipboard unavailable)");
     }
   }
@@ -667,6 +680,9 @@ export default function DebugPanel({ onBack, token }: { onBack: () => void; toke
       </div>
 
       {/* Action buttons */}
+      <p className="text-[11px] leading-4 text-[var(--ink-3)]">
+        Copy LLM Summary is the recommended text artifact. Download diagnostic JSON only when a deeper attachment is needed.
+      </p>
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
@@ -682,7 +698,7 @@ export default function DebugPanel({ onBack, token }: { onBack: () => void; toke
           onClick={handleDownloadJson}
           className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Download JSON
+          Download diagnostic JSON
         </button>
         <button
           type="button"
@@ -706,7 +722,7 @@ export default function DebugPanel({ onBack, token }: { onBack: () => void; toke
           onClick={handleCopyDebugSummary}
           className="rounded-xl bg-[var(--flag)] py-2.5 text-xs font-semibold text-[var(--ink-on-dark)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Copy Debug Summary
+          Copy LLM Summary
         </button>
       </div>
 

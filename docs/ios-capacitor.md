@@ -189,7 +189,35 @@ asset updates, but do not commit a personal `DEVELOPMENT_TEAM` value written int
 - [ ] In Convex, `liveTrailSamples` rows accrue while locked; a Follower session sees the latest
       permitted point via `getLatestLiveTrailSample`.
 - [ ] Tap **PAUSED** → emission stops (watcher removed). Server dedup (60s/200m) prevents flooding.
-- [ ] Debug log shows `live-trail:native-watch:start/stop` and `live-trail:permission:result`.
+- [ ] GPS Trace shows `gps:watcher:start`, `gps:native:callback:received`, and publish
+      acknowledgement entries.
+
+### Diagnosing a locked-screen delivery stall
+
+The iOS location indicator shows that location services are active; it does not prove that
+JavaScript callbacks or Convex writes are continuing.
+
+1. Open Traveler Options → Developer → Dev Tools.
+2. Enable Debug Logging, select **GPS Trace**, enable location redaction, and clear old logs.
+3. Start LIVE and confirm watcher-start, callback, and publish-acknowledgement entries.
+4. Run detached from Xcode, lock the phone, remain stationary long enough to reproduce the stall,
+   then move at least 500 m without opening TripCast or another navigation app.
+5. Foreground TripCast once and immediately choose **Copy LLM Summary** before toggling LIVE.
+6. Repeat under otherwise matching movement, battery, Low Power Mode, and timing conditions while
+   Google Maps navigation is active.
+7. Optionally repeat while attached to Xcode. If only the attached run works, record that the
+   debugger masks normal suspension; it does not prove a Core Location pause.
+
+Interpret the trace by the last stage that continues:
+
+- An unexpected watcher-stop entry points to TripCast lifecycle cleanup.
+- Continued callbacks with publish failures point to WebView, network, or Convex delivery.
+- Publish acknowledgements with stale Followers point to backend freshness or read behavior.
+- Missing callbacks while the watcher remains started narrows the boundary to native acquisition
+  or native-to-JavaScript delivery. This black-box trace cannot distinguish those two.
+
+Raw JSON remains available as a diagnostic attachment for deeper analysis. The LLM summary is the
+recommended text artifact and is capped at 64 KiB.
 
 ## Regenerating the app icon and splash
 
