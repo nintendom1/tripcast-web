@@ -45,6 +45,7 @@ class NativeLocationManager {
   private nextId = 1;
   private syncPromise: Promise<void> = Promise.resolve();
   private lastCallbackAt: number | null = null;
+  private hasAttemptedAlreadyStartedRecovery = false;
 
   public addWatcher(
     options: WatcherOptions,
@@ -71,6 +72,38 @@ class NativeLocationManager {
       .then(() => this.syncPlugin())
       .catch((error) => {
         log.error("gps:native:sync:error", "error", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+        this.watchers.forEach((watcher) => watcher.onError(error));
+      });
+  }
+
+  private scheduleAlreadyStartedRecovery(): void {
+    if (this.hasAttemptedAlreadyStartedRecovery) {
+      return;
+    }
+    this.hasAttemptedAlreadyStartedRecovery = true;
+    log.logGps("gps:native:plugin:recovery:request", {
+      reason: "already-started",
+      watcherCount: this.watchers.length,
+    });
+    this.syncPromise = this.syncPromise
+      .then(async () => {
+        log.logGps("gps:native:plugin:stop:request", {
+          reason: "already-started-recovery",
+        });
+        await BackgroundGeolocation.stop();
+        this.isStarted = false;
+        this.currentOptions = null;
+        this.lastCallbackAt = null;
+        log.logGps("gps:native:plugin:stop:ack", {
+          reason: "already-started-recovery",
+        });
+        await this.syncPlugin();
+      })
+      .catch((error) => {
+        log.error("gps:native:plugin:recovery:failure", "error", {
+          reason: "already-started",
           errorType: error instanceof Error ? error.name : typeof error,
         });
         this.watchers.forEach((watcher) => watcher.onError(error));
@@ -141,6 +174,15 @@ class NativeLocationManager {
         },
         (location?: Location, error?: CallbackError) => {
           if (error) {
+            if (error.code === "ALREADY_STARTED") {
+              if (!this.hasAttemptedAlreadyStartedRecovery) {
+                log.logGps("gps:native:callback:already-started", {
+                  watcherCount: this.watchers.length,
+                });
+                this.scheduleAlreadyStartedRecovery();
+                return;
+              }
+            }
             log.error("gps:native:callback:error", "error", {
               code: error.code,
             });
