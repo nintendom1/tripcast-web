@@ -150,7 +150,7 @@ describe("App: Options sheet — Traveler", () => {
 
     const logList = screen.getByLabelText(/recent debug log entries/i);
     expect(logList.parentElement).toHaveClass("h-[18rem]", "shrink-0", "overflow-y-auto");
-    expect(screen.getByRole("button", { name: /copy debug summary/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy llm summary/i })).toBeInTheDocument();
   });
 });
 

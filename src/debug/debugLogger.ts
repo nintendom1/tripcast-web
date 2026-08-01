@@ -7,9 +7,10 @@ const LS_OVERRIDES_KEY = "tripcast.debug.category-overrides";
 const LS_LOCATION_REDACT_KEY = "tripcast.debug.redact-location";
 const LS_CONSOLE_MIRROR_KEY = "tripcast.debug.console-mirror";
 const LS_CENTERING_CALIBRATION_KEY = "tripcast.debug.centering-calibration";
-const MAX_ENTRIES = 500;
+const MAX_ENTRIES = 1500;
 const DROP_BATCH = 100;
 const MAX_BYTES = 256 * 1024;
+const MAX_LLM_SUMMARY_BYTES = 64 * 1024;
 
 const SESSION_ID = crypto.randomUUID().slice(0, 8);
 const SESSION_START = performance.now();
@@ -22,9 +23,9 @@ export type DebugLevel = "debug" | "info" | "warn" | "error";
 export type DebugCategory =
   | "error" | "ui" | "route" | "auth" | "mutation" | "query"
   | "map" | "interaction" | "form" | "audio" | "state"
-  | "funds" | "performance" | "debug";
+  | "funds" | "performance" | "debug" | "gps";
 
-export type DebugPreset = "minimal" | "normal" | "verbose" | "interaction-trace";
+export type DebugPreset = "minimal" | "normal" | "verbose" | "interaction-trace" | "gps-trace";
 
 export interface DebugEntry {
   ts: string;
@@ -65,6 +66,7 @@ const PRESET_CATEGORIES: Record<DebugPreset, Set<DebugCategory>> = {
     "error", "auth", "ui", "route", "map", "form", "mutation", "funds", "query",
     "state", "audio", "performance", "debug", "interaction",
   ]),
+  "gps-trace": new Set(["error", "gps"]),
 };
 
 // Component name → relative file path registry for LLM summary
@@ -139,7 +141,7 @@ function loadFromStorage(): void {
 function persist(): void {
   try {
     let json = JSON.stringify(buffer);
-    while (json.length > MAX_BYTES && buffer.length > 0) {
+    while (new TextEncoder().encode(json).byteLength > MAX_BYTES && buffer.length > 0) {
       buffer.splice(0, DROP_BATCH);
       json = JSON.stringify(buffer);
     }
@@ -180,7 +182,13 @@ export function setEnabled(on: boolean): void {
 
 export function getPreset(): DebugPreset {
   const stored = localStorage.getItem(LS_PRESET_KEY);
-  if (stored === "minimal" || stored === "normal" || stored === "verbose" || stored === "interaction-trace") {
+  if (
+    stored === "minimal" ||
+    stored === "normal" ||
+    stored === "verbose" ||
+    stored === "interaction-trace" ||
+    stored === "gps-trace"
+  ) {
     return stored;
   }
   return "normal";
@@ -216,6 +224,9 @@ export function clearCategoryOverride(cat: DebugCategory): void {
 export function isCategoryEnabled(cat: DebugCategory): boolean {
   // "error" is always on — never filterable
   if (cat === "error") return true;
+  // GPS Trace is intentionally a fixed filter so category overrides cannot
+  // accidentally add unrelated app activity to a long-running trace.
+  if (getPreset() === "gps-trace") return cat === "gps";
   const overrides = getCategoryOverrides();
   if (cat in overrides) return overrides[cat] === true;
   return PRESET_CATEGORIES[getPreset()].has(cat);
@@ -403,6 +414,10 @@ export function buildLlmSummary(): string {
       }))
     : buffer;
 
+  if (getPreset() === "gps-trace") {
+    return buildGpsLlmSummary(entries);
+  }
+
   const lines: string[] = [];
 
   lines.push("# TripCast Debug Session");
@@ -449,4 +464,111 @@ export function buildLlmSummary(): string {
   }
 
   return lines.join("\n");
+}
+
+function compactEntryLine(entry: DebugEntry): string {
+  const details = entry.details ? ` · ${JSON.stringify(entry.details)}` : "";
+  const state = entry.state ? ` · state=${JSON.stringify(entry.state)}` : "";
+  return `${entry.ts} ${entry.level.padEnd(5)} [${entry.category}] ${entry.src} · ${entry.action}${details}${state}`;
+}
+
+function largestGapMs(entries: DebugEntry[]): number | null {
+  let largest: number | null = null;
+  let previous: number | null = null;
+  for (const entry of entries) {
+    const current = Date.parse(entry.ts);
+    if (!Number.isFinite(current)) continue;
+    if (previous !== null) {
+      largest = Math.max(largest ?? 0, current - previous);
+    }
+    previous = current;
+  }
+  return largest;
+}
+
+function stageBounds(entries: DebugEntry[], matcher: (entry: DebugEntry) => boolean): string {
+  const matches = entries.filter(matcher);
+  if (matches.length === 0) return "none";
+  return `${matches[0].ts} → ${matches[matches.length - 1].ts} (${matches.length})`;
+}
+
+function utf8Bytes(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function sliceUtf8(value: string, maxBytes: number, fromEnd = false): string {
+  let low = 0;
+  let high = value.length;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const candidate = fromEnd ? value.slice(value.length - mid) : value.slice(0, mid);
+    if (utf8Bytes(candidate) <= maxBytes) low = mid;
+    else high = mid - 1;
+  }
+  return fromEnd ? value.slice(value.length - low) : value.slice(0, low);
+}
+
+function capSummaryPreservingEnds(summary: string): string {
+  if (utf8Bytes(summary) <= MAX_LLM_SUMMARY_BYTES) return summary;
+  const marker = "\n\n[… middle omitted to keep this artifact under 64 KiB …]\n\n";
+  const available = MAX_LLM_SUMMARY_BYTES - utf8Bytes(marker);
+  const prefix = sliceUtf8(summary, Math.floor(available * 0.65));
+  const suffix = sliceUtf8(summary, available - utf8Bytes(prefix), true);
+  return prefix + marker + suffix;
+}
+
+function buildGpsLlmSummary(entries: DebugEntry[]): string {
+  const relevant = entries.filter(
+    (entry) => entry.category === "gps" || entry.level === "warn" || entry.level === "error",
+  );
+  const counts = new Map<string, number>();
+  for (const entry of relevant) {
+    if (!entry.action.startsWith("gps:")) continue;
+    counts.set(entry.action, (counts.get(entry.action) ?? 0) + 1);
+  }
+
+  const callbacks = relevant.filter((entry) => entry.action.endsWith("callback:received"));
+  const publishes = relevant.filter(
+    (entry) => entry.action.includes("publish") && entry.action.endsWith(":ack"),
+  );
+  const problems = relevant.filter((entry) => entry.level === "warn" || entry.level === "error");
+  const seen = new Set<string>();
+  const timeline = relevant.filter((entry) => {
+    const key = JSON.stringify(entry);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const first = timeline.slice(0, 25);
+  const firstKeys = new Set(first.map((entry) => JSON.stringify(entry)));
+  const last = timeline.slice(-150).filter((entry) => !firstKeys.has(JSON.stringify(entry)));
+
+  const lines = [
+    "# TripCast GPS Delivery Trace",
+    `Session: ${SESSION_ID}  |  Relevant: ${relevant.length} entries  |  Generated: ${new Date().toISOString()}`,
+    "Privacy: GPS trace events contain delivery metadata only; coordinates, credentials, request payloads, and backend responses are excluded.",
+    "",
+    "## Counts by GPS Action",
+    ...[...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([action, count]) => `- ${action}: ${count}`),
+    "",
+    "## Stage Bounds",
+    `- Watcher: ${stageBounds(relevant, (entry) => entry.action.includes("watcher") || entry.action.includes("plugin:start") || entry.action.includes("plugin:stop"))}`,
+    `- Callback: ${stageBounds(relevant, (entry) => entry.action.includes("callback"))}`,
+    `- Publish: ${stageBounds(relevant, (entry) => entry.action.includes("publish"))}`,
+    "",
+    "## Largest Observed Gaps",
+    `- Callback arrivals: ${largestGapMs(callbacks) ?? "none"} ms`,
+    `- Publish acknowledgements: ${largestGapMs(publishes) ?? "none"} ms`,
+    "",
+    "## Warnings & Errors",
+    ...(problems.length ? problems.map((entry) => `- ${compactEntryLine(entry)}`) : ["- None"]),
+    "",
+    "## Timeline — First 25 Relevant Entries",
+    ...first.map(compactEntryLine),
+    "",
+    "## Timeline — Last 150 Relevant Entries (Deduplicated)",
+    ...last.map(compactEntryLine),
+  ];
+
+  return capSummaryPreservingEnds(lines.join("\n"));
 }

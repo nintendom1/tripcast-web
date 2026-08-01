@@ -42,9 +42,9 @@ describe("DebugPanel", () => {
     expect(screen.getByRole("button", { name: /normal/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /refresh/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /clear logs/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /download json/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /download diagnostic json/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^copy json$/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /copy debug summary/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /copy llm summary/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /copy current context/i })).toBeDisabled();
     expect(screen.getByLabelText(/ui/i)).toBeDisabled();
   });
@@ -57,7 +57,7 @@ describe("DebugPanel", () => {
     expect(screen.getByRole("switch", { name: /redact location in copies/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /minimal/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /refresh/i })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: /copy debug summary/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /copy llm summary/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /copy current context/i })).not.toBeDisabled();
     expect(screen.getByLabelText(/ui/i)).not.toBeDisabled();
   });
@@ -165,12 +165,12 @@ describe("DebugPanel", () => {
 
     setEnabled(true);
     render(<DebugPanel onBack={vi.fn()} />);
-    const copyButton = screen.getByRole("button", { name: /copy debug summary/i });
+    const copyButton = screen.getByRole("button", { name: /copy llm summary/i });
 
     await act(async () => {
       fireEvent.click(copyButton);
     });
-    expect(screen.getByRole("status")).toHaveTextContent(/copied debug summary/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/copied llm summary/i);
 
     act(() => {
       vi.advanceTimersByTime(2000);

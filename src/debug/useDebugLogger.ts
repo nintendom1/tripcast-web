@@ -17,6 +17,7 @@ export interface DebugLogger {
   logState: (stateName: string, before: unknown, after?: unknown) => void;
   logFunds: (action: string, details?: Record<string, unknown>) => void;
   logPerformance: (action: string, details?: Record<string, unknown>) => void;
+  logGps: (action: string, details?: Record<string, unknown>, level?: DebugLevel) => void;
   withLoggedHandler: <T>(action: string, handler: () => T) => T;
 }
 
@@ -41,6 +42,7 @@ function makeLogger(src: string): DebugLogger {
       emit("debug", `state:${stateName}`, "state", undefined, { before, after } as Record<string, unknown>),
     logFunds: (action, details) => emit("info", action, "funds", details),
     logPerformance: (action, details) => emit("info", action, "performance", details),
+    logGps: (action, details, level = "info") => emit(level, action, "gps", details),
     withLoggedHandler: <T>(action: string, handler: () => T): T => {
       emit("info", action, "ui");
       return handler();
