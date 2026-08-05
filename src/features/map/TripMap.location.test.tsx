@@ -88,9 +88,12 @@ vi.mock("./useCloakingZones", () => ({
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 vi.mock("../../native/locationWatcher", () => ({
+  isAdaptiveLocationAvailable: () => false,
   isNativeLocationAvailable: nativeLocationMocks.isNativeLocationAvailable,
+  isAdaptiveNativeTrackingActive: () => false,
   openNativeLocationSettings: nativeLocationMocks.openNativeLocationSettings,
   startNativeLocationWatch: nativeLocationMocks.startNativeLocationWatch,
+  stopNativeLocationTracking: vi.fn(),
 }));
 
 vi.mock("maplibre-gl", () => {

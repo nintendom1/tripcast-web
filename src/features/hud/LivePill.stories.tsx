@@ -128,6 +128,20 @@ export const PausedWithTrail: Story = {
   ],
 };
 
+export const LivePowerSaving: Story = {
+  args: {
+    on: true,
+    trackingMode: "power-saving",
+  },
+  decorators: [
+    (Story) => (
+      <div className="flex min-h-72 items-center justify-center bg-[var(--bg-canvas)] p-8">
+        <Story />
+      </div>
+    ),
+  ],
+};
+
 export const DownwardPrecisionMenuInMapHud: Story = {
   render: () => <MapHudFixture />,
   parameters: {

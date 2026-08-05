@@ -2,11 +2,13 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 
 import { Compass, Route } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSamplerMode, setSamplerMode, type SamplerMode } from "../../lib/samplerMode";
+import type { NativeTrackingMode } from "../../native/nativeTrackingState";
 
 export interface LivePillProps {
   on: boolean;
   onToggle: () => void;
   trailEnabled?: boolean;
+  trackingMode?: NativeTrackingMode;
   className?: string;
 }
 
@@ -39,7 +41,13 @@ function vibrate(duration: number): void {
  * out below the pill to quickly change the GPS precision. Glide finger to select, or release
  * and tap.
  */
-export function LivePill({ on, onToggle, trailEnabled = false, className }: LivePillProps) {
+export function LivePill({
+  on,
+  onToggle,
+  trailEnabled = false,
+  trackingMode = "off",
+  className,
+}: LivePillProps) {
   const samplerMode = useSamplerMode();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [hoveredMode, setHoveredMode] = useState<SamplerMode | null>(null);
@@ -278,7 +286,9 @@ export function LivePill({ on, onToggle, trailEnabled = false, className }: Live
         aria-expanded={isMenuOpen}
         aria-haspopup="menu"
         aria-label={
-          trailEnabled
+          on && trackingMode === "power-saving"
+            ? "Live location on, power saving."
+            : trailEnabled
             ? on
               ? "Stop sharing live location. Live Trail is enabled."
               : "Start sharing live location. Live Trail is enabled."
@@ -294,7 +304,13 @@ export function LivePill({ on, onToggle, trailEnabled = false, className }: Live
           className,
         )}
       >
-        <span className="flex h-4 w-4 items-center justify-center">
+        <span
+          className={cn(
+            "flex h-4 w-4 items-center justify-center",
+            on && trackingMode === "power-saving" &&
+              "rounded-full bg-[var(--bg-card)] text-[var(--green)]",
+          )}
+        >
           <Compass className="h-3 w-3" aria-hidden="true" />
         </span>
         {on ? "LIVE" : "PAUSED"}

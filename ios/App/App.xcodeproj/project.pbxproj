@@ -12,6 +12,8 @@
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		A71C8D012F31000100A11CE1 /* BridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D022F31000100A11CE1 /* BridgeViewController.swift */; };
 		A71C8D032F31000100A11CE1 /* ProvisioningProfilePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */; };
+		A71C8D052F31000100A11CE1 /* AdaptiveLocationPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */; };
+		A71C8D072F31000100A11CE1 /* AdaptiveLocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -26,6 +28,8 @@
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A71C8D022F31000100A11CE1 /* BridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeViewController.swift; sourceTree = "<group>"; };
 		A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvisioningProfilePlugin.swift; sourceTree = "<group>"; };
+		A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLocationPlugin.swift; sourceTree = "<group>"; };
+		A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLocationService.swift; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -81,6 +85,8 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				A71C8D022F31000100A11CE1 /* BridgeViewController.swift */,
 				A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */,
+				A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */,
+				A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -218,6 +224,8 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				A71C8D012F31000100A11CE1 /* BridgeViewController.swift in Sources */,
 				A71C8D032F31000100A11CE1 /* ProvisioningProfilePlugin.swift in Sources */,
+				A71C8D052F31000100A11CE1 /* AdaptiveLocationPlugin.swift in Sources */,
+				A71C8D072F31000100A11CE1 /* AdaptiveLocationService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -24,6 +24,10 @@ export function isNativeLocationAvailable(): boolean {
   return Capacitor.isNativePlatform();
 }
 
+export function isAdaptiveLocationAvailable(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+}
+
 /** Open the iOS Settings page for this app, so a user who denied location can re-enable it. */
 export function openNativeLocationSettings(): void {
   nativeLocationManager.openSettings();
@@ -38,6 +42,8 @@ export function openNativeLocationSettings(): void {
 export function startNativeLocationWatch(
   onFix: (fix: NativeLocationFix) => void,
   onError: (error: unknown) => void,
+  adaptiveEnabled = true,
+  highFrequency = false,
 ): () => void {
   const id = nativeLocationManager.addWatcher(
     {
@@ -45,6 +51,9 @@ export function startNativeLocationWatch(
       backgroundTitle: "TripCast — Live location",
       requestPermissions: true,
       distanceFilter: DISTANCE_FILTER_METERS,
+      purpose: "live",
+      adaptive: adaptiveEnabled && isAdaptiveLocationAvailable(),
+      highFrequency,
     },
     onFix,
     onError,
@@ -53,4 +62,12 @@ export function startNativeLocationWatch(
   return () => {
     nativeLocationManager.removeWatcher(id);
   };
+}
+
+export function stopNativeLocationTracking(): void {
+  nativeLocationManager.explicitStop();
+}
+
+export function isAdaptiveNativeTrackingActive(): boolean {
+  return nativeLocationManager.isAdaptiveActive();
 }

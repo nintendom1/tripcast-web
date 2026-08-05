@@ -30,6 +30,7 @@ import { log as debugLog } from "./debug/debugLogger";
 import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 import { BackgroundSaveProvider } from "./providers/BackgroundSaveProvider";
 import { clearLiveTrailCachesForToken } from "./features/map/liveTrailCache";
+import { stopNativeLocationTracking } from "./native/locationWatcher";
 
 import OptionsSheet from "./features/options/OptionsSheet";
 
@@ -283,6 +284,7 @@ function ConnectedApp() {
   }
 
   async function handleSignOut() {
+    stopNativeLocationTracking();
     if (session) void clearLiveTrailCachesForToken(session.token);
     if (session) {
       try {
@@ -303,6 +305,7 @@ function ConnectedApp() {
   }
 
   function handleLocalSignOut() {
+    stopNativeLocationTracking();
     if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
     setSession(null);

@@ -32,11 +32,12 @@ export function startCalibrationLocationWatch(
       {
         requestPermissions: true,
         distanceFilter: 0,
+        purpose: "calibration",
       },
       (fix) => {
         onFix({
           ...fix,
-          at: Date.now(),
+          at: fix.at,
         });
       },
       onError,
