@@ -77,6 +77,10 @@ struct TripCastLiveActivityWidget: Widget {
                     Color(red: 0.05, green: 0.01, blue: 0.31)
                 )
                 .padding(size * 0.12)
+            Image("TripCastIcon", bundle: .main)
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
         }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
@@ -88,6 +92,7 @@ struct TripCastLiveActivityWidget: Widget {
                         Circle().stroke(.black.opacity(0.65), lineWidth: 1)
                     }
             }
+            .unredacted()
             .accessibilityHidden(true)
     }
 
