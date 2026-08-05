@@ -48,6 +48,7 @@ final class NativeLocationPublisher {
     private var configuration: Configuration?
     private var samples: [PendingSample] = []
     private var isPublishing = false
+    private var generation = 0
     private var retryWorkItem: DispatchWorkItem?
     private var lastEmissionLocation: CLLocation?
     private var lastEmissionAt: Date?
@@ -71,56 +72,72 @@ final class NativeLocationPublisher {
         cloakTimeoutSeconds: TimeInterval,
         cloakZones: [CloakZone]
     ) throws {
-        guard let url = URL(string: endpoint), isAllowedEndpoint(url) else {
-            throw NSError(
-                domain: "TripCastNativeLocation",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "The native location endpoint is not allowed."]
+        try workQueue.sync {
+            guard let url = URL(string: endpoint), isAllowedEndpoint(url) else {
+                throw NSError(
+                    domain: "TripCastNativeLocation",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The native location endpoint is not allowed."]
+                )
+            }
+            try storeToken(token)
+            let next = Configuration(
+                endpoint: endpoint,
+                liveTrailEnabled: liveTrailEnabled,
+                alertThresholdSeconds: max(0, alertThresholdSeconds),
+                cloakTimeoutSeconds: max(0, cloakTimeoutSeconds),
+                cloakZones: cloakZones
             )
+            generation += 1
+            isPublishing = false
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            configuration = next
+            try persist(next, to: configurationURL)
+            LiveActivityController.shared.configure(alertThresholdSeconds: next.alertThresholdSeconds)
+            publishIfPossibleLocked()
         }
-        try storeToken(token)
-        let next = Configuration(
-            endpoint: endpoint,
-            liveTrailEnabled: liveTrailEnabled,
-            alertThresholdSeconds: max(0, alertThresholdSeconds),
-            cloakTimeoutSeconds: max(0, cloakTimeoutSeconds),
-            cloakZones: cloakZones
-        )
-        configuration = next
-        try persist(next, to: configurationURL)
-        LiveActivityController.shared.configure(alertThresholdSeconds: next.alertThresholdSeconds)
-        publishIfPossible()
     }
 
     func startLive(mode: String) {
-        currentMode = mode
-        LiveActivityController.shared.start(mode: mode, queueDepth: samples.count)
-        LiveActivityController.shared.setMode(mode, queueDepth: samples.count)
-        publishIfPossible()
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            self.currentMode = mode
+            LiveActivityController.shared.start(mode: mode, queueDepth: self.samples.count)
+            LiveActivityController.shared.setMode(mode, queueDepth: self.samples.count)
+            self.publishIfPossibleLocked()
+        }
     }
 
     func setMode(_ mode: String) {
-        currentMode = mode
-        LiveActivityController.shared.setMode(mode, queueDepth: samples.count)
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            self.currentMode = mode
+            LiveActivityController.shared.setMode(mode, queueDepth: self.samples.count)
+        }
     }
 
     func stopLive(clearCredentials: Bool) {
-        retryWorkItem?.cancel()
-        retryWorkItem = nil
-        currentMode = "off"
-        lastEmissionLocation = nil
-        lastEmissionAt = nil
-        lastBearing = nil
-        enteredCloakAt = nil
-        samples.removeAll()
-        try? fileManager.removeItem(at: samplesURL)
-        LiveActivityController.shared.stop()
-        if clearCredentials {
-            configuration = nil
-            try? fileManager.removeItem(at: configurationURL)
-            deleteToken()
+        workQueue.sync {
+            generation += 1
+            isPublishing = false
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            currentMode = "off"
+            lastEmissionLocation = nil
+            lastEmissionAt = nil
+            lastBearing = nil
+            enteredCloakAt = nil
+            samples.removeAll()
+            try? fileManager.removeItem(at: samplesURL)
+            LiveActivityController.shared.stop()
+            if clearCredentials {
+                configuration = nil
+                try? fileManager.removeItem(at: configurationURL)
+                deleteToken()
+            }
+            emit("gps:native-publish:stopped", details: ["queueDepth": 0])
         }
-        emit("gps:native-publish:stopped", details: ["queueDepth": 0])
     }
 
     func accept(_ location: CLLocation, forcedReason: String? = nil) {
@@ -211,13 +228,17 @@ final class NativeLocationPublisher {
             URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
                 guard let self else { return }
                 let status = (response as? HTTPURLResponse)?.statusCode
+                let succeeded = error == nil && status.map { (200..<300).contains($0) } == true
+                var details: JSObject = ["result": succeeded ? "ack" : "failure"]
+                if !succeeded {
+                    details["failureClass"] = error == nil ? "server" : "network"
+                }
                 self.emit(
-                    error == nil && status.map({ (200..<300).contains($0) }) == true
+                    succeeded
                         ? "gps:native-publish:privacy-stop:ack"
                         : "gps:native-publish:privacy-stop:failure",
-                    level: error == nil && status.map({ (200..<300).contains($0) }) == true
-                        ? "info" : "warn",
-                    details: ["failureClass": error == nil ? "server" : "network"]
+                    level: succeeded ? "info" : "warn",
+                    details: details
                 )
                 self.endBackgroundTask(backgroundTask)
             }.resume()
@@ -230,6 +251,7 @@ final class NativeLocationPublisher {
               let token = readToken(),
               let baseURL = URL(string: config.endpoint) else { return }
         isPublishing = true
+        let requestGeneration = generation
         retryWorkItem?.cancel()
         retryWorkItem = nil
         let batch = Array(samples.prefix(20))
@@ -237,7 +259,6 @@ final class NativeLocationPublisher {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 15
         let encodedSamples: [[String: Any]] = batch.map { sample in
             var value: [String: Any] = [
                 "clientSampleId": sample.clientSampleId,
@@ -264,6 +285,10 @@ final class NativeLocationPublisher {
         URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             self?.workQueue.async {
                 guard let self else { return }
+                guard requestGeneration == self.generation else {
+                    self.endBackgroundTask(backgroundTask)
+                    return
+                }
                 guard error == nil,
                       let http = response as? HTTPURLResponse,
                       (200..<300).contains(http.statusCode),
@@ -455,11 +480,7 @@ final class NativeLocationPublisher {
     }
 
     private func beginBackgroundTask() -> UIBackgroundTaskIdentifier {
-        var identifier = UIBackgroundTaskIdentifier.invalid
-        DispatchQueue.main.sync {
-            identifier = UIApplication.shared.beginBackgroundTask(withName: "TripCastLocationPublish")
-        }
-        return identifier
+        UIApplication.shared.beginBackgroundTask(withName: "TripCastLocationPublish")
     }
 
     private func endBackgroundTask(_ identifier: UIBackgroundTaskIdentifier) {
