@@ -15,6 +15,7 @@ type AdaptiveLocationEvent = {
   mode: Exclude<NativeTrackingMode, "legacy">;
   liveRequested: boolean;
   changedAt: number;
+  reason?: string;
   lat?: number;
   lon?: number;
   accuracy?: number;
@@ -287,6 +288,7 @@ class NativeLocationManager {
       mode: event.mode,
       liveRequested: event.liveRequested,
       changedAt: event.changedAt,
+      reason: event.reason,
     });
     setNativeTrackingMode(event.mode, event.changedAt);
   }

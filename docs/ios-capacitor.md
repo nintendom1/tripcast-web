@@ -147,9 +147,12 @@ choice.
 Adaptive tracking begins in **Precise** mode. After approximately five minutes without meaningful
 movement, or when Core Location automatically pauses updates, it enters **Power saving** while the
 HUD remains LIVE. A 100 m exit region, significant-location changes, and low-accuracy standard
-updates give iOS multiple opportunities to report movement. The service then returns to precise
-configuration and waits for a fresh precise fix before sending an event to JavaScript. Calibration
-temporarily holds precise, high-frequency tracking.
+updates give iOS multiple opportunities to report movement. The foreground-started standard
+location session remains running throughout Live; mode changes reconfigure that manager in place
+instead of stopping and restarting it from a background wake. On promotion, the service temporarily
+disables automatic pausing and the distance filter until a fresh precise fix arrives, then restores
+normal precise settings and sends the fix to JavaScript. Calibration temporarily holds precise,
+high-frequency tracking.
 
 The native service persists the Live request, current adaptive mode, stationary anchor, and timing
 metadata. A location-triggered iOS relaunch reconstructs that state before the Capacitor bridge is
@@ -224,6 +227,8 @@ asset updates, but do not commit a personal `DEVELOPMENT_TEAM` value written int
 - [ ] Exercise denied/reduced accuracy, Background App Refresh off, Low Power Mode, calibration,
       cloaking, sign-out, Emergency Reset, OS location relaunch, and normal foreground/background.
 - [ ] GPS Trace shows watcher start, adaptive mode changes, callbacks, and publish acknowledgements.
+      Adaptive mode entries include a transition reason such as `stationary-timeout`,
+      `automatic-pause`, `low-power-location`, or `region-exit`.
 
 ### Battery comparison
 

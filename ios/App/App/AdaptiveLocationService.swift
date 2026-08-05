@@ -20,6 +20,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         static let anchorTimestamp = "tripcast.adaptiveLocation.anchorTimestamp"
         static let lastMeaningfulAt = "tripcast.adaptiveLocation.lastMeaningfulAt"
         static let modeChangedAt = "tripcast.adaptiveLocation.modeChangedAt"
+        static let modeChangedReason = "tripcast.adaptiveLocation.modeChangedReason"
     }
 
     private let manager = CLLocationManager()
@@ -37,8 +38,10 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     private var lastPreciseFix: CLLocation?
     private var lastMeaningfulAt: Date?
     private var modeChangedAt = Date.distantPast
+    private var modeChangedReason = "initialized"
     private var stationaryTimer: Timer?
     private var waitingForFreshPreciseFix = false
+    private var standardUpdatesRunning = false
 
     var eventHandler: ((JSObject) -> Void)? {
         didSet { deliverPendingEventIfNeeded() }
@@ -63,7 +66,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         liveRequested = true
         defaults.set(true, forKey: DefaultsKey.liveRequested)
         requestAuthorization()
-        enterPreciseMode(resetIdleWindow: true)
+        enterPreciseMode(resetIdleWindow: true, reason: "live-start")
     }
 
     func stopLive() {
@@ -78,6 +81,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         waitingForFreshPreciseFix = false
         mode = .off
         modeChangedAt = Date()
+        modeChangedReason = "live-stop"
         clearPersistedTrackingState()
         emitState()
     }
@@ -87,14 +91,15 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         guard liveRequested else { return }
         if active {
             if mode == .powerSaving {
-                enterPreciseMode(resetIdleWindow: true)
+                enterPreciseMode(resetIdleWindow: true, reason: "calibration-start")
             } else {
-                configurePreciseManager()
+                waitingForFreshPreciseFix = true
+                configurePreciseManager(acquiringFreshFix: true)
                 manager.distanceFilter = kCLDistanceFilterNone
                 scheduleStationaryTimer()
             }
         } else if mode == .precise {
-            configurePreciseManager()
+            configurePreciseManager(acquiringFreshFix: waitingForFreshPreciseFix)
             scheduleStationaryTimer()
         }
     }
@@ -103,7 +108,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         [
             "mode": mode.rawValue,
             "liveRequested": liveRequested,
-            "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000
+            "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000,
+            "reason": modeChangedReason
         ]
     }
 
@@ -111,13 +117,14 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         liveRequested = true
         mode = Mode(rawValue: defaults.string(forKey: DefaultsKey.mode) ?? "") ?? .precise
         modeChangedAt = date(forKey: DefaultsKey.modeChangedAt) ?? Date()
+        modeChangedReason = defaults.string(forKey: DefaultsKey.modeChangedReason) ?? "location-relaunch"
         lastMeaningfulAt = date(forKey: DefaultsKey.lastMeaningfulAt) ?? Date()
         stationaryAnchor = persistedAnchor()
 
         if mode == .powerSaving, stationaryAnchor != nil {
             configurePowerSavingManager()
         } else {
-            enterPreciseMode(resetIdleWindow: false)
+            enterPreciseMode(resetIdleWindow: false, reason: "location-relaunch")
         }
         requestAuthorization()
         emitState()
@@ -134,34 +141,38 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    private func enterPreciseMode(resetIdleWindow: Bool) {
+    private func enterPreciseMode(resetIdleWindow: Bool, reason: String) {
         stopLowPowerMonitors()
-        manager.stopUpdatingLocation()
         mode = .precise
         modeChangedAt = Date()
+        modeChangedReason = reason
         waitingForFreshPreciseFix = true
         if resetIdleWindow || lastMeaningfulAt == nil {
             lastMeaningfulAt = Date()
         }
-        configurePreciseManager()
-        manager.startUpdatingLocation()
+        configurePreciseManager(acquiringFreshFix: true)
+        ensureStandardUpdatesRunning()
         persistState()
         scheduleStationaryTimer()
         emitState()
     }
 
-    private func configurePreciseManager() {
+    private func configurePreciseManager(acquiringFreshFix: Bool = false) {
         manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-        manager.distanceFilter = calibrationActive ? kCLDistanceFilterNone : movementDistance
+        if calibrationActive || acquiringFreshFix {
+            manager.distanceFilter = kCLDistanceFilterNone
+        } else {
+            manager.distanceFilter = movementDistance
+        }
         manager.activityType = .otherNavigation
         manager.allowsBackgroundLocationUpdates = true
-        manager.pausesLocationUpdatesAutomatically = true
+        manager.pausesLocationUpdatesAutomatically = !acquiringFreshFix
         if #available(iOS 11.0, *) {
             manager.showsBackgroundLocationIndicator = false
         }
     }
 
-    private func enterPowerSavingMode(anchor: CLLocation?) {
+    private func enterPowerSavingMode(anchor: CLLocation?, reason: String) {
         guard liveRequested, !calibrationActive, mode == .precise else { return }
         stationaryTimer?.invalidate()
         stationaryTimer = nil
@@ -172,9 +183,9 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             return
         }
 
-        manager.stopUpdatingLocation()
         mode = .powerSaving
         modeChangedAt = Date()
+        modeChangedReason = reason
         waitingForFreshPreciseFix = false
         configurePowerSavingManager()
         persistState()
@@ -187,7 +198,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         manager.activityType = .other
         manager.allowsBackgroundLocationUpdates = true
         manager.pausesLocationUpdatesAutomatically = false
-        manager.startUpdatingLocation()
+        ensureStandardUpdatesRunning()
         manager.startMonitoringSignificantLocationChanges()
         if let anchor = stationaryAnchor, CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) {
             manager.stopMonitoring(for: CLCircularRegion(
@@ -206,9 +217,15 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    private func promoteFromPowerSaving() {
+    private func promoteFromPowerSaving(reason: String) {
         guard liveRequested, mode == .powerSaving else { return }
-        enterPreciseMode(resetIdleWindow: true)
+        enterPreciseMode(resetIdleWindow: true, reason: reason)
+    }
+
+    private func ensureStandardUpdatesRunning() {
+        guard !standardUpdatesRunning else { return }
+        manager.startUpdatingLocation()
+        standardUpdatesRunning = true
     }
 
     private func scheduleStationaryTimer() {
@@ -218,7 +235,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         let remaining = max(0.1, stationaryInterval - Date().timeIntervalSince(meaningfulAt))
         stationaryTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
             guard let self else { return }
-            self.enterPowerSavingMode(anchor: self.lastPreciseFix)
+            self.enterPowerSavingMode(anchor: self.lastPreciseFix, reason: "stationary-timeout")
         }
     }
 
@@ -241,6 +258,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
 
     private func stopAllLocationServices() {
         manager.stopUpdatingLocation()
+        standardUpdatesRunning = false
         stopLowPowerMonitors()
     }
 
@@ -276,6 +294,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         defaults.set(liveRequested, forKey: DefaultsKey.liveRequested)
         defaults.set(mode.rawValue, forKey: DefaultsKey.mode)
         defaults.set(modeChangedAt.timeIntervalSince1970, forKey: DefaultsKey.modeChangedAt)
+        defaults.set(modeChangedReason, forKey: DefaultsKey.modeChangedReason)
         if let lastMeaningfulAt {
             defaults.set(lastMeaningfulAt.timeIntervalSince1970, forKey: DefaultsKey.lastMeaningfulAt)
         }
@@ -296,7 +315,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             DefaultsKey.anchorAccuracy,
             DefaultsKey.anchorTimestamp,
             DefaultsKey.lastMeaningfulAt,
-            DefaultsKey.modeChangedAt
+            DefaultsKey.modeChangedAt,
+            DefaultsKey.modeChangedReason
         ]
         keys.forEach { defaults.removeObject(forKey: $0) }
     }
@@ -335,7 +355,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
                location.distance(from: anchor) < wakeRegionRadius {
                 return
             }
-            promoteFromPowerSaving()
+            promoteFromPowerSaving(reason: "low-power-location")
             return
         }
 
@@ -344,6 +364,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         lastPreciseFix = location
         if waitingForFreshPreciseFix {
             waitingForFreshPreciseFix = false
+            configurePreciseManager()
         }
         if meaningfulMovement {
             lastMeaningfulAt = Date()
@@ -355,12 +376,12 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
-        enterPowerSavingMode(anchor: lastPreciseFix)
+        enterPowerSavingMode(anchor: lastPreciseFix, reason: "automatic-pause")
     }
 
     func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {
         guard region.identifier == wakeRegionIdentifier else { return }
-        promoteFromPowerSaving()
+        promoteFromPowerSaving(reason: "region-exit")
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
@@ -368,6 +389,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             "mode": mode.rawValue,
             "liveRequested": liveRequested,
             "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000,
+            "reason": modeChangedReason,
             "error": error.localizedDescription,
             "code": (error as? CLError)?.code.rawValue ?? -1
         ])
