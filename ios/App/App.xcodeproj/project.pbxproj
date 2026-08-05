@@ -20,6 +20,7 @@
 		B10000012F31000100B11CE1 /* TripCastLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */; };
 		B10000022F31000100B11CE1 /* TripCastLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */; };
 		B10000032F31000100B11CE1 /* TripCastLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		B10000042F31000100B11CE1 /* icon.png in Resources */ = {isa = PBXBuildFile; fileRef = B10000132F31000100B11CE1 /* icon.png */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -42,6 +43,7 @@
 		B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCastLiveActivityWidget.swift; sourceTree = "<group>"; };
 		B10000112F31000100B11CE1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TripCastLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000132F31000100B11CE1 /* icon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = icon.png; path = ../../assets/icon.png; sourceTree = SOURCE_ROOT; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -150,6 +152,7 @@
 			children = (
 				B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */,
 				B10000112F31000100B11CE1 /* Info.plist */,
+				B10000132F31000100B11CE1 /* icon.png */,
 			);
 			path = TripCastLiveActivity;
 			sourceTree = "<group>";
@@ -263,6 +266,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B10000042F31000100B11CE1 /* icon.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

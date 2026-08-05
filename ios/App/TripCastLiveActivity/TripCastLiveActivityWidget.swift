@@ -13,9 +13,7 @@ struct TripCastLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TripCastLiveActivityAttributes.self) { context in
             HStack(spacing: 12) {
-                Circle()
-                    .fill(statusColor(context.state.health))
-                    .frame(width: 12, height: 12)
+                brandedIcon(size: 36, health: context.state.health)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title(context.state.mode))
                         .font(.headline)
@@ -36,7 +34,10 @@ struct TripCastLiveActivityWidget: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(title(context.state.mode), systemImage: "location.fill")
+                    HStack(spacing: 7) {
+                        brandedIcon(size: 24, health: context.state.health)
+                        Text(title(context.state.mode))
+                    }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     Circle()
@@ -54,16 +55,29 @@ struct TripCastLiveActivityWidget: Widget {
                     .font(.caption)
                 }
             } compactLeading: {
-                Image(systemName: "location.fill")
-                    .foregroundStyle(statusColor(context.state.health))
+                brandedIcon(size: 20, health: context.state.health)
             } compactTrailing: {
                 compactTimer(context.state)
             } minimal: {
-                Circle()
-                    .fill(statusColor(context.state.health))
-                    .frame(width: 10, height: 10)
+                brandedIcon(size: 20, health: context.state.health)
             }
         }
+    }
+
+    private func brandedIcon(size: CGFloat, health: String) -> some View {
+        Image("icon")
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+            .overlay(alignment: .bottomTrailing) {
+                Circle()
+                    .fill(statusColor(health))
+                    .frame(width: max(6, size * 0.28), height: max(6, size * 0.28))
+                    .overlay {
+                        Circle().stroke(.black.opacity(0.65), lineWidth: 1)
+                    }
+            }
     }
 
     private func title(_ mode: String) -> String {
