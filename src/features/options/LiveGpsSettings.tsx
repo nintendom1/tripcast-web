@@ -8,10 +8,16 @@ import {
   useNativeTrackingState,
   type NativeTrackingMode,
 } from "../../native/nativeTrackingState";
+import {
+  setStaleBreadcrumbAlertSeconds,
+  useStaleBreadcrumbAlertSeconds,
+  type StaleBreadcrumbAlertSeconds,
+} from "../../lib/staleBreadcrumbAlertPreference";
 
 export type LiveGpsSettingsProps = {
   previewAdaptiveEnabled?: boolean;
   previewMode?: NativeTrackingMode;
+  previewAlertThresholdSeconds?: StaleBreadcrumbAlertSeconds;
 };
 
 const MODE_LABELS: Record<NativeTrackingMode, string> = {
@@ -34,12 +40,18 @@ const MODE_DESCRIPTIONS: Array<{ mode: NativeTrackingMode; description: string }
 export function LiveGpsSettings({
   previewAdaptiveEnabled,
   previewMode,
+  previewAlertThresholdSeconds,
 }: LiveGpsSettingsProps) {
   const storedAdaptiveEnabled = useAdaptiveGpsEnabled();
   const trackingState = useNativeTrackingState();
   const adaptiveEnabled = previewAdaptiveEnabled ?? storedAdaptiveEnabled;
   const mode = previewMode ?? trackingState.mode;
-  const isPreview = previewAdaptiveEnabled !== undefined || previewMode !== undefined;
+  const storedAlertThreshold = useStaleBreadcrumbAlertSeconds();
+  const alertThreshold = previewAlertThresholdSeconds ?? storedAlertThreshold;
+  const isPreview =
+    previewAdaptiveEnabled !== undefined ||
+    previewMode !== undefined ||
+    previewAlertThresholdSeconds !== undefined;
 
   return (
     <div className="grid gap-6" data-live-gps-settings="">
@@ -49,7 +61,9 @@ export function LiveGpsSettings({
             <Compass className="h-5 w-5" aria-hidden="true" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-base font-medium text-[var(--ink-1)]">Adaptive GPS</span>
+            <span className="block text-base font-medium text-[var(--ink-1)]">
+              Adaptive Background GPS
+            </span>
             <span className="block text-sm text-[var(--ink-3)]">
               Save power while you stay in one place.
             </span>
@@ -82,6 +96,47 @@ export function LiveGpsSettings({
           <span className="font-[var(--font-mono)] text-xs font-semibold uppercase tracking-wide text-[var(--ink-1)]">
             {MODE_LABELS[mode]}
           </span>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] shadow-sm">
+        <div className="px-4 py-4 sm:px-5">
+          <div className="text-base font-medium text-[var(--ink-1)]">Stale breadcrumb alert</div>
+          <div className="mt-1 text-sm text-[var(--ink-3)]">
+            Sound an iOS notification when Precise sharing has not reached the server.
+          </div>
+          <div className="mt-4 grid grid-cols-4 gap-2" role="radiogroup" aria-label="Stale breadcrumb alert">
+            {([
+              [0, "Off"],
+              [120, "2 min"],
+              [180, "3 min"],
+              [300, "5 min"],
+            ] as const).map(([seconds, label]) => (
+              <button
+                key={seconds}
+                type="button"
+                role="radio"
+                aria-checked={alertThreshold === seconds}
+                className={cn(
+                  "rounded-lg border px-2 py-2 text-xs font-medium transition-colors",
+                  alertThreshold === seconds
+                    ? "border-[var(--ink-1)] bg-[var(--ink-1)] text-[var(--bg-card)]"
+                    : "border-[var(--line-soft)] text-[var(--ink-2)]",
+                )}
+                onClick={() => {
+                  if (!isPreview) {
+                    setStaleBreadcrumbAlertSeconds(seconds as StaleBreadcrumbAlertSeconds);
+                  }
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-[var(--ink-3)]">
+            Power Saving and Privacy Pause are intentionally quiet and do not trigger this alert.
+            The Lock Screen Live Activity also shows how long ago the server confirmed a breadcrumb.
+          </p>
         </div>
       </div>
 

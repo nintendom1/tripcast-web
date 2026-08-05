@@ -23,11 +23,25 @@ type AdaptiveLocationEvent = {
   timestamp?: number;
   error?: string;
   code?: number;
+  action?: string;
+  level?: "info" | "warn" | "error";
+  details?: Record<string, unknown>;
+};
+
+export type NativePublishingConfiguration = {
+  endpoint: string;
+  token: string;
+  liveTrailEnabled: boolean;
+  alertThresholdSeconds: number;
+  cloakTimeoutSeconds: number;
+  cloakZones: Array<{ lat: number; lon: number; radiusMeters: number }>;
 };
 
 interface AdaptiveLocationPlugin {
   start(): Promise<AdaptiveLocationEvent>;
-  stop(): Promise<AdaptiveLocationEvent>;
+  stop(options?: { clearCredentials?: boolean }): Promise<AdaptiveLocationEvent>;
+  configurePublishing(options: NativePublishingConfiguration): Promise<AdaptiveLocationEvent>;
+  foreground(): Promise<AdaptiveLocationEvent>;
   setCalibrationActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
   getState(): Promise<AdaptiveLocationEvent>;
   addListener(
@@ -101,14 +115,14 @@ class NativeLocationManager {
     void BackgroundGeolocation.openSettings();
   }
 
-  public explicitStop(): void {
+  public explicitStop(clearCredentials = false): void {
     this.adaptiveStarted = false;
     if (this.isStarted) {
       this.isStarted = false;
       this.currentOptions = null;
       void BackgroundGeolocation.stop().catch(() => {});
     }
-    void AdaptiveLocation.stop().catch((error) => {
+    void AdaptiveLocation.stop({ clearCredentials }).catch((error) => {
       log.error("gps:adaptive:stop:failure", "error", {
         errorType: error instanceof Error ? error.name : typeof error,
       });
@@ -118,6 +132,19 @@ class NativeLocationManager {
 
   public isAdaptiveActive(): boolean {
     return this.adaptiveStarted;
+  }
+
+  public async configurePublishing(options: NativePublishingConfiguration): Promise<void> {
+    const state = await AdaptiveLocation.configurePublishing(options);
+    this.applyAdaptiveState(state);
+  }
+
+  public foreground(): void {
+    void AdaptiveLocation.foreground().then((state) => this.applyAdaptiveState(state)).catch((error) => {
+      log.error("gps:adaptive:foreground:failure", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+    });
   }
 
   private scheduleSync(): void {
@@ -284,6 +311,10 @@ class NativeLocationManager {
   }
 
   private applyAdaptiveState(event: AdaptiveLocationEvent): void {
+    if (event.action) {
+      log.logGps(event.action, event.details ?? {}, event.level === "warn" ? "warn" : undefined);
+    }
+    if (!event.mode) return;
     log.logGps("gps:adaptive:mode", {
       mode: event.mode,
       liveRequested: event.liveRequested,

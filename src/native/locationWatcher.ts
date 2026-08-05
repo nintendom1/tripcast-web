@@ -3,6 +3,7 @@ import {
   nativeLocationManager,
   type NativeLocationFix,
 } from "./nativeLocationManager";
+import type { NativePublishingConfiguration } from "./nativeLocationManager";
 
 /**
  * Native (Capacitor) location source. iOS browsers / PWAs cannot emit GPS while
@@ -64,10 +65,22 @@ export function startNativeLocationWatch(
   };
 }
 
-export function stopNativeLocationTracking(): void {
-  nativeLocationManager.explicitStop();
+export function stopNativeLocationTracking(clearCredentials = false): void {
+  nativeLocationManager.explicitStop(clearCredentials);
 }
 
 export function isAdaptiveNativeTrackingActive(): boolean {
   return nativeLocationManager.isAdaptiveActive();
+}
+
+export function configureNativeLocationPublishing(
+  configuration: NativePublishingConfiguration,
+): Promise<void> {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve();
+  return nativeLocationManager.configurePublishing(configuration);
+}
+
+export function foregroundNativeLocationTracking(): void {
+  if (!isAdaptiveLocationAvailable()) return;
+  nativeLocationManager.foreground();
 }

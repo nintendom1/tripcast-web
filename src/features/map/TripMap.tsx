@@ -67,6 +67,8 @@ import {
   BackgroundSaveRetryToast,
 } from "../hud";
 import {
+  configureNativeLocationPublishing,
+  foregroundNativeLocationTracking,
   isAdaptiveLocationAvailable,
   isAdaptiveNativeTrackingActive,
   isNativeLocationAvailable,
@@ -75,6 +77,7 @@ import {
   stopNativeLocationTracking,
 } from "../../native/locationWatcher";
 import { useAdaptiveGpsEnabled } from "../../lib/adaptiveGpsPreference";
+import { useStaleBreadcrumbAlertSeconds } from "../../lib/staleBreadcrumbAlertPreference";
 import { useNativeTrackingState } from "../../native/nativeTrackingState";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import {
@@ -1311,6 +1314,7 @@ export default function TripMap({
   const enteredCloakAtRef = useRef<number | null>(null);
   const cloakToastShownRef = useRef(false);
   const cloakAutoShutoffFiredRef = useRef(false);
+  const nativePublishingReadyRef = useRef(false);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   // Focus-observability: pendingFocusRef carries the in-flight focus so the next
   // programmatic moveend can log where the pin actually settled; focusAdjustArmRef
@@ -1334,6 +1338,7 @@ export default function TripMap({
   const calibrationRef = useRef(calibration);
   calibrationRef.current = calibration;
   const adaptiveGpsEnabled = useAdaptiveGpsEnabled();
+  const staleBreadcrumbAlertSeconds = useStaleBreadcrumbAlertSeconds();
   const nativeTrackingState = useNativeTrackingState();
   const nativeTrackingModeRef = useRef(nativeTrackingState.mode);
   nativeTrackingModeRef.current = nativeTrackingState.mode;
@@ -3248,6 +3253,65 @@ export default function TripMap({
   }, [cloakingPinsData]);
 
   useEffect(() => {
+    if (
+      role !== "traveler" ||
+      !adaptiveGpsEnabled ||
+      !isAdaptiveLocationAvailable()
+    ) {
+      nativePublishingReadyRef.current = false;
+      return;
+    }
+    const endpoint = import.meta.env.VITE_CONVEX_URL as string | undefined;
+    if (!endpoint) {
+      nativePublishingReadyRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    let cloakTimeoutSeconds = 300;
+    try {
+      const minutes = Number(
+        localStorage.getItem("tripcast.cloaking.autoDisableGpsTimeoutMinutes") ?? "5",
+      );
+      if (Number.isFinite(minutes) && minutes >= 0) cloakTimeoutSeconds = minutes * 60;
+    } catch {
+      // Keep the privacy-first default.
+    }
+    configureNativeLocationPublishing({
+      endpoint,
+      token,
+      liveTrailEnabled,
+      alertThresholdSeconds: staleBreadcrumbAlertSeconds,
+      cloakTimeoutSeconds,
+      cloakZones: (cloakingPinsData ?? []).map((pin) => ({
+        lat: pin.lat,
+        lon: pin.lon,
+        radiusMeters: pin.radiusMeters,
+      })),
+    })
+      .then(() => {
+        if (!cancelled) nativePublishingReadyRef.current = true;
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        nativePublishingReadyRef.current = false;
+        log.error("gps:native-publish:configure-failure", "error", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    adaptiveGpsEnabled,
+    cloakingPinsData,
+    liveTrailEnabled,
+    log,
+    role,
+    staleBreadcrumbAlertSeconds,
+    token,
+  ]);
+
+  useEffect(() => {
     try {
       const stored = localStorage.getItem("tripcast.cloaking.enteredAt");
       if (stored) {
@@ -3506,7 +3570,10 @@ export default function TripMap({
       }
       // ── End cloaking ──────────────────────────────────────────────────────
 
-      if (isLocationSharingRef.current) {
+      if (
+        isLocationSharingRef.current &&
+        !(isAdaptiveNativeTrackingActive() && nativePublishingReadyRef.current)
+      ) {
         publishTravelerLocation(nextPosition, accuracy);
         if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
           publishLiveTrailSample(nextPosition, accuracy, false, fixAt);
@@ -3904,6 +3971,13 @@ export default function TripMap({
         movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
       });
       if (nextActive) {
+        if (
+          isLocationSharingRef.current &&
+          adaptiveGpsEnabled &&
+          isAdaptiveLocationAvailable()
+        ) {
+          foregroundNativeLocationTracking();
+        }
         // Re-engage follow if an accidental pan dropped it right before the
         // swipe-away backgrounded us (see FOLLOW_RESTORE_GRACE_MS).
         if (restoreFollowOnResumeRef.current) {
@@ -3927,7 +4001,7 @@ export default function TripMap({
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   // forceStopAllWatchers reads refs only; safe to omit.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, log]);
+  }, [adaptiveGpsEnabled, role, log]);
 
   useEffect(() => {
     if (role !== "traveler") return;

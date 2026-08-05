@@ -4,6 +4,8 @@
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>TripCast shows your live location on the trip map.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>TripCast keeps sharing your live location with followers while the app is in the background.</string>
 	<key>UIBackgroundModes</key>

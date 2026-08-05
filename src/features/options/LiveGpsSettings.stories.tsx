@@ -38,6 +38,14 @@ export const PowerSaving: Story = {
   args: { previewAdaptiveEnabled: true, previewMode: "power-saving" },
 };
 
+export const AlertsOff: Story = {
+  args: {
+    previewAdaptiveEnabled: true,
+    previewMode: "precise",
+    previewAlertThresholdSeconds: 0,
+  },
+};
+
 export const Legacy: Story = {
   args: { previewAdaptiveEnabled: false, previewMode: "legacy" },
 };
