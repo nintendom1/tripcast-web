@@ -1,6 +1,5 @@
 import ActivityKit
 import SwiftUI
-import UIKit
 import WidgetKit
 
 @main
@@ -11,13 +10,6 @@ struct TripCastLiveActivityWidgetBundle: WidgetBundle {
 }
 
 struct TripCastLiveActivityWidget: Widget {
-    private static let iconImage: UIImage? = {
-        guard let url = Bundle.main.url(forResource: "icon", withExtension: "png") else {
-            return nil
-        }
-        return UIImage(contentsOfFile: url.path)
-    }()
-
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: TripCastLiveActivityAttributes.self) { context in
             HStack(spacing: 12) {
@@ -75,16 +67,16 @@ struct TripCastLiveActivityWidget: Widget {
     private func brandedIcon(size: CGFloat, health: String) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.22, style: .continuous)
-                .fill(Color(red: 0.12, green: 0.19, blue: 0.16))
-            if let iconImage = Self.iconImage {
-                Image(uiImage: iconImage)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Text("TC")
-                    .font(.system(size: size * 0.32, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
-            }
+                .fill(Color(red: 0.05, green: 0.01, blue: 0.31))
+            Image(systemName: "mappin.circle.fill")
+                .resizable()
+                .scaledToFit()
+                .symbolRenderingMode(.palette)
+                .foregroundStyle(
+                    Color(red: 1.0, green: 0.09, blue: 0.03),
+                    Color(red: 0.05, green: 0.01, blue: 0.31)
+                )
+                .padding(size * 0.12)
         }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
