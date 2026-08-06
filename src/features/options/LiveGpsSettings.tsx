@@ -103,7 +103,8 @@ export function LiveGpsSettings({
         <div className="px-4 py-4 sm:px-5">
           <div className="text-base font-medium text-[var(--ink-1)]">Stale breadcrumb alert</div>
           <div className="mt-1 text-sm text-[var(--ink-3)]">
-            Sound an iOS notification when Precise sharing has not reached the server.
+            Sound an iOS notification when moving or uncertain and Precise sharing has not reached
+            the server.
           </div>
           <div className="mt-4 grid grid-cols-4 gap-2" role="radiogroup" aria-label="Stale breadcrumb alert">
             {([
@@ -134,7 +135,8 @@ export function LiveGpsSettings({
             ))}
           </div>
           <p className="mt-3 text-xs leading-relaxed text-[var(--ink-3)]">
-            Power Saving and Privacy Pause are intentionally quiet and do not trigger this alert.
+            Power Saving, Privacy Pause, and confidently stationary Motion &amp; Fitness activity are
+            intentionally quiet. Queued breadcrumbs and publishing failures still trigger the alert.
             The Lock Screen Live Activity also shows how long ago the server confirmed a breadcrumb.
           </p>
         </div>

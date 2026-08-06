@@ -1,4 +1,5 @@
 import CoreLocation
+import CoreMotion
 import Foundation
 import Capacitor
 
@@ -24,6 +25,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     private let manager = CLLocationManager()
+    private let motionManager = CMMotionActivityManager()
+    private let motionQueue = OperationQueue.main
     private let defaults = UserDefaults.standard
     private let stationaryInterval: TimeInterval = 5 * 60
     private let movementDistance: CLLocationDistance = 50
@@ -46,6 +49,10 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     private var forcedPublishReason: String?
     private var standardUpdatesRunning = false
     private var backgroundActivitySession: AnyObject?
+    private var motionUpdatesRunning = false
+    private var motionState = "unknown"
+    private var motionConfidence = "unknown"
+    private var motionChangedAt = Date.distantPast
 
     var eventHandler: ((JSObject) -> Void)? {
         didSet { deliverPendingEventIfNeeded() }
@@ -80,6 +87,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         liveRequested = true
         defaults.set(true, forKey: DefaultsKey.liveRequested)
         requestAuthorization()
+        startMotionUpdates()
         ensureBackgroundActivitySession()
         enterPreciseMode(resetIdleWindow: true, reason: "live-start")
     }
@@ -90,6 +98,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         stationaryTimer?.invalidate()
         stationaryTimer = nil
         stopAllLocationServices()
+        stopMotionUpdates()
         stationaryAnchor = nil
         lastPreciseFix = nil
         lastMeaningfulAt = nil
@@ -129,7 +138,10 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             "mode": mode.rawValue,
             "liveRequested": liveRequested,
             "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000,
-            "reason": modeChangedReason
+            "reason": modeChangedReason,
+            "motionState": motionState,
+            "motionConfidence": motionConfidence,
+            "motionChangedAt": motionChangedAt.timeIntervalSince1970 * 1_000
         ]
     }
 
@@ -140,6 +152,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
         guard liveRequested else { return }
         ensureBackgroundActivitySession()
+        startMotionUpdates()
         if mode == .precise,
            modeChangedReason == "foreground",
            Date().timeIntervalSince(modeChangedAt) < 2 {
@@ -156,6 +169,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         lastMeaningfulAt = date(forKey: DefaultsKey.lastMeaningfulAt) ?? Date()
         stationaryAnchor = persistedAnchor()
         ensureBackgroundActivitySession()
+        startMotionUpdates()
         NativeLocationPublisher.shared.startLive(mode: mode.rawValue)
 
         if mode == .powerSaving, stationaryAnchor != nil {
@@ -176,6 +190,92 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         default:
             break
         }
+    }
+
+    private func startMotionUpdates() {
+        guard CMMotionActivityManager.isActivityAvailable() else {
+            updateMotion(state: "unknown", confidence: "unavailable", at: Date(), source: "availability")
+            return
+        }
+        if !motionUpdatesRunning {
+            motionUpdatesRunning = true
+            motionManager.startActivityUpdates(to: motionQueue) { [weak self] activity in
+                guard let self, let activity else { return }
+                self.handleMotionActivity(activity, source: "live")
+            }
+        }
+        let now = Date()
+        motionManager.queryActivityStarting(
+            from: now.addingTimeInterval(-15 * 60),
+            to: now,
+            to: motionQueue
+        ) { [weak self] activities, _ in
+            guard let self, let activity = activities?.last else { return }
+            self.handleMotionActivity(activity, source: "history")
+        }
+    }
+
+    private func stopMotionUpdates() {
+        guard motionUpdatesRunning else { return }
+        motionManager.stopActivityUpdates()
+        motionUpdatesRunning = false
+        motionState = "unknown"
+        motionConfidence = "unknown"
+        motionChangedAt = Date()
+        LiveActivityController.shared.setMotion(state: motionState, confidence: motionConfidence)
+    }
+
+    private func handleMotionActivity(_ activity: CMMotionActivity, source: String) {
+        guard liveRequested, activity.startDate >= motionChangedAt else { return }
+        let confidence: String
+        switch activity.confidence {
+        case .high: confidence = "high"
+        case .medium: confidence = "medium"
+        case .low: confidence = "low"
+        @unknown default: confidence = "unknown"
+        }
+
+        let state: String
+        if activity.stationary {
+            state = "stationary"
+        } else if activity.cycling {
+            state = "cycling"
+        } else if activity.walking {
+            state = "walking"
+        } else if activity.running {
+            state = "running"
+        } else if activity.automotive {
+            state = "automotive"
+        } else {
+            state = "unknown"
+        }
+        updateMotion(state: state, confidence: confidence, at: activity.startDate, source: source)
+
+        let trustedMoving = confidence != "low" && confidence != "unknown" &&
+            state != "stationary" && state != "unknown"
+        if trustedMoving, mode == .powerSaving {
+            promoteFromPowerSaving(reason: "motion-\(state)")
+        }
+    }
+
+    private func updateMotion(state: String, confidence: String, at date: Date, source: String) {
+        motionState = state
+        motionConfidence = confidence
+        motionChangedAt = date
+        LiveActivityController.shared.setMotion(state: state, confidence: confidence)
+        emit([
+            "mode": mode.rawValue,
+            "liveRequested": liveRequested,
+            "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000,
+            "reason": modeChangedReason,
+            "action": "gps:motion:classified",
+            "details": [
+                "state": state,
+                "confidence": confidence,
+                "source": source,
+                "motionChangedAt": date.timeIntervalSince1970 * 1_000
+            ]
+        ])
     }
 
     private func enterPreciseMode(resetIdleWindow: Bool, reason: String) {

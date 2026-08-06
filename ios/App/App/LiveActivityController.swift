@@ -11,6 +11,8 @@ final class LiveActivityController {
     private var lastAcknowledgedAt: Date?
     private var mode = "off"
     private var queueDepth = 0
+    private var motionState = "unknown"
+    private var motionConfidence = "unknown"
     private var availableImplementation: AnyObject?
 
     private init() {}
@@ -40,6 +42,8 @@ final class LiveActivityController {
         mode = "off"
         queueDepth = 0
         lastAcknowledgedAt = nil
+        motionState = "unknown"
+        motionConfidence = "unknown"
         cancelNotifications()
         if #available(iOS 16.1, *) {
             implementation().stop()
@@ -56,6 +60,14 @@ final class LiveActivityController {
     func setQueueDepth(_ queueDepth: Int) {
         self.queueDepth = queueDepth
         updateActivity()
+        scheduleStaleNotificationIfNeeded()
+    }
+
+    func setMotion(state: String, confidence: String) {
+        motionState = state
+        motionConfidence = confidence
+        updateActivity()
+        scheduleStaleNotificationIfNeeded()
     }
 
     func acknowledge(at date: Date, mode: String, queueDepth: Int) {
@@ -133,6 +145,10 @@ final class LiveActivityController {
         cancelStaleNotification()
         guard alertThresholdSeconds > 0,
               mode == "precise" || mode == "recovering" else { return }
+        let deliveryProblemKnown = mode == "recovering" || queueDepth > 0
+        let trustedStationary = motionState == "stationary" &&
+            (motionConfidence == "medium" || motionConfidence == "high")
+        guard deliveryProblemKnown || !trustedStationary else { return }
         let baseline = lastAcknowledgedAt ?? Date()
         let delay = max(1, baseline.addingTimeInterval(alertThresholdSeconds).timeIntervalSinceNow)
         let content = UNMutableNotificationContent()
