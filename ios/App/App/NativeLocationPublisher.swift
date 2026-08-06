@@ -289,6 +289,11 @@ final class NativeLocationPublisher {
                     self.endBackgroundTask(backgroundTask)
                     return
                 }
+                let httpStatus = (response as? HTTPURLResponse)?.statusCode
+                let root = data.flatMap {
+                    try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+                }
+                let serverStatus = root?["status"] as? String
                 guard error == nil,
                       let http = response as? HTTPURLResponse,
                       (200..<300).contains(http.statusCode),
@@ -296,10 +301,17 @@ final class NativeLocationPublisher {
                       let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       root["status"] as? String == "success",
                       let value = root["value"] as? [String: Any] else {
-                    self.emit("gps:native-publish:failure", level: "warn", details: [
+                    var details: JSObject = [
                         "queueDepth": self.samples.count,
                         "failureClass": error == nil ? "server" : "network"
-                    ])
+                    ]
+                    if let httpStatus { details["httpStatus"] = httpStatus }
+                    if let serverStatus { details["serverStatus"] = serverStatus }
+                    if let urlError = error as? URLError {
+                        details["networkCode"] = urlError.code.rawValue
+                        details["networkReason"] = Self.safeNetworkReason(urlError.code)
+                    }
+                    self.emit("gps:native-publish:failure", level: "warn", details: details)
                     LiveActivityController.shared.setRecovering(queueDepth: self.samples.count)
                     self.isPublishing = false
                     self.endBackgroundTask(backgroundTask)
@@ -392,6 +404,20 @@ final class NativeLocationPublisher {
             return "recovery"
         default:
             return "force"
+        }
+    }
+
+    private static func safeNetworkReason(_ code: URLError.Code) -> String {
+        switch code {
+        case .cancelled: return "cancelled"
+        case .timedOut: return "timed-out"
+        case .cannotFindHost: return "cannot-find-host"
+        case .cannotConnectToHost: return "cannot-connect-to-host"
+        case .networkConnectionLost: return "connection-lost"
+        case .dnsLookupFailed: return "dns-lookup-failed"
+        case .notConnectedToInternet: return "offline"
+        case .secureConnectionFailed: return "secure-connection-failed"
+        default: return "other"
         }
     }
 

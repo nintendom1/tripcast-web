@@ -68,6 +68,12 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             for (key, value) in event { merged[key] = value }
             self.emit(merged)
         }
+        LiveActivityController.shared.eventHandler = { [weak self] event in
+            guard let self else { return }
+            var merged = self.currentState()
+            for (key, value) in event { merged[key] = value }
+            self.emit(merged)
+        }
         NativeLocationPublisher.shared.onCloakTimeout = { [weak self] in
             NativeLocationPublisher.shared.stopRemoteSharing()
             self?.stopLive()
@@ -222,7 +228,11 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         motionState = "unknown"
         motionConfidence = "unknown"
         motionChangedAt = Date()
-        LiveActivityController.shared.setMotion(state: motionState, confidence: motionConfidence)
+        LiveActivityController.shared.setMotion(
+            state: motionState,
+            confidence: motionConfidence,
+            startedAt: motionChangedAt
+        )
     }
 
     private func handleMotionActivity(_ activity: CMMotionActivity, source: String) {
@@ -262,7 +272,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         motionState = state
         motionConfidence = confidence
         motionChangedAt = date
-        LiveActivityController.shared.setMotion(state: state, confidence: confidence)
+        LiveActivityController.shared.setMotion(state: state, confidence: confidence, startedAt: date)
         emit([
             "mode": mode.rawValue,
             "liveRequested": liveRequested,

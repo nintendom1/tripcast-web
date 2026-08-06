@@ -9,6 +9,8 @@ struct TripCastLiveActivityAttributes: ActivityAttributes {
         var lastAcknowledgedAt: Date?
         var queueDepth: Int
         var message: String
+        var motionState: String?
+        var motionStartedAt: Date?
     }
 
     let startedAt: Date
