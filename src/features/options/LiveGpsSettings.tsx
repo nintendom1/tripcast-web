@@ -135,10 +135,10 @@ export function LiveGpsSettings({
             ))}
           </div>
           <p className="mt-3 text-xs leading-relaxed text-[var(--ink-3)]">
-            Power Saving, Privacy Pause, and confidently stationary Motion &amp; Fitness activity are
-            quiet when healthy. Unknown motion can still alert, and GPS or publishing errors alert
-            even while stationary. Breadcrumbs stay queued during connection outages, and a server
-            confirmation resets the alert.
+            Power Saving, Privacy Pause, stationary activity, and unknown motion are quiet when
+            healthy. Confirmed movement without a fresh breadcrumb can alert, and sustained GPS or
+            publishing errors alert even while stationary. Breadcrumbs stay queued during connection
+            outages, and a server confirmation resets the alert.
           </p>
         </div>
       </div>

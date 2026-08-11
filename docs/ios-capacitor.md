@@ -163,11 +163,12 @@ the fallback until native publishing is configured and for the Legacy tracker.
 
 While Live is on, iOS 16.1 and later shows a Lock Screen Live Activity with the current mode, queued
 sample count, and a system-updating relative timer from the last server-confirmed breadcrumb. The
-configurable stale alert treats a confidently stationary session as healthy even when the last
-server-confirmed breadcrumb is old. Moving and uncertain Motion & Fitness states remain alertable if
-server confirmation stops. Core Location, authorization, storage, network, and server failures also
-remain alertable while stationary, but only after the selected delay so transient failures can recover
-quietly. Power Saving is quiet unless an explicit failure is active; Privacy Pause is always quiet.
+configurable stale alert treats stationary and unknown Motion & Fitness states as healthy even when
+the last server-confirmed breadcrumb is old. Trusted walking, running, cycling, and automotive motion
+remain alertable if server confirmation stops. Core Location, authorization, storage, network, and
+server failures also remain alertable while stationary, but only after the selected delay so transient
+failures can recover quietly. Power Saving is quiet unless an explicit failure is active; Privacy Pause
+is always quiet.
 One persisted notification is sent per unresolved incident. Notifications must be allowed for the
 sound alert; the Live Activity timer remains useful when alerts are denied. Open TripCast before the
 Live Activity's eight-hour system lifetime expires to renew it.
@@ -257,8 +258,8 @@ asset updates, but do not commit a personal `DEVELOPMENT_TEAM` value written int
       back on and confirm **Precise** with a fresh idle window.
 - [ ] Remain stationary beyond the configured alert delay and confirm an old acknowledgement alone
       does not notify. Then move with delivery blocked and confirm exactly one delayed alert.
-- [ ] Deny Motion & Fitness and confirm uncertain motion still alerts after the configured delay when
-      server confirmation stops.
+- [ ] Deny Motion & Fitness and confirm uncertain motion stays quiet unless an explicit GPS or
+      publishing failure persists beyond the configured delay.
 - [ ] Trigger Core Location/authorization and publishing failures while stationary. Confirm transient
       failures that recover before the delay stay quiet and sustained failures notify once.
 - [ ] Stay offline while moving, confirm samples remain queued, reconnect, and verify the queue drains

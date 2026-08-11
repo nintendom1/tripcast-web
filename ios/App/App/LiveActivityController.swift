@@ -134,21 +134,21 @@ final class LiveActivityController {
 
     func setMotion(state: String, confidence: String, startedAt: Date) {
         stateQueue.async {
-            let wasTrustedStationary = self.isTrustedStationary
+            let wasTrustedMoving = self.isTrustedMoving
             self.motionState = state
             self.motionConfidence = confidence
             self.motionStartedAt = startedAt
-            if self.isTrustedStationary && self.activeFailureSources.isEmpty {
-                self.clearAlertIncident(reason: "trusted-stationary", removeDelivered: true)
-            } else if wasTrustedStationary {
-                if self.activeFailureSources.isEmpty {
-                    self.restartEligibilityWindow(reason: "motion-resumed")
+            if !self.activeFailureSources.isEmpty {
+                self.ensureFailureIncident(reason: "motion-\(state)-with-failure")
+                self.scheduleStaleNotificationIfNeeded(reason: "motion-\(state)-with-failure")
+            } else if self.isTrustedMoving {
+                if wasTrustedMoving {
+                    self.scheduleStaleNotificationIfNeeded(reason: "motion-\(state)")
                 } else {
-                    self.ensureFailureIncident(reason: "motion-resumed-with-failure")
-                    self.scheduleStaleNotificationIfNeeded(reason: "motion-resumed-with-failure")
+                    self.restartEligibilityWindow(reason: "trusted-motion-detected")
                 }
             } else {
-                self.scheduleStaleNotificationIfNeeded(reason: "motion-\(state)")
+                self.clearAlertIncident(reason: "motion-not-confirmed", removeDelivered: true)
             }
             self.updateActivity()
         }
@@ -220,8 +220,10 @@ final class LiveActivityController {
         }
     }
 
-    private var isTrustedStationary: Bool {
-        motionState == "stationary" && (motionConfidence == "medium" || motionConfidence == "high")
+    private var isTrustedMoving: Bool {
+        let movingStates = ["walking", "running", "cycling", "automotive"]
+        let trustedConfidence = motionConfidence == "medium" || motionConfidence == "high"
+        return trustedConfidence && movingStates.contains(motionState)
     }
 
     private var canAlert: Bool {
@@ -229,7 +231,7 @@ final class LiveActivityController {
         if !activeFailureSources.isEmpty || alertIncident?.kind == "failure" {
             return true
         }
-        return mode == "precise" && !isTrustedStationary
+        return mode == "precise" && isTrustedMoving
     }
 
     private func prepareForCurrentMode(reason: String) {

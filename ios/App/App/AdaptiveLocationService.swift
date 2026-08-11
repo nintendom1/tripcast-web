@@ -586,7 +586,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        if liveRequested {
+        let isTransientLocationUnknown = (error as? CLError)?.code == .locationUnknown
+        if liveRequested, !isTransientLocationUnknown {
             LiveActivityController.shared.setLocationAcquisitionFailed()
         }
         emit([
@@ -595,7 +596,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000,
             "reason": modeChangedReason,
             "error": error.localizedDescription,
-            "code": (error as? CLError)?.code.rawValue ?? -1
+            "code": (error as? CLError)?.code.rawValue ?? -1,
+            "transient": isTransientLocationUnknown
         ])
     }
 
