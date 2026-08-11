@@ -67,10 +67,18 @@ import {
   BackgroundSaveRetryToast,
 } from "../hud";
 import {
+  configureNativeLocationPublishing,
+  foregroundNativeLocationTracking,
+  isAdaptiveLocationAvailable,
+  isAdaptiveNativeTrackingActive,
   isNativeLocationAvailable,
   openNativeLocationSettings,
   startNativeLocationWatch,
+  stopNativeLocationTracking,
 } from "../../native/locationWatcher";
+import { useAdaptiveGpsEnabled } from "../../lib/adaptiveGpsPreference";
+import { useStaleBreadcrumbAlertSeconds } from "../../lib/staleBreadcrumbAlertPreference";
+import { useNativeTrackingState } from "../../native/nativeTrackingState";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import {
   Sheet,
@@ -1306,6 +1314,7 @@ export default function TripMap({
   const enteredCloakAtRef = useRef<number | null>(null);
   const cloakToastShownRef = useRef(false);
   const cloakAutoShutoffFiredRef = useRef(false);
+  const nativePublishingReadyRef = useRef(false);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   // Focus-observability: pendingFocusRef carries the in-flight focus so the next
   // programmatic moveend can log where the pin actually settled; focusAdjustArmRef
@@ -1328,6 +1337,11 @@ export default function TripMap({
   // into a ref it can read at fire time.
   const calibrationRef = useRef(calibration);
   calibrationRef.current = calibration;
+  const adaptiveGpsEnabled = useAdaptiveGpsEnabled();
+  const staleBreadcrumbAlertSeconds = useStaleBreadcrumbAlertSeconds();
+  const nativeTrackingState = useNativeTrackingState();
+  const nativeTrackingModeRef = useRef(nativeTrackingState.mode);
+  nativeTrackingModeRef.current = nativeTrackingState.mode;
 
   const [mapInstance, setMapInstance] = useState<maplibregl.Map | null>(null);
   const [isFollowing, setIsFollowing] = useState(false);
@@ -3239,6 +3253,65 @@ export default function TripMap({
   }, [cloakingPinsData]);
 
   useEffect(() => {
+    if (
+      role !== "traveler" ||
+      !adaptiveGpsEnabled ||
+      !isAdaptiveLocationAvailable()
+    ) {
+      nativePublishingReadyRef.current = false;
+      return;
+    }
+    const endpoint = import.meta.env.VITE_CONVEX_URL as string | undefined;
+    if (!endpoint) {
+      nativePublishingReadyRef.current = false;
+      return;
+    }
+    let cancelled = false;
+    let cloakTimeoutSeconds = 300;
+    try {
+      const minutes = Number(
+        localStorage.getItem("tripcast.cloaking.autoDisableGpsTimeoutMinutes") ?? "5",
+      );
+      if (Number.isFinite(minutes) && minutes >= 0) cloakTimeoutSeconds = minutes * 60;
+    } catch {
+      // Keep the privacy-first default.
+    }
+    configureNativeLocationPublishing({
+      endpoint,
+      token,
+      liveTrailEnabled,
+      alertThresholdSeconds: staleBreadcrumbAlertSeconds,
+      cloakTimeoutSeconds,
+      cloakZones: (cloakingPinsData ?? []).map((pin) => ({
+        lat: pin.lat,
+        lon: pin.lon,
+        radiusMeters: pin.radiusMeters,
+      })),
+    })
+      .then(() => {
+        if (!cancelled) nativePublishingReadyRef.current = true;
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        nativePublishingReadyRef.current = false;
+        log.error("gps:native-publish:configure-failure", "error", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    adaptiveGpsEnabled,
+    cloakingPinsData,
+    liveTrailEnabled,
+    log,
+    role,
+    staleBreadcrumbAlertSeconds,
+    token,
+  ]);
+
+  useEffect(() => {
     try {
       const stored = localStorage.getItem("tripcast.cloaking.enteredAt");
       if (stored) {
@@ -3411,8 +3484,9 @@ export default function TripMap({
       accuracy?: number,
       speed?: number,
       source: "native-watch" | "browser-watch" | "stale-probe" | "overlay-probe" = "browser-watch",
+      sampledAt?: number,
     ) => {
-      const fixAt = Date.now();
+      const fixAt = sampledAt ?? Date.now();
       const callbackGapMs =
         lastHandledFixAtRef.current === null ? null : fixAt - lastHandledFixAtRef.current;
       lastHandledFixAtRef.current = fixAt;
@@ -3496,10 +3570,13 @@ export default function TripMap({
       }
       // ── End cloaking ──────────────────────────────────────────────────────
 
-      if (isLocationSharingRef.current) {
+      if (
+        isLocationSharingRef.current &&
+        !(isAdaptiveNativeTrackingActive() && nativePublishingReadyRef.current)
+      ) {
         publishTravelerLocation(nextPosition, accuracy);
         if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
-          publishLiveTrailSample(nextPosition, accuracy);
+          publishLiveTrailSample(nextPosition, accuracy, false, fixAt);
         }
       }
 
@@ -3665,8 +3742,10 @@ export default function TripMap({
       });
       gpsOwnerRef.current = { kind: "native", reason: "live-pill", startedAt: Date.now() };
       const stop = startNativeLocationWatch(
-        (fix) => handleFix(fix.lat, fix.lon, fix.accuracy, fix.speed, "native-watch"),
+        (fix) => handleFix(fix.lat, fix.lon, fix.accuracy, fix.speed, "native-watch", fix.at),
         handleError,
+        adaptiveGpsEnabled,
+        fixOverlayEnabled,
       );
       cleanup = () => {
         if (gpsOwnerRef.current?.kind === "native") {
@@ -3736,6 +3815,7 @@ export default function TripMap({
     const STALE_AFTER_MS = 20 * 60_000;
     const staleInterval = setInterval(() => {
       if (!isNativeLocationAvailable()) return;
+      if (nativeTrackingModeRef.current === "power-saving") return;
       const last = lastLocationFixAtRef.current;
       if (last !== null && Date.now() - last > STALE_AFTER_MS) {
         const staleForMs = Date.now() - last;
@@ -3787,6 +3867,7 @@ export default function TripMap({
       ) {
         return;
       }
+      if (isAdaptiveNativeTrackingActive()) return;
       navigator.geolocation.getCurrentPosition(
         (pos) =>
           handleFix(
@@ -3821,7 +3902,7 @@ export default function TripMap({
   // — Travelers backgrounding with LIVE on must keep streaming fixes to
   // Followers without a gap.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLocationSharing, browserWatcherEnabled, role, token, log]);
+  }, [adaptiveGpsEnabled, fixOverlayEnabled, isLocationSharing, browserWatcherEnabled, role, token, log]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -3890,6 +3971,13 @@ export default function TripMap({
         movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
       });
       if (nextActive) {
+        if (
+          isLocationSharingRef.current &&
+          adaptiveGpsEnabled &&
+          isAdaptiveLocationAvailable()
+        ) {
+          foregroundNativeLocationTracking();
+        }
         // Re-engage follow if an accidental pan dropped it right before the
         // swipe-away backgrounded us (see FOLLOW_RESTORE_GRACE_MS).
         if (restoreFollowOnResumeRef.current) {
@@ -3913,12 +4001,22 @@ export default function TripMap({
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   // forceStopAllWatchers reads refs only; safe to omit.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, log]);
+  }, [adaptiveGpsEnabled, role, log]);
 
   useEffect(() => {
     if (role !== "traveler") return;
 
     function handlePageHide() {
+      if (
+        isLocationSharingRef.current &&
+        adaptiveGpsEnabled &&
+        isAdaptiveLocationAvailable()
+      ) {
+        log.logGps("gps:pagehide:adaptive-detach", {
+          liveSharing: true,
+        });
+        return;
+      }
       // Tear down the watcher before the WebView disappears. iOS's
       // appstate-background path also covers this, but pagehide is the
       // PWA/Safari path and must work without Capacitor.
@@ -3935,7 +4033,7 @@ export default function TripMap({
     return () => window.removeEventListener("pagehide", handlePageHide);
   // forceStopAllWatchers reads refs only; safe to omit.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, stopTravelerLocationSharing, token]);
+  }, [adaptiveGpsEnabled, role, stopTravelerLocationSharing, token]);
 
   useEffect(() => {
     if (tripDataResetNonce === 0) return;
@@ -4014,8 +4112,9 @@ export default function TripMap({
     position: { lat: number; lon: number },
     accuracy?: number,
     force = false,
+    sampledAt = Date.now(),
   ) {
-    const fix: GeoFix = { ...position, accuracy, sampledAt: Date.now() };
+    const fix: GeoFix = { ...position, accuracy, sampledAt };
     const mode = samplerModeRef.current;
     const { shouldEmit, reason, nextState } =
       mode === "legacy"
@@ -4107,6 +4206,7 @@ export default function TripMap({
       publishLiveTrailSample(livePosition, livePosition.accuracy, true);
     }
     isLocationSharingRef.current = false;
+    stopNativeLocationTracking();
     lastSentLocationRef.current = null;
     breadcrumbSamplerStateRef.current = {};
     setIsLocationSharing(false);
@@ -5634,6 +5734,7 @@ export default function TripMap({
                 on={isLocationSharing}
                 onToggle={handleToggleLocationSharing}
                 trailEnabled={liveTrailEnabled}
+                trackingMode={isLocationSharing ? nativeTrackingState.mode : "off"}
                 className="pointer-events-auto"
               />
             ) : null}

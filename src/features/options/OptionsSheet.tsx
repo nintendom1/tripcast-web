@@ -15,6 +15,7 @@ import {
   Bug,
   ChevronRight,
   Clock,
+  Compass,
   Database,
   Download,
   Eye,
@@ -89,6 +90,8 @@ import { triggerCrash } from "../../debug/crashTrigger";
 import { getMapStyleResolution } from "../map/mapService";
 import { computeAutoState } from "../travelstate/autoStateCalc";
 import { IosSideloadProfileCountdown } from "./SideloadProfileCountdownRow";
+import { LiveGpsSettings } from "./LiveGpsSettings";
+import { isAdaptiveLocationAvailable } from "../../native/locationWatcher";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -111,7 +114,7 @@ type OptionsSheetProps = {
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker" | "quick-activities";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "live-gps" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker" | "quick-activities";
 type LiveTrailDeleteMode = "range" | "every_other" | "individual";
 
 const TICKER_PREVIEW_MESSAGE = {
@@ -1113,7 +1116,15 @@ function FollowerAttributionToggle({ token }: { token: string }) {
   );
 }
 
-function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogger }) {
+function LiveTrailSettingsSheet({
+  token,
+  log,
+  onLiveGps,
+}: {
+  token: string;
+  log: DebugLogger;
+  onLiveGps: () => void;
+}) {
   const liveTrailCache = useMemo(() => getLiveTrailCache(token, "traveler"), [token]);
   const samplerMode = useSamplerMode();
   const fixOverlayEnabled = useFixOverlayEnabled();
@@ -1273,10 +1284,21 @@ function LiveTrailSettingsSheet({ token, log }: { token: string; log: DebugLogge
     <div className="grid gap-8">
       <OptionsSection label="Recording">
         <OptionsGroup>
+          {isAdaptiveLocationAvailable() ? (
+            <OptionsRow
+              icon={Compass}
+              title="Adaptive Background GPS"
+              detail="Adaptive battery use and current tracking mode"
+              onClick={() => {
+                log.logUi("action:live-gps-settings");
+                onLiveGps();
+              }}
+            />
+          ) : null}
           <OptionsSwitchRow
             icon={Route}
             title="Live Trail"
-            detail="Records GPS breadcrumbs only while Live GPS is on."
+            detail="Records GPS breadcrumbs only while Live is on."
             checked={enabled}
             onChange={handleEnabledChange}
           />
@@ -1791,6 +1813,11 @@ export default function OptionsSheet({
               title="Live Trail"
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "live-gps" ? (
+            <SubViewHeader
+              title="Adaptive Background GPS"
+              onBack={() => { music.sfx("page"); navigateTo("live-trail"); }}
+            />
           ) : view === "cloaking-pins" ? (
             <SubViewHeader
               title="Cloaking Zones"
@@ -1843,7 +1870,17 @@ export default function OptionsSheet({
           ) : view === "live-trail" ? (
             <SheetBody className="p-0">
               <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <LiveTrailSettingsSheet token={session.token} log={log} />
+                <LiveTrailSettingsSheet
+                  token={session.token}
+                  log={log}
+                  onLiveGps={() => { music.sfx("page"); navigateTo("live-gps"); }}
+                />
+              </OptionsContentFrame>
+            </SheetBody>
+          ) : view === "live-gps" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <LiveGpsSettings />
               </OptionsContentFrame>
             </SheetBody>
           ) : view === "cloaking-pins" ? (

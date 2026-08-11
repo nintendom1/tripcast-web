@@ -12,6 +12,15 @@
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
 		A71C8D012F31000100A11CE1 /* BridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D022F31000100A11CE1 /* BridgeViewController.swift */; };
 		A71C8D032F31000100A11CE1 /* ProvisioningProfilePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */; };
+		A71C8D052F31000100A11CE1 /* AdaptiveLocationPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */; };
+		A71C8D072F31000100A11CE1 /* AdaptiveLocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */; };
+		A71C8D092F31000100A11CE1 /* NativeLocationPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */; };
+		A71C8D0B2F31000100A11CE1 /* LiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */; };
+		A71C8D0D2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */; };
+		B10000012F31000100B11CE1 /* TripCastLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */; };
+		B10000022F31000100B11CE1 /* TripCastLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */; };
+		B10000032F31000100B11CE1 /* TripCastLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		B10000052F31000100B11CE1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000142F31000100B11CE1 /* Assets.xcassets */; };
 		504EC30D1FED79650016851F /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30B1FED79650016851F /* Main.storyboard */; };
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
@@ -26,6 +35,15 @@
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A71C8D022F31000100A11CE1 /* BridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeViewController.swift; sourceTree = "<group>"; };
 		A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvisioningProfilePlugin.swift; sourceTree = "<group>"; };
+		A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLocationPlugin.swift; sourceTree = "<group>"; };
+		A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLocationService.swift; sourceTree = "<group>"; };
+		A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLocationPublisher.swift; sourceTree = "<group>"; };
+		A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
+		A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCastLiveActivityAttributes.swift; sourceTree = "<group>"; };
+		B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCastLiveActivityWidget.swift; sourceTree = "<group>"; };
+		B10000112F31000100B11CE1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TripCastLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000142F31000100B11CE1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC30C1FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		504EC30E1FED79650016851F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		504EC3111FED79650016851F /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -36,12 +54,43 @@
 		FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.debug.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.debug.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXContainerItemProxy section */
+		B10000712F31000100B11CE1 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 504EC2FC1FED79650016851F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B10000402F31000100B11CE1;
+			remoteInfo = TripCastLiveActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B10000602F31000100B11CE1 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B10000032F31000100B11CE1 /* TripCastLiveActivity.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		504EC3011FED79650016851F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000312F31000100B11CE1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -60,6 +109,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3061FED79650016851F /* App */,
+				B10000202F31000100B11CE1 /* TripCastLiveActivity */,
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
@@ -70,6 +120,7 @@
 			isa = PBXGroup;
 			children = (
 				504EC3041FED79650016851F /* App.app */,
+				B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -81,6 +132,11 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				A71C8D022F31000100A11CE1 /* BridgeViewController.swift */,
 				A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */,
+				A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */,
+				A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */,
+				A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */,
+				A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */,
+				A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -89,6 +145,16 @@
 				50B271D01FEDC1A000F3C39B /* public */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		B10000202F31000100B11CE1 /* TripCastLiveActivity */ = {
+			isa = PBXGroup;
+			children = (
+				B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */,
+				B10000112F31000100B11CE1 /* Info.plist */,
+				B10000142F31000100B11CE1 /* Assets.xcassets */,
+			);
+			path = TripCastLiveActivity;
 			sourceTree = "<group>";
 		};
 		7F8756D8B27F46E3366F6CEA /* Pods */ = {
@@ -111,16 +177,35 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				B10000602F31000100B11CE1 /* Embed App Extensions */,
 				9592DBEFFC6D2A0C8D5DEB22 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B10000702F31000100B11CE1 /* PBXTargetDependency */,
 			);
 			name = App;
 			productName = App;
 			productReference = 504EC3041FED79650016851F /* App.app */;
 			productType = "com.apple.product-type.application";
+		};
+		B10000402F31000100B11CE1 /* TripCastLiveActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B10000522F31000100B11CE1 /* Build configuration list for PBXNativeTarget "TripCastLiveActivity" */;
+			buildPhases = (
+				B10000302F31000100B11CE1 /* Sources */,
+				B10000312F31000100B11CE1 /* Frameworks */,
+				B10000322F31000100B11CE1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TripCastLiveActivity;
+			productName = TripCastLiveActivity;
+			productReference = B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -134,6 +219,10 @@
 					504EC3031FED79650016851F = {
 						CreatedOnToolsVersion = 9.2;
 						LastSwiftMigration = 1100;
+						ProvisioningStyle = Automatic;
+					};
+					B10000402F31000100B11CE1 = {
+						CreatedOnToolsVersion = 16.0;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -154,6 +243,7 @@
 			projectRoot = "";
 			targets = (
 				504EC3031FED79650016851F /* App */,
+				B10000402F31000100B11CE1 /* TripCastLiveActivity */,
 			);
 		};
 /* End PBXProject section */
@@ -169,6 +259,14 @@
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000322F31000100B11CE1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000052F31000100B11CE1 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -218,10 +316,32 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				A71C8D012F31000100A11CE1 /* BridgeViewController.swift in Sources */,
 				A71C8D032F31000100A11CE1 /* ProvisioningProfilePlugin.swift in Sources */,
+				A71C8D052F31000100A11CE1 /* AdaptiveLocationPlugin.swift in Sources */,
+				A71C8D072F31000100A11CE1 /* AdaptiveLocationService.swift in Sources */,
+				A71C8D092F31000100A11CE1 /* NativeLocationPublisher.swift in Sources */,
+				A71C8D0B2F31000100A11CE1 /* LiveActivityController.swift in Sources */,
+				A71C8D0D2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000302F31000100B11CE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B10000012F31000100B11CE1 /* TripCastLiveActivityWidget.swift in Sources */,
+				B10000022F31000100B11CE1 /* TripCastLiveActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B10000702F31000100B11CE1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B10000402F31000100B11CE1 /* TripCastLiveActivity */;
+			targetProxy = B10000712F31000100B11CE1 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXVariantGroup section */
 		504EC30B1FED79650016851F /* Main.storyboard */ = {
@@ -393,6 +513,43 @@
 			};
 			name = Release;
 		};
+		B10000502F31000100B11CE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TripCastLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tripcast.app.TripCastLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		B10000512F31000100B11CE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = TripCastLiveActivity/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tripcast.app.TripCastLiveActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -410,6 +567,15 @@
 			buildConfigurations = (
 				504EC3171FED79650016851F /* Debug */,
 				504EC3181FED79650016851F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B10000522F31000100B11CE1 /* Build configuration list for PBXNativeTarget "TripCastLiveActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000502F31000100B11CE1 /* Debug */,
+				B10000512F31000100B11CE1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -133,12 +133,73 @@ on every routine build, because renewal requires Apple's provisioning service.
 - [ ] `--refresh-profile` renews the profile to approximately seven days and deploys it.
 - [ ] `npm run validate` passes (regression guard).
 
-## Background GPS emission
+## Adaptive background GPS emission
 
-`src/native/nativeLocationManager.ts` wraps `@capgo/background-geolocation` behind a platform
-guard, and the Traveler location-sharing effect in `src/features/map/TripMap.tsx` uses it on native
-(web still uses `navigator.geolocation`). The **LivePill** "LIVE / PAUSED" toggle is the control
-surface.
+The native iOS app has two mutually exclusive tracking engines. Adaptive Background GPS is the
+default and is
+implemented by TripCast in `AdaptiveLocationPlugin.swift` and `AdaptiveLocationService.swift`.
+Turning Adaptive Background GPS off in
+**Options → Account → Live Trail → Adaptive Background GPS** selects the unchanged
+`@capgo/background-geolocation` integration as an in-app rollback path. Web/PWA and non-iOS
+builds continue to use their existing browser or legacy behavior. The **LivePill** "LIVE / PAUSED"
+toggle remains the explicit sharing control; changing engines never changes that logical Live
+choice.
+
+Adaptive tracking begins in **Precise** mode. After approximately five minutes without meaningful
+movement, it enters **Power saving** while the
+HUD remains LIVE. A 100 m exit region, significant-location changes, and low-accuracy standard
+updates give iOS multiple opportunities to report movement. The foreground-started standard
+location session remains running throughout Live; mode changes reconfigure that manager in place
+instead of stopping and restarting it from a background wake. Automatic Core Location pausing is
+disabled; if iOS nevertheless pauses the session, TripCast immediately requests updates again. On
+promotion, the service removes the distance filter until a fresh precise fix arrives, then restores
+normal precise settings. Calibration temporarily holds precise, high-frequency tracking.
+
+Accepted fixes are sampled and published by native Swift rather than depending on the WebView to
+stay executable. Samples are durably queued on-device, sent to Convex in idempotent batches, and
+removed only after acknowledgement. The current-location write advances only for a newer sampled
+timestamp, so delayed retries cannot move the Traveler backwards. The JavaScript publisher remains
+the fallback until native publishing is configured and for the Legacy tracker.
+
+While Live is on, iOS 16.1 and later shows a Lock Screen Live Activity with the current mode, queued
+sample count, and a system-updating relative timer from the last server-confirmed breadcrumb. The
+configurable stale alert treats stationary and unknown Motion & Fitness states as healthy even when
+the last server-confirmed breadcrumb is old. Trusted walking, running, cycling, and automotive motion
+remain alertable if server confirmation stops. Core Location, authorization, storage, network, and
+server failures also remain alertable while stationary, but only after the selected delay so transient
+failures can recover quietly. Power Saving is quiet unless an explicit failure is active; Privacy Pause
+is always quiet.
+One persisted notification is sent per unresolved incident. Notifications must be allowed for the
+sound alert; the Live Activity timer remains useful when alerts are denied. Open TripCast before the
+Live Activity's eight-hour system lifetime expires to renew it.
+
+The alert does not control retention. Accepted fixes remain in the durable on-device queue during a
+connection outage, retry in idempotent batches, and are removed only after backend acknowledgement.
+Ordinary queued or in-flight samples are not themselves failures.
+
+The native service persists the Live request, current adaptive mode, stationary anchor, and timing
+metadata. A location-triggered iOS relaunch reconstructs that state before the Capacitor bridge is
+available, and the latest event is retained until JavaScript reattaches. Explicit Live-off,
+sign-out, Emergency Reset, and cloaking auto-shutoff clear all native location services and the
+temporary region.
+
+### iOS wake-up limits
+
+iOS controls the effective region cushion, significant-change threshold, delivery timing, and
+background scheduling. Treat the 100 m region as an input, not a promise that wake-up will occur at
+exactly 100 m or immediately. Background App Refresh, Low Power Mode, permission precision, and
+system conditions can all affect delivery.
+
+- When TripCast is merely backgrounded or its WebView is suspended, the foreground-started native
+  Core Location session, native sampler, durable queue, and native publisher continue independently
+  of JavaScript.
+- If iOS terminates TripCast in the background for memory or system pressure, a region exit or
+  significant-location event may relaunch it because the app declares location background mode.
+  The native service restores the persisted Live request and queue before the WebView loads. This
+  relaunch remains an iOS scheduling opportunity, not a delivery-time guarantee.
+- If the user force-quits TripCast from the app switcher, iOS intentionally suppresses reliable
+  background location relaunch until the app is opened manually. The Lock Screen timer and stale
+  notification are secondary clues for deciding when to do that.
 
 ### ⚠️ Info.plist keys are MANDATORY — missing them crashes the app
 
@@ -183,14 +244,43 @@ asset updates, but do not commit a personal `DEVELOPMENT_TEAM` value written int
 
 ### On-device test (real iPhone — simulator can't truly background-lock GPS)
 
+- [ ] Confirm Adaptive Background GPS defaults on while LIVE remains off on a fresh install.
 - [ ] Tap **LIVE** on the HUD; grant **Allow Always** when prompted (Always is required for locked
       emission — "While Using" stops when backgrounded).
-- [ ] Confirm the iOS location arrow appears; lock the phone, walk/drive a few hundred meters.
+- [ ] Confirm Adaptive Background GPS reports **Precise** and a Follower receives updates.
+- [ ] Remain stationary for five minutes; confirm **Power saving**, the green Compass inset, and
+      unchanged LIVE text in Meadow and Constellation.
+- [ ] Lock the phone, walk/drive, and record the observed wake distance/time. Confirm the next
+      emitted event is a fresh precise fix and Followers resume receiving updates.
 - [ ] In Convex, `liveTrailSamples` rows accrue while locked; a Follower session sees the latest
       permitted point via `getLatestLiveTrailSample`.
-- [ ] Tap **PAUSED** → emission stops (watcher removed). Server dedup (60s/200m) prevents flooding.
-- [ ] GPS Trace shows `gps:watcher:start`, `gps:native:callback:received`, and publish
-      acknowledgement entries.
+- [ ] Turn Adaptive GPS off while LIVE; confirm **Legacy** without a follower-visible stop. Turn it
+      back on and confirm **Precise** with a fresh idle window.
+- [ ] Remain stationary beyond the configured alert delay and confirm an old acknowledgement alone
+      does not notify. Then move with delivery blocked and confirm exactly one delayed alert.
+- [ ] Deny Motion & Fitness and confirm uncertain motion stays quiet unless an explicit GPS or
+      publishing failure persists beyond the configured delay.
+- [ ] Trigger Core Location/authorization and publishing failures while stationary. Confirm transient
+      failures that recover before the delay stay quiet and sustained failures notify once.
+- [ ] Stay offline while moving, confirm samples remain queued, reconnect, and verify the queue drains
+      to Convex exactly once before the incident clears.
+- [ ] Confirm the Lock Screen Live Activity timer resets after a server acknowledgement, and that
+      Privacy Pause, LIVE off, and the alert's Off setting cancel pending notifications.
+- [ ] Tap **PAUSED** → native acquisition and publishing stop and the queued samples are cleared.
+- [ ] Exercise denied/reduced accuracy, Background App Refresh off, Low Power Mode, calibration,
+      cloaking, sign-out, Emergency Reset, OS location relaunch, and normal foreground/background.
+- [ ] GPS Trace shows watcher start, adaptive mode changes, callbacks, and publish acknowledgements.
+      Adaptive mode entries include a transition reason such as `stationary-timeout`,
+      `stationary-location`, `low-power-location`, or `region-exit`. Native publishing adds redacted
+      queued, attempt, acknowledgement, retry, and queue-depth events without coordinates or tokens.
+
+### Battery comparison
+
+Use matched stationary runs on the same physical iPhone in Xcode Instruments: first Legacy, then
+Adaptive under the same battery, radio, permission, and environment conditions. Detach the debugger
+for the final observation. After Adaptive enters Power saving, verify there is no sustained
+high-accuracy session and that location energy impact is materially lower than Legacy. Record the
+observed movement wake distance and elapsed time rather than treating either as fixed.
 
 ### Diagnosing a locked-screen delivery stall
 

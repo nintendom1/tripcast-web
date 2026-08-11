@@ -1,14 +1,56 @@
-import { registerPlugin } from "@capacitor/core";
+import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import type {
   BackgroundGeolocationPlugin,
   Location,
   CallbackError,
 } from "@capgo/background-geolocation";
 import { debugLoggerFor } from "../debug/useDebugLogger";
+import { setNativeTrackingMode, type NativeTrackingMode } from "./nativeTrackingState";
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
   "BackgroundGeolocation",
 );
+
+type AdaptiveLocationEvent = {
+  mode: Exclude<NativeTrackingMode, "legacy">;
+  liveRequested: boolean;
+  changedAt: number;
+  reason?: string;
+  lat?: number;
+  lon?: number;
+  accuracy?: number;
+  speed?: number;
+  timestamp?: number;
+  error?: string;
+  code?: number;
+  action?: string;
+  level?: "info" | "warn" | "error";
+  details?: Record<string, unknown>;
+};
+
+export type NativePublishingConfiguration = {
+  endpoint: string;
+  token: string;
+  liveTrailEnabled: boolean;
+  alertThresholdSeconds: number;
+  cloakTimeoutSeconds: number;
+  cloakZones: Array<{ lat: number; lon: number; radiusMeters: number }>;
+};
+
+interface AdaptiveLocationPlugin {
+  start(): Promise<AdaptiveLocationEvent>;
+  stop(options?: { clearCredentials?: boolean }): Promise<AdaptiveLocationEvent>;
+  configurePublishing(options: NativePublishingConfiguration): Promise<AdaptiveLocationEvent>;
+  foreground(): Promise<AdaptiveLocationEvent>;
+  setCalibrationActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
+  getState(): Promise<AdaptiveLocationEvent>;
+  addListener(
+    eventName: "locationUpdate",
+    listener: (event: AdaptiveLocationEvent) => void,
+  ): Promise<PluginListenerHandle>;
+}
+
+const AdaptiveLocation = registerPlugin<AdaptiveLocationPlugin>("AdaptiveLocation");
 const log = debugLoggerFor(
   "NativeLocationManager",
   "src/native/nativeLocationManager.ts",
@@ -19,6 +61,7 @@ export type NativeLocationFix = {
   lon: number;
   accuracy?: number;
   speed?: number;
+  at: number;
 };
 
 export type WatcherOptions = {
@@ -26,6 +69,9 @@ export type WatcherOptions = {
   backgroundMessage?: string;
   backgroundTitle?: string;
   requestPermissions?: boolean;
+  purpose?: "live" | "calibration";
+  adaptive?: boolean;
+  highFrequency?: boolean;
 };
 
 export type WatcherCallback = (fix: NativeLocationFix) => void;
@@ -42,6 +88,8 @@ class NativeLocationManager {
   private watchers: WatcherRecord[] = [];
   private isStarted = false;
   private currentOptions: WatcherOptions | null = null;
+  private adaptiveStarted = false;
+  private adaptiveListener: PluginListenerHandle | null = null;
   private nextId = 1;
   private syncPromise: Promise<void> = Promise.resolve();
   private lastCallbackAt: number | null = null;
@@ -59,12 +107,44 @@ class NativeLocationManager {
   }
 
   public removeWatcher(id: string): void {
-    this.watchers = this.watchers.filter((w) => w.id !== id);
+    this.watchers = this.watchers.filter((watcher) => watcher.id !== id);
     this.scheduleSync();
   }
 
   public openSettings(): void {
     void BackgroundGeolocation.openSettings();
+  }
+
+  public explicitStop(clearCredentials = false): void {
+    this.adaptiveStarted = false;
+    if (this.isStarted) {
+      this.isStarted = false;
+      this.currentOptions = null;
+      void BackgroundGeolocation.stop().catch(() => {});
+    }
+    void AdaptiveLocation.stop({ clearCredentials }).catch((error) => {
+      log.error("gps:adaptive:stop:failure", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+    });
+    setNativeTrackingMode("off");
+  }
+
+  public isAdaptiveActive(): boolean {
+    return this.adaptiveStarted;
+  }
+
+  public async configurePublishing(options: NativePublishingConfiguration): Promise<void> {
+    const state = await AdaptiveLocation.configurePublishing(options);
+    this.applyAdaptiveState(state);
+  }
+
+  public foreground(): void {
+    void AdaptiveLocation.foreground().then((state) => this.applyAdaptiveState(state)).catch((error) => {
+      log.error("gps:adaptive:foreground:failure", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+    });
   }
 
   private scheduleSync(): void {
@@ -79,92 +159,57 @@ class NativeLocationManager {
   }
 
   private scheduleAlreadyStartedRecovery(): void {
-    if (this.hasAttemptedAlreadyStartedRecovery) {
-      return;
-    }
+    if (this.hasAttemptedAlreadyStartedRecovery) return;
     this.hasAttemptedAlreadyStartedRecovery = true;
-    log.logGps("gps:native:plugin:recovery:request", {
-      reason: "already-started",
-      watcherCount: this.watchers.length,
-    });
     this.syncPromise = this.syncPromise
       .then(async () => {
-        log.logGps("gps:native:plugin:stop:request", {
-          reason: "already-started-recovery",
-        });
         await BackgroundGeolocation.stop();
         this.isStarted = false;
         this.currentOptions = null;
         this.lastCallbackAt = null;
-        log.logGps("gps:native:plugin:stop:ack", {
-          reason: "already-started-recovery",
-        });
         await this.syncPlugin();
       })
       .catch((error) => {
-        log.error("gps:native:plugin:recovery:failure", "error", {
-          reason: "already-started",
-          errorType: error instanceof Error ? error.name : typeof error,
-        });
         this.watchers.forEach((watcher) => watcher.onError(error));
       });
   }
 
   private async syncPlugin(): Promise<void> {
+    const adaptiveLive = this.watchers.some(
+      (watcher) => watcher.options.purpose === "live" && watcher.options.adaptive === true,
+    );
+
+    if (adaptiveLive) {
+      await this.syncAdaptivePlugin();
+      return;
+    }
+
+    // A disappearing WebView removes its JavaScript listeners. Adaptive Live
+    // remains a native request until an explicit Live-off/sign-out/reset.
     if (this.watchers.length === 0) {
       if (this.isStarted) {
-        log.logGps("gps:native:plugin:stop:request", {
-          reason: "no-watchers",
-        });
-        try {
-          await BackgroundGeolocation.stop();
-          this.isStarted = false;
-          this.currentOptions = null;
-          log.logGps("gps:native:plugin:stop:ack", {
-            reason: "no-watchers",
-          });
-        } catch (error) {
-          log.error("gps:native:plugin:stop:failure", "error", {
-            reason: "no-watchers",
-            errorType: error instanceof Error ? error.name : typeof error,
-          });
-          throw error;
-        }
+        await BackgroundGeolocation.stop();
+        this.isStarted = false;
+        this.currentOptions = null;
+        setNativeTrackingMode("off");
       }
       return;
+    }
+
+    if (this.adaptiveStarted) {
+      this.adaptiveStarted = false;
+      await AdaptiveLocation.stop();
     }
 
     const aggregated = this.aggregateOptions();
-
-    if (this.isStarted && this.isSameOptions(aggregated, this.currentOptions)) {
-      return;
-    }
+    if (this.isStarted && this.isSameOptions(aggregated, this.currentOptions)) return;
 
     if (this.isStarted) {
-      log.logGps("gps:native:plugin:stop:request", {
-        reason: "options-changed",
-      });
-      try {
-        await BackgroundGeolocation.stop();
-        this.isStarted = false;
-        log.logGps("gps:native:plugin:stop:ack", {
-          reason: "options-changed",
-        });
-      } catch (error) {
-        log.error("gps:native:plugin:stop:failure", "error", {
-          reason: "options-changed",
-          errorType: error instanceof Error ? error.name : typeof error,
-        });
-        throw error;
-      }
+      await BackgroundGeolocation.stop();
+      this.isStarted = false;
     }
 
     try {
-      log.logGps("gps:native:plugin:start:request", {
-        watcherCount: this.watchers.length,
-        distanceFilterMeters: aggregated.distanceFilter,
-        requestPermissions: aggregated.requestPermissions ?? false,
-      });
       await BackgroundGeolocation.start(
         {
           distanceFilter: aggregated.distanceFilter,
@@ -174,55 +219,109 @@ class NativeLocationManager {
         },
         (location?: Location, error?: CallbackError) => {
           if (error) {
-            if (error.code === "ALREADY_STARTED") {
-              if (!this.hasAttemptedAlreadyStartedRecovery) {
-                log.logGps("gps:native:callback:already-started", {
-                  watcherCount: this.watchers.length,
-                });
-                this.scheduleAlreadyStartedRecovery();
-                return;
-              }
+            if (error.code === "ALREADY_STARTED" && !this.hasAttemptedAlreadyStartedRecovery) {
+              this.scheduleAlreadyStartedRecovery();
+              return;
             }
-            log.error("gps:native:callback:error", "error", {
-              code: error.code,
-            });
-            this.watchers.forEach((w) => w.onError(error));
+            this.watchers.forEach((watcher) => watcher.onError(error));
             return;
           }
-          if (location) {
-            const now = Date.now();
-            log.logGps("gps:native:callback:received", {
-              gapMs: this.lastCallbackAt === null ? null : now - this.lastCallbackAt,
-              watcherCount: this.watchers.length,
-              hasAccuracy: typeof location.accuracy === "number",
-              hasSpeed: typeof location.speed === "number" && location.speed >= 0,
-            });
-            this.lastCallbackAt = now;
-            const fix: NativeLocationFix = {
-              lat: location.latitude,
-              lon: location.longitude,
-              accuracy: location.accuracy,
-              speed:
-                typeof location.speed === "number" && location.speed >= 0
-                  ? location.speed
-                  : undefined,
-            };
-            this.watchers.forEach((w) => w.onFix(fix));
-          }
+          if (!location) return;
+          const now = Date.now();
+          log.logGps("gps:native:callback:received", {
+            gapMs: this.lastCallbackAt === null ? null : now - this.lastCallbackAt,
+            watcherCount: this.watchers.length,
+            hasAccuracy: typeof location.accuracy === "number",
+            hasSpeed: typeof location.speed === "number" && location.speed >= 0,
+          });
+          this.lastCallbackAt = now;
+          const fix: NativeLocationFix = {
+            lat: location.latitude,
+            lon: location.longitude,
+            accuracy: location.accuracy,
+            speed:
+              typeof location.speed === "number" && location.speed >= 0
+                ? location.speed
+                : undefined,
+            at: now,
+          };
+          this.watchers.forEach((watcher) => watcher.onFix(fix));
         },
       );
       this.isStarted = true;
       this.currentOptions = aggregated;
-      log.logGps("gps:native:plugin:start:ack", {
-        watcherCount: this.watchers.length,
-        distanceFilterMeters: aggregated.distanceFilter,
-      });
-    } catch (e) {
-      log.error("gps:native:plugin:start:failure", "error", {
-        errorType: e instanceof Error ? e.name : typeof e,
-      });
-      this.watchers.forEach((w) => w.onError(e));
+      setNativeTrackingMode("legacy");
+    } catch (error) {
+      this.watchers.forEach((watcher) => watcher.onError(error));
     }
+  }
+
+  private async syncAdaptivePlugin(): Promise<void> {
+    if (this.isStarted) {
+      await BackgroundGeolocation.stop();
+      this.isStarted = false;
+      this.currentOptions = null;
+    }
+
+    if (!this.adaptiveListener) {
+      this.adaptiveListener = await AdaptiveLocation.addListener(
+        "locationUpdate",
+        (event) => this.handleAdaptiveEvent(event),
+      );
+    }
+
+    const state = this.adaptiveStarted
+      ? await AdaptiveLocation.getState()
+      : await AdaptiveLocation.start();
+    this.adaptiveStarted = true;
+    this.applyAdaptiveState(state);
+    const calibratedState = await AdaptiveLocation.setCalibrationActive({
+      active: this.watchers.some(
+        (watcher) =>
+          watcher.options.purpose === "calibration" || watcher.options.highFrequency === true,
+      ),
+    });
+    this.applyAdaptiveState(calibratedState);
+  }
+
+  private handleAdaptiveEvent(event: AdaptiveLocationEvent): void {
+    this.applyAdaptiveState(event);
+    if (event.error) {
+      this.watchers.forEach((watcher) => watcher.onError({
+        code: event.code,
+        message: event.error,
+      }));
+      return;
+    }
+    if (typeof event.lat !== "number" || typeof event.lon !== "number") return;
+    log.logGps("gps:adaptive:callback:received", {
+      mode: event.mode,
+      watcherCount: this.watchers.length,
+      hasAccuracy: typeof event.accuracy === "number",
+      hasSpeed: typeof event.speed === "number",
+    });
+    const fix: NativeLocationFix = {
+      lat: event.lat,
+      lon: event.lon,
+      accuracy: event.accuracy,
+      speed: event.speed,
+      at: event.timestamp ?? Date.now(),
+    };
+    this.watchers.forEach((watcher) => watcher.onFix(fix));
+  }
+
+  private applyAdaptiveState(event: AdaptiveLocationEvent): void {
+    if (event.action) {
+      log.logGps(event.action, event.details ?? {}, event.level === "warn" ? "warn" : undefined);
+    }
+    if (!event.mode) return;
+    log.logGps("gps:adaptive:mode", {
+      mode: event.mode,
+      liveRequested: event.liveRequested,
+      changedAt: event.changedAt,
+      reason: event.reason,
+    });
+    setNativeTrackingMode(event.mode, event.changedAt);
   }
 
   private aggregateOptions(): WatcherOptions {
@@ -231,17 +330,11 @@ class NativeLocationManager {
     let backgroundTitle: string | undefined;
     let requestPermissions = false;
 
-    for (const w of this.watchers) {
-      minDistanceFilter = Math.min(minDistanceFilter, w.options.distanceFilter);
-      if (w.options.backgroundMessage) {
-        backgroundMessage = w.options.backgroundMessage;
-      }
-      if (w.options.backgroundTitle) {
-        backgroundTitle = w.options.backgroundTitle;
-      }
-      if (w.options.requestPermissions) {
-        requestPermissions = true;
-      }
+    for (const watcher of this.watchers) {
+      minDistanceFilter = Math.min(minDistanceFilter, watcher.options.distanceFilter);
+      backgroundMessage = watcher.options.backgroundMessage ?? backgroundMessage;
+      backgroundTitle = watcher.options.backgroundTitle ?? backgroundTitle;
+      requestPermissions ||= watcher.options.requestPermissions === true;
     }
 
     return {
