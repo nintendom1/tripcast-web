@@ -326,6 +326,7 @@ final class NativeLocationPublisher {
                 self.persistSamples()
                 let confirmed = value["currentLocationConfirmed"] as? Bool == true
                 let acknowledgedAtMs = value["serverAcknowledgedAt"] as? Double
+                LiveActivityController.shared.setPublishingHealthy(queueDepth: self.samples.count)
                 if confirmed, let acknowledgedAtMs {
                     LiveActivityController.shared.acknowledge(
                         at: Date(timeIntervalSince1970: acknowledgedAtMs / 1_000),
@@ -442,6 +443,7 @@ final class NativeLocationPublisher {
             emit("gps:native-publish:persist-failure", level: "warn", details: [
                 "failureClass": "storage"
             ])
+            LiveActivityController.shared.setRecovering(queueDepth: samples.count)
         }
     }
 

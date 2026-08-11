@@ -8,10 +8,16 @@ final class LiveActivityController {
 
     private struct AlertIncident: Codable {
         let id: String
-        let kind: String
+        var kind: String
+        var failureSources: Set<String>?
         var eligibleSince: Date
         var scheduledFireAt: Date?
         var alerted: Bool
+    }
+
+    private enum FailureSource: String {
+        case acquisition
+        case publishing
     }
 
     private enum DefaultsKey {
@@ -29,6 +35,7 @@ final class LiveActivityController {
     private var motionState = "unknown"
     private var motionConfidence = "unknown"
     private var motionStartedAt: Date?
+    private var activeFailureSources: Set<FailureSource> = []
     private var alertIncident: AlertIncident?
     private var lastDeduplicatedIncidentID: String?
     private var availableImplementation: AnyObject?
@@ -38,6 +45,10 @@ final class LiveActivityController {
     private init() {
         if let data = defaults.data(forKey: DefaultsKey.alertIncident) {
             alertIncident = try? JSONDecoder().decode(AlertIncident.self, from: data)
+            if alertIncident?.kind == "failure" {
+                let persistedSources = alertIncident?.failureSources ?? [FailureSource.publishing.rawValue]
+                activeFailureSources = Set(persistedSources.compactMap { FailureSource(rawValue: $0) })
+            }
         }
     }
 
@@ -51,7 +62,7 @@ final class LiveActivityController {
             }
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
             if self.mode != "off" {
-                self.scheduleStaleNotificationIfNeeded(reason: "configured")
+                self.prepareForCurrentMode(reason: "configured")
             }
         }
     }
@@ -76,6 +87,7 @@ final class LiveActivityController {
             self.motionState = "unknown"
             self.motionConfidence = "unknown"
             self.motionStartedAt = nil
+            self.activeFailureSources.removeAll()
             self.clearAlertIncident(reason: "live-stopped", removeDelivered: true)
             self.cancelRenewalNotification()
             if #available(iOS 16.1, *) {
@@ -90,13 +102,23 @@ final class LiveActivityController {
             self.mode = mode
             self.queueDepth = queueDepth
             if mode == "off" || mode == "privacy" {
+                self.activeFailureSources.removeAll()
                 self.clearAlertIncident(reason: mode, removeDelivered: true)
             } else if mode == "power-saving" {
-                self.cancelPendingAlert(reason: "power-saving")
+                if self.activeFailureSources.isEmpty {
+                    self.clearAlertIncident(reason: "power-saving", removeDelivered: true)
+                } else {
+                    self.ensureFailureIncident(reason: "mode-power-saving")
+                    self.scheduleStaleNotificationIfNeeded(reason: "mode-power-saving")
+                }
             } else if mode == "precise",
-                      previousMode == "power-saving" || previousMode == "privacy" {
+                      (previousMode == "power-saving" || previousMode == "privacy"),
+                      self.activeFailureSources.isEmpty {
                 self.restartEligibilityWindow(reason: "precise-resumed")
             } else {
+                if !self.activeFailureSources.isEmpty {
+                    self.ensureFailureIncident(reason: "mode-\(mode)")
+                }
                 self.scheduleStaleNotificationIfNeeded(reason: "mode-\(mode)")
             }
             self.updateActivity()
@@ -116,10 +138,15 @@ final class LiveActivityController {
             self.motionState = state
             self.motionConfidence = confidence
             self.motionStartedAt = startedAt
-            if self.isTrustedStationary {
-                self.cancelPendingAlert(reason: "trusted-stationary")
+            if self.isTrustedStationary && self.activeFailureSources.isEmpty {
+                self.clearAlertIncident(reason: "trusted-stationary", removeDelivered: true)
             } else if wasTrustedStationary {
-                self.restartEligibilityWindow(reason: "motion-resumed")
+                if self.activeFailureSources.isEmpty {
+                    self.restartEligibilityWindow(reason: "motion-resumed")
+                } else {
+                    self.ensureFailureIncident(reason: "motion-resumed-with-failure")
+                    self.scheduleStaleNotificationIfNeeded(reason: "motion-resumed-with-failure")
+                }
             } else {
                 self.scheduleStaleNotificationIfNeeded(reason: "motion-\(state)")
             }
@@ -132,10 +159,22 @@ final class LiveActivityController {
             self.lastAcknowledgedAt = date
             self.mode = mode
             self.queueDepth = queueDepth
-            self.clearAlertIncident(reason: "server-ack", removeDelivered: true)
-            if self.canAlert {
-                self.beginAlertIncident(kind: "watch", eligibleSince: date, reason: "server-ack-watch")
-                self.scheduleStaleNotificationIfNeeded(reason: "server-ack-watch")
+            let publishingRecovered = self.activeFailureSources.remove(.publishing) != nil
+            if publishingRecovered {
+                self.emit("gps:stale-alert:failure-resolved", details: [
+                    "reason": "server-ack",
+                    "source": FailureSource.publishing.rawValue
+                ])
+            }
+            if self.activeFailureSources.isEmpty {
+                self.clearAlertIncident(reason: "server-ack", removeDelivered: true)
+                if self.canAlert {
+                    self.beginAlertIncident(kind: "watch", eligibleSince: date, reason: "server-ack-watch")
+                    self.scheduleStaleNotificationIfNeeded(reason: "server-ack-watch")
+                }
+            } else {
+                self.ensureFailureIncident(reason: "server-ack-with-active-failure")
+                self.scheduleStaleNotificationIfNeeded(reason: "server-ack-with-active-failure")
             }
             self.updateActivity()
         }
@@ -143,15 +182,30 @@ final class LiveActivityController {
 
     func setRecovering(queueDepth: Int) {
         stateQueue.async {
-            self.mode = "recovering"
             self.queueDepth = queueDepth
-            self.reconcileDeliveredAlert(reason: "publish-failure")
-            if self.alertIncident == nil ||
-                (self.alertIncident?.kind != "failure" && self.alertIncident?.alerted != true) {
-                self.cancelPendingAlert(reason: "publish-failure")
-                self.beginAlertIncident(kind: "failure", eligibleSince: Date(), reason: "publish-failure")
-            }
-            self.scheduleStaleNotificationIfNeeded(reason: "publish-failure")
+            self.reportFailure(.publishing, reason: "publish-failure")
+            self.updateActivity()
+        }
+    }
+
+    func setPublishingHealthy(queueDepth: Int) {
+        stateQueue.async {
+            self.queueDepth = queueDepth
+            self.resolveFailure(.publishing, reason: "publish-recovered", watchEligibleSince: Date())
+            self.updateActivity()
+        }
+    }
+
+    func setLocationAcquisitionFailed() {
+        stateQueue.async {
+            self.reportFailure(.acquisition, reason: "location-acquisition-failure")
+            self.updateActivity()
+        }
+    }
+
+    func setLocationAcquisitionHealthy() {
+        stateQueue.async {
+            self.resolveFailure(.acquisition, reason: "location-acquisition-recovered", watchEligibleSince: Date())
             self.updateActivity()
         }
     }
@@ -159,6 +213,7 @@ final class LiveActivityController {
     func setPrivacyPaused(lastAcknowledgedAt: Date?) {
         stateQueue.async {
             self.mode = "privacy"
+            self.activeFailureSources.removeAll()
             if let lastAcknowledgedAt { self.lastAcknowledgedAt = lastAcknowledgedAt }
             self.clearAlertIncident(reason: "privacy", removeDelivered: true)
             self.updateActivity()
@@ -170,33 +225,46 @@ final class LiveActivityController {
     }
 
     private var canAlert: Bool {
-        alertThresholdSeconds > 0 &&
-            (mode == "precise" || mode == "recovering") &&
-            !isTrustedStationary
+        guard alertThresholdSeconds > 0, mode != "off", mode != "privacy" else { return false }
+        if !activeFailureSources.isEmpty || alertIncident?.kind == "failure" {
+            return true
+        }
+        return mode == "precise" && !isTrustedStationary
     }
 
     private func prepareForCurrentMode(reason: String) {
         guard canAlert else {
-            cancelPendingAlert(reason: mode == "power-saving" ? "power-saving" : "not-alertable")
+            if activeFailureSources.isEmpty {
+                clearAlertIncident(
+                    reason: mode == "power-saving" ? "power-saving" : "not-alertable",
+                    removeDelivered: true
+                )
+            } else {
+                cancelPendingAlert(reason: "not-alertable")
+            }
             updateActivity()
             return
         }
         if alertIncident == nil {
-            beginAlertIncident(kind: "watch", eligibleSince: lastAcknowledgedAt ?? Date(), reason: reason)
+            if activeFailureSources.isEmpty {
+                beginAlertIncident(kind: "watch", eligibleSince: lastAcknowledgedAt ?? Date(), reason: reason)
+            } else {
+                beginAlertIncident(kind: "failure", eligibleSince: Date(), reason: reason)
+            }
         }
         scheduleStaleNotificationIfNeeded(reason: reason)
         updateActivity()
     }
 
     private func restartEligibilityWindow(reason: String) {
-        guard canAlert else { return }
+        guard canAlert, activeFailureSources.isEmpty else { return }
         reconcileDeliveredAlert(reason: reason)
         if alertIncident?.alerted == true {
             emit("gps:stale-alert:deduplicated", details: ["reason": reason])
             return
         }
-        cancelPendingAlert(reason: reason)
-        beginAlertIncident(kind: alertIncident?.kind ?? "watch", eligibleSince: Date(), reason: reason)
+        clearAlertIncident(reason: reason, removeDelivered: true)
+        beginAlertIncident(kind: "watch", eligibleSince: Date(), reason: reason)
         scheduleStaleNotificationIfNeeded(reason: reason)
     }
 
@@ -204,6 +272,7 @@ final class LiveActivityController {
         alertIncident = AlertIncident(
             id: UUID().uuidString.lowercased(),
             kind: kind,
+            failureSources: kind == "failure" ? persistedFailureSources : nil,
             eligibleSince: eligibleSince,
             scheduledFireAt: nil,
             alerted: false
@@ -217,13 +286,79 @@ final class LiveActivityController {
         ])
     }
 
+    private var persistedFailureSources: Set<String> {
+        Set(activeFailureSources.map(\.rawValue))
+    }
+
+    private func ensureFailureIncident(reason: String) {
+        if alertIncident == nil {
+            beginAlertIncident(kind: "failure", eligibleSince: Date(), reason: reason)
+            return
+        }
+        alertIncident?.kind = "failure"
+        alertIncident?.failureSources = persistedFailureSources
+        persistAlertIncident()
+    }
+
+    private func reportFailure(_ source: FailureSource, reason: String) {
+        guard mode != "off", mode != "privacy" else {
+            emit("gps:stale-alert:failure-suppressed", details: [
+                "reason": reason,
+                "source": source.rawValue,
+                "mode": mode
+            ])
+            return
+        }
+        let inserted = activeFailureSources.insert(source).inserted
+        reconcileDeliveredAlert(reason: reason)
+        ensureFailureIncident(reason: reason)
+        scheduleStaleNotificationIfNeeded(reason: reason)
+        if inserted {
+            emit("gps:stale-alert:failure-started", details: [
+                "reason": reason,
+                "source": source.rawValue
+            ])
+        }
+    }
+
+    private func resolveFailure(
+        _ source: FailureSource,
+        reason: String,
+        watchEligibleSince: Date
+    ) {
+        guard activeFailureSources.remove(source) != nil else {
+            if activeFailureSources.isEmpty, alertIncident?.kind == "watch" {
+                scheduleStaleNotificationIfNeeded(reason: reason)
+            }
+            return
+        }
+        emit("gps:stale-alert:failure-resolved", details: [
+            "reason": reason,
+            "source": source.rawValue
+        ])
+        if !activeFailureSources.isEmpty {
+            ensureFailureIncident(reason: reason)
+            scheduleStaleNotificationIfNeeded(reason: reason)
+            return
+        }
+        clearAlertIncident(reason: reason, removeDelivered: true)
+        if canAlert {
+            beginAlertIncident(kind: "watch", eligibleSince: watchEligibleSince, reason: "\(reason)-watch")
+            scheduleStaleNotificationIfNeeded(reason: "\(reason)-watch")
+        }
+    }
+
     private func scheduleStaleNotificationIfNeeded(reason: String) {
         guard canAlert else {
             cancelPendingAlert(reason: "not-alertable")
             return
         }
         if alertIncident == nil {
-            beginAlertIncident(kind: mode == "recovering" ? "failure" : "watch", eligibleSince: Date(), reason: reason)
+            beginAlertIncident(
+                kind: activeFailureSources.isEmpty ? "watch" : "failure",
+                eligibleSince: Date(),
+                reason: reason
+            )
         }
         reconcileDeliveredAlert(reason: reason)
         guard alertIncident?.alerted != true else {
@@ -245,8 +380,8 @@ final class LiveActivityController {
         )
         let delay = max(1, fireAt.timeIntervalSinceNow)
         let content = UNMutableNotificationContent()
-        content.title = "TripCast breadcrumbs are delayed"
-        content.body = "Open TripCast to refresh Adaptive Background GPS."
+        content.title = "TripCast Live needs attention"
+        content.body = "TripCast couldn’t confirm location sharing. Open the app to check GPS or your connection."
         content.sound = .default
         let request = UNNotificationRequest(
             identifier: staleNotificationIdentifier,
@@ -352,7 +487,8 @@ final class LiveActivityController {
     private func state() -> TripCastLiveActivityAttributes.ContentState {
         let health: String
         let message: String
-        switch mode {
+        let displayedMode = activeFailureSources.isEmpty ? mode : "recovering"
+        switch displayedMode {
         case "power-saving":
             health = "neutral"
             message = "Waiting for movement"
@@ -374,7 +510,7 @@ final class LiveActivityController {
             message = "Live is off"
         }
         return .init(
-            mode: mode,
+            mode: displayedMode,
             health: health,
             lastAcknowledgedAt: lastAcknowledgedAt,
             queueDepth: queueDepth,

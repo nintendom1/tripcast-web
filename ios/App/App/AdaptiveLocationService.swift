@@ -193,6 +193,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             manager.requestAlwaysAuthorization()
         case .authorizedWhenInUse:
             manager.requestAlwaysAuthorization()
+        case .denied, .restricted:
+            LiveActivityController.shared.setLocationAcquisitionFailed()
         default:
             break
         }
@@ -516,6 +518,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard liveRequested, let location = locations.last, location.horizontalAccuracy >= 0 else { return }
+        LiveActivityController.shared.setLocationAcquisitionHealthy()
 
         if mode == .powerSaving {
             guard location.timestamp > modeChangedAt else { return }
@@ -583,6 +586,9 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        if liveRequested {
+            LiveActivityController.shared.setLocationAcquisitionFailed()
+        }
         emit([
             "mode": mode.rawValue,
             "liveRequested": liveRequested,
@@ -591,5 +597,15 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             "error": error.localizedDescription,
             "code": (error as? CLError)?.code.rawValue ?? -1
         ])
+    }
+
+    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard liveRequested else { return }
+        switch manager.authorizationStatus {
+        case .denied, .restricted:
+            LiveActivityController.shared.setLocationAcquisitionFailed()
+        default:
+            break
+        }
     }
 }

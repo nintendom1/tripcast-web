@@ -103,8 +103,8 @@ export function LiveGpsSettings({
         <div className="px-4 py-4 sm:px-5">
           <div className="text-base font-medium text-[var(--ink-1)]">Stale breadcrumb alert</div>
           <div className="mt-1 text-sm text-[var(--ink-3)]">
-            Sound one iOS notification when moving or uncertain and a publishing interruption lasts
-            for the selected time.
+            Sound one iOS notification when Live cannot confirm location sharing for the selected
+            time.
           </div>
           <div className="mt-4 grid grid-cols-4 gap-2" role="radiogroup" aria-label="Stale breadcrumb alert">
             {([
@@ -136,9 +136,9 @@ export function LiveGpsSettings({
           </div>
           <p className="mt-3 text-xs leading-relaxed text-[var(--ink-3)]">
             Power Saving, Privacy Pause, and confidently stationary Motion &amp; Fitness activity are
-            intentionally quiet. Normal in-flight breadcrumbs do not count as failures, and a server
-            confirmation resets the alert. The Lock Screen Live Activity shows both detected motion
-            and how long ago the server confirmed a breadcrumb.
+            quiet when healthy. Unknown motion can still alert, and GPS or publishing errors alert
+            even while stationary. Breadcrumbs stay queued during connection outages, and a server
+            confirmation resets the alert.
           </p>
         </div>
       </div>

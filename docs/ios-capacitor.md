@@ -163,9 +163,18 @@ the fallback until native publishing is configured and for the Legacy tracker.
 
 While Live is on, iOS 16.1 and later shows a Lock Screen Live Activity with the current mode, queued
 sample count, and a system-updating relative timer from the last server-confirmed breadcrumb. The
-configurable stale alert is intentionally suppressed in Power Saving and Privacy Pause. Notifications
-must be allowed for the sound alert; the Live Activity timer remains useful when alerts are denied.
-Open TripCast before the Live Activity's eight-hour system lifetime expires to renew it.
+configurable stale alert treats a confidently stationary session as healthy even when the last
+server-confirmed breadcrumb is old. Moving and uncertain Motion & Fitness states remain alertable if
+server confirmation stops. Core Location, authorization, storage, network, and server failures also
+remain alertable while stationary, but only after the selected delay so transient failures can recover
+quietly. Power Saving is quiet unless an explicit failure is active; Privacy Pause is always quiet.
+One persisted notification is sent per unresolved incident. Notifications must be allowed for the
+sound alert; the Live Activity timer remains useful when alerts are denied. Open TripCast before the
+Live Activity's eight-hour system lifetime expires to renew it.
+
+The alert does not control retention. Accepted fixes remain in the durable on-device queue during a
+connection outage, retry in idempotent batches, and are removed only after backend acknowledgement.
+Ordinary queued or in-flight samples are not themselves failures.
 
 The native service persists the Live request, current adaptive mode, stationary anchor, and timing
 metadata. A location-triggered iOS relaunch reconstructs that state before the Capacitor bridge is
@@ -246,8 +255,16 @@ asset updates, but do not commit a personal `DEVELOPMENT_TEAM` value written int
       permitted point via `getLatestLiveTrailSample`.
 - [ ] Turn Adaptive GPS off while LIVE; confirm **Legacy** without a follower-visible stop. Turn it
       back on and confirm **Precise** with a fresh idle window.
-- [ ] Confirm the Lock Screen Live Activity timer resets after a server acknowledgement and the
-      configured alert fires only when Precise/Recovering delivery becomes stale.
+- [ ] Remain stationary beyond the configured alert delay and confirm an old acknowledgement alone
+      does not notify. Then move with delivery blocked and confirm exactly one delayed alert.
+- [ ] Deny Motion & Fitness and confirm uncertain motion still alerts after the configured delay when
+      server confirmation stops.
+- [ ] Trigger Core Location/authorization and publishing failures while stationary. Confirm transient
+      failures that recover before the delay stay quiet and sustained failures notify once.
+- [ ] Stay offline while moving, confirm samples remain queued, reconnect, and verify the queue drains
+      to Convex exactly once before the incident clears.
+- [ ] Confirm the Lock Screen Live Activity timer resets after a server acknowledgement, and that
+      Privacy Pause, LIVE off, and the alert's Off setting cancel pending notifications.
 - [ ] Tap **PAUSED** → native acquisition and publishing stop and the queued samples are cleared.
 - [ ] Exercise denied/reduced accuracy, Background App Refresh off, Low Power Mode, calibration,
       cloaking, sign-out, Emergency Reset, OS location relaunch, and normal foreground/background.
