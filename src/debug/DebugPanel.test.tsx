@@ -33,7 +33,7 @@ afterEach(() => {
 describe("DebugPanel", () => {
   it("disables debug options when logging is off", () => {
     setEnabled(false);
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
 
     expect(screen.getByRole("switch", { name: /debug logging/i })).not.toBeDisabled();
     expect(screen.getByRole("switch", { name: /browser console logs/i })).toBeDisabled();
@@ -51,7 +51,7 @@ describe("DebugPanel", () => {
 
   it("enables debug options when logging is on", () => {
     setEnabled(true);
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
 
     expect(screen.getByRole("switch", { name: /browser console logs/i })).not.toBeDisabled();
     expect(screen.getByRole("switch", { name: /redact location in copies/i })).not.toBeDisabled();
@@ -64,7 +64,7 @@ describe("DebugPanel", () => {
 
   it("shows browser console command examples", () => {
     setEnabled(true);
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
 
     expect(screen.getByText('tripcast.addLog("Checkpoint")')).toBeInTheDocument();
     expect(screen.getByText("tripcast.enableLogs() / tripcast.disableLogs()")).toBeInTheDocument();
@@ -74,7 +74,7 @@ describe("DebugPanel", () => {
   it("syncs open panel state when browser console helpers change debug settings", () => {
     setEnabled(false);
     setConsoleMirror(false);
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
 
     const debugSwitch = screen.getByRole("switch", { name: /debug logging/i });
     const consoleSwitch = screen.getByRole("switch", { name: /browser console logs/i });
@@ -105,7 +105,7 @@ describe("DebugPanel", () => {
 
   it("syncs open panel logs when browser console helper adds a manual note", () => {
     setEnabled(true);
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
 
     act(() => {
       window.tripcast?.addLog?.("manual checkpoint");
@@ -117,7 +117,7 @@ describe("DebugPanel", () => {
   it("updates floating Debug button settings", () => {
     setEnabled(true);
     setPreset("verbose");
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
 
     fireEvent.click(screen.getByRole("button", { name: /compact/i }));
     fireEvent.click(screen.getByRole("switch", { name: /show source opened by/i }));
@@ -145,7 +145,7 @@ describe("DebugPanel", () => {
       sourceLabel: "Journal -> Story",
     });
 
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /copy current context/i }));
@@ -164,7 +164,7 @@ describe("DebugPanel", () => {
     });
 
     setEnabled(true);
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
     const copyButton = screen.getByRole("button", { name: /copy llm summary/i });
 
     await act(async () => {
@@ -209,7 +209,7 @@ describe("DebugPanel", () => {
     const revokeObjectUrl = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
 
     setEnabled(true);
-    render(<DebugPanel onBack={vi.fn()} />);
+    render(<DebugPanel />);
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: /^copy json$/i }));
@@ -224,7 +224,7 @@ describe("DebugPanel", () => {
 
   it("renders Ticker Debug section when logging is enabled", () => {
     setEnabled(true);
-    render(<DebugPanel onBack={vi.fn()} token="mock-token" />);
+    render(<DebugPanel token="mock-token" />);
 
     expect(screen.getByText(/ticker debug/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/debug message/i)).toBeInTheDocument();

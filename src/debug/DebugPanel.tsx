@@ -34,7 +34,6 @@ import {
   subscribeActiveUiContext,
   type FloatingDebugButtonMode,
 } from "./activeUiContext";
-import { TERMS } from "../copy/terminology";
 
 // ---------------------------------------------------------------------------
 // Clipboard helpers
@@ -303,7 +302,7 @@ function TickerDebug({ token }: { token?: string }) {
 // Panel
 // ---------------------------------------------------------------------------
 
-export default function DebugPanel({ onBack, token }: { onBack: () => void; token?: string }) {
+export default function DebugPanel({ token }: { token?: string }) {
   const [enabled, setEnabledState] = useState(isEnabled);
   const [consoleMirror, setConsoleMirrorState] = useState(getConsoleMirror);
   const [locationRedact, setLocationRedactState] = useState(getLocationRedact);
@@ -470,22 +469,7 @@ export default function DebugPanel({ onBack, token }: { onBack: () => void; toke
   const allLogs = getLogs();
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-5 pb-6">
-      {/* Back header */}
-      <div className="flex items-center gap-2 pt-1">
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-sm font-semibold text-[var(--ink-2)] hover:text-[var(--ink-1)]"
-          aria-label="Back to options"
-        >
-          ← Back
-        </button>
-        <span className="flex-1 font-[var(--font-display)] text-xl font-extrabold text-[var(--ink-1)]">
-          {TERMS.debugLog}
-        </span>
-      </div>
-
+    <div className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto px-5 py-6">
       {/* Toggle */}
       <div className="flex items-center justify-between rounded-xl bg-[var(--bg-card)] px-4 py-3">
         <div>

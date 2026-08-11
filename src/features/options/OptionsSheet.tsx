@@ -1843,7 +1843,12 @@ export default function OptionsSheet({
               onResetStarted={onResetStarted}
               onPendingChange={setIsEmergencyResetPending}
             />
-          ) : view === "debug-logs" ? null : (
+          ) : view === "debug-logs" ? (
+            <SubViewHeader
+              title={TERMS.debugLog}
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
+          ) : (
             <div className="relative">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[var(--header-gradient)]" />
               <OptionsHomeHeader role={role} />
@@ -1925,10 +1930,7 @@ export default function OptionsSheet({
             />
           ) : view === "debug-logs" ? (
             <SheetBody className="min-h-0 overflow-hidden p-0">
-              <DebugPanel 
-                onBack={() => { music.sfx("page"); navigateTo("options"); }} 
-                token={session?.token}
-              />
+              <DebugPanel token={session?.token} />
             </SheetBody>
           ) : null}
         </SheetContent>
