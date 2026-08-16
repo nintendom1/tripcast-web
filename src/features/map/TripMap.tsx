@@ -5733,8 +5733,8 @@ export default function TripMap({
             onClick={openNativeLocationSettings}
             className="pointer-events-auto rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-left text-xs font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]"
           >
-            Live location hasn’t updated recently. Tap to check location access — or reinstall from
-            Xcode if the app build has expired.
+            TripCast can’t get your location. Tap to check location access — or reinstall from Xcode
+            if the app build has expired.
           </button>
         ) : null}
         {role === "traveler" &&
