@@ -142,6 +142,22 @@ export const LivePowerSaving: Story = {
   ],
 };
 
+export const LiveOfflineSaving: Story = {
+  args: {
+    on: true,
+    trailEnabled: true,
+    publishingPhase: "offline",
+    pendingBreadcrumbs: 37,
+  },
+  decorators: [
+    (Story) => (
+      <div className="flex min-h-72 items-center justify-center bg-[var(--bg-canvas)] p-8">
+        <Story />
+      </div>
+    ),
+  ],
+};
+
 export const DownwardPrecisionMenuInMapHud: Story = {
   render: () => <MapHudFixture />,
   parameters: {

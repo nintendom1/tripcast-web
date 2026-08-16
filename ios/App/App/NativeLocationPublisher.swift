@@ -1,6 +1,7 @@
 import CoreLocation
 import Capacitor
 import Foundation
+import Network
 import Security
 import UIKit
 
@@ -28,6 +29,7 @@ final class NativeLocationPublisher {
         let accuracy: Double?
         let sampledAt: Double
         let recordTrail: Bool
+        let publishCurrentLocation: Bool?
         let reason: String
     }
 
@@ -38,6 +40,7 @@ final class NativeLocationPublisher {
 
     private let workQueue = DispatchQueue(label: "com.tripcast.native-location-publisher")
     private let fileManager = FileManager.default
+    private let pathMonitor = NWPathMonitor()
     private let maxQueueDepth = 10_000
     private let minEmissionInterval: TimeInterval = 3
     private let heartbeatInterval: TimeInterval = 60
@@ -50,11 +53,18 @@ final class NativeLocationPublisher {
     private var isPublishing = false
     private var generation = 0
     private var retryWorkItem: DispatchWorkItem?
+    private var activePublishTask: URLSessionDataTask?
     private var lastEmissionLocation: CLLocation?
     private var lastEmissionAt: Date?
     private var lastBearing: CLLocationDirection?
     private var enteredCloakAt: Date?
     private var currentMode = "off"
+    private var networkAvailable: Bool?
+    private var publishingPhase = "idle"
+    private var storageHealthy = true
+    private var capacityReached = false
+    private var recoveryActive = false
+    private var recoveryBreadcrumbsDelivered = 0
 
     var eventHandler: ((JSObject) -> Void)?
     var onCloakTimeout: (() -> Void)?
@@ -62,6 +72,11 @@ final class NativeLocationPublisher {
     private init() {
         configuration = loadConfiguration()
         samples = loadSamples()
+        recoveryActive = !samples.isEmpty
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            self?.handleNetworkPath(path)
+        }
+        pathMonitor.start(queue: workQueue)
     }
 
     func configure(
@@ -90,11 +105,16 @@ final class NativeLocationPublisher {
             )
             generation += 1
             isPublishing = false
+            activePublishTask?.cancel()
+            activePublishTask = nil
             retryWorkItem?.cancel()
             retryWorkItem = nil
             configuration = next
             try persist(next, to: configurationURL)
             LiveActivityController.shared.configure(alertThresholdSeconds: next.alertThresholdSeconds)
+            publishingPhase = samples.isEmpty
+                ? "healthy"
+                : (networkAvailable == false ? "offline" : "syncing")
             publishIfPossibleLocked()
         }
     }
@@ -103,8 +123,15 @@ final class NativeLocationPublisher {
         workQueue.async { [weak self] in
             guard let self else { return }
             self.currentMode = mode
+            self.publishingPhase = self.networkAvailable == false
+                ? "offline"
+                : (self.recoveryActive && !self.samples.isEmpty ? "syncing" : "healthy")
             LiveActivityController.shared.start(mode: mode, queueDepth: self.samples.count)
             LiveActivityController.shared.setMode(mode, queueDepth: self.samples.count)
+            self.emit("gps:native-publish:live-started", details: [
+                "queueDepth": self.samples.count,
+                "breadcrumbQueueDepth": self.breadcrumbQueueDepth
+            ])
             self.publishIfPossibleLocked()
         }
     }
@@ -117,10 +144,12 @@ final class NativeLocationPublisher {
         }
     }
 
-    func stopLive(clearCredentials: Bool) {
+    func stopLive(clearCredentials: Bool, preserveSamples: Bool) {
         workQueue.sync {
             generation += 1
             isPublishing = false
+            activePublishTask?.cancel()
+            activePublishTask = nil
             retryWorkItem?.cancel()
             retryWorkItem = nil
             currentMode = "off"
@@ -128,15 +157,48 @@ final class NativeLocationPublisher {
             lastEmissionAt = nil
             lastBearing = nil
             enteredCloakAt = nil
-            samples.removeAll()
-            try? fileManager.removeItem(at: samplesURL)
             LiveActivityController.shared.stop()
+            if preserveSamples, !clearCredentials {
+                samples = samples.map { sample in
+                    PendingSample(
+                        clientSampleId: sample.clientSampleId,
+                        lat: sample.lat,
+                        lon: sample.lon,
+                        accuracy: sample.accuracy,
+                        sampledAt: sample.sampledAt,
+                        recordTrail: sample.recordTrail,
+                        publishCurrentLocation: false,
+                        reason: sample.reason
+                    )
+                }
+                recoveryActive = !samples.isEmpty
+                recoveryBreadcrumbsDelivered = 0
+                persistSamples()
+                if storageHealthy {
+                    publishingPhase = samples.isEmpty
+                        ? "idle"
+                        : (networkAvailable == false ? "offline" : "syncing")
+                }
+                emit("gps:native-publish:preserved", details: [
+                    "queueDepth": samples.count,
+                    "breadcrumbQueueDepth": breadcrumbQueueDepth
+                ])
+                publishIfPossibleLocked()
+            } else {
+                samples.removeAll()
+                try? fileManager.removeItem(at: samplesURL)
+                publishingPhase = "idle"
+                storageHealthy = true
+                capacityReached = false
+                recoveryActive = false
+                recoveryBreadcrumbsDelivered = 0
+            }
             if clearCredentials {
                 configuration = nil
                 try? fileManager.removeItem(at: configurationURL)
                 deleteToken()
             }
-            emit("gps:native-publish:stopped", details: ["queueDepth": 0])
+            emit("gps:native-publish:stopped", details: ["queueDepth": samples.count])
         }
     }
 
@@ -182,11 +244,14 @@ final class NativeLocationPublisher {
                 accuracy: location.horizontalAccuracy >= 0 ? location.horizontalAccuracy : nil,
                 sampledAt: location.timestamp.timeIntervalSince1970 * 1_000,
                 recordTrail: self.configuration?.liveTrailEnabled == true,
+                publishCurrentLocation: true,
                 reason: acceptedReason
             )
             self.samples.append(sample)
             if self.samples.count > self.maxQueueDepth {
                 self.samples.removeFirst(self.samples.count - self.maxQueueDepth)
+                self.capacityReached = true
+                self.recoveryActive = true
                 self.emit("gps:native-publish:queue-capacity", level: "warn", details: [
                     "queueDepth": self.samples.count
                 ])
@@ -195,6 +260,14 @@ final class NativeLocationPublisher {
             self.lastEmissionAt = now
             self.lastBearing = bearing
             self.persistSamples()
+            if !self.storageHealthy {
+                self.publishingPhase = "storage-error"
+            } else if self.networkAvailable == false {
+                self.publishingPhase = "offline"
+                self.recoveryActive = true
+            } else {
+                self.publishingPhase = self.recoveryActive ? "syncing" : "healthy"
+            }
             self.emit("gps:native-publish:queued", details: [
                 "queueDepth": self.samples.count,
                 "reason": acceptedReason,
@@ -250,7 +323,17 @@ final class NativeLocationPublisher {
               let config = configuration,
               let token = readToken(),
               let baseURL = URL(string: config.endpoint) else { return }
+        guard networkAvailable != false else {
+            publishingPhase = "offline"
+            recoveryActive = true
+            emit("gps:native-publish:offline", level: "warn", details: [
+                "queueDepth": samples.count,
+                "breadcrumbQueueDepth": breadcrumbQueueDepth
+            ])
+            return
+        }
         isPublishing = true
+        publishingPhase = recoveryActive ? "syncing" : "healthy"
         let requestGeneration = generation
         retryWorkItem?.cancel()
         retryWorkItem = nil
@@ -266,6 +349,7 @@ final class NativeLocationPublisher {
                 "lon": sample.lon,
                 "sampledAt": sample.sampledAt,
                 "recordTrail": sample.recordTrail,
+                "publishCurrentLocation": sample.publishCurrentLocation ?? true,
                 "reason": sample.reason
             ]
             if let accuracy = sample.accuracy { value["accuracy"] = accuracy }
@@ -282,13 +366,14 @@ final class NativeLocationPublisher {
             "batchSize": batch.count,
             "queueDepth": samples.count
         ])
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             self?.workQueue.async {
                 guard let self else { return }
                 guard requestGeneration == self.generation else {
                     self.endBackgroundTask(backgroundTask)
                     return
                 }
+                self.activePublishTask = nil
                 let httpStatus = (response as? HTTPURLResponse)?.statusCode
                 let root = data.flatMap {
                     try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
@@ -311,6 +396,8 @@ final class NativeLocationPublisher {
                         details["networkCode"] = urlError.code.rawValue
                         details["networkReason"] = Self.safeNetworkReason(urlError.code)
                     }
+                    self.publishingPhase = error == nil ? "retrying" : "offline"
+                    self.recoveryActive = true
                     self.emit("gps:native-publish:failure", level: "warn", details: details)
                     LiveActivityController.shared.setRecovering(queueDepth: self.samples.count)
                     self.isPublishing = false
@@ -322,8 +409,15 @@ final class NativeLocationPublisher {
                 let accepted = value["acceptedClientSampleIds"] as? [String] ?? []
                 let duplicates = value["duplicateClientSampleIds"] as? [String] ?? []
                 let delivered = Set(accepted + duplicates)
+                let deliveredBreadcrumbs = batch.filter {
+                    delivered.contains($0.clientSampleId) && $0.recordTrail
+                }.count
                 self.samples.removeAll { delivered.contains($0.clientSampleId) }
                 self.persistSamples()
+                self.capacityReached = self.samples.count >= self.maxQueueDepth
+                if self.recoveryActive {
+                    self.recoveryBreadcrumbsDelivered += deliveredBreadcrumbs
+                }
                 let confirmed = value["currentLocationConfirmed"] as? Bool == true
                 let acknowledgedAtMs = value["serverAcknowledgedAt"] as? Double
                 LiveActivityController.shared.setPublishingHealthy(queueDepth: self.samples.count)
@@ -344,11 +438,31 @@ final class NativeLocationPublisher {
                 ])
                 self.isPublishing = false
                 self.endBackgroundTask(backgroundTask)
-                if !self.samples.isEmpty {
+                if !self.storageHealthy {
+                    self.publishingPhase = "storage-error"
+                } else if !self.samples.isEmpty {
+                    self.publishingPhase = "syncing"
                     self.publishIfPossibleLocked()
+                } else {
+                    self.publishingPhase = self.currentMode == "off" ? "idle" : "healthy"
+                    if self.recoveryActive {
+                        let completed = self.recoveryBreadcrumbsDelivered
+                        self.recoveryActive = false
+                        self.recoveryBreadcrumbsDelivered = 0
+                        self.emit("gps:native-publish:drain-complete", details: [
+                            "completedDrainCount": completed
+                        ], completedDrainCount: completed)
+                    } else {
+                        self.emit("gps:native-publish:queue-empty", details: [
+                            "queueDepth": 0,
+                            "breadcrumbQueueDepth": 0
+                        ])
+                    }
                 }
             }
-        }.resume()
+        }
+        activePublishTask = task
+        task.resume()
     }
 
     private func shouldSuppress(_ location: CLLocation) -> Bool {
@@ -374,12 +488,55 @@ final class NativeLocationPublisher {
         workQueue.asyncAfter(deadline: .now() + 30, execute: item)
     }
 
-    private func emit(_ action: String, level: String = "info", details: JSObject) {
-        let event: JSObject = [
+    private var breadcrumbQueueDepth: Int {
+        samples.filter { $0.recordTrail }.count
+    }
+
+    private func handleNetworkPath(_ path: NWPath) {
+        let wasAvailable = networkAvailable
+        networkAvailable = path.status == .satisfied
+        if networkAvailable == false {
+            if currentMode != "off" || !samples.isEmpty {
+                recoveryActive = true
+                publishingPhase = "offline"
+            } else {
+                publishingPhase = "idle"
+            }
+            emit("gps:native-publish:network-offline", level: "warn", details: [
+                "queueDepth": samples.count,
+                "breadcrumbQueueDepth": breadcrumbQueueDepth
+            ])
+            return
+        }
+
+        publishingPhase = samples.isEmpty ? (currentMode == "off" ? "idle" : "healthy") : "syncing"
+        emit("gps:native-publish:network-online", details: [
+            "queueDepth": samples.count,
+            "breadcrumbQueueDepth": breadcrumbQueueDepth
+        ])
+        if wasAvailable != true, !samples.isEmpty {
+            retryWorkItem?.cancel()
+            retryWorkItem = nil
+            publishIfPossibleLocked()
+        }
+    }
+
+    private func emit(
+        _ action: String,
+        level: String = "info",
+        details: JSObject,
+        completedDrainCount: Int? = nil
+    ) {
+        var event: JSObject = [
             "action": action,
             "level": level,
-            "details": details
+            "details": details,
+            "publishingPhase": publishingPhase,
+            "queueDepth": samples.count,
+            "breadcrumbQueueDepth": breadcrumbQueueDepth,
+            "capacityReached": capacityReached
         ]
+        if let completedDrainCount { event["completedDrainCount"] = completedDrainCount }
         eventHandler?(event)
     }
 
@@ -439,7 +596,11 @@ final class NativeLocationPublisher {
     private func persistSamples() {
         do {
             try persist(samples, to: samplesURL)
+            storageHealthy = true
         } catch {
+            storageHealthy = false
+            publishingPhase = "storage-error"
+            recoveryActive = true
             emit("gps:native-publish:persist-failure", level: "warn", details: [
                 "failureClass": "storage"
             ])

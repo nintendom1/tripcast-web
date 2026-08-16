@@ -157,6 +157,35 @@ export type LiveTrailStatus = {
   visibleToFollowers: boolean;
 };
 
+export type NativeLocationSampleReason =
+  | "distance"
+  | "turn"
+  | "heartbeat"
+  | "force"
+  | "recovery"
+  | "foreground";
+
+export type NativeLocationSampleInput = {
+  clientSampleId: string;
+  lat: number;
+  lon: number;
+  accuracy?: number;
+  sampledAt: number;
+  recordTrail: boolean;
+  publishCurrentLocation?: boolean;
+  reason: NativeLocationSampleReason;
+};
+
+export type NativeLocationBatchResult = {
+  acceptedClientSampleIds: string[];
+  duplicateClientSampleIds: string[];
+  currentLocationUpdated: boolean;
+  currentLocationConfirmed: boolean;
+  currentLocationSampledAt: number | null;
+  serverAcknowledgedAt: number;
+  trailInsertedCount: number;
+};
+
 export type LatestLiveTrailSample = LiveTrailSample | FollowerLiveTrailSample | null;
 
 export type LiveTrailPreviewSample = {
@@ -1699,6 +1728,14 @@ export const tripcastApi = {
       "public",
       { token: string },
       TravelerLocation
+    >,
+  },
+  nativeLocationIngest: {
+    travelerIngestNativeLocationBatch: (anyApi as any).nativeLocationIngest.travelerIngestNativeLocationBatch as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; samples: NativeLocationSampleInput[] },
+      NativeLocationBatchResult
     >,
   },
   liveTrail: {
