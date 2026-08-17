@@ -60,6 +60,8 @@ import {
   type FanAction,
   FundsCompactConnected,
   LivePill,
+  OfflineBreadcrumbNotice,
+  PendingBreadcrumbPauseDialog,
   MapCenterButton,
   MusicMuteIndicator,
   StatusCardConnected,
@@ -79,6 +81,10 @@ import {
 import { useAdaptiveGpsEnabled } from "../../lib/adaptiveGpsPreference";
 import { useStaleBreadcrumbAlertSeconds } from "../../lib/staleBreadcrumbAlertPreference";
 import { useNativeTrackingState } from "../../native/nativeTrackingState";
+import {
+  clearCompletedNativeDrain,
+  useNativePublishingState,
+} from "../../native/nativePublishingState";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import {
   Sheet,
@@ -1340,6 +1346,7 @@ export default function TripMap({
   const adaptiveGpsEnabled = useAdaptiveGpsEnabled();
   const staleBreadcrumbAlertSeconds = useStaleBreadcrumbAlertSeconds();
   const nativeTrackingState = useNativeTrackingState();
+  const nativePublishingState = useNativePublishingState();
   const nativeTrackingModeRef = useRef(nativeTrackingState.mode);
   nativeTrackingModeRef.current = nativeTrackingState.mode;
 
@@ -1381,6 +1388,7 @@ export default function TripMap({
   const [isJournalOpen, setIsJournalOpen] = useState(false);
   const [selectedStoryDetail, setSelectedStoryDetail] = useState<SelectedStoryDetail | null>(null);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [isPauseWithBreadcrumbsOpen, setIsPauseWithBreadcrumbsOpen] = useState(false);
   const [deletingBreadcrumbId, setDeletingBreadcrumbId] = useState<string | null>(null);
   const [storyOpenedFromJournal, setStoryOpenedFromJournal] = useState(false);
   const [isMessagingOpen, setIsMessagingOpen] = useState(false);
@@ -1838,6 +1846,15 @@ export default function TripMap({
       toastTimeoutRef.current = null;
     }, 3200);
   }, []);
+
+  useEffect(() => {
+    const count = nativePublishingState.completedDrainCount;
+    if (count === null) return;
+    if (count > 0) {
+      showToast(`${count.toLocaleString()} saved breadcrumb${count === 1 ? "" : "s"} sent.`);
+    }
+    clearCompletedNativeDrain();
+  }, [nativePublishingState.completedDrainCount, showToast]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || replayPaused) return;
@@ -4194,19 +4211,20 @@ export default function TripMap({
       });
   }
 
-  function stopLocationSharing() {
+  function stopLocationSharing(pendingSamples: "discard" | "preserve" = "discard") {
     // Symmetric to the start-side forced emit: capture a closing breadcrumb at
     // the current position before tearing down sampler state, so the trail's
     // tail reflects where the user actually stopped sharing.
     if (
       liveTrailEnabledRef.current &&
       liveTrailCanRecordRef.current &&
-      livePosition
+      livePosition &&
+      !(isAdaptiveNativeTrackingActive() && nativePublishingReadyRef.current)
     ) {
       publishLiveTrailSample(livePosition, livePosition.accuracy, true);
     }
     isLocationSharingRef.current = false;
-    stopNativeLocationTracking();
+    stopNativeLocationTracking({ pendingSamples });
     lastSentLocationRef.current = null;
     breadcrumbSamplerStateRef.current = {};
     setIsLocationSharing(false);
@@ -4238,7 +4256,15 @@ export default function TripMap({
   function handleToggleLocationSharing() {
     music.sfx("tap");
     if (isLocationSharing) {
-      stopLocationSharing();
+      if (
+        isAdaptiveLocationAvailable() &&
+        adaptiveGpsEnabled &&
+        nativePublishingState.breadcrumbQueueDepth > 0
+      ) {
+        setIsPauseWithBreadcrumbsOpen(true);
+        return;
+      }
+      stopLocationSharing("discard");
     } else {
       if (liveTrailEnabledRef.current) {
         liveTrailPermissionLoggedRef.current = false;
@@ -5707,9 +5733,17 @@ export default function TripMap({
             onClick={openNativeLocationSettings}
             className="pointer-events-auto rounded-md border border-[var(--ink-danger)] bg-[var(--bg-danger)] px-3 py-2 text-left text-xs font-semibold text-[var(--ink-danger)] shadow-[var(--shadow-card)]"
           >
-            Live location hasn’t updated recently. Tap to check location access — or reinstall from
-            Xcode if the app build has expired.
+            TripCast can’t get your location. Tap to check location access — or reinstall from Xcode
+            if the app build has expired.
           </button>
+        ) : null}
+        {role === "traveler" &&
+        ((liveTrailEnabled && isLocationSharing) || nativePublishingState.breadcrumbQueueDepth > 0) ? (
+          <OfflineBreadcrumbNotice
+            phase={nativePublishingState.phase}
+            breadcrumbCount={nativePublishingState.breadcrumbQueueDepth}
+            capacityReached={nativePublishingState.capacityReached}
+          />
         ) : null}
         <FeatureBoundary
           resetKeys={[token, role, "hud-status-card"]}
@@ -5735,6 +5769,8 @@ export default function TripMap({
                 onToggle={handleToggleLocationSharing}
                 trailEnabled={liveTrailEnabled}
                 trackingMode={isLocationSharing ? nativeTrackingState.mode : "off"}
+                publishingPhase={nativePublishingState.phase}
+                pendingBreadcrumbs={nativePublishingState.breadcrumbQueueDepth}
                 className="pointer-events-auto"
               />
             ) : null}
@@ -5955,6 +5991,14 @@ export default function TripMap({
         cancelLabel="Keep"
         onConfirm={handleDeleteBreadcrumb}
         variant="danger"
+      />
+
+      <PendingBreadcrumbPauseDialog
+        open={isPauseWithBreadcrumbsOpen}
+        breadcrumbCount={nativePublishingState.breadcrumbQueueDepth}
+        onOpenChange={setIsPauseWithBreadcrumbsOpen}
+        onKeep={() => stopLocationSharing("preserve")}
+        onDiscard={() => stopLocationSharing("discard")}
       />
 
       <Suspense fallback={null}>

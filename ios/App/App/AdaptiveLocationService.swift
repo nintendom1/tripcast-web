@@ -98,7 +98,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         enterPreciseMode(resetIdleWindow: true, reason: "live-start")
     }
 
-    func stopLive(clearCredentials: Bool = false) {
+    func stopLive(clearCredentials: Bool = false, preserveSamples: Bool = false) {
         liveRequested = false
         calibrationActive = false
         stationaryTimer?.invalidate()
@@ -115,7 +115,10 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         modeChangedAt = Date()
         modeChangedReason = "live-stop"
         clearPersistedTrackingState()
-        NativeLocationPublisher.shared.stopLive(clearCredentials: clearCredentials)
+        NativeLocationPublisher.shared.stopLive(
+            clearCredentials: clearCredentials,
+            preserveSamples: preserveSamples
+        )
         emitState()
     }
 

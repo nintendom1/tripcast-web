@@ -5,6 +5,11 @@ import type {
   CallbackError,
 } from "@capgo/background-geolocation";
 import { debugLoggerFor } from "../debug/useDebugLogger";
+import {
+  resetNativePublishingState,
+  setNativePublishingState,
+  type NativePublishingPhase,
+} from "./nativePublishingState";
 import { setNativeTrackingMode, type NativeTrackingMode } from "./nativeTrackingState";
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
@@ -26,6 +31,11 @@ type AdaptiveLocationEvent = {
   action?: string;
   level?: "info" | "warn" | "error";
   details?: Record<string, unknown>;
+  publishingPhase?: NativePublishingPhase;
+  queueDepth?: number;
+  breadcrumbQueueDepth?: number;
+  capacityReached?: boolean;
+  completedDrainCount?: number;
 };
 
 export type NativePublishingConfiguration = {
@@ -39,7 +49,7 @@ export type NativePublishingConfiguration = {
 
 interface AdaptiveLocationPlugin {
   start(): Promise<AdaptiveLocationEvent>;
-  stop(options?: { clearCredentials?: boolean }): Promise<AdaptiveLocationEvent>;
+  stop(options?: NativeStopOptions): Promise<AdaptiveLocationEvent>;
   configurePublishing(options: NativePublishingConfiguration): Promise<AdaptiveLocationEvent>;
   foreground(): Promise<AdaptiveLocationEvent>;
   setCalibrationActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
@@ -49,6 +59,11 @@ interface AdaptiveLocationPlugin {
     listener: (event: AdaptiveLocationEvent) => void,
   ): Promise<PluginListenerHandle>;
 }
+
+export type NativeStopOptions = {
+  clearCredentials?: boolean;
+  pendingSamples?: "discard" | "preserve";
+};
 
 const AdaptiveLocation = registerPlugin<AdaptiveLocationPlugin>("AdaptiveLocation");
 const log = debugLoggerFor(
@@ -115,19 +130,22 @@ class NativeLocationManager {
     void BackgroundGeolocation.openSettings();
   }
 
-  public explicitStop(clearCredentials = false): void {
+  public explicitStop(options: NativeStopOptions = {}): void {
     this.adaptiveStarted = false;
     if (this.isStarted) {
       this.isStarted = false;
       this.currentOptions = null;
       void BackgroundGeolocation.stop().catch(() => {});
     }
-    void AdaptiveLocation.stop({ clearCredentials }).catch((error) => {
+    void AdaptiveLocation.stop(options).then((event) => {
+      this.applyAdaptiveState(event);
+    }).catch((error) => {
       log.error("gps:adaptive:stop:failure", "error", {
         errorType: error instanceof Error ? error.name : typeof error,
       });
     });
     setNativeTrackingMode("off");
+    if (options.pendingSamples !== "preserve") resetNativePublishingState();
   }
 
   public isAdaptiveActive(): boolean {
@@ -311,6 +329,25 @@ class NativeLocationManager {
   }
 
   private applyAdaptiveState(event: AdaptiveLocationEvent): void {
+    if (
+      event.publishingPhase ||
+      typeof event.queueDepth === "number" ||
+      typeof event.breadcrumbQueueDepth === "number"
+    ) {
+      setNativePublishingState({
+        ...(event.publishingPhase ? { phase: event.publishingPhase } : {}),
+        ...(typeof event.queueDepth === "number" ? { queueDepth: event.queueDepth } : {}),
+        ...(typeof event.breadcrumbQueueDepth === "number"
+          ? { breadcrumbQueueDepth: event.breadcrumbQueueDepth }
+          : {}),
+        ...(typeof event.capacityReached === "boolean"
+          ? { capacityReached: event.capacityReached }
+          : {}),
+        ...(typeof event.completedDrainCount === "number"
+          ? { completedDrainCount: event.completedDrainCount }
+          : {}),
+      });
+    }
     if (event.action) {
       log.logGps(event.action, event.details ?? {}, event.level === "warn" ? "warn" : undefined);
     }

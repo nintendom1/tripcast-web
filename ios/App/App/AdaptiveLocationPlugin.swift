@@ -26,8 +26,10 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func stop(_ call: CAPPluginCall) {
+        let preserveSamples = call.getString("pendingSamples") == "preserve"
         AdaptiveLocationService.shared.stopLive(
-            clearCredentials: call.getBool("clearCredentials") ?? false
+            clearCredentials: call.getBool("clearCredentials") ?? false,
+            preserveSamples: preserveSamples
         )
         call.resolve(AdaptiveLocationService.shared.currentState())
     }

@@ -85,6 +85,12 @@ project. `npm run ios:run` also reads `DEVELOPMENT_TEAM` locally and passes it d
 
 ## Routine deploy and profile renewal (Mac)
 
+Before deploying a change that crosses the iOS Traveler, backend, or Follower web boundaries,
+compare both repositories against `main`. Confirm the iOS code on `main` can still write to the
+candidate backend and the Follower web code on `main` can still query and render data written by
+the candidate Traveler. Prefer additive optional fields with server defaults, and deploy compatible
+backend changes before installing the matching iOS build.
+
 For ordinary web changes, one command builds, syncs, signs, and deploys:
 
 ```bash
@@ -175,6 +181,7 @@ Live Activity's eight-hour system lifetime expires to renew it.
 
 The alert does not control retention. Accepted fixes remain in the durable on-device queue during a
 connection outage, retry in idempotent batches, and are removed only after backend acknowledgement.
+The queue retains at most 10,000 fixes and replaces the oldest fixes after reaching that limit.
 Ordinary queued or in-flight samples are not themselves failures.
 
 The native service persists the Live request, current adaptive mode, stationary anchor, and timing
@@ -266,7 +273,9 @@ asset updates, but do not commit a personal `DEVELOPMENT_TEAM` value written int
       to Convex exactly once before the incident clears.
 - [ ] Confirm the Lock Screen Live Activity timer resets after a server acknowledgement, and that
       Privacy Pause, LIVE off, and the alert's Off setting cancel pending notifications.
-- [ ] Tap **PAUSED** → native acquisition and publishing stop and the queued samples are cleared.
+- [ ] Tap **PAUSED** with queued breadcrumbs. Confirm Keep stops acquisition and current-location
+      sharing while allowing historical breadcrumbs to drain, Delete clears them, and Cancel keeps
+      LIVE running.
 - [ ] Exercise denied/reduced accuracy, Background App Refresh off, Low Power Mode, calibration,
       cloaking, sign-out, Emergency Reset, OS location relaunch, and normal foreground/background.
 - [ ] GPS Trace shows watcher start, adaptive mode changes, callbacks, and publish acknowledgements.

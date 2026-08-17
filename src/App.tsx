@@ -209,7 +209,7 @@ function ConnectedApp() {
 
   useEffect(() => {
     if (session !== null && activeSessionCheck === null) {
-      stopNativeLocationTracking(true);
+      stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
       void clearLiveTrailCachesForToken(session.token);
       clearStoredSession();
       setSession(null);
@@ -285,7 +285,7 @@ function ConnectedApp() {
   }
 
   async function handleSignOut() {
-    stopNativeLocationTracking(true);
+    stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     if (session) {
       try {
@@ -306,7 +306,7 @@ function ConnectedApp() {
   }
 
   function handleLocalSignOut() {
-    stopNativeLocationTracking(true);
+    stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
     setSession(null);
@@ -325,7 +325,7 @@ function ConnectedApp() {
   }
 
   function handleLoggedOut() {
-    stopNativeLocationTracking(true);
+    stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
     setSession(null);

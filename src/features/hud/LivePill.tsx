@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import { Compass, Route } from "lucide-react";
+import { CloudOff, Compass, LoaderCircle, Route } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSamplerMode, setSamplerMode, type SamplerMode } from "../../lib/samplerMode";
 import type { NativeTrackingMode } from "../../native/nativeTrackingState";
+import type { NativePublishingPhase } from "../../native/nativePublishingState";
 
 export interface LivePillProps {
   on: boolean;
   onToggle: () => void;
   trailEnabled?: boolean;
   trackingMode?: NativeTrackingMode;
+  publishingPhase?: NativePublishingPhase;
+  pendingBreadcrumbs?: number;
   className?: string;
 }
 
@@ -46,11 +49,15 @@ export function LivePill({
   onToggle,
   trailEnabled = false,
   trackingMode = "off",
+  publishingPhase = "idle",
+  pendingBreadcrumbs = 0,
   className,
 }: LivePillProps) {
   const samplerMode = useSamplerMode();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [hoveredMode, setHoveredMode] = useState<SamplerMode | null>(null);
+  const isOffline = on && publishingPhase === "offline";
+  const isSyncing = on && publishingPhase === "syncing" && pendingBreadcrumbs > 0;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -286,7 +293,11 @@ export function LivePill({
         aria-expanded={isMenuOpen}
         aria-haspopup="menu"
         aria-label={
-          on && trackingMode === "power-saving"
+          isOffline
+            ? `Live location on. Offline. ${pendingBreadcrumbs} breadcrumbs saved locally and not transmitting.`
+            : isSyncing
+              ? `Live location on. Sending ${pendingBreadcrumbs} saved breadcrumbs.`
+          : on && trackingMode === "power-saving"
             ? "Live location on, power saving."
             : trailEnabled
             ? on
@@ -301,6 +312,7 @@ export function LivePill({
           on
             ? "bg-[var(--flag)] text-white"
             : "bg-[var(--bg-card)] text-[var(--ink-2)]",
+          isOffline && "ring-2 ring-[var(--amber)] ring-offset-1 ring-offset-transparent",
           className,
         )}
       >
@@ -318,10 +330,16 @@ export function LivePill({
           <Route className="h-3 w-3" aria-hidden="true" />
         ) : null}
         {on ? (
-          <span
-            aria-hidden="true"
-            className="inline-block h-1.5 w-1.5 rounded-full bg-white"
-          />
+          isOffline ? (
+            <CloudOff className="h-3 w-3 text-[var(--amber)]" aria-hidden="true" />
+          ) : isSyncing ? (
+            <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />
+          ) : (
+            <span
+              aria-hidden="true"
+              className="inline-block h-1.5 w-1.5 rounded-full bg-white"
+            />
+          )
         ) : null}
       </button>
     </div>
