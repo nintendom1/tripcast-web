@@ -13,11 +13,18 @@ import {
   useStaleBreadcrumbAlertSeconds,
   type StaleBreadcrumbAlertSeconds,
 } from "../../lib/staleBreadcrumbAlertPreference";
+import {
+  setLiveGpsUploadIntervalSeconds,
+  useLiveGpsUploadIntervalSeconds,
+  type LiveGpsUploadIntervalSeconds,
+} from "../../lib/liveGpsUploadIntervalPreference";
+import { useDebugLogger } from "../../debug/useDebugLogger";
 
 export type LiveGpsSettingsProps = {
   previewAdaptiveEnabled?: boolean;
   previewMode?: NativeTrackingMode;
   previewAlertThresholdSeconds?: StaleBreadcrumbAlertSeconds;
+  previewUploadIntervalSeconds?: LiveGpsUploadIntervalSeconds;
 };
 
 const MODE_LABELS: Record<NativeTrackingMode, string> = {
@@ -41,17 +48,22 @@ export function LiveGpsSettings({
   previewAdaptiveEnabled,
   previewMode,
   previewAlertThresholdSeconds,
+  previewUploadIntervalSeconds,
 }: LiveGpsSettingsProps) {
+  const log = useDebugLogger("LiveGpsSettings", "src/features/options/LiveGpsSettings.tsx");
   const storedAdaptiveEnabled = useAdaptiveGpsEnabled();
   const trackingState = useNativeTrackingState();
   const adaptiveEnabled = previewAdaptiveEnabled ?? storedAdaptiveEnabled;
   const mode = previewMode ?? trackingState.mode;
   const storedAlertThreshold = useStaleBreadcrumbAlertSeconds();
   const alertThreshold = previewAlertThresholdSeconds ?? storedAlertThreshold;
+  const storedUploadInterval = useLiveGpsUploadIntervalSeconds();
+  const uploadInterval = previewUploadIntervalSeconds ?? storedUploadInterval;
   const isPreview =
     previewAdaptiveEnabled !== undefined ||
     previewMode !== undefined ||
-    previewAlertThresholdSeconds !== undefined;
+    previewAlertThresholdSeconds !== undefined ||
+    previewUploadIntervalSeconds !== undefined;
 
   return (
     <div className="grid gap-6" data-live-gps-settings="">
@@ -96,6 +108,46 @@ export function LiveGpsSettings({
           <span className="font-[var(--font-mono)] text-xs font-semibold uppercase tracking-wide text-[var(--ink-1)]">
             {MODE_LABELS[mode]}
           </span>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] shadow-sm">
+        <div className="px-4 py-4 sm:px-5">
+          <div className="text-base font-medium text-[var(--ink-1)]">Upload interval</div>
+          <div className="mt-1 text-sm text-[var(--ink-3)]">
+            Choose how often Followers receive your latest accepted location.
+          </div>
+          <div className="mt-4 grid grid-cols-3 gap-2" role="radiogroup" aria-label="Upload interval">
+            {([
+              [0, "Immediate"],
+              [15, "15 seconds"],
+              [30, "30 seconds"],
+            ] as const).map(([seconds, label]) => (
+              <button
+                key={seconds}
+                type="button"
+                role="radio"
+                aria-checked={uploadInterval === seconds}
+                className={cn(
+                  "rounded-lg border px-2 py-2 text-xs font-medium transition-colors",
+                  uploadInterval === seconds
+                    ? "border-[var(--ink-1)] bg-[var(--ink-1)] text-[var(--bg-card)]"
+                    : "border-[var(--line-soft)] text-[var(--ink-2)]",
+                )}
+                onClick={() => {
+                  if (!isPreview) {
+                    setLiveGpsUploadIntervalSeconds(seconds);
+                    log.logInteraction("gps:upload-interval:changed", { seconds });
+                  }
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-xs leading-relaxed text-[var(--ink-3)]">
+            Every accepted breadcrumb stays saved on this iPhone until it is uploaded.
+          </p>
         </div>
       </div>
 

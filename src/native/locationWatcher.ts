@@ -85,3 +85,15 @@ export function foregroundNativeLocationTracking(): void {
   if (!isAdaptiveLocationAvailable()) return;
   nativeLocationManager.foreground();
 }
+
+export function retryNativeLocationTracking(): Promise<void> {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve();
+  return nativeLocationManager.retryAdaptiveStart();
+}
+
+export function getNativeLocalTrailSnapshot() {
+  if (!isAdaptiveLocationAvailable()) {
+    return Promise.resolve({ queueRevision: 0, points: [] });
+  }
+  return nativeLocationManager.getLocalTrailSnapshot();
+}

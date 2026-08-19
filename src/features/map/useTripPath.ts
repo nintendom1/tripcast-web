@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import maplibregl from "maplibre-gl";
 import { Checkpoint } from "../../convex/tripcastApi";
 import { LiveTrailPoint } from "./useLiveTrailPath";
@@ -172,6 +172,13 @@ export function useTripPath(
       features,
     } as GeoJSON.FeatureCollection<GeoJSON.LineString>;
   }, [checkpoints, livePosition, visible, playheadTime, liveTrailSamples, showBreadcrumbs]);
+  const pathSignature = useMemo(() => pathData === null ? "none" : JSON.stringify(pathData), [pathData]);
+  const syncStateRef = useRef({
+    map: null as maplibregl.Map | null,
+    signature: null as string | null,
+    consecutiveFailures: 0,
+    circuitOpen: false,
+  });
 
   useEffect(() => {
     if (!map) return;
@@ -182,10 +189,64 @@ export function useTripPath(
       (count, feature) => count + feature.geometry.coordinates.length,
       0,
     ) ?? 0;
+    const syncState = syncStateRef.current;
+    if (syncState.map !== map) {
+      syncState.map = map;
+      syncState.signature = null;
+      syncState.consecutiveFailures = 0;
+      syncState.circuitOpen = false;
+    }
+    let subscribed = false;
+    const unsubscribe = () => {
+      if (!subscribed) return;
+      subscribed = false;
+      map.off("load", ensureAfterStyle);
+      map.off("style.load", ensureAfterStyle);
+      map.off("styledata", ensureAfterStyle);
+      map.off("idle", ensureAfterStyle);
+    };
+    const openCircuit = () => {
+      if (syncState.circuitOpen) return;
+      syncState.circuitOpen = true;
+      unsubscribe();
+      try { if (map.getLayer(layerId)) map.removeLayer(layerId); } catch { /* disabled */ }
+      try { if (map.getSource(sourceId)) map.removeSource(sourceId); } catch { /* disabled */ }
+      logMapEvent("map:route-path:circuit-open", {
+        operation: "disable",
+        stage: "circuit-open",
+        styleLoaded: map.isStyleLoaded(),
+        featureCount: pathData?.features.length ?? 0,
+        coordinateCount,
+        consecutiveFailureCount: syncState.consecutiveFailures,
+      });
+    };
+    const attempt = (operation: string, stage: string, run: () => void): boolean => {
+      if (syncState.circuitOpen) return false;
+      try {
+        run();
+        return true;
+      } catch (error) {
+        syncState.consecutiveFailures += 1;
+        logMapEvent("map:route-path:failure", {
+          operation,
+          stage,
+          errorType: error instanceof Error ? error.name : typeof error,
+          styleLoaded: map.isStyleLoaded(),
+          featureCount: pathData?.features.length ?? 0,
+          coordinateCount,
+          consecutiveFailureCount: syncState.consecutiveFailures,
+        });
+        if (syncState.consecutiveFailures >= 3) openCircuit();
+        return false;
+      }
+    };
+    const markSuccess = () => { syncState.consecutiveFailures = 0; };
 
     const addLayer = (trigger: string) => {
-      map.addSource(sourceId, { type: "geojson", data: pathData! });
-      map.addLayer({
+      if (!map.getSource(sourceId) && !attempt("addSource", `${trigger}:source`, () => {
+        map.addSource(sourceId, { type: "geojson", data: pathData! });
+      })) return;
+      if (!map.getLayer(layerId) && !attempt("addLayer", `${trigger}:layer`, () => map.addLayer({
         id: layerId,
         type: "line",
         source: sourceId,
@@ -199,7 +260,9 @@ export function useTripPath(
           "line-dasharray": [2, 2],
           "line-opacity": ["get", "opacity"],
         },
-      });
+      }))) return;
+      syncState.signature = pathSignature;
+      markSuccess();
       logMapEvent("map:route-path:re-add", { layerId, lineColor });
       logMapEvent("map:route-path:sync", {
         result: "addLayer",
@@ -213,11 +276,17 @@ export function useTripPath(
     // Apply the latest pathData. Runs on every pathData change (effect body) — NOT on
     // map style events, so it never redundantly re-parses unchanged data.
     const apply = () => {
+      if (syncState.circuitOpen) return;
       if (!pathData) {
         const hadLayer = !!map.getLayer(layerId);
         const hadSource = !!map.getSource(sourceId);
-        if (hadLayer) map.removeLayer(layerId);
-        if (hadSource) map.removeSource(sourceId);
+        let succeeded = true;
+        if (hadLayer) succeeded = attempt("removeLayer", "effect:layer", () => map.removeLayer(layerId));
+        if (hadSource) succeeded = attempt("removeSource", "effect:source", () => map.removeSource(sourceId)) && succeeded;
+        if (succeeded) {
+          syncState.signature = pathSignature;
+          markSuccess();
+        }
         logMapEvent("map:route-path:sync", {
           result: hadLayer || hadSource ? "removed" : "noop",
           trigger: "effect",
@@ -229,6 +298,10 @@ export function useTripPath(
       }
       const existing = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
       if (existing) {
+        if (!map.getLayer(layerId)) {
+          addLayer("effect-missing-layer");
+          return;
+        }
         // Updating an existing source's data does NOT require the style to report
         // fully loaded — only adding a new source/layer does. The old code gated
         // setData on isStyleLoaded() (which is unreliable — it can read false even
@@ -236,10 +309,20 @@ export function useTripPath(
         // once("load") that never re-fires, silently dropping updates such as the
         // full-trail restore on replay exit and freezing the trail at its last
         // applied (partial) state.
-        existing.setData(pathData);
-        map.setPaintProperty(layerId, "line-color", lineColor);
+        let succeeded = true;
+        const dataChanged = syncState.signature !== pathSignature;
+        if (dataChanged) succeeded = attempt("setData", "effect:data", () => existing.setData(pathData));
+        if (map.getLayer(layerId)) {
+          succeeded = attempt("setPaintProperty", "effect:paint", () => {
+            map.setPaintProperty(layerId, "line-color", lineColor);
+          }) && succeeded;
+        }
+        if (succeeded) {
+          syncState.signature = pathSignature;
+          markSuccess();
+        }
         logMapEvent("map:route-path:sync", {
-          result: "setData",
+          result: dataChanged ? "setData" : "unchanged",
           trigger: "effect",
           styleLoaded: map.isStyleLoaded(),
           featureCount: pathData.features.length,
@@ -250,31 +333,18 @@ export function useTripPath(
       // Source missing: create it. addSource/addLayer throw if the style isn't ready
       // yet; if so, the style listeners below retry until it succeeds. Don't gate on
       // isStyleLoaded() — it under-reports readiness in some environments.
-      try {
-        addLayer("effect");
-      } catch {
-        logMapEvent("map:route-path:sync", {
-          result: "deferred",
-          trigger: "effect",
-          styleLoaded: map.isStyleLoaded(),
-          featureCount: pathData.features.length,
-          coordinateCount,
-        });
-      }
+      addLayer("effect");
     };
 
     // Recreate the layer when a style event fires and the source is missing (e.g.
     // setStyle on a theme toggle wiped it, or the style wasn't ready on first apply).
     // Only creates — updates to an existing source flow through `apply` on pathData
     // change, so this never re-parses unchanged data on the frequent styledata/idle.
-    const ensureAfterStyle = (event?: { type?: string }) => {
-      if (!pathData || map.getSource(sourceId)) return;
-      try {
-        addLayer(event?.type ?? "style-event");
-      } catch {
-        /* style still not ready; a later style event will retry */
-      }
-    };
+    function ensureAfterStyle(event?: { type?: string }) {
+      if (syncState.circuitOpen || !pathData || (map!.getSource(sourceId) && map!.getLayer(layerId))) return;
+      const styleReady = event?.type === "style.load" || event?.type === "load";
+      if (styleReady || map!.isStyleLoaded()) addLayer(event?.type ?? "style-event");
+    }
 
     logMapEvent("map:route-path:effect", {
       layerId,
@@ -294,21 +364,19 @@ export function useTripPath(
     // the style reports fully loaded; if the source doesn't exist yet, the listeners
     // below create it once the style is parsed.
     apply();
-    map.on("load", ensureAfterStyle);
-    map.on("style.load", ensureAfterStyle);
-    map.on("styledata", ensureAfterStyle);
-    map.on("idle", ensureAfterStyle);
-    return () => {
-      map.off("load", ensureAfterStyle);
-      map.off("style.load", ensureAfterStyle);
-      map.off("styledata", ensureAfterStyle);
-      map.off("idle", ensureAfterStyle);
-    };
+    if (!syncState.circuitOpen) {
+      map.on("load", ensureAfterStyle);
+      map.on("style.load", ensureAfterStyle);
+      map.on("styledata", ensureAfterStyle);
+      map.on("idle", ensureAfterStyle);
+      subscribed = true;
+    }
+    return unsubscribe;
     // `checkpoints`, `liveTrailSamples`, and `showBreadcrumbs` are read only
     // for the descriptive log snapshot above — they intentionally do NOT
     // re-fire the layer sync, which depends solely on map/pathData/lineColor.
     // Adding them would tear down + re-bind map listeners on every live-trail
     // sample (multiple times per minute on an active trip).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, pathData, lineColor]);
+  }, [map, pathData, pathSignature, lineColor]);
 }

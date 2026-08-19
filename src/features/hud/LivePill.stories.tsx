@@ -142,6 +142,12 @@ export const LivePowerSaving: Story = {
   ],
 };
 
+export const Starting: Story = { args: { captureReadiness: "starting" } };
+export const CaptureDegraded: Story = { args: { captureReadiness: "degraded" } };
+export const LiveActivityUnavailable: Story = {
+  args: { captureReadiness: "ready", activityStatus: "disabled" },
+};
+
 export const LiveOfflineSaving: Story = {
   args: {
     on: true,

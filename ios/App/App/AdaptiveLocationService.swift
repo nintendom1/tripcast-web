@@ -2,9 +2,27 @@ import CoreLocation
 import CoreMotion
 import Foundation
 import Capacitor
+import UIKit
 
 final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     static let shared = AdaptiveLocationService()
+
+    private final class StartOperation {
+        let id = UUID().uuidString.lowercased()
+        let trigger: String
+        let startedAt = Date()
+        let retryCount: Int
+        var captureFinished = false
+        var activityFinished = false
+        var completions: [(JSObject) -> Void] = []
+        var watchdog: DispatchWorkItem?
+
+        init(trigger: String, retryCount: Int, completion: ((JSObject) -> Void)?) {
+            self.trigger = trigger
+            self.retryCount = retryCount
+            if let completion { completions.append(completion) }
+        }
+    }
 
     enum Mode: String {
         case off
@@ -34,6 +52,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     private let walkingSpeed: CLLocationSpeed = 0.9
     private let wakeRegionRadius: CLLocationDistance = 100
     private let wakeRegionIdentifier = "tripcast-adaptive-stationary"
+    private let mainThreadHeartbeat = MainThreadHeartbeat()
 
     private(set) var mode: Mode = .off
     private(set) var liveRequested = false
@@ -53,17 +72,37 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     private var motionState = "unknown"
     private var motionConfidence = "unknown"
     private var motionChangedAt = Date.distantPast
+    private var isApplicationForeground = UIApplication.shared.applicationState == .active
+    private var suppressedBridgeEventCount = 0
+    private var startRetryCount = 0
+    private var cachedPublishingState: JSObject = [
+        "publishingPhase": "idle",
+        "queueDepth": 0,
+        "breadcrumbQueueDepth": 0,
+        "capacityReached": false,
+        "configurationReady": false,
+        "durableStorageReady": true,
+        "activityStatus": "idle",
+        "queueRevision": 0
+    ]
+    private var captureFailureReason: String?
+    private var startOperation: StartOperation?
+    private var lastStartCompletedAt: Date?
 
     var eventHandler: ((JSObject) -> Void)? {
         didSet { deliverPendingEventIfNeeded() }
     }
     private var pendingEvent: JSObject?
+    private var pendingHangSummary: JSObject?
 
     private override init() {
         super.init()
+        pendingHangSummary = mainThreadHeartbeat.consumePreviousHangSummary()
+        mainThreadHeartbeat.setActive(isApplicationForeground)
         manager.delegate = self
         NativeLocationPublisher.shared.eventHandler = { [weak self] event in
             guard let self else { return }
+            self.mergePublishingState(event)
             var merged = self.currentState()
             for (key, value) in event { merged[key] = value }
             self.emit(merged)
@@ -78,27 +117,79 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             NativeLocationPublisher.shared.stopRemoteSharing()
             self?.stopLive()
         }
+        NativeLocationPublisher.shared.currentPublishingState { [weak self] state in
+            self?.mergePublishingState(state)
+        }
     }
 
     func bootstrapLocationRelaunch() {
         guard defaults.bool(forKey: DefaultsKey.liveRequested) else { return }
-        restorePersistedStateAndStart()
+        restorePersistedState()
+        coordinateStart(trigger: "restored", completion: nil)
     }
 
-    func startLive() {
-        if liveRequested, mode != .off {
-            emitState()
+    func startLive(trigger: String = "explicit", completion: @escaping (JSObject) -> Void) {
+        coordinateStart(trigger: trigger, completion: completion)
+    }
+
+    private func coordinateStart(trigger: String, completion: ((JSObject) -> Void)?) {
+        if let operation = startOperation {
+            if let completion { operation.completions.append(completion) }
+            emitOperationLog(operation, stage: "coalesced", timeout: false)
             return
         }
+        if trigger != "retry",
+           liveRequested,
+           let lastStartCompletedAt,
+           Date().timeIntervalSince(lastStartCompletedAt) < 2,
+           currentState()["captureReadiness"] as? String == "ready" {
+            NativeLocationPublisher.shared.setMode(mode.rawValue)
+            completion?(currentState())
+            return
+        }
+        let wasAlreadyRequested = liveRequested || defaults.bool(forKey: DefaultsKey.liveRequested)
+        if wasAlreadyRequested { startRetryCount += 1 } else { startRetryCount = 0 }
+        let operation = StartOperation(trigger: trigger, retryCount: startRetryCount, completion: completion)
+        startOperation = operation
+        emitOperationLog(operation, stage: "requested", timeout: false)
         liveRequested = true
         defaults.set(true, forKey: DefaultsKey.liveRequested)
         requestAuthorization()
         startMotionUpdates()
         ensureBackgroundActivitySession()
-        enterPreciseMode(resetIdleWindow: true, reason: "live-start")
+        if trigger == "restored", mode == .powerSaving, stationaryAnchor != nil {
+            configurePowerSavingManager()
+        } else {
+            enterPreciseMode(resetIdleWindow: trigger != "restored", reason: trigger)
+        }
+
+        NativeLocationPublisher.shared.startLive(mode: mode.rawValue) { [weak self] state in
+            guard let self else { return }
+            self.mergePublishingState(state)
+            self.finishStartStage(operationID: operation.id, capability: "capture")
+        }
+        LiveActivityController.shared.start(mode: mode.rawValue, queueDepth: cachedQueueDepth) { [weak self] outcome in
+            guard let self else { return }
+            self.cachedPublishingState["activityStatus"] = outcome
+            self.emit([
+                "action": "gps:live-activity:\(outcome)",
+                "level": outcome == "failed" ? "warn" : "info",
+                "details": ["operationId": operation.id, "trigger": trigger]
+            ])
+            self.finishStartStage(operationID: operation.id, capability: "activity")
+        }
+        let watchdog = DispatchWorkItem { [weak self] in
+            self?.finishStartWatchdog(operationID: operation.id)
+        }
+        operation.watchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: watchdog)
     }
 
-    func stopLive(clearCredentials: Bool = false, preserveSamples: Bool = false) {
+    func stopLive(
+        clearCredentials: Bool = false,
+        preserveSamples: Bool = false,
+        completion: ((JSObject) -> Void)? = nil
+    ) {
         liveRequested = false
         calibrationActive = false
         stationaryTimer?.invalidate()
@@ -114,12 +205,22 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         mode = .off
         modeChangedAt = Date()
         modeChangedReason = "live-stop"
+        cancelStartOperation(reason: "stopped")
         clearPersistedTrackingState()
+        let suppressedEvents = suppressedBridgeEventCount
+        suppressedBridgeEventCount = 0
+        LiveActivityController.shared.stop()
         NativeLocationPublisher.shared.stopLive(
             clearCredentials: clearCredentials,
-            preserveSamples: preserveSamples
-        )
-        emitState()
+            preserveSamples: preserveSamples,
+            suppressedBridgeEvents: suppressedEvents
+        ) { [weak self] state in
+            guard let self else { return }
+            self.mergePublishingState(state)
+            let result = self.currentState()
+            self.emit(result)
+            completion?(result)
+        }
     }
 
     func setCalibrationActive(_ active: Bool) {
@@ -143,7 +244,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func currentState() -> JSObject {
-        [
+        var state: JSObject = [
             "mode": mode.rawValue,
             "liveRequested": liveRequested,
             "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000,
@@ -152,42 +253,193 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             "motionConfidence": motionConfidence,
             "motionChangedAt": motionChangedAt.timeIntervalSince1970 * 1_000
         ]
+        let publishingState = cachedPublishingState
+        for (key, value) in publishingState { state[key] = value }
+        if !liveRequested {
+            state["captureReadiness"] = "idle"
+        } else if manager.authorizationStatus == .notDetermined {
+            state["captureReadiness"] = "starting"
+        } else if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
+            state["captureReadiness"] = "degraded"
+            state["failureReason"] = "location-permission-denied"
+        } else if manager.authorizationStatus == .authorizedWhenInUse {
+            state["captureReadiness"] = "degraded"
+            state["failureReason"] = "always-location-permission-required"
+        } else if let captureFailureReason {
+            state["captureReadiness"] = "degraded"
+            state["failureReason"] = captureFailureReason
+        } else if publishingState["configurationReady"] as? Bool != true {
+            state["captureReadiness"] = "degraded"
+            state["failureReason"] = publishingState["failureReason"] as? String ?? "configuration-missing"
+        } else if publishingState["durableStorageReady"] as? Bool != true {
+            state["captureReadiness"] = "degraded"
+            state["failureReason"] = publishingState["failureReason"] as? String ?? "queue-storage-unavailable"
+        } else {
+            state["captureReadiness"] = "ready"
+            state.removeValue(forKey: "failureReason")
+        }
+        return state
     }
 
-    func applicationDidBecomeActive() {
+    func applicationDidBecomeActive(completion: ((JSObject) -> Void)? = nil) {
+        isApplicationForeground = true
+        mainThreadHeartbeat.setActive(true)
+        let suppressedEvents = suppressedBridgeEventCount
+        suppressedBridgeEventCount = 0
+        if liveRequested || defaults.bool(forKey: DefaultsKey.liveRequested) {
+            NativeLocationPublisher.shared.emitSessionSummary(
+                reason: "foreground",
+                suppressedBridgeEvents: suppressedEvents
+            )
+        }
         if !liveRequested, defaults.bool(forKey: DefaultsKey.liveRequested) {
-            restorePersistedStateAndStart()
+            restorePersistedState()
+            coordinateStart(trigger: "foreground-restored", completion: completion)
             return
         }
-        guard liveRequested else { return }
-        ensureBackgroundActivitySession()
-        startMotionUpdates()
-        if mode == .precise,
-           modeChangedReason == "foreground",
-           Date().timeIntervalSince(modeChangedAt) < 2 {
+        guard liveRequested else {
+            completion?(currentState())
             return
         }
-        enterPreciseMode(resetIdleWindow: true, reason: "foreground")
+        coordinateStart(trigger: "foreground", completion: completion)
     }
 
-    private func restorePersistedStateAndStart() {
+    func applicationDidEnterBackground() {
+        isApplicationForeground = false
+        mainThreadHeartbeat.setActive(false)
+    }
+
+    private func restorePersistedState() {
         liveRequested = true
         mode = Mode(rawValue: defaults.string(forKey: DefaultsKey.mode) ?? "") ?? .precise
         modeChangedAt = date(forKey: DefaultsKey.modeChangedAt) ?? Date()
         modeChangedReason = defaults.string(forKey: DefaultsKey.modeChangedReason) ?? "location-relaunch"
         lastMeaningfulAt = date(forKey: DefaultsKey.lastMeaningfulAt) ?? Date()
         stationaryAnchor = persistedAnchor()
-        ensureBackgroundActivitySession()
-        startMotionUpdates()
-        NativeLocationPublisher.shared.startLive(mode: mode.rawValue)
+    }
 
-        if mode == .powerSaving, stationaryAnchor != nil {
-            configurePowerSavingManager()
-        } else {
-            enterPreciseMode(resetIdleWindow: false, reason: "location-relaunch")
+    func configurePublishing(
+        endpoint: String,
+        token: String,
+        liveTrailEnabled: Bool,
+        emissionIntervalSeconds: Int,
+        alertThresholdSeconds: TimeInterval,
+        cloakTimeoutSeconds: TimeInterval,
+        cloakZones: [NativeLocationPublisher.CloakZone],
+        completion: @escaping (Result<JSObject, Error>) -> Void
+    ) {
+        LiveActivityController.shared.configure(alertThresholdSeconds: alertThresholdSeconds)
+        NativeLocationPublisher.shared.configure(
+            endpoint: endpoint,
+            token: token,
+            liveTrailEnabled: liveTrailEnabled,
+            emissionIntervalSeconds: emissionIntervalSeconds,
+            alertThresholdSeconds: alertThresholdSeconds,
+            cloakTimeoutSeconds: cloakTimeoutSeconds,
+            cloakZones: cloakZones
+        ) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success(let state):
+                self.mergePublishingState(state)
+                self.captureFailureReason = nil
+                completion(.success(self.currentState()))
+            case .failure(let error):
+                self.captureFailureReason = "configuration-failed"
+                completion(.failure(error))
+            }
         }
-        requestAuthorization()
-        emitState()
+    }
+
+    func localTrailSnapshot(completion: @escaping (JSObject) -> Void) {
+        NativeLocationPublisher.shared.localTrailSnapshot(completion: completion)
+    }
+
+    private var cachedQueueDepth: Int {
+        cachedPublishingState["queueDepth"] as? Int ?? 0
+    }
+
+    private func mergePublishingState(_ state: JSObject) {
+        let keys = [
+            "publishingPhase", "queueDepth", "breadcrumbQueueDepth", "capacityReached",
+            "configurationReady", "durableStorageReady", "activityStatus", "queueRevision",
+            "failureReason", "completedDrainCount"
+        ]
+        for key in keys where state[key] != nil {
+            cachedPublishingState[key] = state[key]
+        }
+        if state["failureReason"] == nil,
+           state["configurationReady"] as? Bool == true,
+           state["durableStorageReady"] as? Bool == true {
+            cachedPublishingState.removeValue(forKey: "failureReason")
+        }
+    }
+
+    private func finishStartStage(operationID: String, capability: String) {
+        guard let operation = startOperation, operation.id == operationID else {
+            if capability == "capture" { captureFailureReason = nil }
+            emit([
+                "action": "gps:adaptive:start-late-recovery",
+                "details": ["operationId": operationID, "capability": capability]
+            ])
+            emitState()
+            return
+        }
+        if capability == "capture" {
+            operation.captureFinished = true
+            captureFailureReason = nil
+        } else {
+            operation.activityFinished = true
+        }
+        emitOperationLog(operation, stage: "\(capability)-complete", timeout: false)
+        if operation.captureFinished && operation.activityFinished {
+            completeStartOperation(operation, timeout: false)
+        }
+    }
+
+    private func finishStartWatchdog(operationID: String) {
+        guard let operation = startOperation, operation.id == operationID else { return }
+        if !operation.captureFinished { captureFailureReason = "native-start-timeout" }
+        if !operation.activityFinished { cachedPublishingState["activityStatus"] = "failed" }
+        completeStartOperation(operation, timeout: true)
+    }
+
+    private func completeStartOperation(_ operation: StartOperation, timeout: Bool) {
+        guard startOperation?.id == operation.id else { return }
+        operation.watchdog?.cancel()
+        startOperation = nil
+        lastStartCompletedAt = Date()
+        let state = currentState()
+        emitOperationLog(operation, stage: "result", timeout: timeout)
+        emit(state)
+        operation.completions.forEach { $0(state) }
+    }
+
+    private func cancelStartOperation(reason: String) {
+        guard let operation = startOperation else { return }
+        operation.watchdog?.cancel()
+        startOperation = nil
+        emitOperationLog(operation, stage: reason, timeout: false)
+        let state = currentState()
+        operation.completions.forEach { $0(state) }
+    }
+
+    private func emitOperationLog(_ operation: StartOperation, stage: String, timeout: Bool) {
+        let state = currentState()
+        emit([
+            "action": stage == "result" ? "gps:adaptive:start-result" : "gps:adaptive:start-progress",
+            "level": timeout ? "warn" : "info",
+            "details": [
+                "operationId": operation.id,
+                "trigger": operation.trigger,
+                "stage": stage,
+                "durationMs": Int(Date().timeIntervalSince(operation.startedAt) * 1_000),
+                "retryCount": operation.retryCount,
+                "timeout": timeout,
+                "captureResult": state["captureReadiness"] as? String ?? "degraded",
+                "activityOutcome": state["activityStatus"] as? String ?? "unsupported"
+            ]
+        ])
     }
 
     private func requestAuthorization() {
@@ -309,7 +561,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         ensureStandardUpdatesRunning()
         persistState()
         scheduleStationaryTimer()
-        NativeLocationPublisher.shared.startLive(mode: mode.rawValue)
+        NativeLocationPublisher.shared.setMode(mode.rawValue)
         emitState()
     }
 
@@ -322,7 +574,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
         manager.activityType = .fitness
         manager.allowsBackgroundLocationUpdates = true
-        manager.pausesLocationUpdatesAutomatically = false
+        manager.pausesLocationUpdatesAutomatically = true
         if #available(iOS 11.0, *) {
             manager.showsBackgroundLocationIndicator = true
         }
@@ -356,11 +608,12 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         manager.distanceFilter = 100
         manager.activityType = .fitness
         manager.allowsBackgroundLocationUpdates = true
-        manager.pausesLocationUpdatesAutomatically = false
+        manager.pausesLocationUpdatesAutomatically = true
         if #available(iOS 11.0, *) {
             manager.showsBackgroundLocationIndicator = true
         }
-        ensureStandardUpdatesRunning()
+        manager.stopUpdatingLocation()
+        standardUpdatesRunning = false
         manager.startMonitoringSignificantLocationChanges()
         if let anchor = stationaryAnchor, CLLocationManager.isMonitoringAvailable(for: CLCircularRegion.self) {
             manager.stopMonitoring(for: CLCircularRegion(
@@ -451,6 +704,10 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     private func emit(_ event: JSObject) {
+        guard isApplicationForeground else {
+            suppressedBridgeEventCount += 1
+            return
+        }
         if let eventHandler {
             eventHandler(event)
         } else {
@@ -459,9 +716,19 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     private func deliverPendingEventIfNeeded() {
-        guard let eventHandler, let pendingEvent else { return }
-        self.pendingEvent = nil
-        eventHandler(pendingEvent)
+        guard let eventHandler else { return }
+        if let pendingHangSummary {
+            self.pendingHangSummary = nil
+            eventHandler([
+                "action": "gps:native-main-thread:previous-stall",
+                "level": "warn",
+                "details": pendingHangSummary
+            ])
+        }
+        if let pendingEvent {
+            self.pendingEvent = nil
+            eventHandler(pendingEvent)
+        }
     }
 
     private func persistState() {
@@ -564,17 +831,22 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
+        standardUpdatesRunning = false
         emit([
             "mode": mode.rawValue,
             "liveRequested": liveRequested,
             "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000,
-            "reason": "unexpected-ios-pause"
+            "reason": "ios-pause"
         ])
-        manager.startUpdatingLocation()
-        standardUpdatesRunning = true
     }
 
     func locationManagerDidResumeLocationUpdates(_ manager: CLLocationManager) {
+        if mode == .powerSaving {
+            manager.stopUpdatingLocation()
+            standardUpdatesRunning = false
+        } else {
+            standardUpdatesRunning = true
+        }
         emit([
             "mode": mode.rawValue,
             "liveRequested": liveRequested,
@@ -609,8 +881,81 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         switch manager.authorizationStatus {
         case .denied, .restricted:
             LiveActivityController.shared.setLocationAcquisitionFailed()
+        case .authorizedAlways:
+            ensureBackgroundActivitySession()
+            startMotionUpdates()
+            if mode == .powerSaving { configurePowerSavingManager() }
+            else { enterPreciseMode(resetIdleWindow: true, reason: "authorization-change") }
         default:
             break
+        }
+        emitState()
+    }
+}
+
+private final class MainThreadHeartbeat {
+    private enum DefaultsKey {
+        static let hangSummary = "tripcast.nativeMainThread.hangSummary"
+    }
+
+    private let queue = DispatchQueue(label: "com.tripcast.main-thread-heartbeat")
+    private let defaults = UserDefaults.standard
+    private var timer: DispatchSourceTimer?
+    private var active = false
+    private var awaitingResponse = false
+    private var pingStartedAt: Date?
+    private var reportedThisSession = false
+
+    func setActive(_ active: Bool) {
+        queue.async {
+            self.active = active
+            self.awaitingResponse = false
+            self.pingStartedAt = nil
+            if active { self.startTimerIfNeeded() }
+        }
+    }
+
+    func consumePreviousHangSummary() -> JSObject? {
+        guard let data = defaults.data(forKey: DefaultsKey.hangSummary),
+              let value = try? JSONSerialization.jsonObject(with: data) as? JSObject else { return nil }
+        defaults.removeObject(forKey: DefaultsKey.hangSummary)
+        return value
+    }
+
+    private func startTimerIfNeeded() {
+        guard timer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 1, repeating: 1)
+        timer.setEventHandler { [weak self] in self?.tick() }
+        self.timer = timer
+        timer.resume()
+    }
+
+    private func tick() {
+        guard active else { return }
+        if awaitingResponse,
+           let pingStartedAt,
+           Date().timeIntervalSince(pingStartedAt) >= 5,
+           !reportedThisSession {
+            reportedThisSession = true
+            let summary: JSObject = [
+                "detectedAt": Date().timeIntervalSince1970 * 1_000,
+                "stallDurationMs": Int(Date().timeIntervalSince(pingStartedAt) * 1_000),
+                "thresholdMs": 5_000
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: summary) {
+                defaults.set(data, forKey: DefaultsKey.hangSummary)
+            }
+            return
+        }
+        guard !awaitingResponse else { return }
+        awaitingResponse = true
+        pingStartedAt = Date()
+        DispatchQueue.main.async { [weak self] in
+            self?.queue.async {
+                self?.awaitingResponse = false
+                self?.pingStartedAt = nil
+            }
         }
     }
 }

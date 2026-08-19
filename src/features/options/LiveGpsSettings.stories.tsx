@@ -27,15 +27,27 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Ready: Story = {
-  args: { previewAdaptiveEnabled: true, previewMode: "off" },
+  args: { previewAdaptiveEnabled: true, previewMode: "off", previewUploadIntervalSeconds: 15 },
 };
 
 export const Precise: Story = {
-  args: { previewAdaptiveEnabled: true, previewMode: "precise" },
+  args: { previewAdaptiveEnabled: true, previewMode: "precise", previewUploadIntervalSeconds: 15 },
 };
 
 export const PowerSaving: Story = {
-  args: { previewAdaptiveEnabled: true, previewMode: "power-saving" },
+  args: { previewAdaptiveEnabled: true, previewMode: "power-saving", previewUploadIntervalSeconds: 15 },
+};
+
+export const UploadImmediate: Story = {
+  args: { previewAdaptiveEnabled: true, previewMode: "precise", previewUploadIntervalSeconds: 0 },
+};
+
+export const UploadEvery15Seconds: Story = {
+  args: { previewAdaptiveEnabled: true, previewMode: "precise", previewUploadIntervalSeconds: 15 },
+};
+
+export const UploadEvery30Seconds: Story = {
+  args: { previewAdaptiveEnabled: true, previewMode: "precise", previewUploadIntervalSeconds: 30 },
 };
 
 export const AlertsOff: Story = {

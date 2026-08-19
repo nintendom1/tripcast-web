@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useSamplerMode, setSamplerMode, type SamplerMode } from "../../lib/samplerMode";
 import type { NativeTrackingMode } from "../../native/nativeTrackingState";
 import type { NativePublishingPhase } from "../../native/nativePublishingState";
+import type { NativeActivityStatus, NativeCaptureReadiness } from "../../native/nativeReadinessState";
 
 export interface LivePillProps {
   on: boolean;
@@ -12,6 +13,8 @@ export interface LivePillProps {
   trackingMode?: NativeTrackingMode;
   publishingPhase?: NativePublishingPhase;
   pendingBreadcrumbs?: number;
+  captureReadiness?: NativeCaptureReadiness;
+  activityStatus?: NativeActivityStatus;
   className?: string;
 }
 
@@ -51,6 +54,8 @@ export function LivePill({
   trackingMode = "off",
   publishingPhase = "idle",
   pendingBreadcrumbs = 0,
+  captureReadiness = "idle",
+  activityStatus = "idle",
   className,
 }: LivePillProps) {
   const samplerMode = useSamplerMode();
@@ -58,6 +63,9 @@ export function LivePill({
   const [hoveredMode, setHoveredMode] = useState<SamplerMode | null>(null);
   const isOffline = on && publishingPhase === "offline";
   const isSyncing = on && publishingPhase === "syncing" && pendingBreadcrumbs > 0;
+  const isStarting = on && captureReadiness === "starting";
+  const isCaptureDegraded = on && captureReadiness === "degraded";
+  const isActivityUnavailable = on && captureReadiness === "ready" && ["disabled", "unsupported", "failed"].includes(activityStatus);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -313,6 +321,7 @@ export function LivePill({
             ? "bg-[var(--flag)] text-white"
             : "bg-[var(--bg-card)] text-[var(--ink-2)]",
           isOffline && "ring-2 ring-[var(--amber)] ring-offset-1 ring-offset-transparent",
+          (isCaptureDegraded || isActivityUnavailable) && "bg-[var(--amber)] text-[var(--ink-1)] ring-2 ring-[var(--amber)] ring-offset-1 ring-offset-transparent",
           className,
         )}
       >
@@ -330,7 +339,9 @@ export function LivePill({
           <Route className="h-3 w-3" aria-hidden="true" />
         ) : null}
         {on ? (
-          isOffline ? (
+          isStarting ? (
+            <LoaderCircle className="h-3 w-3 animate-spin" aria-label="Starting live location" />
+          ) : isOffline ? (
             <CloudOff className="h-3 w-3 text-[var(--amber)]" aria-hidden="true" />
           ) : isSyncing ? (
             <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />

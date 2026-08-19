@@ -39,6 +39,10 @@ final class LiveActivityController {
     private var alertIncident: AlertIncident?
     private var lastDeduplicatedIncidentID: String?
     private var availableImplementation: AnyObject?
+    private var lastActivityStateData: Data?
+    private var lastActivityTransitionSignature: String?
+    private var lastActivityUpdateAt: Date?
+    private var healthyRefreshWorkItem: DispatchWorkItem?
 
     var eventHandler: ((JSObject) -> Void)?
 
@@ -67,15 +71,23 @@ final class LiveActivityController {
         }
     }
 
-    func start(mode: String, queueDepth: Int) {
+    func start(mode: String, queueDepth: Int, completion: @escaping (String) -> Void) {
         stateQueue.async {
             self.mode = mode
             self.queueDepth = queueDepth
+            let outcome: String
             if #available(iOS 16.1, *) {
-                self.implementation().startIfNeeded(state: self.state())
+                let state = self.state()
+                outcome = self.implementation().startIfNeeded(state: state)
+                if outcome == "created" || outcome == "reused" {
+                    self.recordActivitySubmission(state)
+                }
+            } else {
+                outcome = "unsupported"
             }
             self.scheduleRenewalNotification()
             self.prepareForCurrentMode(reason: "live-start")
+            DispatchQueue.main.async { completion(outcome) }
         }
     }
 
@@ -88,6 +100,11 @@ final class LiveActivityController {
             self.motionConfidence = "unknown"
             self.motionStartedAt = nil
             self.activeFailureSources.removeAll()
+            self.healthyRefreshWorkItem?.cancel()
+            self.healthyRefreshWorkItem = nil
+            self.lastActivityStateData = nil
+            self.lastActivityTransitionSignature = nil
+            self.lastActivityUpdateAt = nil
             self.clearAlertIncident(reason: "live-stopped", removeDelivered: true)
             self.cancelRenewalNotification()
             if #available(iOS 16.1, *) {
@@ -462,17 +479,61 @@ final class LiveActivityController {
     }
 
     private func emit(_ action: String, level: String = "info", details: JSObject) {
-        eventHandler?([
+        let event: JSObject = [
             "action": action,
             "level": level,
             "details": details
-        ])
+        ]
+        DispatchQueue.main.async { [weak self] in
+            self?.eventHandler?(event)
+        }
     }
 
-    private func updateActivity() {
-        if #available(iOS 16.1, *) {
-            implementation().update(state: state())
+    private func updateActivity(force: Bool = false) {
+        guard #available(iOS 16.1, *) else { return }
+        let nextState = state()
+        guard let encoded = try? JSONEncoder().encode(nextState), encoded != lastActivityStateData else {
+            return
         }
+        let signature = activityTransitionSignature(nextState)
+        let isTransition = signature != lastActivityTransitionSignature
+        let elapsed = Date().timeIntervalSince(lastActivityUpdateAt ?? .distantPast)
+        if force || isTransition || elapsed >= 60 {
+            healthyRefreshWorkItem?.cancel()
+            healthyRefreshWorkItem = nil
+            implementation().update(state: nextState)
+            recordActivitySubmission(nextState)
+            return
+        }
+
+        guard healthyRefreshWorkItem == nil else { return }
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.healthyRefreshWorkItem = nil
+            self.updateActivity(force: true)
+        }
+        healthyRefreshWorkItem = item
+        stateQueue.asyncAfter(deadline: .now() + max(0.1, 60 - elapsed), execute: item)
+    }
+
+    @available(iOS 16.1, *)
+    private func recordActivitySubmission(_ state: TripCastLiveActivityAttributes.ContentState) {
+        lastActivityStateData = try? JSONEncoder().encode(state)
+        lastActivityTransitionSignature = activityTransitionSignature(state)
+        lastActivityUpdateAt = Date()
+    }
+
+    @available(iOS 16.1, *)
+    private func activityTransitionSignature(
+        _ state: TripCastLiveActivityAttributes.ContentState
+    ) -> String {
+        [
+            state.mode,
+            state.health,
+            state.message,
+            state.motionState ?? "",
+            state.motionStartedAt.map { String($0.timeIntervalSince1970) } ?? ""
+        ].joined(separator: "|")
     }
 
     @available(iOS 16.1, *)
@@ -550,13 +611,15 @@ final class LiveActivityController {
 @available(iOS 16.1, *)
 private final class AvailableLiveActivityController: NSObject {
     private var activity: Activity<TripCastLiveActivityAttributes>?
+    private var lastState: TripCastLiveActivityAttributes.ContentState?
 
-    func startIfNeeded(state: TripCastLiveActivityAttributes.ContentState) {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+    func startIfNeeded(state: TripCastLiveActivityAttributes.ContentState) -> String {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return "disabled" }
         if let existing = Activity<TripCastLiveActivityAttributes>.activities.first {
             activity = existing
+            lastState = nil
             update(state: state)
-            return
+            return "reused"
         }
         do {
             activity = try Activity.request(
@@ -564,19 +627,25 @@ private final class AvailableLiveActivityController: NSObject {
                 contentState: state,
                 pushType: nil
             )
+            lastState = state
+            return "created"
         } catch {
             activity = nil
+            lastState = nil
+            return "failed"
         }
     }
 
     func update(state: TripCastLiveActivityAttributes.ContentState) {
-        guard let activity else { return }
+        guard let activity, state != lastState else { return }
+        lastState = state
         Task { await activity.update(using: state) }
     }
 
     func stop() {
         guard let activity else { return }
         self.activity = nil
+        lastState = nil
         Task { await activity.end(dismissalPolicy: .immediate) }
     }
 }
