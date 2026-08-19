@@ -1124,6 +1124,25 @@ describe("TripMap location marker", () => {
     });
   });
 
+  it("suppresses an equivalent follow ease while the first movement is active", async () => {
+    const location = { lat: 47.61, lon: -122.33, isSharing: true as const };
+    setupQueries({ travelerLocation: location });
+    const { rerender } = render(<TripMap token="test-token" role="follower" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Center map on traveler" }));
+    await waitFor(() => {
+      expect(mapEaseTo).toHaveBeenCalledWith(
+        expect.objectContaining({ center: [-122.33, 47.61] }),
+      );
+    });
+    const movementCount = mapEaseTo.mock.calls.length;
+
+    setupQueries({ travelerLocation: { ...location } });
+    rerender(<TripMap token="test-token" role="follower" />);
+
+    expect(mapEaseTo).toHaveBeenCalledTimes(movementCount);
+  });
+
   it("lets sheet camera fit turn off GPS follow", async () => {
     setupQueries({
       travelerLocation: { lat: 47.61, lon: -122.33, isSharing: true },

@@ -1,5 +1,6 @@
 import Capacitor
 import Foundation
+import UIKit
 
 @objc(AdaptiveLocationPlugin)
 public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
@@ -11,7 +12,8 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "configurePublishing", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "foreground", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setCalibrationActive", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getLocalTrailSnapshot", returnType: CAPPluginReturnPromise)
     ]
 
     public override func load() {
@@ -21,17 +23,21 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func start(_ call: CAPPluginCall) {
-        AdaptiveLocationService.shared.startLive()
-        call.resolve(AdaptiveLocationService.shared.currentState())
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.startLive(trigger: call.getString("trigger") ?? "javascript") { state in
+                call.resolve(state)
+            }
+        }
     }
 
     @objc func stop(_ call: CAPPluginCall) {
         let preserveSamples = call.getString("pendingSamples") == "preserve"
-        AdaptiveLocationService.shared.stopLive(
-            clearCredentials: call.getBool("clearCredentials") ?? false,
-            preserveSamples: preserveSamples
-        )
-        call.resolve(AdaptiveLocationService.shared.currentState())
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.stopLive(
+                clearCredentials: call.getBool("clearCredentials") ?? false,
+                preserveSamples: preserveSamples
+            ) { state in call.resolve(state) }
+        }
     }
 
     @objc func configurePublishing(_ call: CAPPluginCall) {
@@ -50,32 +56,49 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
             else { return nil }
             return .init(lat: lat, lon: lon, radiusMeters: radiusMeters)
         }
-        do {
-            try NativeLocationPublisher.shared.configure(
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.configurePublishing(
                 endpoint: endpoint,
                 token: token,
                 liveTrailEnabled: call.getBool("liveTrailEnabled") ?? false,
+                emissionIntervalSeconds: call.getInt("emissionIntervalSeconds") ?? 15,
                 alertThresholdSeconds: call.getDouble("alertThresholdSeconds") ?? 120,
                 cloakTimeoutSeconds: call.getDouble("cloakTimeoutSeconds") ?? 300,
                 cloakZones: zones
-            )
-            call.resolve(AdaptiveLocationService.shared.currentState())
-        } catch {
-            call.reject("Unable to configure native location publishing", nil, error)
+            ) { result in
+                switch result {
+                case .success(let state): call.resolve(state)
+                case .failure(let error):
+                    call.reject("Unable to configure native location publishing", nil, error)
+                }
+            }
         }
     }
 
     @objc func foreground(_ call: CAPPluginCall) {
-        AdaptiveLocationService.shared.applicationDidBecomeActive()
-        call.resolve(AdaptiveLocationService.shared.currentState())
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.applicationDidBecomeActive { state in call.resolve(state) }
+        }
     }
 
     @objc func setCalibrationActive(_ call: CAPPluginCall) {
-        AdaptiveLocationService.shared.setCalibrationActive(call.getBool("active") ?? false)
-        call.resolve(AdaptiveLocationService.shared.currentState())
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.setCalibrationActive(call.getBool("active") ?? false)
+            call.resolve(AdaptiveLocationService.shared.currentState())
+        }
     }
 
     @objc func getState(_ call: CAPPluginCall) {
-        call.resolve(AdaptiveLocationService.shared.currentState())
+        DispatchQueue.main.async {
+            call.resolve(AdaptiveLocationService.shared.currentState())
+        }
+    }
+
+    @objc func getLocalTrailSnapshot(_ call: CAPPluginCall) {
+        guard UIApplication.shared.applicationState == .active else {
+            call.reject("Local trail snapshots are foreground-only")
+            return
+        }
+        AdaptiveLocationService.shared.localTrailSnapshot { snapshot in call.resolve(snapshot) }
     }
 }

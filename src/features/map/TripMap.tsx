@@ -60,6 +60,7 @@ import {
   type FanAction,
   FundsCompactConnected,
   LivePill,
+  LiveSafetyNotice,
   OfflineBreadcrumbNotice,
   PendingBreadcrumbPauseDialog,
   MapCenterButton,
@@ -71,16 +72,21 @@ import {
 import {
   configureNativeLocationPublishing,
   foregroundNativeLocationTracking,
+  getNativeLocalTrailSnapshot,
   isAdaptiveLocationAvailable,
   isAdaptiveNativeTrackingActive,
   isNativeLocationAvailable,
   openNativeLocationSettings,
+  retryNativeLocationTracking,
   startNativeLocationWatch,
   stopNativeLocationTracking,
 } from "../../native/locationWatcher";
 import { useAdaptiveGpsEnabled } from "../../lib/adaptiveGpsPreference";
 import { useStaleBreadcrumbAlertSeconds } from "../../lib/staleBreadcrumbAlertPreference";
+import { useLiveGpsUploadIntervalSeconds } from "../../lib/liveGpsUploadIntervalPreference";
 import { useNativeTrackingState } from "../../native/nativeTrackingState";
+import { useNativeReadinessState } from "../../native/nativeReadinessState";
+import { usePendingTrail, type LocalTrailPoint } from "./usePendingTrail";
 import {
   clearCompletedNativeDrain,
   useNativePublishingState,
@@ -1304,6 +1310,7 @@ export default function TripMap({
   // and, if the app backgrounds right after, re-engage follow on resume.
   const isFollowingRef = useRef(false);
   const lastGestureUnfollowAtRef = useRef<number>(0);
+  const activeFollowEaseRef = useRef<{ lat: number; lon: number; until: number } | null>(null);
   const restoreFollowOnResumeRef = useRef(false);
   // Ref-pattern for onMapLoaded: the map-init effect must NOT re-run when the
   // parent passes a fresh callback identity (would tear down + rebuild the
@@ -1345,8 +1352,10 @@ export default function TripMap({
   calibrationRef.current = calibration;
   const adaptiveGpsEnabled = useAdaptiveGpsEnabled();
   const staleBreadcrumbAlertSeconds = useStaleBreadcrumbAlertSeconds();
+  const liveGpsUploadIntervalSeconds = useLiveGpsUploadIntervalSeconds();
   const nativeTrackingState = useNativeTrackingState();
   const nativePublishingState = useNativePublishingState();
+  const nativeReadinessState = useNativeReadinessState();
   const nativeTrackingModeRef = useRef(nativeTrackingState.mode);
   nativeTrackingModeRef.current = nativeTrackingState.mode;
 
@@ -1360,6 +1369,9 @@ export default function TripMap({
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(initialLiveSharing);
+  const [localTrailPoints, setLocalTrailPoints] = useState<LocalTrailPoint[]>([]);
+  const localTrailSnapshotRef = useRef<{ queueRevision: number; signature: string } | null>(null);
+  const [nativeRetryNonce, setNativeRetryNonce] = useState(0);
   // Mirrors document.visibilityState. Drives the foreground-only browser
   // watcher gate so it does not survive backgrounding (and to re-arm on
   // foreground without churning the native watcher when LIVE is on).
@@ -1594,9 +1606,20 @@ export default function TripMap({
     : liveTrailSamples;
   const pathTrailSamples = useMemo(() => {
     const base = replayActive ? replaySessionState.breadcrumbs : liveTrailSamples;
-    return base.filter((s) => inReplayWindow(s.sampledAt));
-  }, [replayActive, replaySessionState.breadcrumbs, liveTrailSamples, inReplayWindow]);
+    if (replayActive || role !== "traveler") return base.filter((s) => inReplayWindow(s.sampledAt));
+    const acknowledged = localTrailPoints.filter((point) => point.status === "acknowledged");
+    return [...base, ...acknowledged]
+      .filter((sample, index, rows) => inReplayWindow(sample.sampledAt) && rows.findIndex((candidate) =>
+        candidate.sampledAt === sample.sampledAt && candidate.lat === sample.lat && candidate.lon === sample.lon,
+      ) === index)
+      .sort((a, b) => a.sampledAt - b.sampledAt)
+      .slice(-100);
+  }, [replayActive, replaySessionState.breadcrumbs, liveTrailSamples, localTrailPoints, role, inReplayWindow]);
   const pathTrailVisible = pathTrailSamples.length >= 1;
+  const pendingTrailPoints = useMemo(
+    () => role === "traveler" ? localTrailPoints.filter((point) => point.status === "pending") : [],
+    [localTrailPoints, role],
+  );
 
   useEffect(() => {
     if (!cacheAuthorized) return;
@@ -1723,13 +1746,20 @@ export default function TripMap({
     mapInstance,
     checkpoints,
     role === "traveler"
-      ? (isLocationSharing ? livePosition : null)
+      ? (isLocationSharing && pendingTrailPoints.length === 0 ? livePosition : null)
       : (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null),
     showPath,
     replayRevealUpTo,
     routeLineColor,
     pathTrailSamples,
     pathTrailVisible,
+  );
+  usePendingTrail(
+    mapInstance,
+    pendingTrailPoints,
+    pathTrailSamples.length > 0 ? pathTrailSamples[pathTrailSamples.length - 1] : null,
+    role === "traveler" && !replayActive && showPath && liveTrailEnabled,
+    resolvedTheme,
   );
 
   const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
@@ -1795,6 +1825,49 @@ export default function TripMap({
 
   // Re-measure the map canvas when the desktop/mobile layout switches so
   // MapLibre doesn't show a blank canvas after the container changes size.
+  useEffect(() => {
+    nativePublishingReadyRef.current = nativeReadinessState.captureReadiness === "ready";
+  }, [nativeReadinessState.captureReadiness]);
+
+  useEffect(() => {
+    if (role !== "traveler" || !isAppActive || !isAdaptiveLocationAvailable()) {
+      if (role !== "traveler") setLocalTrailPoints([]);
+      return;
+    }
+    let cancelled = false;
+    void getNativeLocalTrailSnapshot()
+      .then((snapshot) => {
+        if (cancelled) return;
+        const signature = JSON.stringify(snapshot.points.map((point) => [
+          point.clientSampleId,
+          point.sampledAt,
+          point.status,
+          point.lat,
+          point.lon,
+        ]));
+        const previous = localTrailSnapshotRef.current;
+        if (previous?.queueRevision === snapshot.queueRevision && previous.signature === signature) {
+          log.logMap("map:pending-trail:native-sync", {
+            result: "unchanged",
+            queueRevision: snapshot.queueRevision,
+          });
+          return;
+        }
+        localTrailSnapshotRef.current = { queueRevision: snapshot.queueRevision, signature };
+        setLocalTrailPoints(snapshot.points);
+        log.logMap("map:pending-trail:native-sync", {
+          result: "applied",
+          pendingCount: snapshot.points.filter((point) => point.status === "pending").length,
+          acknowledgedCount: snapshot.points.filter((point) => point.status === "acknowledged").length,
+          queueRevision: snapshot.queueRevision,
+        });
+      })
+      .catch((error) => log.error("map:pending-trail:native-sync-failure", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      }));
+    return () => { cancelled = true; };
+  }, [isAppActive, log, nativeReadinessState.queueRevision, role, token]);
+
   useEffect(() => {
     if (!mapRef.current) return;
     const id = requestAnimationFrame(() => { mapRef.current?.resize(); });
@@ -3297,6 +3370,7 @@ export default function TripMap({
       endpoint,
       token,
       liveTrailEnabled,
+      emissionIntervalSeconds: liveGpsUploadIntervalSeconds,
       alertThresholdSeconds: staleBreadcrumbAlertSeconds,
       cloakTimeoutSeconds,
       cloakZones: (cloakingPinsData ?? []).map((pin) => ({
@@ -3306,7 +3380,7 @@ export default function TripMap({
       })),
     })
       .then(() => {
-        if (!cancelled) nativePublishingReadyRef.current = true;
+        if (!cancelled && isLocationSharingRef.current) void retryNativeLocationTracking();
       })
       .catch((error) => {
         if (cancelled) return;
@@ -3322,10 +3396,12 @@ export default function TripMap({
     adaptiveGpsEnabled,
     cloakingPinsData,
     liveTrailEnabled,
+    liveGpsUploadIntervalSeconds,
     log,
     role,
     staleBreadcrumbAlertSeconds,
     token,
+    nativeRetryNonce,
   ]);
 
   useEffect(() => {
@@ -3375,12 +3451,23 @@ export default function TripMap({
         showToast("Map movement is paused until the map service resumes.");
         return;
       }
+      const activeEase = activeFollowEaseRef.current;
+      if (
+        activeEase &&
+        activeEase.until > Date.now() &&
+        Math.abs(activeEase.lat - coordinate.lat) < 0.00001 &&
+        Math.abs(activeEase.lon - coordinate.lon) < 0.00001
+      ) {
+        log.logMap("map:camera:move-suppressed", { trigger: "center:location", reason: "equivalent-ease-active" });
+        return;
+      }
       log.logInteraction("map:camera:move", {
         lat: roundedCoordinate(coordinate.lat),
         lon: roundedCoordinate(coordinate.lon),
         trigger: "center:location",
       });
       // Reset any persistent padding set by handleNavigateToMission before easing
+      activeFollowEaseRef.current = { lat: coordinate.lat, lon: coordinate.lon, until: Date.now() + 750 };
       map.easeTo({
         center: [coordinate.lon, coordinate.lat],
         zoom: Math.max(map.getZoom(), 14),
@@ -4054,6 +4141,8 @@ export default function TripMap({
 
   useEffect(() => {
     if (tripDataResetNonce === 0) return;
+    localTrailSnapshotRef.current = null;
+    setLocalTrailPoints([]);
     void liveTrailCache.clear();
     setIsVotePanelOpen(false);
     stopFollowing();
@@ -4225,6 +4314,10 @@ export default function TripMap({
     }
     isLocationSharingRef.current = false;
     stopNativeLocationTracking({ pendingSamples });
+    if (pendingSamples === "discard") {
+      localTrailSnapshotRef.current = null;
+      setLocalTrailPoints([]);
+    }
     lastSentLocationRef.current = null;
     breadcrumbSamplerStateRef.current = {};
     setIsLocationSharing(false);
@@ -4261,7 +4354,20 @@ export default function TripMap({
         adaptiveGpsEnabled &&
         nativePublishingState.breadcrumbQueueDepth > 0
       ) {
-        setIsPauseWithBreadcrumbsOpen(true);
+        if (
+          nativePublishingState.phase === "offline" ||
+          nativePublishingState.phase === "retrying" ||
+          nativePublishingState.phase === "storage-error"
+        ) {
+          setIsPauseWithBreadcrumbsOpen(true);
+          return;
+        }
+        log.logGps("gps:native-publish:healthy-stop-drain", {
+          queueDepth: nativePublishingState.queueDepth,
+          breadcrumbQueueDepth: nativePublishingState.breadcrumbQueueDepth,
+          publishingPhase: nativePublishingState.phase,
+        });
+        stopLocationSharing("preserve");
         return;
       }
       stopLocationSharing("discard");
@@ -5745,6 +5851,11 @@ export default function TripMap({
             capacityReached={nativePublishingState.capacityReached}
           />
         ) : null}
+        {role === "traveler" && isLocationSharing && nativeReadinessState.captureReadiness === "degraded" ? (
+          <LiveSafetyNotice kind="capture" onRetry={() => setNativeRetryNonce((value) => value + 1)} onOpenSettings={openNativeLocationSettings} />
+        ) : role === "traveler" && isLocationSharing && nativeReadinessState.captureReadiness === "ready" && ["disabled", "unsupported", "failed"].includes(nativeReadinessState.activityStatus) ? (
+          <LiveSafetyNotice kind="activity" onRetry={() => setNativeRetryNonce((value) => value + 1)} onOpenSettings={openNativeLocationSettings} />
+        ) : null}
         <FeatureBoundary
           resetKeys={[token, role, "hud-status-card"]}
           title="Status card hit a problem."
@@ -5771,6 +5882,8 @@ export default function TripMap({
                 trackingMode={isLocationSharing ? nativeTrackingState.mode : "off"}
                 publishingPhase={nativePublishingState.phase}
                 pendingBreadcrumbs={nativePublishingState.breadcrumbQueueDepth}
+                captureReadiness={nativeReadinessState.captureReadiness}
+                activityStatus={nativeReadinessState.activityStatus}
                 className="pointer-events-auto"
               />
             ) : null}

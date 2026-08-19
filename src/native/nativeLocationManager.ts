@@ -11,6 +11,15 @@ import {
   type NativePublishingPhase,
 } from "./nativePublishingState";
 import { setNativeTrackingMode, type NativeTrackingMode } from "./nativeTrackingState";
+import type { LiveGpsUploadIntervalSeconds } from "../lib/liveGpsUploadIntervalPreference";
+import {
+  markNativeCaptureStarting,
+  resetNativeReadinessState,
+  setNativeReadinessState,
+  type NativeActivityStatus,
+  type NativeCaptureReadiness,
+} from "./nativeReadinessState";
+import type { LocalTrailPoint } from "../features/map/usePendingTrail";
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
   "BackgroundGeolocation",
@@ -36,24 +45,32 @@ type AdaptiveLocationEvent = {
   breadcrumbQueueDepth?: number;
   capacityReached?: boolean;
   completedDrainCount?: number;
+  captureReadiness?: NativeCaptureReadiness;
+  activityStatus?: NativeActivityStatus;
+  failureReason?: string;
+  queueRevision?: number;
 };
+
+type NativeTrailSnapshot = { queueRevision: number; points: LocalTrailPoint[] };
 
 export type NativePublishingConfiguration = {
   endpoint: string;
   token: string;
   liveTrailEnabled: boolean;
+  emissionIntervalSeconds: LiveGpsUploadIntervalSeconds;
   alertThresholdSeconds: number;
   cloakTimeoutSeconds: number;
   cloakZones: Array<{ lat: number; lon: number; radiusMeters: number }>;
 };
 
 interface AdaptiveLocationPlugin {
-  start(): Promise<AdaptiveLocationEvent>;
+  start(options?: { trigger?: "javascript" | "retry" }): Promise<AdaptiveLocationEvent>;
   stop(options?: NativeStopOptions): Promise<AdaptiveLocationEvent>;
   configurePublishing(options: NativePublishingConfiguration): Promise<AdaptiveLocationEvent>;
   foreground(): Promise<AdaptiveLocationEvent>;
   setCalibrationActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
   getState(): Promise<AdaptiveLocationEvent>;
+  getLocalTrailSnapshot(): Promise<NativeTrailSnapshot>;
   addListener(
     eventName: "locationUpdate",
     listener: (event: AdaptiveLocationEvent) => void,
@@ -109,6 +126,7 @@ class NativeLocationManager {
   private syncPromise: Promise<void> = Promise.resolve();
   private lastCallbackAt: number | null = null;
   private hasAttemptedAlreadyStartedRecovery = false;
+  private publishingConfigurationPromise: Promise<AdaptiveLocationEvent> | null = null;
 
   public addWatcher(
     options: WatcherOptions,
@@ -145,6 +163,7 @@ class NativeLocationManager {
       });
     });
     setNativeTrackingMode("off");
+    resetNativeReadinessState();
     if (options.pendingSamples !== "preserve") resetNativePublishingState();
   }
 
@@ -153,8 +172,27 @@ class NativeLocationManager {
   }
 
   public async configurePublishing(options: NativePublishingConfiguration): Promise<void> {
-    const state = await AdaptiveLocation.configurePublishing(options);
+    const pending = AdaptiveLocation.configurePublishing(options);
+    this.publishingConfigurationPromise = pending;
+    try {
+      const state = await pending;
+      this.applyAdaptiveState(state);
+    } catch (error) {
+      setNativeReadinessState({ captureReadiness: "degraded", failureReason: "configuration-failed" });
+      throw error;
+    }
+  }
+
+  public async retryAdaptiveStart(): Promise<void> {
+    markNativeCaptureStarting();
+    if (this.publishingConfigurationPromise) await this.publishingConfigurationPromise;
+    const state = await AdaptiveLocation.start({ trigger: "retry" });
+    this.adaptiveStarted = true;
     this.applyAdaptiveState(state);
+  }
+
+  public async getLocalTrailSnapshot(): Promise<NativeTrailSnapshot> {
+    return AdaptiveLocation.getLocalTrailSnapshot();
   }
 
   public foreground(): void {
@@ -169,6 +207,9 @@ class NativeLocationManager {
     this.syncPromise = this.syncPromise
       .then(() => this.syncPlugin())
       .catch((error) => {
+        if (this.watchers.some((watcher) => watcher.options.purpose === "live" && watcher.options.adaptive)) {
+          setNativeReadinessState({ captureReadiness: "degraded", failureReason: "native-start-failed" });
+        }
         log.error("gps:native:sync:error", "error", {
           errorType: error instanceof Error ? error.name : typeof error,
         });
@@ -288,9 +329,9 @@ class NativeLocationManager {
       );
     }
 
-    const state = this.adaptiveStarted
-      ? await AdaptiveLocation.getState()
-      : await AdaptiveLocation.start();
+    markNativeCaptureStarting();
+    if (this.publishingConfigurationPromise) await this.publishingConfigurationPromise;
+    const state = await AdaptiveLocation.start({ trigger: "javascript" });
     this.adaptiveStarted = true;
     this.applyAdaptiveState(state);
     const calibratedState = await AdaptiveLocation.setCalibrationActive({
@@ -329,6 +370,17 @@ class NativeLocationManager {
   }
 
   private applyAdaptiveState(event: AdaptiveLocationEvent): void {
+    if (
+      event.captureReadiness || event.activityStatus || event.failureReason ||
+      typeof event.queueRevision === "number"
+    ) {
+      setNativeReadinessState({
+        ...(event.captureReadiness ? { captureReadiness: event.captureReadiness } : {}),
+        ...(event.activityStatus ? { activityStatus: event.activityStatus } : {}),
+        ...("failureReason" in event ? { failureReason: event.failureReason ?? null } : {}),
+        ...(typeof event.queueRevision === "number" ? { queueRevision: event.queueRevision } : {}),
+      });
+    }
     if (
       event.publishingPhase ||
       typeof event.queueDepth === "number" ||
