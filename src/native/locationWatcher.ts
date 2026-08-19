@@ -66,8 +66,8 @@ export function startNativeLocationWatch(
   };
 }
 
-export function stopNativeLocationTracking(options: NativeStopOptions = {}): void {
-  nativeLocationManager.explicitStop(options);
+export function stopNativeLocationTracking(options: NativeStopOptions = {}): Promise<void> {
+  return nativeLocationManager.explicitStop(options);
 }
 
 export function isAdaptiveNativeTrackingActive(): boolean {

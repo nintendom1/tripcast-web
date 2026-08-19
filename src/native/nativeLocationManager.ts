@@ -127,6 +127,7 @@ class NativeLocationManager {
   private lastCallbackAt: number | null = null;
   private hasAttemptedAlreadyStartedRecovery = false;
   private publishingConfigurationPromise: Promise<AdaptiveLocationEvent> | null = null;
+  private adaptiveStopRequested = false;
 
   public addWatcher(
     options: WatcherOptions,
@@ -135,6 +136,9 @@ class NativeLocationManager {
   ): string {
     const id = String(this.nextId++);
     this.watchers.push({ id, options, onFix, onError });
+    if (options.purpose === "live" && options.adaptive === true) {
+      this.adaptiveStopRequested = false;
+    }
     this.scheduleSync();
     return id;
   }
@@ -148,16 +152,31 @@ class NativeLocationManager {
     void BackgroundGeolocation.openSettings();
   }
 
-  public explicitStop(options: NativeStopOptions = {}): void {
+  public explicitStop(options: NativeStopOptions = {}): Promise<void> {
+    this.adaptiveStopRequested = true;
     this.adaptiveStarted = false;
-    if (this.isStarted) {
-      this.isStarted = false;
-      this.currentOptions = null;
-      void BackgroundGeolocation.stop().catch(() => {});
-    }
-    void AdaptiveLocation.stop(options).then((event) => {
-      this.applyAdaptiveState(event);
-    }).catch((error) => {
+    log.logGps("gps:adaptive:stop:requested", {
+      preserveSamples: options.pendingSamples === "preserve",
+      clearCredentials: options.clearCredentials === true,
+    });
+    // Submit teardown to both native plugins immediately. Waiting for the
+    // existing JS command chain before crossing the bridge would let iOS
+    // suspend the WebView while an older start was still resolving.
+    const legacyStop = this.isStarted
+      ? BackgroundGeolocation.stop()
+      : Promise.resolve();
+    this.isStarted = false;
+    this.currentOptions = null;
+    const adaptiveStop = AdaptiveLocation.stop(options);
+    const nativeStop = Promise.all([legacyStop, adaptiveStop])
+      .then(([, event]) => {
+        this.applyAdaptiveState(event);
+        log.logGps("gps:adaptive:stop:acknowledged", {
+          preserveSamples: options.pendingSamples === "preserve",
+        });
+      });
+    const operation = Promise.all([this.syncPromise.catch(() => {}), nativeStop]).then(() => {});
+    this.syncPromise = operation.catch((error) => {
       log.error("gps:adaptive:stop:failure", "error", {
         errorType: error instanceof Error ? error.name : typeof error,
       });
@@ -165,6 +184,7 @@ class NativeLocationManager {
     setNativeTrackingMode("off");
     resetNativeReadinessState();
     if (options.pendingSamples !== "preserve") resetNativePublishingState();
+    return operation;
   }
 
   public isAdaptiveActive(): boolean {
@@ -184,11 +204,24 @@ class NativeLocationManager {
   }
 
   public async retryAdaptiveStart(): Promise<void> {
-    markNativeCaptureStarting();
-    if (this.publishingConfigurationPromise) await this.publishingConfigurationPromise;
-    const state = await AdaptiveLocation.start({ trigger: "retry" });
-    this.adaptiveStarted = true;
-    this.applyAdaptiveState(state);
+    this.adaptiveStopRequested = false;
+    const operation = this.syncPromise
+      .catch(() => {})
+      .then(async () => {
+        if (!this.hasAdaptiveLiveWatcher()) return;
+        markNativeCaptureStarting();
+        if (this.publishingConfigurationPromise) await this.publishingConfigurationPromise;
+        if (this.adaptiveStopRequested || !this.hasAdaptiveLiveWatcher()) return;
+        const state = await AdaptiveLocation.start({ trigger: "retry" });
+        if (this.adaptiveStopRequested || !this.hasAdaptiveLiveWatcher()) {
+          await AdaptiveLocation.stop({ pendingSamples: "preserve" });
+          return;
+        }
+        this.adaptiveStarted = true;
+        this.applyAdaptiveState(state);
+      });
+    this.syncPromise = operation.catch(() => {});
+    return operation;
   }
 
   public async getLocalTrailSnapshot(): Promise<NativeTrailSnapshot> {
@@ -196,7 +229,18 @@ class NativeLocationManager {
   }
 
   public foreground(): void {
-    void AdaptiveLocation.foreground().then((state) => this.applyAdaptiveState(state)).catch((error) => {
+    if (this.adaptiveStopRequested) {
+      void this.explicitStop({ pendingSamples: "preserve" });
+      return;
+    }
+    const operation = this.syncPromise
+      .catch(() => {})
+      .then(async () => {
+        if (this.adaptiveStopRequested) return;
+        const state = await AdaptiveLocation.foreground();
+        this.applyAdaptiveState(state);
+      });
+    this.syncPromise = operation.catch((error) => {
       log.error("gps:adaptive:foreground:failure", "error", {
         errorType: error instanceof Error ? error.name : typeof error,
       });
@@ -234,9 +278,7 @@ class NativeLocationManager {
   }
 
   private async syncPlugin(): Promise<void> {
-    const adaptiveLive = this.watchers.some(
-      (watcher) => watcher.options.purpose === "live" && watcher.options.adaptive === true,
-    );
+    const adaptiveLive = this.hasAdaptiveLiveWatcher();
 
     if (adaptiveLive) {
       await this.syncAdaptivePlugin();
@@ -316,6 +358,7 @@ class NativeLocationManager {
   }
 
   private async syncAdaptivePlugin(): Promise<void> {
+    if (this.adaptiveStopRequested || !this.hasAdaptiveLiveWatcher()) return;
     if (this.isStarted) {
       await BackgroundGeolocation.stop();
       this.isStarted = false;
@@ -331,7 +374,12 @@ class NativeLocationManager {
 
     markNativeCaptureStarting();
     if (this.publishingConfigurationPromise) await this.publishingConfigurationPromise;
+    if (this.adaptiveStopRequested || !this.hasAdaptiveLiveWatcher()) return;
     const state = await AdaptiveLocation.start({ trigger: "javascript" });
+    if (this.adaptiveStopRequested || !this.hasAdaptiveLiveWatcher()) {
+      await AdaptiveLocation.stop({ pendingSamples: "preserve" });
+      return;
+    }
     this.adaptiveStarted = true;
     this.applyAdaptiveState(state);
     const calibratedState = await AdaptiveLocation.setCalibrationActive({
@@ -341,6 +389,12 @@ class NativeLocationManager {
       ),
     });
     this.applyAdaptiveState(calibratedState);
+  }
+
+  private hasAdaptiveLiveWatcher(): boolean {
+    return this.watchers.some(
+      (watcher) => watcher.options.purpose === "live" && watcher.options.adaptive === true,
+    );
   }
 
   private handleAdaptiveEvent(event: AdaptiveLocationEvent): void {

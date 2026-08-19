@@ -123,7 +123,10 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func bootstrapLocationRelaunch() {
-        guard defaults.bool(forKey: DefaultsKey.liveRequested) else { return }
+        guard defaults.bool(forKey: DefaultsKey.liveRequested) else {
+            LiveActivityController.shared.stop()
+            return
+        }
         restorePersistedState()
         coordinateStart(trigger: "restored", completion: nil)
     }
@@ -190,6 +193,13 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         preserveSamples: Bool = false,
         completion: ((JSObject) -> Void)? = nil
     ) {
+        emit([
+            "action": "gps:adaptive:stop:requested",
+            "details": [
+                "preserveSamples": preserveSamples,
+                "clearCredentials": clearCredentials
+            ]
+        ])
         liveRequested = false
         calibrationActive = false
         stationaryTimer?.invalidate()
@@ -218,6 +228,10 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             guard let self else { return }
             self.mergePublishingState(state)
             let result = self.currentState()
+            self.emit([
+                "action": "gps:adaptive:stop:completed",
+                "details": ["preserveSamples": preserveSamples]
+            ])
             self.emit(result)
             completion?(result)
         }
@@ -298,6 +312,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             return
         }
         guard liveRequested else {
+            LiveActivityController.shared.stop()
             completion?(currentState())
             return
         }

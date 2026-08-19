@@ -643,9 +643,13 @@ private final class AvailableLiveActivityController: NSObject {
     }
 
     func stop() {
-        guard let activity else { return }
+        let activities = Activity<TripCastLiveActivityAttributes>.activities
         self.activity = nil
         lastState = nil
-        Task { await activity.end(dismissalPolicy: .immediate) }
+        Task {
+            for activity in activities {
+                await activity.end(dismissalPolicy: .immediate)
+            }
+        }
     }
 }

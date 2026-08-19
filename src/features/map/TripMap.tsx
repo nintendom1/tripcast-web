@@ -1328,6 +1328,7 @@ export default function TripMap({
   const cloakToastShownRef = useRef(false);
   const cloakAutoShutoffFiredRef = useRef(false);
   const nativePublishingReadyRef = useRef(false);
+  const nativeOffReconciledRef = useRef(false);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   // Focus-observability: pendingFocusRef carries the in-flight focus so the next
   // programmatic moveend can log where the pin actually settled; focusAdjustArmRef
@@ -3283,6 +3284,25 @@ export default function TripMap({
   }, [isLocationSharing]);
 
   useEffect(() => {
+    if (
+      role !== "traveler" ||
+      isLocationSharing ||
+      nativeOffReconciledRef.current ||
+      !isAdaptiveLocationAvailable()
+    ) {
+      if (isLocationSharing) nativeOffReconciledRef.current = false;
+      return;
+    }
+    nativeOffReconciledRef.current = true;
+    void stopNativeLocationTracking({ pendingSamples: "preserve" }).catch((error) => {
+      nativeOffReconciledRef.current = false;
+      log.error("gps:adaptive:off-reconcile-failure", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+    });
+  }, [isLocationSharing, log, role]);
+
+  useEffect(() => {
     isFollowingRef.current = isFollowing;
   }, [isFollowing]);
 
@@ -4076,6 +4096,20 @@ export default function TripMap({
       });
       if (nextActive) {
         if (
+          !isLocationSharingRef.current &&
+          !nativeOffReconciledRef.current &&
+          isAdaptiveLocationAvailable()
+        ) {
+          nativeOffReconciledRef.current = true;
+          void stopNativeLocationTracking({ pendingSamples: "preserve" }).catch((error) => {
+            nativeOffReconciledRef.current = false;
+            log.error("gps:adaptive:off-reconcile-failure", "error", {
+              errorType: error instanceof Error ? error.name : typeof error,
+              trigger: "foreground",
+            });
+          });
+        }
+        if (
           isLocationSharingRef.current &&
           adaptiveGpsEnabled &&
           isAdaptiveLocationAvailable()
@@ -4313,7 +4347,18 @@ export default function TripMap({
       publishLiveTrailSample(livePosition, livePosition.accuracy, true);
     }
     isLocationSharingRef.current = false;
-    stopNativeLocationTracking({ pendingSamples });
+    nativeOffReconciledRef.current = true;
+    try {
+      localStorage.setItem("tripcast.live-sharing.enabled", "false");
+    } catch {
+      // The in-memory Off state remains authoritative for this session.
+    }
+    void stopNativeLocationTracking({ pendingSamples }).catch((error) => {
+      nativeOffReconciledRef.current = false;
+      log.error("gps:adaptive:stop-unacknowledged", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+    });
     if (pendingSamples === "discard") {
       localTrailSnapshotRef.current = null;
       setLocalTrailPoints([]);
@@ -4383,6 +4428,12 @@ export default function TripMap({
         return;
       }
       isLocationSharingRef.current = true;
+      nativeOffReconciledRef.current = false;
+      try {
+        localStorage.setItem("tripcast.live-sharing.enabled", "true");
+      } catch {
+        // The mount synchronization effect will retry if storage becomes available.
+      }
       setIsLocationSharing(true);
       if (livePosition) {
         publishTravelerLocation(livePosition, livePosition.accuracy);

@@ -4,14 +4,25 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   stop: vi.fn(),
   openSettings: vi.fn(),
+  adaptiveStart: vi.fn(),
+  adaptiveStop: vi.fn(),
+  adaptiveAddListener: vi.fn(),
+  adaptiveSetCalibrationActive: vi.fn(),
 }));
 
 vi.mock("@capacitor/core", () => ({
-  registerPlugin: () => ({
-    start: mocks.start,
-    stop: mocks.stop,
-    openSettings: mocks.openSettings,
-  }),
+  registerPlugin: (name: string) => name === "AdaptiveLocation"
+    ? {
+        start: mocks.adaptiveStart,
+        stop: mocks.adaptiveStop,
+        addListener: mocks.adaptiveAddListener,
+        setCalibrationActive: mocks.adaptiveSetCalibrationActive,
+      }
+    : {
+        start: mocks.start,
+        stop: mocks.stop,
+        openSettings: mocks.openSettings,
+      },
 }));
 
 import { nativeLocationManager } from "./nativeLocationManager";
@@ -21,6 +32,14 @@ describe("nativeLocationManager", () => {
     vi.clearAllMocks();
     mocks.start.mockResolvedValue(undefined);
     mocks.stop.mockResolvedValue(undefined);
+    mocks.adaptiveStart.mockResolvedValue({ mode: "precise", liveRequested: true, changedAt: 1 });
+    mocks.adaptiveStop.mockResolvedValue({ mode: "off", liveRequested: false, changedAt: 2 });
+    mocks.adaptiveAddListener.mockResolvedValue({ remove: vi.fn() });
+    mocks.adaptiveSetCalibrationActive.mockResolvedValue({
+      mode: "precise",
+      liveRequested: true,
+      changedAt: 1,
+    });
     // Reset private state for testing
     // @ts-expect-error accessing private for test
     nativeLocationManager.watchers = [];
@@ -28,6 +47,14 @@ describe("nativeLocationManager", () => {
     nativeLocationManager.isStarted = false;
     // @ts-expect-error accessing private for test
     nativeLocationManager.currentOptions = null;
+    // @ts-expect-error accessing private for test
+    nativeLocationManager.adaptiveStarted = false;
+    // @ts-expect-error accessing private for test
+    nativeLocationManager.adaptiveListener = null;
+    // @ts-expect-error accessing private for test
+    nativeLocationManager.adaptiveStopRequested = false;
+    // @ts-expect-error accessing private for test
+    nativeLocationManager.publishingConfigurationPromise = null;
     // @ts-expect-error accessing private for test
     nativeLocationManager.syncPromise = Promise.resolve();
   });
@@ -203,5 +230,44 @@ describe("nativeLocationManager", () => {
 
     expect(mocks.start).toHaveBeenCalledTimes(3);
     expect(mocks.start.mock.calls[2][0].distanceFilter).toBe(50);
+  });
+
+  it("keeps a requested stop authoritative over a late adaptive start", async () => {
+    let resolveStart!: (value: { mode: "precise"; liveRequested: true; changedAt: number }) => void;
+    mocks.adaptiveStart.mockReturnValueOnce(new Promise((resolve) => {
+      resolveStart = resolve;
+    }));
+    nativeLocationManager.addWatcher(
+      { distanceFilter: 50, purpose: "live", adaptive: true },
+      vi.fn(),
+      vi.fn(),
+    );
+    await vi.waitFor(() => expect(mocks.adaptiveStart).toHaveBeenCalledTimes(1));
+
+    const stopPromise = nativeLocationManager.explicitStop({ pendingSamples: "preserve" });
+    resolveStart({ mode: "precise", liveRequested: true, changedAt: 1 });
+    await stopPromise;
+
+    expect(mocks.adaptiveStop).toHaveBeenCalled();
+    // @ts-expect-error accessing private for test
+    expect(nativeLocationManager.adaptiveStarted).toBe(false);
+  });
+
+  it("does not acknowledge an explicit stop before the native stop resolves", async () => {
+    let resolveStop!: (value: { mode: "off"; liveRequested: false; changedAt: number }) => void;
+    mocks.adaptiveStop.mockReturnValueOnce(new Promise((resolve) => {
+      resolveStop = resolve;
+    }));
+    let acknowledged = false;
+
+    const stopPromise = nativeLocationManager.explicitStop().then(() => {
+      acknowledged = true;
+    });
+    await Promise.resolve();
+    expect(acknowledged).toBe(false);
+
+    resolveStop({ mode: "off", liveRequested: false, changedAt: 2 });
+    await stopPromise;
+    expect(acknowledged).toBe(true);
   });
 });
