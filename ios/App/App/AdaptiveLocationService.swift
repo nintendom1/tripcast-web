@@ -575,9 +575,6 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         manager.activityType = .fitness
         manager.allowsBackgroundLocationUpdates = true
         manager.pausesLocationUpdatesAutomatically = true
-        if #available(iOS 11.0, *) {
-            manager.showsBackgroundLocationIndicator = true
-        }
     }
 
     private func enterPowerSavingMode(anchor: CLLocation?, reason: String) {
@@ -609,9 +606,6 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         manager.activityType = .fitness
         manager.allowsBackgroundLocationUpdates = true
         manager.pausesLocationUpdatesAutomatically = true
-        if #available(iOS 11.0, *) {
-            manager.showsBackgroundLocationIndicator = true
-        }
         manager.stopUpdatingLocation()
         standardUpdatesRunning = false
         manager.startMonitoringSignificantLocationChanges()
