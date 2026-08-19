@@ -14,6 +14,7 @@ struct TripCastLiveActivityWidget: Widget {
         ActivityConfiguration(for: TripCastLiveActivityAttributes.self) { context in
             HStack(spacing: 12) {
                 brandedIcon(size: 36, health: context.state.health)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title(context.state.mode))
                         .font(.headline)
@@ -29,25 +30,30 @@ struct TripCastLiveActivityWidget: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 7) {
                         brandedIcon(size: 24, health: context.state.health)
+                            .accessibilityHidden(true)
                         Text(title(context.state.mode))
                     }
                 }
-                DynamicIslandExpandedRegion(.trailing) {
-                    Circle()
-                        .fill(statusColor(context.state.health))
-                        .frame(width: 10, height: 10)
-                }
                 DynamicIslandExpandedRegion(.bottom) {
-                    statusLines(context.state)
+                    expandedStatusLines(context.state)
                 }
             } compactLeading: {
-                brandedIcon(size: 20, health: context.state.health)
+                accessibleBrandedIcon(size: 20, state: context.state)
             } compactTrailing: {
-                compactTimer(context.state)
+                EmptyView()
             } minimal: {
-                brandedIcon(size: 20, health: context.state.health)
+                accessibleBrandedIcon(size: 20, state: context.state)
             }
         }
+    }
+
+    private func accessibleBrandedIcon(
+        size: CGFloat,
+        state: TripCastLiveActivityAttributes.ContentState
+    ) -> some View {
+        brandedIcon(size: size, health: state.health)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(accessibilitySummary(state)))
     }
 
     private func brandedIcon(size: CGFloat, health: String) -> some View {
@@ -79,7 +85,6 @@ struct TripCastLiveActivityWidget: Widget {
                     }
             }
             .unredacted()
-            .accessibilityHidden(true)
     }
 
     private func title(_ mode: String) -> String {
@@ -99,6 +104,25 @@ struct TripCastLiveActivityWidget: Widget {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
             if let date = state.lastAcknowledgedAt, state.mode != "privacy" {
+                (Text("Server confirmed ") + Text(date, style: .relative) + Text(" ago"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+    }
+
+    private func expandedStatusLines(
+        _ state: TripCastLiveActivityAttributes.ContentState
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(state.message)
+                .font(.subheadline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            if let date = state.lastAcknowledgedAt,
+               state.mode == "recovering" || state.health == "stale" {
                 (Text("Server confirmed ") + Text(date, style: .relative) + Text(" ago"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -134,15 +158,10 @@ struct TripCastLiveActivityWidget: Widget {
         }
     }
 
-    @ViewBuilder
-    private func compactTimer(_ state: TripCastLiveActivityAttributes.ContentState) -> some View {
-        if let date = state.lastAcknowledgedAt,
-           state.mode != "power-saving", state.mode != "privacy" {
-            Text(date, style: .relative)
-                .monospacedDigit()
-        } else {
-            Image(systemName: state.mode == "power-saving" ? "leaf.fill" : "eye.slash.fill")
-        }
+    private func accessibilitySummary(
+        _ state: TripCastLiveActivityAttributes.ContentState
+    ) -> String {
+        "\(title(state.mode)), \(state.message)"
     }
 
     private func statusColor(_ health: String) -> Color {
