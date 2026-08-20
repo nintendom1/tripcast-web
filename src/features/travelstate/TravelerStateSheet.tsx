@@ -13,12 +13,6 @@ import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
 import { Capacitor } from "@capacitor/core";
 import { tripcastApi } from "../../convex/tripcastApi";
-import {
-  mphToMps,
-  mpsToMph,
-  DEFAULT_WALKING_MPH,
-  DEFAULT_MOVING_MPH,
-} from "../../lib/movementUnits";
 import type {
   AutoState,
   CurrentActivity,
@@ -53,12 +47,12 @@ import {
 } from "./travelerStateUtils";
 import { formatSaveError } from "./formatSaveError";
 import AutoStateTab, { type AutoStateFooterAction } from "./AutoStateTab";
-import MovementDebugModal from "./MovementDebugModal";
+import MotionDiagnosticsModal from "./MotionDiagnosticsModal";
 import {
-  useMovementDebugRecords,
-  type AlmostRecord,
-  type TriggeredRecord,
-} from "../../providers/MovementDebugProvider";
+  DEFAULT_MOTION_ACTIVITY_VALUES,
+  MovementDetectionSettings,
+  type MotionActivityValues,
+} from "./MovementDetectionSettings";
 import { computeAutoState } from "./autoStateCalc";
 import { TERMS } from "../../copy/terminology";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
@@ -262,45 +256,6 @@ function ToggleRow({
   );
 }
 
-function MovementEventStrip({
-  triggered,
-  almost,
-  formatSpeed,
-  unitLabel,
-  triggeredLabel,
-}: {
-  triggered: TriggeredRecord | null;
-  almost: AlmostRecord | null;
-  formatSpeed: (mps: number) => string;
-  unitLabel: string;
-  triggeredLabel: string;
-}) {
-  return (
-    <div className="grid gap-0.5 text-[11px] text-[var(--ink-3)]">
-      <div>
-        Last triggered:{" "}
-        {triggered ? (
-          <span className="text-[var(--ink-2)]">
-            {formatRelativeTime(triggered.timestamp)} · {triggeredLabel} @ {formatSpeed(triggered.speedMps)} {unitLabel}
-          </span>
-        ) : (
-          <span>—</span>
-        )}
-      </div>
-      <div>
-        Last almost:{" "}
-        {almost ? (
-          <span className="text-[var(--ink-2)]">
-            {formatRelativeTime(almost.timestamp)} · {formatSpeed(almost.speedMps)} {unitLabel} (threshold {formatSpeed(almost.thresholdMps)} {unitLabel})
-          </span>
-        ) : (
-          <span>—</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
 /** Grouped "segment" of the State form — a titled card that reduces density by
  *  visually separating the bars, the chip pickers, notes, and biometrics. */
 function StateSegment({
@@ -418,16 +373,12 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   const [sleepEnd, setSleepEnd] = useState("07:00");
   const [sleepThresholdMs, setSleepThresholdMs] = useState(3_600_000);
 
-  const movementDebug = useMovementDebugRecords();
   const [showDebugModal, setShowDebugModal] = useState(false);
 
   const [movementEnabled, setMovementEnabled] = useState(false);
-  const [walkingLabel, setWalkingLabel] = useState("Walking");
-  const [walkingEmoji, setWalkingEmoji] = useState("🚶");
-  const [walkingMph, setWalkingMph] = useState<number>(DEFAULT_WALKING_MPH);
-  const [movingLabel, setMovingLabel] = useState("Moving");
-  const [movingEmoji, setMovingEmoji] = useState("🚄");
-  const [movingMph, setMovingMph] = useState<number>(DEFAULT_MOVING_MPH);
+  const [motionActivities, setMotionActivities] = useState<MotionActivityValues>(
+    DEFAULT_MOTION_ACTIVITY_VALUES,
+  );
   const [movementOverridesSleep, setMovementOverridesSleep] = useState(true);
 
   // Visibility form
@@ -567,14 +518,24 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
       setSleepEnd(utcMinutesToLocalTimeString(prefs.sleepEndMinutes));
     setSleepThresholdMs(prefs.sleepStaleThresholdMs ?? 3_600_000);
     setMovementEnabled(prefs.movementDetectionEnabled ?? false);
-    if (prefs.movementWalkingLabel !== undefined) setWalkingLabel(prefs.movementWalkingLabel);
-    if (prefs.movementWalkingEmoji !== undefined) setWalkingEmoji(prefs.movementWalkingEmoji);
-    if (prefs.movementWalkingThresholdMps !== undefined)
-      setWalkingMph(Number(mpsToMph(prefs.movementWalkingThresholdMps).toFixed(1)));
-    if (prefs.movementMovingLabel !== undefined) setMovingLabel(prefs.movementMovingLabel);
-    if (prefs.movementMovingEmoji !== undefined) setMovingEmoji(prefs.movementMovingEmoji);
-    if (prefs.movementMovingThresholdMps !== undefined)
-      setMovingMph(Math.round(mpsToMph(prefs.movementMovingThresholdMps) * 10) / 10);
+    setMotionActivities({
+      walking: {
+        label: prefs.movementWalkingLabel ?? DEFAULT_MOTION_ACTIVITY_VALUES.walking.label,
+        emoji: prefs.movementWalkingEmoji ?? DEFAULT_MOTION_ACTIVITY_VALUES.walking.emoji,
+      },
+      running: {
+        label: prefs.movementRunningLabel ?? DEFAULT_MOTION_ACTIVITY_VALUES.running.label,
+        emoji: prefs.movementRunningEmoji ?? DEFAULT_MOTION_ACTIVITY_VALUES.running.emoji,
+      },
+      cycling: {
+        label: prefs.movementCyclingLabel ?? DEFAULT_MOTION_ACTIVITY_VALUES.cycling.label,
+        emoji: prefs.movementCyclingEmoji ?? DEFAULT_MOTION_ACTIVITY_VALUES.cycling.emoji,
+      },
+      automotive: {
+        label: prefs.movementVehicleLabel ?? DEFAULT_MOTION_ACTIVITY_VALUES.automotive.label,
+        emoji: prefs.movementVehicleEmoji ?? DEFAULT_MOTION_ACTIVITY_VALUES.automotive.emoji,
+      },
+    });
     if (prefs.movementOverridesSleep !== undefined)
       setMovementOverridesSleep(prefs.movementOverridesSleep);
   }, [prefs]);
@@ -1219,150 +1180,24 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
             <StateSegment
               title="Movement detection"
-              hint="Auto-sets your activity from GPS while Live is on."
+              hint="Auto-sets your activity from iOS motion while Live is on."
             >
-              <ToggleRow
-                label="Detect movement while Live is on"
-                checked={movementEnabled}
-                onChange={(v) => {
-                  setMovementEnabled(v);
-                  updateMovementDetection({ token, movementDetectionEnabled: v }).catch(() => {});
+              <MovementDetectionSettings
+                enabled={movementEnabled}
+                activities={motionActivities}
+                overridesSleep={movementOverridesSleep}
+                nativePlatform={Capacitor.isNativePlatform()}
+                onEnabledChange={setMovementEnabled}
+                onActivitiesChange={setMotionActivities}
+                onOverridesSleepChange={setMovementOverridesSleep}
+                onUpdate={(update) => {
+                  updateMovementDetection({ token, ...update }).catch(() => {});
+                }}
+                onOpenDiagnostics={() => {
+                  log.logInteraction("motion-diagnostics:open", {});
+                  setShowDebugModal(true);
                 }}
               />
-              {movementEnabled && (
-                <div className="grid gap-3 pt-2">
-                  {!Capacitor.isNativePlatform() && (
-                    <p className="rounded-md border border-[var(--line-soft)] bg-[var(--meter-track)] px-3 py-2 text-xs text-[var(--ink-2)]">
-                      Requires the iOS app — settings are saved but detection only runs on the native build.
-                    </p>
-                  )}
-
-                  {/* Walking band */}
-                  <div className="grid gap-1.5">
-                    <label className={stateLabelClass}>Walking</label>
-                    <div className="flex flex-wrap gap-2 sm:grid sm:grid-cols-[72px_1fr_120px]">
-                      <input
-                        type="text"
-                        value={walkingEmoji}
-                        onChange={(e) => setWalkingEmoji(e.target.value.slice(0, 10))}
-                        onBlur={() =>
-                          updateMovementDetection({ token, movementWalkingEmoji: walkingEmoji.trim() || "🚶" }).catch(() => {})
-                        }
-                        maxLength={10}
-                        placeholder="🚶"
-                        aria-label="Walking emoji"
-                        className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
-                      />
-                      <input
-                        type="text"
-                        value={walkingLabel}
-                        onChange={(e) => setWalkingLabel(e.target.value.slice(0, 80))}
-                        onBlur={() =>
-                          updateMovementDetection({ token, movementWalkingLabel: walkingLabel.trim() || "Walking" }).catch(() => {})
-                        }
-                        aria-label="Walking label"
-                        className={cn("h-9 px-3 text-sm", stateInputClass)}
-                      />
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0.1}
-                          step={0.1}
-                          inputMode="decimal"
-                          value={walkingMph}
-                          onChange={(e) => setWalkingMph(Number(e.target.value) || 0)}
-                          onBlur={() => {
-                            const v = walkingMph > 0 ? walkingMph : DEFAULT_WALKING_MPH;
-                            updateMovementDetection({ token, movementWalkingThresholdMps: mphToMps(v) }).catch(() => {});
-                          }}
-                          aria-label="Walking threshold (mph)"
-                          className={cn("h-9 w-20 px-2 text-sm", stateInputClass)}
-                        />
-                        <span className={stateHintClass}>mph</span>
-                      </div>
-                    </div>
-                    <MovementEventStrip
-                      triggered={movementDebug.lastTriggeredWalking}
-                      almost={movementDebug.lastAlmostTriggeredWalking}
-                      formatSpeed={(mps) => mpsToMph(mps).toFixed(1)}
-                      unitLabel="mph"
-                      triggeredLabel="Walking"
-                    />
-                  </div>
-
-                  {/* Moving band */}
-                  <div className="grid gap-1.5">
-                    <label className={stateLabelClass}>Moving</label>
-                    <div className="flex flex-wrap gap-2 sm:grid sm:grid-cols-[72px_1fr_120px]">
-                      <input
-                        type="text"
-                        value={movingEmoji}
-                        onChange={(e) => setMovingEmoji(e.target.value.slice(0, 10))}
-                        onBlur={() =>
-                          updateMovementDetection({ token, movementMovingEmoji: movingEmoji.trim() || "🚄" }).catch(() => {})
-                        }
-                        maxLength={10}
-                        placeholder="🚄"
-                        aria-label="Moving emoji"
-                        className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
-                      />
-                      <input
-                        type="text"
-                        value={movingLabel}
-                        onChange={(e) => setMovingLabel(e.target.value.slice(0, 80))}
-                        onBlur={() =>
-                          updateMovementDetection({ token, movementMovingLabel: movingLabel.trim() || "Moving" }).catch(() => {})
-                        }
-                        aria-label="Moving label"
-                        className={cn("h-9 px-3 text-sm", stateInputClass)}
-                      />
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min={0.1}
-                          step={1}
-                          value={movingMph}
-                          onChange={(e) => setMovingMph(Number(e.target.value) || 0)}
-                          onBlur={() => {
-                            const v = movingMph > 0 ? movingMph : DEFAULT_MOVING_MPH;
-                            updateMovementDetection({ token, movementMovingThresholdMps: mphToMps(v) }).catch(() => {});
-                          }}
-                          aria-label="Moving threshold (mph)"
-                          className={cn("h-9 w-20 px-2 text-sm", stateInputClass)}
-                        />
-                        <span className={stateHintClass}>mph</span>
-                      </div>
-                    </div>
-                    <MovementEventStrip
-                      triggered={movementDebug.lastTriggeredMoving}
-                      almost={movementDebug.lastAlmostTriggeredMoving}
-                      formatSpeed={(mps) => mpsToMph(mps).toFixed(1)}
-                      unitLabel="mph"
-                      triggeredLabel="Moving"
-                    />
-                  </div>
-
-                  <ToggleRow
-                    label="Movement overrides Sleeping"
-                    checked={movementOverridesSleep}
-                    onChange={(v) => {
-                      setMovementOverridesSleep(v);
-                      updateMovementDetection({ token, movementOverridesSleep: v }).catch(() => {});
-                    }}
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      log.logInteraction("debug-modal:open", {});
-                      setShowDebugModal(true);
-                    }}
-                    className="rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm font-medium text-[var(--ink-2)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
-                  >
-                    Calibration & Debug
-                  </button>
-                </div>
-              )}
             </StateSegment>
           </div>
         )}
@@ -1434,10 +1269,9 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     </motion.div>
     <AnimatePresence>
       {showDebugModal ? (
-        <MovementDebugModal
-          token={token}
+        <MotionDiagnosticsModal
           onClose={() => {
-            log.logInteraction("debug-modal:close", {});
+            log.logInteraction("motion-diagnostics:close", {});
             setShowDebugModal(false);
           }}
         />

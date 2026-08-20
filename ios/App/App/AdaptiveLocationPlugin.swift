@@ -11,7 +11,7 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "configurePublishing", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "foreground", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "setCalibrationActive", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setHighFrequencyActive", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLocalTrailSnapshot", returnType: CAPPluginReturnPromise)
     ]
@@ -61,6 +61,7 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
                 endpoint: endpoint,
                 token: token,
                 liveTrailEnabled: call.getBool("liveTrailEnabled") ?? false,
+                movementDetectionEnabled: call.getBool("movementDetectionEnabled") ?? false,
                 emissionIntervalSeconds: call.getInt("emissionIntervalSeconds") ?? 15,
                 alertThresholdSeconds: call.getDouble("alertThresholdSeconds") ?? 120,
                 cloakTimeoutSeconds: call.getDouble("cloakTimeoutSeconds") ?? 300,
@@ -81,9 +82,9 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc func setCalibrationActive(_ call: CAPPluginCall) {
+    @objc func setHighFrequencyActive(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
-            AdaptiveLocationService.shared.setCalibrationActive(call.getBool("active") ?? false)
+            AdaptiveLocationService.shared.setHighFrequencyActive(call.getBool("active") ?? false)
             call.resolve(AdaptiveLocationService.shared.currentState())
         }
     }

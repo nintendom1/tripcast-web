@@ -20,6 +20,13 @@ import {
   type NativeCaptureReadiness,
 } from "./nativeReadinessState";
 import type { LocalTrailPoint } from "../features/map/usePendingTrail";
+import {
+  resetNativeMotionState,
+  setNativeMotionState,
+  type NativeMotionClassification,
+  type NativeMotionConfidence,
+  type NativeMotionPublishStatus,
+} from "./nativeMotionState";
 
 const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
   "BackgroundGeolocation",
@@ -49,6 +56,12 @@ type AdaptiveLocationEvent = {
   activityStatus?: NativeActivityStatus;
   failureReason?: string;
   queueRevision?: number;
+  motionState?: NativeMotionClassification;
+  motionConfidence?: NativeMotionConfidence;
+  motionChangedAt?: number;
+  motionPublishStatus?: NativeMotionPublishStatus;
+  motionPendingClassification?: NativeMotionClassification | null;
+  motionPublishFailureReason?: string | null;
 };
 
 type NativeTrailSnapshot = { queueRevision: number; points: LocalTrailPoint[] };
@@ -57,6 +70,7 @@ export type NativePublishingConfiguration = {
   endpoint: string;
   token: string;
   liveTrailEnabled: boolean;
+  movementDetectionEnabled: boolean;
   emissionIntervalSeconds: LiveGpsUploadIntervalSeconds;
   alertThresholdSeconds: number;
   cloakTimeoutSeconds: number;
@@ -68,7 +82,7 @@ interface AdaptiveLocationPlugin {
   stop(options?: NativeStopOptions): Promise<AdaptiveLocationEvent>;
   configurePublishing(options: NativePublishingConfiguration): Promise<AdaptiveLocationEvent>;
   foreground(): Promise<AdaptiveLocationEvent>;
-  setCalibrationActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
+  setHighFrequencyActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
   getState(): Promise<AdaptiveLocationEvent>;
   getLocalTrailSnapshot(): Promise<NativeTrailSnapshot>;
   addListener(
@@ -101,7 +115,7 @@ export type WatcherOptions = {
   backgroundMessage?: string;
   backgroundTitle?: string;
   requestPermissions?: boolean;
-  purpose?: "live" | "calibration";
+  purpose?: "live";
   adaptive?: boolean;
   highFrequency?: boolean;
 };
@@ -183,6 +197,7 @@ class NativeLocationManager {
     });
     setNativeTrackingMode("off");
     resetNativeReadinessState();
+    resetNativeMotionState();
     if (options.pendingSamples !== "preserve") resetNativePublishingState();
     return operation;
   }
@@ -382,13 +397,10 @@ class NativeLocationManager {
     }
     this.adaptiveStarted = true;
     this.applyAdaptiveState(state);
-    const calibratedState = await AdaptiveLocation.setCalibrationActive({
-      active: this.watchers.some(
-        (watcher) =>
-          watcher.options.purpose === "calibration" || watcher.options.highFrequency === true,
-      ),
+    const highFrequencyState = await AdaptiveLocation.setHighFrequencyActive({
+      active: this.watchers.some((watcher) => watcher.options.highFrequency === true),
     });
-    this.applyAdaptiveState(calibratedState);
+    this.applyAdaptiveState(highFrequencyState);
   }
 
   private hasAdaptiveLiveWatcher(): boolean {
@@ -424,6 +436,24 @@ class NativeLocationManager {
   }
 
   private applyAdaptiveState(event: AdaptiveLocationEvent): void {
+    if (
+      event.motionState || event.motionConfidence || typeof event.motionChangedAt === "number" ||
+      event.motionPublishStatus || "motionPendingClassification" in event ||
+      "motionPublishFailureReason" in event
+    ) {
+      setNativeMotionState({
+        ...(event.motionState ? { classification: event.motionState } : {}),
+        ...(event.motionConfidence ? { confidence: event.motionConfidence } : {}),
+        ...(typeof event.motionChangedAt === "number" ? { changedAt: event.motionChangedAt } : {}),
+        ...(event.motionPublishStatus ? { publishStatus: event.motionPublishStatus } : {}),
+        ...("motionPendingClassification" in event
+          ? { pendingClassification: event.motionPendingClassification ?? null }
+          : {}),
+        ...("motionPublishFailureReason" in event
+          ? { publishFailureReason: event.motionPublishFailureReason ?? null }
+          : {}),
+      });
+    }
     if (
       event.captureReadiness || event.activityStatus || event.failureReason ||
       typeof event.queueRevision === "number"

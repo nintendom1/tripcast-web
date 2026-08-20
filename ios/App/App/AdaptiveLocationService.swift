@@ -56,7 +56,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
 
     private(set) var mode: Mode = .off
     private(set) var liveRequested = false
-    private var calibrationActive = false
+    private var highFrequencyActive = false
     private var stationaryAnchor: CLLocation?
     private var lastPreciseFix: CLLocation?
     private var lastMeaningfulAt: Date?
@@ -169,6 +169,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         NativeLocationPublisher.shared.startLive(mode: mode.rawValue) { [weak self] state in
             guard let self else { return }
             self.mergePublishingState(state)
+            self.publishCurrentMotion()
             self.finishStartStage(operationID: operation.id, capability: "capture")
         }
         LiveActivityController.shared.start(mode: mode.rawValue, queueDepth: cachedQueueDepth) { [weak self] outcome in
@@ -201,7 +202,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             ]
         ])
         liveRequested = false
-        calibrationActive = false
+        highFrequencyActive = false
         stationaryTimer?.invalidate()
         stationaryTimer = nil
         stopAllLocationServices()
@@ -255,26 +256,6 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    func setCalibrationActive(_ active: Bool) {
-        calibrationActive = active
-        guard liveRequested else { return }
-        if active {
-            if mode == .powerSaving {
-                enterPreciseMode(resetIdleWindow: true, reason: "calibration-start")
-            } else {
-                waitingForFreshPreciseFix = true
-                freshFixAcquisitionBeganAt = Date()
-                forcedPublishReason = "force"
-                configurePreciseManager(acquiringFreshFix: true)
-                manager.distanceFilter = kCLDistanceFilterNone
-                scheduleStationaryTimer()
-            }
-        } else if mode == .precise {
-            configurePreciseManager(acquiringFreshFix: waitingForFreshPreciseFix)
-            scheduleStationaryTimer()
-        }
-    }
-
     func currentState() -> JSObject {
         var state: JSObject = [
             "mode": mode.rawValue,
@@ -282,9 +263,11 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             "changedAt": modeChangedAt.timeIntervalSince1970 * 1_000,
             "reason": modeChangedReason,
             "motionState": motionState,
-            "motionConfidence": motionConfidence,
-            "motionChangedAt": motionChangedAt.timeIntervalSince1970 * 1_000
+            "motionConfidence": motionConfidence
         ]
+        if motionChangedAt != Date.distantPast {
+            state["motionChangedAt"] = motionChangedAt.timeIntervalSince1970 * 1_000
+        }
         let publishingState = cachedPublishingState
         for (key, value) in publishingState { state[key] = value }
         if !liveRequested {
@@ -311,6 +294,26 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             state.removeValue(forKey: "failureReason")
         }
         return state
+    }
+
+    func setHighFrequencyActive(_ active: Bool) {
+        highFrequencyActive = active
+        guard liveRequested else { return }
+        if active {
+            if mode == .powerSaving {
+                enterPreciseMode(resetIdleWindow: true, reason: "high-frequency-start")
+            } else {
+                waitingForFreshPreciseFix = true
+                freshFixAcquisitionBeganAt = Date()
+                forcedPublishReason = "force"
+                configurePreciseManager(acquiringFreshFix: true)
+                manager.distanceFilter = kCLDistanceFilterNone
+                scheduleStationaryTimer()
+            }
+        } else if mode == .precise {
+            configurePreciseManager(acquiringFreshFix: waitingForFreshPreciseFix)
+            scheduleStationaryTimer()
+        }
     }
 
     func applicationDidBecomeActive(completion: ((JSObject) -> Void)? = nil) {
@@ -355,6 +358,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         endpoint: String,
         token: String,
         liveTrailEnabled: Bool,
+        movementDetectionEnabled: Bool,
         emissionIntervalSeconds: Int,
         alertThresholdSeconds: TimeInterval,
         cloakTimeoutSeconds: TimeInterval,
@@ -366,6 +370,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             endpoint: endpoint,
             token: token,
             liveTrailEnabled: liveTrailEnabled,
+            movementDetectionEnabled: movementDetectionEnabled,
             emissionIntervalSeconds: emissionIntervalSeconds,
             alertThresholdSeconds: alertThresholdSeconds,
             cloakTimeoutSeconds: cloakTimeoutSeconds,
@@ -376,6 +381,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             case .success(let state):
                 self.mergePublishingState(state)
                 self.captureFailureReason = nil
+                self.publishCurrentMotion()
                 completion(.success(self.currentState()))
             case .failure(let error):
                 self.captureFailureReason = "configuration-failed"
@@ -396,7 +402,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         let keys = [
             "publishingPhase", "queueDepth", "breadcrumbQueueDepth", "capacityReached",
             "configurationReady", "durableStorageReady", "activityStatus", "queueRevision",
-            "failureReason", "completedDrainCount"
+            "failureReason", "completedDrainCount", "motionPublishStatus",
+            "motionPendingClassification", "motionPublishFailureReason"
         ]
         for key in keys where state[key] != nil {
             cachedPublishingState[key] = state[key]
@@ -536,16 +543,16 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
 
         let state: String
-        if activity.stationary {
-            state = "stationary"
+        if activity.automotive {
+            state = "automotive"
         } else if activity.cycling {
             state = "cycling"
-        } else if activity.walking {
-            state = "walking"
         } else if activity.running {
             state = "running"
-        } else if activity.automotive {
-            state = "automotive"
+        } else if activity.walking {
+            state = "walking"
+        } else if activity.stationary {
+            state = "stationary"
         } else {
             state = "unknown"
         }
@@ -563,6 +570,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         motionConfidence = confidence
         motionChangedAt = date
         LiveActivityController.shared.setMotion(state: state, confidence: confidence, startedAt: date)
+        publishCurrentMotion()
         emit([
             "mode": mode.rawValue,
             "liveRequested": liveRequested,
@@ -576,6 +584,15 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
                 "motionChangedAt": date.timeIntervalSince1970 * 1_000
             ]
         ])
+    }
+
+    private func publishCurrentMotion() {
+        guard motionChangedAt != Date.distantPast else { return }
+        NativeLocationPublisher.shared.acceptMotion(
+            classification: motionState,
+            confidence: motionConfidence,
+            sampledAt: motionChangedAt
+        )
     }
 
     private func enterPreciseMode(resetIdleWindow: Bool, reason: String) {
@@ -600,7 +617,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
 
     private func configurePreciseManager(acquiringFreshFix: Bool = false) {
         manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-        if calibrationActive || acquiringFreshFix {
+        if highFrequencyActive || acquiringFreshFix {
             manager.distanceFilter = kCLDistanceFilterNone
         } else {
             manager.distanceFilter = preciseDistanceFilter
@@ -611,7 +628,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     private func enterPowerSavingMode(anchor: CLLocation?, reason: String) {
-        guard liveRequested, !calibrationActive, mode == .precise else { return }
+        guard liveRequested, !highFrequencyActive, mode == .precise else { return }
         stationaryTimer?.invalidate()
         stationaryTimer = nil
         if let anchor { stationaryAnchor = anchor }
@@ -672,7 +689,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
 
     private func scheduleStationaryTimer() {
         stationaryTimer?.invalidate()
-        guard liveRequested, mode == .precise, !calibrationActive else { return }
+        guard liveRequested, mode == .precise, !highFrequencyActive else { return }
         let meaningfulAt = lastMeaningfulAt ?? Date()
         let remaining = max(0.1, stationaryInterval - Date().timeIntervalSince(meaningfulAt))
         stationaryTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
