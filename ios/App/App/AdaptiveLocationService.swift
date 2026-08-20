@@ -123,7 +123,10 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func bootstrapLocationRelaunch() {
-        guard defaults.bool(forKey: DefaultsKey.liveRequested) else { return }
+        guard defaults.bool(forKey: DefaultsKey.liveRequested) else {
+            LiveActivityController.shared.stop()
+            return
+        }
         restorePersistedState()
         coordinateStart(trigger: "restored", completion: nil)
     }
@@ -190,6 +193,13 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         preserveSamples: Bool = false,
         completion: ((JSObject) -> Void)? = nil
     ) {
+        emit([
+            "action": "gps:adaptive:stop:requested",
+            "details": [
+                "preserveSamples": preserveSamples,
+                "clearCredentials": clearCredentials
+            ]
+        ])
         liveRequested = false
         calibrationActive = false
         stationaryTimer?.invalidate()
@@ -209,15 +219,37 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         clearPersistedTrackingState()
         let suppressedEvents = suppressedBridgeEventCount
         suppressedBridgeEventCount = 0
-        LiveActivityController.shared.stop()
+        let stopGroup = DispatchGroup()
+        var stoppedPublishingState: JSObject?
+        var activityStopResult: LiveActivityStopResult?
+        stopGroup.enter()
+        LiveActivityController.shared.stop { result in
+            activityStopResult = result
+            stopGroup.leave()
+        }
+        stopGroup.enter()
         NativeLocationPublisher.shared.stopLive(
             clearCredentials: clearCredentials,
             preserveSamples: preserveSamples,
             suppressedBridgeEvents: suppressedEvents
-        ) { [weak self] state in
+        ) { state in
+            stoppedPublishingState = state
+            stopGroup.leave()
+        }
+        stopGroup.notify(queue: .main) { [weak self] in
             guard let self else { return }
-            self.mergePublishingState(state)
+            if let stoppedPublishingState {
+                self.mergePublishingState(stoppedPublishingState)
+            }
             let result = self.currentState()
+            self.emit([
+                "action": "gps:adaptive:stop:completed",
+                "details": [
+                    "preserveSamples": preserveSamples,
+                    "activityCount": activityStopResult?.requestedCount ?? 0,
+                    "remainingActivityCount": activityStopResult?.remainingCount ?? 0
+                ]
+            ])
             self.emit(result)
             completion?(result)
         }
@@ -298,6 +330,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             return
         }
         guard liveRequested else {
+            LiveActivityController.shared.stop()
             completion?(currentState())
             return
         }

@@ -33,7 +33,13 @@ const convexMocks = vi.hoisted(() => ({
 const convexQuery = convexMocks.query;
 const nativeLocationMocks = vi.hoisted(() => ({
   isNativeLocationAvailable: vi.fn(() => false),
+  isAdaptiveLocationAvailable: vi.fn(() => false),
   openNativeLocationSettings: vi.fn(),
+  stopNativeLocationTracking: vi.fn(() => Promise.resolve()),
+  configureNativeLocationPublishing: vi.fn(() => Promise.resolve()),
+  getNativeLocalTrailSnapshot: vi.fn(() => Promise.resolve({ queueRevision: 0, points: [] })),
+  foregroundNativeLocationTracking: vi.fn(),
+  retryNativeLocationTracking: vi.fn(() => Promise.resolve()),
   startNativeLocationWatch: vi.fn(
     (_onFix: (fix: { lat: number; lon: number; accuracy?: number }) => void, _onError: (error: unknown) => void) =>
       vi.fn(),
@@ -88,12 +94,16 @@ vi.mock("./useCloakingZones", () => ({
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 vi.mock("../../native/locationWatcher", () => ({
-  isAdaptiveLocationAvailable: () => false,
+  isAdaptiveLocationAvailable: nativeLocationMocks.isAdaptiveLocationAvailable,
   isNativeLocationAvailable: nativeLocationMocks.isNativeLocationAvailable,
   isAdaptiveNativeTrackingActive: () => false,
   openNativeLocationSettings: nativeLocationMocks.openNativeLocationSettings,
   startNativeLocationWatch: nativeLocationMocks.startNativeLocationWatch,
-  stopNativeLocationTracking: vi.fn(),
+  stopNativeLocationTracking: nativeLocationMocks.stopNativeLocationTracking,
+  configureNativeLocationPublishing: nativeLocationMocks.configureNativeLocationPublishing,
+  getNativeLocalTrailSnapshot: nativeLocationMocks.getNativeLocalTrailSnapshot,
+  foregroundNativeLocationTracking: nativeLocationMocks.foregroundNativeLocationTracking,
+  retryNativeLocationTracking: nativeLocationMocks.retryNativeLocationTracking,
 }));
 
 vi.mock("maplibre-gl", () => {
@@ -473,7 +483,17 @@ beforeEach(async () => {
   deleteBreadcrumb.mockResolvedValue({ deleted: 1 });
   mockReplayQueries({});
   nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(false);
+  nativeLocationMocks.isAdaptiveLocationAvailable.mockReturnValue(false);
   nativeLocationMocks.openNativeLocationSettings.mockClear();
+  nativeLocationMocks.stopNativeLocationTracking.mockReset();
+  nativeLocationMocks.stopNativeLocationTracking.mockResolvedValue(undefined);
+  nativeLocationMocks.configureNativeLocationPublishing.mockReset();
+  nativeLocationMocks.configureNativeLocationPublishing.mockResolvedValue(undefined);
+  nativeLocationMocks.getNativeLocalTrailSnapshot.mockReset();
+  nativeLocationMocks.getNativeLocalTrailSnapshot.mockResolvedValue({ queueRevision: 0, points: [] });
+  nativeLocationMocks.foregroundNativeLocationTracking.mockClear();
+  nativeLocationMocks.retryNativeLocationTracking.mockReset();
+  nativeLocationMocks.retryNativeLocationTracking.mockResolvedValue(undefined);
   nativeLocationMocks.startNativeLocationWatch.mockReset();
   nativeLocationMocks.startNativeLocationWatch.mockReturnValue(vi.fn());
   fetchMock.mockResolvedValue(new Response("{}", { status: 200 }));
@@ -2688,11 +2708,48 @@ describe("TripMap live location sharing persistence", () => {
     // It should now be stored as "true"
     expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("true");
 
-    // Toggle sharing OFF
+    // Toggle sharing OFF while native teardown is still unresolved.
+    nativeLocationMocks.stopNativeLocationTracking.mockReturnValue(new Promise(() => {}));
     const stopButton = screen.getByRole("button", { name: /Stop sharing live location/i });
     fireEvent.click(stopButton);
 
     // It should now be stored as "false"
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+  });
+
+  it("reconciles a stored Off preference to the adaptive native service", async () => {
+    nativeLocationMocks.isAdaptiveLocationAvailable.mockReturnValue(true);
+    setupQueries({
+      liveTrailStatus: { enabled: false, visibleToFollowers: false },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(nativeLocationMocks.stopNativeLocationTracking).toHaveBeenCalledWith({
+        pendingSamples: "preserve",
+      });
+    });
+    expect(screen.getByRole("button", { name: /Start sharing live location/i })).toBeInTheDocument();
+  });
+
+  it("retries failed native Off reconciliation when the app foregrounds", async () => {
+    nativeLocationMocks.isAdaptiveLocationAvailable.mockReturnValue(true);
+    nativeLocationMocks.stopNativeLocationTracking.mockRejectedValueOnce(new Error("bridge unavailable"));
+    setupQueries({
+      liveTrailStatus: { enabled: false, visibleToFollowers: false },
+    });
+
+    render(<TripMap token="test-token" role="traveler" />);
+    await waitFor(() => {
+      expect(nativeLocationMocks.stopNativeLocationTracking).toHaveBeenCalledTimes(1);
+    });
+
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await waitFor(() => {
+      expect(nativeLocationMocks.stopNativeLocationTracking).toHaveBeenCalledTimes(2);
+    });
     expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
   });
 

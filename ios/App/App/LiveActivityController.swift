@@ -3,6 +3,11 @@ import Capacitor
 import Foundation
 import UserNotifications
 
+struct LiveActivityStopResult {
+    let requestedCount: Int
+    let remainingCount: Int
+}
+
 final class LiveActivityController {
     static let shared = LiveActivityController()
 
@@ -43,6 +48,8 @@ final class LiveActivityController {
     private var lastActivityTransitionSignature: String?
     private var lastActivityUpdateAt: Date?
     private var healthyRefreshWorkItem: DispatchWorkItem?
+    private var stopInFlight = false
+    private var stopCompletions: [(LiveActivityStopResult) -> Void] = []
 
     var eventHandler: ((JSObject) -> Void)?
 
@@ -91,7 +98,7 @@ final class LiveActivityController {
         }
     }
 
-    func stop() {
+    func stop(completion: ((LiveActivityStopResult) -> Void)? = nil) {
         stateQueue.async {
             self.mode = "off"
             self.queueDepth = 0
@@ -107,9 +114,47 @@ final class LiveActivityController {
             self.lastActivityUpdateAt = nil
             self.clearAlertIncident(reason: "live-stopped", removeDelivered: true)
             self.cancelRenewalNotification()
-            if #available(iOS 16.1, *) {
-                self.implementation().stop()
+            if let completion {
+                self.stopCompletions.append(completion)
             }
+            guard !self.stopInFlight else {
+                self.emit("gps:live-activity:end-requested", details: [
+                    "coalesced": true
+                ])
+                return
+            }
+            self.stopInFlight = true
+            if #available(iOS 16.1, *) {
+                let finalState = self.state()
+                let requestedCount = self.implementation().stop(finalState: finalState) { result in
+                    self.stateQueue.async {
+                        self.finishStop(result)
+                    }
+                }
+                self.emit("gps:live-activity:end-requested", details: [
+                    "activityCount": requestedCount,
+                    "coalesced": false
+                ])
+            } else {
+                self.finishStop(.init(requestedCount: 0, remainingCount: 0))
+            }
+        }
+    }
+
+    private func finishStop(_ result: LiveActivityStopResult) {
+        stopInFlight = false
+        emit(
+            "gps:live-activity:ended",
+            level: result.remainingCount == 0 ? "info" : "warn",
+            details: [
+                "activityCount": result.requestedCount,
+                "remainingCount": result.remainingCount
+            ]
+        )
+        let completions = stopCompletions
+        stopCompletions.removeAll()
+        DispatchQueue.main.async {
+            completions.forEach { $0(result) }
         }
     }
 
@@ -642,10 +687,26 @@ private final class AvailableLiveActivityController: NSObject {
         Task { await activity.update(using: state) }
     }
 
-    func stop() {
-        guard let activity else { return }
+    func stop(
+        finalState: TripCastLiveActivityAttributes.ContentState,
+        completion: @escaping (LiveActivityStopResult) -> Void
+    ) -> Int {
+        let activities = Activity<TripCastLiveActivityAttributes>.activities
         self.activity = nil
         lastState = nil
-        Task { await activity.end(dismissalPolicy: .immediate) }
+        Task {
+            for activity in activities {
+                await activity.end(using: finalState, dismissalPolicy: .immediate)
+            }
+            let requestedIDs = Set(activities.map(\.id))
+            let remainingCount = Activity<TripCastLiveActivityAttributes>.activities.reduce(0) {
+                $0 + (requestedIDs.contains($1.id) ? 1 : 0)
+            }
+            completion(.init(
+                requestedCount: activities.count,
+                remainingCount: remainingCount
+            ))
+        }
+        return activities.count
     }
 }
