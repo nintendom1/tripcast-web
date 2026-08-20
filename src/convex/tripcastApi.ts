@@ -856,6 +856,12 @@ export type TravelerPreferences = {
   movementWalkingLabel?: string;
   movementWalkingEmoji?: string;
   movementWalkingThresholdMps?: number;
+  movementRunningLabel?: string;
+  movementRunningEmoji?: string;
+  movementCyclingLabel?: string;
+  movementCyclingEmoji?: string;
+  movementVehicleLabel?: string;
+  movementVehicleEmoji?: string;
   movementMovingLabel?: string;
   movementMovingEmoji?: string;
   movementMovingThresholdMps?: number;
@@ -2175,7 +2181,7 @@ export const tripcastApi = {
     travelerListRecentActivities: (anyApi as any).currentActivity.travelerListRecentActivities as FunctionReference<"query", "public", { token: string }, CurrentActivity[]>,
     travelerGetStalenessSettings: (anyApi as any).currentActivity.travelerGetStalenessSettings as FunctionReference<"query", "public", { token: string }, CurrentActivityStalenessSettings>,
     travelerUpdateStalenessSettings: (anyApi as any).currentActivity.travelerUpdateStalenessSettings as FunctionReference<"mutation", "public", { token: string; enabled: boolean; fallbackTitle: string; fallbackEmoji?: string; resetAfterMs: number }, null>,
-    travelerApplyMovementDetection: (anyApi as any).currentActivity.travelerApplyMovementDetection as FunctionReference<"mutation", "public", { token: string; classification: "walking" | "moving" | "stopped"; speedMps?: number; sampledAt: number }, null>,
+    travelerApplyMovementDetection: (anyApi as any).currentActivity.travelerApplyMovementDetection as FunctionReference<"mutation", "public", { token: string; classification: "walking" | "running" | "cycling" | "automotive" | "moving" | "stopped"; speedMps?: number; sampledAt: number }, null>,
     travelerGetQuickActivitySettings: (anyApi as any).currentActivity.travelerGetQuickActivitySettings as FunctionReference<"query", "public", { token: string }, QuickActivitySettings>,
     travelerUpdateQuickActivitySettings: (anyApi as any).currentActivity.travelerUpdateQuickActivitySettings as FunctionReference<"mutation", "public", { token: string; activities: QuickActivity[]; displayCount: number }, null>,
   },
@@ -2318,6 +2324,12 @@ export const tripcastApi = {
         movementWalkingLabel?: string;
         movementWalkingEmoji?: string;
         movementWalkingThresholdMps?: number;
+        movementRunningLabel?: string;
+        movementRunningEmoji?: string;
+        movementCyclingLabel?: string;
+        movementCyclingEmoji?: string;
+        movementVehicleLabel?: string;
+        movementVehicleEmoji?: string;
         movementMovingLabel?: string;
         movementMovingEmoji?: string;
         movementMovingThresholdMps?: number;

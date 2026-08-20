@@ -106,12 +106,7 @@ import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
 import { useMessagingUnread } from "../messaging/useMessagingUnread";
 import { useJournalUnread } from "../journal/useJournalUnread";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
-import {
-  useMovementDebugRecords,
-  useMovementDebugSpeed,
-} from "../../providers/MovementDebugProvider";
 import { useMusicSafe } from "../../providers/MusicProvider";
-import { DEFAULT_MOVING_MPS, DEFAULT_WALKING_MPS } from "../../lib/movementUnits";
 import { useTripAudioScenario } from "../../lib/audio/useTripAudioScenario";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useCenteringCalibration } from "../../debug/useCenteringCalibration";
@@ -1497,17 +1492,12 @@ export default function TripMap({
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
   const recordLiveTrailSample = useMutation(tripcastApi.liveTrail.travelerRecordLiveTrailSample);
-  const applyMovementDetection = useMutation(tripcastApi.currentActivity.travelerApplyMovementDetection);
   const movementPrefs = useQuery(
     tripcastApi.travelerPreferences.travelerGetPreferences,
     role === "traveler" ? { token } : "skip",
   );
   const movementPrefsRef = useRef<typeof movementPrefs>(undefined);
   movementPrefsRef.current = movementPrefs;
-  const movementDebugRecords = useMovementDebugRecords();
-  const movementDebugSpeed = useMovementDebugSpeed();
-  const movementDebugRef = useRef({ records: movementDebugRecords, speed: movementDebugSpeed });
-  movementDebugRef.current = { records: movementDebugRecords, speed: movementDebugSpeed };
   const addCloakingPin = useMutation(tripcastApi.cloakingPins.travelerAddCloakingPin);
   const deleteBreadcrumb = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailSamples);
   const cloakingPinsData = useQuery(
@@ -3390,6 +3380,7 @@ export default function TripMap({
       endpoint,
       token,
       liveTrailEnabled,
+      movementDetectionEnabled: movementPrefs?.movementDetectionEnabled === true,
       emissionIntervalSeconds: liveGpsUploadIntervalSeconds,
       alertThresholdSeconds: staleBreadcrumbAlertSeconds,
       cloakTimeoutSeconds,
@@ -3418,6 +3409,7 @@ export default function TripMap({
     liveTrailEnabled,
     liveGpsUploadIntervalSeconds,
     log,
+    movementPrefs?.movementDetectionEnabled,
     role,
     staleBreadcrumbAlertSeconds,
     token,
@@ -3587,21 +3579,6 @@ export default function TripMap({
     lastLocationFixAtRef.current = Date.now();
     setLocationStale(false);
 
-    // Movement detection state — kept local to this effect so it resets when
-    // the watcher restarts (e.g. after toggling Live).
-    let lastMovementClassification: "walking" | "moving" | "stopped" | null = null;
-    let lastMovementMutationAt = 0;
-    let prevFixForSpeed: { lat: number; lon: number; at: number } | null = null;
-    const MOVEMENT_MUTATION_MIN_INTERVAL_MS = 60_000;
-    // Dampening (hysteresis): require the same classification across a few
-    // consecutive fixes before firing, so a single noisy GPS sample can't flip
-    // activity. `lastFiredClassification` is the state we actually applied;
-    // `candidateStreak` counts back-to-back fixes agreeing on `candidateClassification`.
-    let lastFiredClassification: "walking" | "moving" | null = null;
-    let candidateClassification: "walking" | "moving" | "stopped" | null = null;
-    let candidateStreak = 0;
-    const MOVEMENT_MIN_CONSECUTIVE_FIXES = 2;
-
     const handleFix = (
       lat: number,
       lon: number,
@@ -3704,123 +3681,6 @@ export default function TripMap({
         }
       }
 
-      // ── Movement auto-state (Capacitor-only) ──────────────────────────────
-      // Classify GPS speed into walking/moving/stopped and notify the backend
-      // when the classification transitions. Native-only because reliable
-      // background GPS is only available on the iOS Capacitor build.
-      if (isNativeLocationAvailable()) {
-        // Movement detection should only run when Live is actually sharing.
-        // The Live-Off foreground watcher is only for the local GPS dot.
-        if (!isLocationSharingRef.current) {
-          lastMovementClassification = null;
-          prevFixForSpeed = null;
-          lastFiredClassification = null;
-          candidateClassification = null;
-          candidateStreak = 0;
-          return;
-        }
-
-        const prefs = movementPrefsRef.current;
-        const fixAt = Date.now();
-        if (prefs?.movementDetectionEnabled === true) {
-          const walkingMps = prefs.movementWalkingThresholdMps ?? DEFAULT_WALKING_MPS;
-          const movingMps = prefs.movementMovingThresholdMps ?? DEFAULT_MOVING_MPS;
-          let speedMps: number | undefined =
-            typeof speed === "number" && speed >= 0 ? speed : undefined;
-          if (speedMps === undefined && prevFixForSpeed) {
-            const dtSec = (fixAt - prevFixForSpeed.at) / 1000;
-            if (dtSec > 0 && dtSec < 600) {
-              const dMeters = distanceMeters(prevFixForSpeed, { lat, lon });
-              speedMps = dMeters / dtSec;
-            }
-          }
-          const classification: "walking" | "moving" | "stopped" =
-            speedMps === undefined
-              ? "stopped"
-              : speedMps >= movingMps
-                ? "moving"
-                : speedMps >= walkingMps
-                  ? "walking"
-                  : "stopped";
-
-          // Movement debug telemetry — always-on recording when detection is
-          // enabled. Live speed updates only while calibration mode is on
-          // (high-frequency, only useful while the debug modal is open).
-          const debug = movementDebugRef.current;
-          if (debug.records.isCalibrationModeEnabled && speedMps !== undefined) {
-            debug.speed.recordCurrentSpeed(speedMps);
-          }
-          if (speedMps !== undefined) {
-            const inWalkingNearMiss =
-              classification === "stopped" &&
-              speedMps >= 0.9 * walkingMps &&
-              speedMps <= 0.99 * walkingMps;
-            const inMovingNearMiss =
-              classification !== "moving" &&
-              speedMps >= 0.9 * movingMps &&
-              speedMps <= 0.99 * movingMps;
-            if (inWalkingNearMiss) {
-              debug.records.recordAlmostTriggered({
-                thresholdType: "walking",
-                speedMps,
-                thresholdMps: walkingMps,
-              });
-            }
-            if (inMovingNearMiss) {
-              debug.records.recordAlmostTriggered({
-                thresholdType: "moving",
-                speedMps,
-                thresholdMps: movingMps,
-              });
-            }
-          }
-
-          // Build/extend the streak of agreeing fixes before acting.
-          if (classification === candidateClassification) {
-            candidateStreak += 1;
-          } else {
-            candidateClassification = classification;
-            candidateStreak = 1;
-          }
-
-          const isNewState = classification !== lastFiredClassification;
-          const sustained = candidateStreak >= MOVEMENT_MIN_CONSECUTIVE_FIXES;
-          const throttleOk =
-            fixAt - lastMovementMutationAt >= MOVEMENT_MUTATION_MIN_INTERVAL_MS ||
-            lastFiredClassification === null;
-          if (classification !== "stopped" && isNewState && sustained && throttleOk) {
-            const from = lastFiredClassification;
-            lastFiredClassification = classification;
-            lastMovementClassification = classification;
-            lastMovementMutationAt = fixAt;
-            log.logUi("movement:classify", { speedMps, classification, from });
-            const triggeredSpeedMps = speedMps;
-            applyMovementDetection({
-              token,
-              classification,
-              speedMps,
-              sampledAt: fixAt,
-            })
-              .then(() => {
-                if (triggeredSpeedMps === undefined) return;
-                movementDebugRef.current.records.recordTriggered({
-                  from,
-                  to: classification,
-                  speedMps: triggeredSpeedMps,
-                });
-              })
-              .catch((error) => {
-                log.error("movement:apply:error", "mutation", {
-                  message: error instanceof Error ? error.message : String(error),
-                });
-              });
-          } else {
-            // Not fired this fix — keep "last seen" in sync for debug/logging.
-            lastMovementClassification = classification;
-          }
-        }
-        prevFixForSpeed = { lat, lon, at: fixAt };
-      }
     };
 
     const handleError = (error: unknown) => {

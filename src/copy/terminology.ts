@@ -18,7 +18,7 @@ export const TERMS = {
   autoEstimated: "AUTO EST.",
   movementDetection: "Movement detection",
   movementWalking: "Walking",
-  movementMoving: "Moving",
+  movementVehicle: "Vehicle",
   pin: "Pin",
   trailLine: "Trail Line",
   options: "Options",

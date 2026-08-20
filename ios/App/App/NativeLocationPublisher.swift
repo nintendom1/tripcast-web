@@ -17,6 +17,7 @@ final class NativeLocationPublisher {
     struct Configuration: Codable {
         let endpoint: String
         let liveTrailEnabled: Bool
+        let movementDetectionEnabled: Bool
         let emissionIntervalSeconds: Int
         let alertThresholdSeconds: TimeInterval
         let cloakTimeoutSeconds: TimeInterval
@@ -25,6 +26,7 @@ final class NativeLocationPublisher {
         private enum CodingKeys: String, CodingKey {
             case endpoint
             case liveTrailEnabled
+            case movementDetectionEnabled
             case emissionIntervalSeconds
             case alertThresholdSeconds
             case cloakTimeoutSeconds
@@ -34,6 +36,7 @@ final class NativeLocationPublisher {
         init(
             endpoint: String,
             liveTrailEnabled: Bool,
+            movementDetectionEnabled: Bool,
             emissionIntervalSeconds: Int,
             alertThresholdSeconds: TimeInterval,
             cloakTimeoutSeconds: TimeInterval,
@@ -41,6 +44,7 @@ final class NativeLocationPublisher {
         ) {
             self.endpoint = endpoint
             self.liveTrailEnabled = liveTrailEnabled
+            self.movementDetectionEnabled = movementDetectionEnabled
             self.emissionIntervalSeconds = Self.normalizedInterval(emissionIntervalSeconds)
             self.alertThresholdSeconds = alertThresholdSeconds
             self.cloakTimeoutSeconds = cloakTimeoutSeconds
@@ -51,6 +55,10 @@ final class NativeLocationPublisher {
             let values = try decoder.container(keyedBy: CodingKeys.self)
             endpoint = try values.decode(String.self, forKey: .endpoint)
             liveTrailEnabled = try values.decode(Bool.self, forKey: .liveTrailEnabled)
+            movementDetectionEnabled = try values.decodeIfPresent(
+                Bool.self,
+                forKey: .movementDetectionEnabled
+            ) ?? false
             emissionIntervalSeconds = Self.normalizedInterval(
                 try values.decodeIfPresent(Int.self, forKey: .emissionIntervalSeconds) ?? 15
             )
@@ -73,6 +81,11 @@ final class NativeLocationPublisher {
         let recordTrail: Bool
         let publishCurrentLocation: Bool?
         let reason: String
+    }
+
+    struct PendingMotion: Codable, Equatable {
+        let classification: String
+        let sampledAt: Double
     }
 
     private enum KeychainKey {
@@ -98,6 +111,13 @@ final class NativeLocationPublisher {
     private var scheduledPublishAt: Date?
     private var batchStartedAt: Date?
     private var activePublishTask: URLSessionDataTask?
+    private var pendingMotion: PendingMotion?
+    private var motionPublishInFlight = false
+    private var activeMotionPublishTask: URLSessionDataTask?
+    private var scheduledMotionPublishWorkItem: DispatchWorkItem?
+    private var lastAcknowledgedMotionClassification: String?
+    private var motionPublishStatus = "idle"
+    private var motionPublishFailureReason: String?
     private var lastEmissionLocation: CLLocation?
     private var lastEmissionAt: Date?
     private var lastBearing: CLLocationDirection?
@@ -128,6 +148,8 @@ final class NativeLocationPublisher {
     private init() {
         configuration = loadConfiguration()
         samples = loadSamples()
+        pendingMotion = loadPendingMotion()
+        motionPublishStatus = pendingMotion == nil ? "idle" : "pending"
         recoveryActive = !samples.isEmpty
         pathMonitor.pathUpdateHandler = { [weak self] path in
             self?.handleNetworkPath(path)
@@ -151,6 +173,9 @@ final class NativeLocationPublisher {
             "capacityReached": capacityReached,
             "configurationReady": configuration != nil && readToken() != nil,
             "durableStorageReady": storageHealthy,
+            "motionPublishStatus": motionPublishStatus,
+            "motionPendingClassification": pendingMotion?.classification ?? NSNull(),
+            "motionPublishFailureReason": motionPublishFailureReason ?? NSNull(),
             "queueRevision": queueRevision
         ]
         if let failureReason { state["failureReason"] = failureReason }
@@ -171,6 +196,7 @@ final class NativeLocationPublisher {
         endpoint: String,
         token: String,
         liveTrailEnabled: Bool,
+        movementDetectionEnabled: Bool,
         emissionIntervalSeconds: Int,
         alertThresholdSeconds: TimeInterval,
         cloakTimeoutSeconds: TimeInterval,
@@ -192,6 +218,7 @@ final class NativeLocationPublisher {
             let next = Configuration(
                 endpoint: endpoint,
                 liveTrailEnabled: liveTrailEnabled,
+                movementDetectionEnabled: movementDetectionEnabled,
                 emissionIntervalSeconds: emissionIntervalSeconds,
                 alertThresholdSeconds: max(0, alertThresholdSeconds),
                 cloakTimeoutSeconds: max(0, cloakTimeoutSeconds),
@@ -202,6 +229,11 @@ final class NativeLocationPublisher {
             activePublishTask?.cancel()
             activePublishTask = nil
             cancelScheduledPublishLocked()
+            activeMotionPublishTask?.cancel()
+            activeMotionPublishTask = nil
+            motionPublishInFlight = false
+            scheduledMotionPublishWorkItem?.cancel()
+            scheduledMotionPublishWorkItem = nil
             configuration = next
             do {
                 try persist(next, to: configurationURL)
@@ -216,12 +248,18 @@ final class NativeLocationPublisher {
             if identityChanged {
                 acknowledgedTrail.removeAll()
                 queueRevision += 1
+                clearPendingMotionLocked()
+                lastAcknowledgedMotionClassification = nil
+            } else if !next.movementDetectionEnabled {
+                clearPendingMotionLocked()
+                lastAcknowledgedMotionClassification = nil
             }
             publishingPhase = samples.isEmpty
                 ? "healthy"
                 : (networkAvailable == false ? "offline" : "syncing")
             emit("gps:native-publish:configured", details: [
                 "emissionIntervalSeconds": next.emissionIntervalSeconds,
+                "movementDetectionEnabled": next.movementDetectionEnabled,
                 "queueDepth": samples.count
             ])
             publishIfPossibleLocked(reason: "configuration")
@@ -285,6 +323,13 @@ final class NativeLocationPublisher {
             activePublishTask?.cancel()
             activePublishTask = nil
             cancelScheduledPublishLocked()
+            activeMotionPublishTask?.cancel()
+            activeMotionPublishTask = nil
+            motionPublishInFlight = false
+            scheduledMotionPublishWorkItem?.cancel()
+            scheduledMotionPublishWorkItem = nil
+            clearPendingMotionLocked()
+            lastAcknowledgedMotionClassification = nil
             currentMode = "off"
             lastEmissionLocation = nil
             lastEmissionAt = nil
@@ -437,6 +482,137 @@ final class NativeLocationPublisher {
                 force: self.samples.count >= 20
             )
         }
+    }
+
+    func acceptMotion(classification: String, confidence: String, sampledAt: Date) {
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            guard self.currentMode != "off" else { return }
+            guard let configuration = self.configuration else { return }
+            guard configuration.movementDetectionEnabled else {
+                self.clearPendingMotionLocked()
+                return
+            }
+            let trusted = confidence == "medium" || confidence == "high"
+            let included = ["walking", "running", "cycling", "automotive"].contains(classification)
+            guard trusted, included else {
+                self.clearPendingMotionLocked()
+                self.emit("gps:motion-publish:ignored", details: [
+                    "classification": classification,
+                    "confidence": confidence
+                ])
+                return
+            }
+            if self.pendingMotion?.classification == classification {
+                self.publishMotionIfPossibleLocked(reason: "classification-repeat")
+                return
+            }
+            if !self.motionPublishInFlight,
+               self.lastAcknowledgedMotionClassification == classification {
+                self.clearPendingMotionLocked(status: "acknowledged")
+                return
+            }
+            let motion = PendingMotion(
+                classification: classification,
+                sampledAt: sampledAt.timeIntervalSince1970 * 1_000
+            )
+            self.pendingMotion = motion
+            self.motionPublishStatus = "pending"
+            self.motionPublishFailureReason = nil
+            self.persistPendingMotionLocked()
+            self.emit("gps:motion-publish:pending", details: [
+                "classification": classification,
+                "sampledAt": motion.sampledAt
+            ])
+            self.publishMotionIfPossibleLocked(reason: "classification")
+        }
+    }
+
+    private func publishMotionIfPossibleLocked(reason: String) {
+        guard !motionPublishInFlight,
+              currentMode != "off",
+              configuration?.movementDetectionEnabled == true,
+              networkAvailable != false,
+              let motion = pendingMotion,
+              let config = configuration,
+              let token = readToken(),
+              let baseURL = URL(string: config.endpoint) else { return }
+        motionPublishInFlight = true
+        motionPublishStatus = "publishing"
+        motionPublishFailureReason = nil
+        let requestGeneration = generation
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/mutation"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 15
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "path": "currentActivity:travelerApplyMovementDetection",
+            "args": [
+                "token": token,
+                "classification": motion.classification,
+                "sampledAt": motion.sampledAt
+            ],
+            "format": "json"
+        ])
+        let backgroundTask = beginBackgroundTask()
+        emit("gps:motion-publish:started", details: [
+            "classification": motion.classification,
+            "reason": reason
+        ])
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            self?.workQueue.async {
+                guard let self else { return }
+                defer { self.endBackgroundTask(backgroundTask) }
+                guard requestGeneration == self.generation else { return }
+                self.activeMotionPublishTask = nil
+                self.motionPublishInFlight = false
+                let succeeded = error == nil &&
+                    (response as? HTTPURLResponse).map { (200..<300).contains($0.statusCode) } == true &&
+                    data.flatMap {
+                        (try? JSONSerialization.jsonObject(with: $0) as? [String: Any])?["status"] as? String
+                    } == "success"
+                if succeeded {
+                    self.lastAcknowledgedMotionClassification = motion.classification
+                    if self.pendingMotion == motion {
+                        self.clearPendingMotionLocked(status: "acknowledged")
+                    }
+                    self.emit("gps:motion-publish:ack", details: [
+                        "classification": motion.classification,
+                        "sampledAt": motion.sampledAt
+                    ])
+                    self.publishMotionIfPossibleLocked(reason: "newer-pending")
+                    return
+                }
+                self.motionPublishStatus = "failed"
+                self.motionPublishFailureReason = error == nil ? "server" : "network"
+                self.emit("gps:motion-publish:failure", level: "warn", details: [
+                    "classification": motion.classification,
+                    "failureClass": self.motionPublishFailureReason ?? "unknown"
+                ])
+                self.scheduleMotionRetryLocked()
+            }
+        }
+        activeMotionPublishTask = task
+        task.resume()
+    }
+
+    private func scheduleMotionRetryLocked() {
+        scheduledMotionPublishWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            self?.scheduledMotionPublishWorkItem = nil
+            self?.publishMotionIfPossibleLocked(reason: "retry")
+        }
+        scheduledMotionPublishWorkItem = item
+        workQueue.asyncAfter(deadline: .now() + 30, execute: item)
+    }
+
+    private func clearPendingMotionLocked(status: String = "idle") {
+        pendingMotion = nil
+        scheduledMotionPublishWorkItem?.cancel()
+        scheduledMotionPublishWorkItem = nil
+        motionPublishStatus = status
+        motionPublishFailureReason = nil
+        try? fileManager.removeItem(at: pendingMotionURL)
     }
 
     func publishIfPossible() {
@@ -746,6 +922,8 @@ final class NativeLocationPublisher {
         networkAvailable = path.status == .satisfied
         if networkAvailable == false {
             cancelScheduledPublishLocked()
+            scheduledMotionPublishWorkItem?.cancel()
+            scheduledMotionPublishWorkItem = nil
             if currentMode != "off" || !samples.isEmpty {
                 recoveryActive = true
                 publishingPhase = "offline"
@@ -771,6 +949,9 @@ final class NativeLocationPublisher {
             ])
             publishIfPossibleLocked(reason: "network-restored", force: true)
         }
+        if wasAvailable != true, pendingMotion != nil {
+            publishMotionIfPossibleLocked(reason: "network-restored")
+        }
     }
 
     private func emit(
@@ -787,6 +968,9 @@ final class NativeLocationPublisher {
             "queueDepth": samples.count,
             "breadcrumbQueueDepth": breadcrumbQueueDepth,
             "capacityReached": capacityReached,
+            "motionPublishStatus": motionPublishStatus,
+            "motionPendingClassification": pendingMotion?.classification ?? NSNull(),
+            "motionPublishFailureReason": motionPublishFailureReason ?? NSNull(),
             "queueRevision": queueRevision
         ]
         if let completedDrainCount { event["completedDrainCount"] = completedDrainCount }
@@ -857,6 +1041,7 @@ final class NativeLocationPublisher {
 
     private var configurationURL: URL { applicationSupportURL.appendingPathComponent("config.json") }
     private var samplesURL: URL { applicationSupportURL.appendingPathComponent("queue.json") }
+    private var pendingMotionURL: URL { applicationSupportURL.appendingPathComponent("pending-motion.json") }
 
     private func persistSamples() {
         do {
@@ -898,6 +1083,28 @@ final class NativeLocationPublisher {
     private func loadSamples() -> [PendingSample] {
         guard let data = try? Data(contentsOf: samplesURL) else { return [] }
         return (try? JSONDecoder().decode([PendingSample].self, from: data)) ?? []
+    }
+
+    private func persistPendingMotionLocked() {
+        guard let pendingMotion else {
+            try? fileManager.removeItem(at: pendingMotionURL)
+            return
+        }
+        do {
+            try persist(pendingMotion, to: pendingMotionURL)
+        } catch {
+            motionPublishStatus = "failed"
+            motionPublishFailureReason = "storage"
+            emit("gps:motion-publish:failure", level: "warn", details: [
+                "classification": pendingMotion.classification,
+                "failureClass": "storage"
+            ])
+        }
+    }
+
+    private func loadPendingMotion() -> PendingMotion? {
+        guard let data = try? Data(contentsOf: pendingMotionURL) else { return nil }
+        return try? JSONDecoder().decode(PendingMotion.self, from: data)
     }
 
     private func isAllowedEndpoint(_ url: URL) -> Bool {
