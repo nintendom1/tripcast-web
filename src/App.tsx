@@ -49,6 +49,8 @@ const PANEL_MOTION = {
   transition: { duration: 0.18, ease: "easeOut" as const },
 };
 
+const GPS_KILL_DURATION_MS = 30_000;
+
 function MapErrorFallback(props: React.ComponentProps<typeof FullScreenErrorFallback>) {
   useEffect(() => {
     debugLog("info", "App", "map:fallback:shown", "map", {
@@ -140,8 +142,21 @@ function ConnectedApp() {
   const [sessionRetryNonce, setSessionRetryNonce] = useState(0);
   const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
   const [testToastMessage, setTestToastMessage] = useState<string | null>(null);
+  const [gpsSuppressedUntil, setGpsSuppressedUntil] = useState<number | null>(null);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const testToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (gpsSuppressedUntil === null) return;
+    const timeout = setTimeout(() => {
+      debugLog("info", "App", "gps:developer-kill:recovery", "gps", {
+        trigger: "timeout",
+        suppressedForMs: GPS_KILL_DURATION_MS,
+      });
+      setGpsSuppressedUntil(null);
+    }, Math.max(0, gpsSuppressedUntil - Date.now()));
+    return () => clearTimeout(timeout);
+  }, [gpsSuppressedUntil]);
 
   useInteractionLogger();
 
@@ -359,6 +374,24 @@ function ConnectedApp() {
     }, 3200);
   }
 
+  function handleKillGpsServices() {
+    const suppressedUntil = Date.now() + GPS_KILL_DURATION_MS;
+    debugLog("warn", "App", "gps:developer-kill:requested", "gps", {
+      durationMs: GPS_KILL_DURATION_MS,
+      suppressedUntil,
+    });
+    setGpsSuppressedUntil(suppressedUntil);
+  }
+
+  function handleEnableGps() {
+    debugLog("info", "App", "gps:developer-kill:recovery", "gps", {
+      trigger: "manual",
+      remainingMs:
+        gpsSuppressedUntil === null ? 0 : Math.max(0, gpsSuppressedUntil - Date.now()),
+    });
+    setGpsSuppressedUntil(null);
+  }
+
   // URL-param screens (no session required)
   if (pendingResetToken) {
     return (
@@ -542,6 +575,7 @@ function ConnectedApp() {
           }}
           onResetStarted={showResetToast}
           onTriggerTestToast={handleTriggerTestToast}
+          onKillGpsServices={handleKillGpsServices}
           onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); setIsEndTripOpen(true); } : undefined}
           onViewCredits={() => { setIsOptionsOpen(false); setIsCreditsOpen(true); }}
         />
@@ -595,6 +629,8 @@ function ConnectedApp() {
             role={role}
             locationResetNonce={locationResetNonce}
             tripDataResetNonce={tripDataResetNonce}
+            gpsSuppressedUntil={gpsSuppressedUntil}
+            onEnableGps={handleEnableGps}
             finaleReplayActive={isCreditsOpen}
             onMapLoaded={() => setMapLoaded(true)}
             onPickerActiveChange={setIsPickerActive}

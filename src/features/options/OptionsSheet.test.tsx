@@ -745,6 +745,32 @@ describe("OptionsSheet developer scoring toggle", () => {
     expect(onTriggerTestToast).toHaveBeenCalled();
   });
 
+  it("confirms before killing GPS services", async () => {
+    setupMocks();
+    const onKillGpsServices = vi.fn();
+    renderOptions({ onKillGpsServices });
+
+    await userEvent.click(screen.getByRole("button", { name: /kill gps services/i }));
+    expect(onKillGpsServices).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      /TripCast will stop GPS now but keep LIVE selected/i,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: /^kill gps$/i }));
+    expect(onKillGpsServices).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer the GPS kill action to Followers", () => {
+    setupMocks();
+    renderOptions({
+      session: followerSession,
+      role: "follower",
+      onKillGpsServices: vi.fn(),
+    });
+
+    expect(screen.queryByRole("button", { name: /kill gps services/i })).not.toBeInTheDocument();
+  });
+
   it("hides 'Trigger Test Toast' when no handler is provided", () => {
     setupMocks();
     renderOptions();

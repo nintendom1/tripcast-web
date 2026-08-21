@@ -80,6 +80,13 @@ describe("nativeLocationManager", () => {
     expect(mocks.stop).toHaveBeenCalledTimes(1);
   });
 
+  it("explicitly stops both native engines even when Legacy appears idle", async () => {
+    await nativeLocationManager.explicitStop({ pendingSamples: "preserve" });
+
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+    expect(mocks.adaptiveStop).toHaveBeenCalledWith({ pendingSamples: "preserve" });
+  });
+
   it("aggregates distanceFilter by taking the minimum", async () => {
     nativeLocationManager.addWatcher({ distanceFilter: 50 }, vi.fn(), vi.fn());
     // @ts-expect-error accessing private for test

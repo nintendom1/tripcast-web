@@ -2615,6 +2615,43 @@ describe("TripMap fix overlay debug densifier", () => {
   });
 });
 
+describe("TripMap developer GPS kill", () => {
+  it("stops native tracking, preserves samples, and exposes manual recovery", async () => {
+    localStorage.setItem("tripcast.live-sharing.enabled", "true");
+    setEnabled(true);
+    setPreset("gps-trace");
+    nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+    nativeLocationMocks.isAdaptiveLocationAvailable.mockReturnValue(true);
+    setupQueries({
+      liveTrailStatus: { enabled: true, visibleToFollowers: false },
+    });
+    const onEnableGps = vi.fn();
+
+    render(
+      <TripMap
+        token="test-token"
+        role="traveler"
+        gpsSuppressedUntil={Date.now() + 30_000}
+        onEnableGps={onEnableGps}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(nativeLocationMocks.stopNativeLocationTracking).toHaveBeenCalledWith({
+        pendingSamples: "preserve",
+      });
+    });
+    expect(nativeLocationMocks.startNativeLocationWatch).not.toHaveBeenCalled();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/GPS disabled for/i);
+    expect(getLogs().some((entry) =>
+      entry.action === "gps:developer-kill:teardown-acknowledged"
+    )).toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: /enable gps/i }));
+    expect(onEnableGps).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("TripMap live location sharing persistence", () => {
   it("persists live sharing state to localStorage when toggled", () => {
     setupQueries({

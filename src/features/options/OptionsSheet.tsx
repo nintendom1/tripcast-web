@@ -71,6 +71,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
+import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import type { StoredSession } from "../../lib/auth";
 import { cn } from "@/lib/utils";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -107,6 +108,7 @@ type OptionsSheetProps = {
   onTripDataDeleted: () => void;
   onResetStarted: (message: string) => void;
   onTriggerTestToast?: () => void;
+  onKillGpsServices?: () => void;
   /** Traveler-only: open the End Trip flow (handled on the map). */
   onEndTrip?: () => void;
   /** Either role: open the full-screen trip credits. */
@@ -1728,12 +1730,14 @@ export default function OptionsSheet({
   onTripDataDeleted,
   onResetStarted,
   onTriggerTestToast,
+  onKillGpsServices,
   onEndTrip,
   onViewCredits,
   preserveDebugContext = false,
 }: OptionsSheetProps) {
   const [view, setView] = useState<OptionsView>("options");
   const [isEmergencyResetPending, setIsEmergencyResetPending] = useState(false);
+  const [isKillGpsConfirmOpen, setIsKillGpsConfirmOpen] = useState(false);
   const music = useMusicSafe();
   const log = useDebugLogger("OptionsSheet", "src/features/options/OptionsSheet.tsx");
   useActiveUiContext(open, {
@@ -1925,6 +1929,10 @@ export default function OptionsSheet({
               onQuickActivities={() => { music.sfx("page"); navigateTo("quick-activities"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
               onTriggerTestToast={onTriggerTestToast}
+              onKillGpsServices={onKillGpsServices ? () => {
+                log.logUi("action:developer-kill-gps:open-confirmation");
+                setIsKillGpsConfirmOpen(true);
+              } : undefined}
               onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
               onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
             />
@@ -1935,6 +1943,21 @@ export default function OptionsSheet({
           ) : null}
         </SheetContent>
       </Sheet>
+
+      <ConfirmModal
+        open={isKillGpsConfirmOpen}
+        onOpenChange={setIsKillGpsConfirmOpen}
+        title="Kill GPS services for 30 seconds?"
+        description="TripCast will stop GPS now but keep LIVE selected. GPS restarts automatically after 30 seconds unless you force-close the app, and you can restart it sooner from the map banner."
+        confirmLabel="Kill GPS"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          log.logUi("action:developer-kill-gps:confirm", { durationMs: 30_000 });
+          handleOpenChange(false);
+          onKillGpsServices?.();
+        }}
+      />
 
       {role === "traveler" ? (
         <BulkImportSheet
@@ -2034,6 +2057,7 @@ function OptionsHome({
   onQuickActivities,
   onDebugLogs,
   onTriggerTestToast,
+  onKillGpsServices,
   onEndTrip,
   onViewCredits,
 }: {
@@ -2054,6 +2078,7 @@ function OptionsHome({
   onFollowerCutoff: () => void;
   onQuickActivities: () => void;
   onTriggerTestToast?: () => void;
+  onKillGpsServices?: () => void;
   onEndTrip?: () => void;
   onViewCredits?: () => void;
 }) {
@@ -2064,6 +2089,15 @@ function OptionsHome({
         <IosSideloadProfileCountdown role={role} />
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
         {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
+        {role === "traveler" && onKillGpsServices ? (
+          <OptionsRow
+            icon={RadioTower}
+            title="Kill GPS Services"
+            detail="Stop all TripCast GPS for 30 seconds"
+            danger
+            onClick={onKillGpsServices}
+          />
+        ) : null}
         <OptionsRow
           icon={ShieldAlert}
           title="Trigger Map Cooldown"

@@ -161,6 +161,12 @@ disabled; if iOS nevertheless pauses the session, TripCast immediately requests 
 promotion, the service removes the distance filter until a fresh precise fix arrives, then restores
 normal precise settings. Calibration temporarily holds precise, high-frequency tracking.
 
+Adaptive tracking uses the app's `location` background mode, Always authorization, and
+`CLLocationManager.allowsBackgroundLocationUpdates`; it does not create a
+`CLBackgroundActivitySession`. The Adaptive manager explicitly keeps
+`showsBackgroundLocationIndicator` off, so normal LIVE tracking retains the TripCast Live Activity
+without requesting iOS's blue background-location pill.
+
 Accepted fixes are sampled and published by native Swift rather than depending on the WebView to
 stay executable. Samples are durably queued on-device, sent to Convex in idempotent batches, and
 removed only after acknowledgement. The current-location write advances only for a newer sampled
@@ -295,6 +301,25 @@ observed movement wake distance and elapsed time rather than treating either as 
 
 The iOS location indicator shows that location services are active; it does not prove that
 JavaScript callbacks or Convex writes are continuing.
+
+If the indicator remains active when TripCast should be idle, open **Traveler Options →
+Developer → Kill GPS Services**. After confirmation, TripCast stops the adaptive service, the
+legacy background-geolocation plugin, and the foreground browser watcher while preserving LIVE
+intent and queued breadcrumbs. A map banner counts down the 30-second suppression window and can
+restart GPS immediately. Otherwise normal tracking recovers automatically when the countdown ends.
+Force-quit TripCast during the window when the goal is to leave all TripCast location work stopped;
+the app does not terminate itself. The GPS trace records
+`gps:adaptive:location-services-stopped` with the manager's background-update and indicator flags.
+
+Before installing the first build that no longer uses `CLBackgroundActivitySession`, stop LIVE and
+wait for the blue indicator to disappear. Alternatively, use **Kill GPS Services**, wait for the
+indicator to disappear, and force-quit TripCast during its 30-second suppression window before
+installing. If Xcode replaces an older build while that build owns an active background activity
+session, iOS can orphan the old process's blue Dynamic Island assertion. The newly installed process
+cannot invalidate that old assertion; restart the iPhone or uninstall the app once, then install
+without reopening the old build. Subsequent Adaptive builds do not create that assertion. The
+Legacy tracker may still show the blue indicator while actively sharing because its third-party
+location manager controls that behavior.
 
 1. Open Traveler Options → Developer → Dev Tools.
 2. Enable Debug Logging, select **GPS Trace**, enable location redaction, and clear old logs.
