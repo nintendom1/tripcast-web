@@ -99,6 +99,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
+import { GpsKillBanner, type GpsKillStatus } from "./GpsKillBanner";
 import { useImagePrefetch } from "../journal/useImagePrefetch";
 import { useEgressMeter } from "../journal/useEgressMeter";
 import { uploadStoryImage } from "../journal/storyImageUpload";
@@ -1224,6 +1225,8 @@ type TripMapProps = {
   role: Role;
   locationResetNonce?: number;
   tripDataResetNonce?: number;
+  gpsSuppressedUntil?: number | null;
+  onEnableGps?: () => void;
   finaleReplayActive?: boolean;
   onOpenDebugPanel?: () => void;
   onMapLoaded?: () => void;
@@ -1237,6 +1240,8 @@ export default function TripMap({
   role,
   locationResetNonce = 0,
   tripDataResetNonce = 0,
+  gpsSuppressedUntil = null,
+  onEnableGps,
   finaleReplayActive = false,
   onOpenDebugPanel,
   onMapLoaded,
@@ -1269,6 +1274,8 @@ export default function TripMap({
   const isAppActiveRef = useRef<boolean>(
     typeof document === "undefined" || document.visibilityState !== "hidden",
   );
+  const gpsSuppressedRef = useRef(gpsSuppressedUntil !== null);
+  const handledGpsKillDeadlineRef = useRef<number | null>(null);
   const lastGpsFixLogAtRef = useRef<number>(0);
   const lastHandledFixAtRef = useRef<number | null>(null);
   const lastSamplerRejectionLogAtRef = useRef<number>(0);
@@ -1283,6 +1290,8 @@ export default function TripMap({
   const locationDeniedSettingsOpenedRef = useRef(false);
   const lastLocationFixAtRef = useRef<number | null>(null);
   const [locationStale, setLocationStale] = useState(false);
+  const [gpsKillStatus, setGpsKillStatus] = useState<GpsKillStatus>("stopping");
+  const [gpsKillSecondsRemaining, setGpsKillSecondsRemaining] = useState(0);
   const lastSentLocationRef = useRef<LastSentLocation>(null);
   const breadcrumbSamplerStateRef = useRef<BreadcrumbSamplerState>({});
   const samplerMode = useSamplerMode();
@@ -3391,7 +3400,9 @@ export default function TripMap({
       })),
     })
       .then(() => {
-        if (!cancelled && isLocationSharingRef.current) void retryNativeLocationTracking();
+        if (!cancelled && isLocationSharingRef.current && !gpsSuppressedRef.current) {
+          void retryNativeLocationTracking();
+        }
       })
       .catch((error) => {
         if (cancelled) return;
@@ -3563,8 +3574,10 @@ export default function TripMap({
   // The native LIVE-on case takes the if-branch above and skips this gate
   // entirely, so visibility flips never churn the background-capable native
   // watcher.
+  const gpsSuppressed = gpsSuppressedUntil !== null;
+  gpsSuppressedRef.current = gpsSuppressed;
   const browserWatcherEnabled =
-    isAppActive && (!isLocationSharing || !isNativeLocationAvailable());
+    !gpsSuppressed && isAppActive && (!isLocationSharing || !isNativeLocationAvailable());
 
   // Track location for Travelers. On a native (Capacitor) build, use the
   // background-capable watcher when "Live" is ON; otherwise fall back to
@@ -3572,6 +3585,10 @@ export default function TripMap({
   // draining battery for background tracking.
   useEffect(() => {
     if (role !== "traveler") {
+      setLocationStale(false);
+      return;
+    }
+    if (gpsSuppressed) {
       setLocationStale(false);
       return;
     }
@@ -3587,6 +3604,7 @@ export default function TripMap({
       source: "native-watch" | "browser-watch" | "stale-probe" | "overlay-probe" = "browser-watch",
       sampledAt?: number,
     ) => {
+      if (gpsSuppressedRef.current) return;
       const fixAt = sampledAt ?? Date.now();
       const callbackGapMs =
         lastHandledFixAtRef.current === null ? null : fixAt - lastHandledFixAtRef.current;
@@ -3886,7 +3904,7 @@ export default function TripMap({
   // — Travelers backgrounding with LIVE on must keep streaming fixes to
   // Followers without a gap.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adaptiveGpsEnabled, fixOverlayEnabled, isLocationSharing, browserWatcherEnabled, role, token, log]);
+  }, [adaptiveGpsEnabled, fixOverlayEnabled, gpsSuppressed, isLocationSharing, browserWatcherEnabled, role, token, log]);
 
   // Cleanup toast timeout on unmount
   useEffect(() => {
@@ -3910,7 +3928,7 @@ export default function TripMap({
   // teardown before the JS context goes away. Logs name the trigger so the
   // user can read the debug log and immediately see WHO stopped GPS.
   function forceStopAllWatchers(
-    trigger: "appstate-background" | "pagehide" | "sign-out",
+    trigger: "appstate-background" | "pagehide" | "sign-out" | "developer-kill",
   ) {
     const owner = gpsOwnerRef.current;
     const fn = gpsCleanupRef.current;
@@ -3931,6 +3949,63 @@ export default function TripMap({
       browserLocationWatchRef.current = null;
     }
   }
+
+  useEffect(() => {
+    if (gpsSuppressedUntil === null) {
+      handledGpsKillDeadlineRef.current = null;
+      return;
+    }
+    if (handledGpsKillDeadlineRef.current === gpsSuppressedUntil) return;
+    handledGpsKillDeadlineRef.current = gpsSuppressedUntil;
+    setGpsKillStatus("stopping");
+    setGpsKillSecondsRemaining(
+      Math.max(0, Math.ceil((gpsSuppressedUntil - Date.now()) / 1000)),
+    );
+    log.logGps("gps:developer-kill:teardown-start", {
+      liveSharing: isLocationSharingRef.current,
+      nativeAvailable: isNativeLocationAvailable(),
+      durationMs: Math.max(0, gpsSuppressedUntil - Date.now()),
+      pendingSamples: "preserve",
+    });
+    forceStopAllWatchers("developer-kill");
+
+    const nativeStop = isNativeLocationAvailable()
+      ? stopNativeLocationTracking({ pendingSamples: "preserve" })
+      : Promise.resolve();
+    void nativeStop
+      .then(() => {
+        if (handledGpsKillDeadlineRef.current !== gpsSuppressedUntil) return;
+        setGpsKillStatus("stopped");
+        log.logGps("gps:developer-kill:teardown-acknowledged", {
+          liveSharing: isLocationSharingRef.current,
+          nativeAvailable: isNativeLocationAvailable(),
+          pendingSamples: "preserve",
+        });
+      })
+      .catch((error) => {
+        if (handledGpsKillDeadlineRef.current !== gpsSuppressedUntil) return;
+        setGpsKillStatus("unconfirmed");
+        log.logGps("gps:developer-kill:teardown-failure", {
+          liveSharing: isLocationSharingRef.current,
+          nativeAvailable: isNativeLocationAvailable(),
+          errorType: error instanceof Error ? error.name : typeof error,
+        }, "error");
+      });
+  // forceStopAllWatchers reads refs only and is intentionally synchronous.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gpsSuppressedUntil, log]);
+
+  useEffect(() => {
+    if (gpsSuppressedUntil === null) return;
+    const updateCountdown = () => {
+      setGpsKillSecondsRemaining(
+        Math.max(0, Math.ceil((gpsSuppressedUntil - Date.now()) / 1000)),
+      );
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [gpsSuppressedUntil]);
 
   // Visibilitychange is the WKWebView signal for "iOS suspended/resumed the
   // app" (swipe home, app switcher). On Capacitor it fires reliably without
@@ -3954,6 +4029,10 @@ export default function TripMap({
         liveTrail: liveTrailEnabledRef.current,
         movementDetect: movementPrefsRef.current?.movementDetectionEnabled ?? false,
       });
+      if (gpsSuppressedRef.current) {
+        forceStopAllWatchers("developer-kill");
+        return;
+      }
       if (nextActive) {
         if (
           !isLocationSharingRef.current &&
@@ -5744,6 +5823,13 @@ export default function TripMap({
           finaleReplayActive && "invisible",
         )}
       >
+        {role === "traveler" && gpsSuppressedUntil !== null ? (
+          <GpsKillBanner
+            status={gpsKillStatus}
+            secondsRemaining={gpsKillSecondsRemaining}
+            onEnable={() => onEnableGps?.()}
+          />
+        ) : null}
         {locationStale ? (
           <button
             type="button"

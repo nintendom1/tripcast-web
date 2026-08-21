@@ -176,9 +176,10 @@ class NativeLocationManager {
     // Submit teardown to both native plugins immediately. Waiting for the
     // existing JS command chain before crossing the bridge would let iOS
     // suspend the WebView while an older start was still resolving.
-    const legacyStop = this.isStarted
-      ? BackgroundGeolocation.stop()
-      : Promise.resolve();
+    // The native plugin's stop is idempotent. Call it even when the JavaScript
+    // bookkeeping says Legacy is idle so an orphaned CLLocationManager cannot
+    // survive a stale or reconstructed WebView state.
+    const legacyStop = BackgroundGeolocation.stop();
     this.isStarted = false;
     this.currentOptions = null;
     const adaptiveStop = AdaptiveLocation.stop(options);

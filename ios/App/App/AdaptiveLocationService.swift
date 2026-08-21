@@ -67,7 +67,6 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     private var freshFixAcquisitionBeganAt: Date?
     private var forcedPublishReason: String?
     private var standardUpdatesRunning = false
-    private var backgroundActivitySession: AnyObject?
     private var motionUpdatesRunning = false
     private var motionState = "unknown"
     private var motionConfidence = "unknown"
@@ -159,7 +158,6 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         defaults.set(true, forKey: DefaultsKey.liveRequested)
         requestAuthorization()
         startMotionUpdates()
-        ensureBackgroundActivitySession()
         if trigger == "restored", mode == .powerSaving, stationaryAnchor != nil {
             configurePowerSavingManager()
         } else {
@@ -624,6 +622,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
         manager.activityType = .fitness
         manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = false
         manager.pausesLocationUpdatesAutomatically = true
     }
 
@@ -655,6 +654,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         manager.distanceFilter = 100
         manager.activityType = .fitness
         manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = false
         manager.pausesLocationUpdatesAutomatically = true
         manager.stopUpdatingLocation()
         standardUpdatesRunning = false
@@ -719,18 +719,21 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         manager.stopUpdatingLocation()
         standardUpdatesRunning = false
         stopLowPowerMonitors()
-        if #available(iOS 17.0, *),
-           let session = backgroundActivitySession as? CLBackgroundActivitySession {
-            session.invalidate()
-        }
-        backgroundActivitySession = nil
-    }
-
-    private func ensureBackgroundActivitySession() {
-        guard backgroundActivitySession == nil else { return }
-        if #available(iOS 17.0, *) {
-            backgroundActivitySession = CLBackgroundActivitySession()
-        }
+        manager.allowsBackgroundLocationUpdates = false
+        manager.showsBackgroundLocationIndicator = false
+        emit([
+            "action": "gps:adaptive:location-services-stopped",
+            "details": [
+                "standardUpdatesStopped": true,
+                "significantLocationChangesStopped": true,
+                "wakeRegionsRemoved": manager.monitoredRegions.filter {
+                    $0.identifier == wakeRegionIdentifier
+                }.isEmpty,
+                "allowsBackgroundLocationUpdates": manager.allowsBackgroundLocationUpdates,
+                "showsBackgroundLocationIndicator": manager.showsBackgroundLocationIndicator,
+                "backgroundActivitySession": "unused"
+            ]
+        ])
     }
 
     private func emitLocation(_ location: CLLocation) {
@@ -926,7 +929,6 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         case .denied, .restricted:
             LiveActivityController.shared.setLocationAcquisitionFailed()
         case .authorizedAlways:
-            ensureBackgroundActivitySession()
             startMotionUpdates()
             if mode == .powerSaving { configurePowerSavingManager() }
             else { enterPreciseMode(resetIdleWindow: true, reason: "authorization-change") }
