@@ -14,7 +14,12 @@ import {
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
-import { extractImageMetadata, validateStoryImageFile, type ImageMetadata } from "../journal/storyImageUpload";
+import {
+  extractImageMetadata,
+  validateStoryImageFile,
+  type ImageMetadata,
+  type StoryImageDraft,
+} from "../journal/storyImageUpload";
 import { LoadingImage } from "../../components/ui/LoadingImage";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
@@ -47,14 +52,14 @@ export type CheckpointPrefill = {
 
 type AddCheckpointSheetProps = {
   selectedCoordinate: SelectedCoordinate | null;
-  onSave: (args: Omit<AddCheckpointArgs, "token">, file?: File) => void;
+  onSave: (args: Omit<AddCheckpointArgs, "token">, image?: StoryImageDraft) => void;
   onCoordinateChange?: (lat: number, lon: number) => void;
   onClose: () => void;
   saveUnavailableMessage?: string;
   stateSection?: React.ReactNode;
   prefill?: CheckpointPrefill;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
-  prefillFile?: File;
+  prefillImage?: StoryImageDraft;
   /** When provided AND a story prefill is active (mission completion path),
    *  the action row swaps the "Cancel" button for a "← Back" button that the
    *  parent can wire to "reopen the mission detail" — matching the rest of the
@@ -102,6 +107,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   const [showInStory, setShowInStory] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [preparedImage, setPreparedImage] = useState<Omit<StoryImageDraft, "file"> | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<StoryImageSize>(() => getDefaultStoryImageSize());
   const [happenedAtInput, setHappenedAtInput] = useState<string>(() => {
@@ -141,6 +147,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
   useEffect(() => {
     if (!selectedCoordinate) {
       setImageFile(null);
+      setPreparedImage(null);
       setImagePreviewUrl(null);
       return;
     }
@@ -164,10 +171,11 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     setShowInStory(true);
     setError(null);
 
-    if (props.prefillFile) {
-      handleImageChange(props.prefillFile);
+    if (props.prefillImage) {
+      handleImageChange(props.prefillImage.file, props.prefillImage);
     } else {
       setImageFile(null);
+      setPreparedImage(null);
       setImagePreviewUrl(null);
     }
 
@@ -176,7 +184,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       prefill?.happenedAt !== undefined ? new Date(prefill.happenedAt) : new Date();
     setHappenedAtInput(toLocalDatetimeInputValue(initialHappenedAt));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCoordinate, prefill, props.prefillFile]);
+  }, [selectedCoordinate, prefill, props.prefillImage]);
 
   useEffect(() => {
     return () => {
@@ -184,11 +192,16 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     };
   }, [imagePreviewUrl]);
 
-  async function handleImageChange(file: File | undefined) {
+  async function handleImageChange(file: File | undefined, prepared?: StoryImageDraft) {
     if (!file) return;
     try {
       validateStoryImageFile(file);
       setImageFile(file);
+      setPreparedImage(prepared ? {
+        width: prepared.width,
+        height: prepared.height,
+        alreadyCompressed: prepared.alreadyCompressed,
+      } : null);
       setImagePreviewUrl((current) => {
         if (current) URL.revokeObjectURL(current);
         return URL.createObjectURL(file);
@@ -196,7 +209,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
 
       // Extract metadata
       const requestId = ++metadataRequestIdRef.current;
-      const nextMetadata = await extractImageMetadata(file);
+      const nextMetadata = prepared?.alreadyCompressed ? null : await extractImageMetadata(file);
       if (requestId !== metadataRequestIdRef.current) return;
       setMetadata(nextMetadata);
       if (nextMetadata) {
@@ -223,6 +236,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
     // Invalidate any in-flight EXIF read so it can't repopulate metadata.
     metadataRequestIdRef.current++;
     setImageFile(null);
+    setPreparedImage(null);
     setImagePreviewUrl((current) => {
       if (current) URL.revokeObjectURL(current);
       return null;
@@ -311,7 +325,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
       source: selectedCoordinate.source,
       missionId: prefill?.missionId,
       ...(happenedAtMs !== null ? { happenedAt: happenedAtMs } : {}),
-    }, imageFile ?? undefined);
+    }, imageFile ? { file: imageFile, ...preparedImage } : undefined);
 
     onClose();
   }

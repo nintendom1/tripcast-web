@@ -64,6 +64,8 @@ Travel Funds information:
 
 Device and app storage:
 - localStorage and sessionStorage data used to keep app preferences, local state, debug settings, read/unread state, and similar app behavior.
+- photo-library metadata and previews processed temporarily on the Traveler's iPhone when Photo Roulette is used;
+- the last-viewed Photo Roulette asset identifier stored locally on the Traveler's device so browsing can resume.
 
 Debug information:
 - local debug logs created in the browser;
@@ -82,6 +84,10 @@ Location may be inaccurate, delayed, unavailable, or incomplete.
 5. Photos and media
 
 Photos and media added to Stories or other trip content may be uploaded to backend storage.
+
+Photo Roulette reads only the iPhone photos the Traveler authorizes. Browsing, thumbnail loading, capture times, and photo GPS coordinates stay on the device. TripCast sends capture timestamps to its backend only when it needs to find the closest existing Trail Line point; it does not upload the browsed photo during that lookup.
+
+An authorized photo is uploaded only after the Traveler chooses it and saves the Story. If the selected original is stored in iCloud, TripCast asks the Traveler to explicitly download it before use.
 
 Photos and media may be visible to authorized trip members.
 

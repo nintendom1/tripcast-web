@@ -135,6 +135,17 @@ on every routine build, because renewal requires Apple's provisioning service.
 - [ ] App launches in the iOS Simulator and the existing TripCast web app renders unchanged
       (map, sheets, auth all work — backend reached over https).
 - [ ] App installs and launches on the physical iPhone via `npm run ios:run`.
+- [ ] Traveler Add menu shows Photo Roulette, requests Photos access, and handles full, limited,
+      denied, and empty-library states.
+- [ ] Swiping local photos updates the map; photo GPS wins, and photos without GPS use the
+      nearest Trail Line sample by capture time.
+- [ ] Roulette restores the last photo at its absolute filtered position, keeps newer photos
+      reachable, and never flashes a false empty-library state during a warm reopen.
+- [ ] The timeline contains only photos since the saved content cutoff or earliest Story pin
+      (and the full library only when neither exists).
+- [ ] Tapping a local thumbnail opens Check In; an iCloud-only photo does not download while
+      browsing and shows a **Download & use** confirmation before any network-backed request.
+- [ ] Saving a selected photo queues one compressed Story image and returns to Photo Roulette.
 - [ ] Traveler Developer options show the embedded profile's actual expiration on physical iOS.
 - [ ] `--refresh-profile` renews the profile to approximately seven days and deploys it.
 - [ ] `npm run validate` passes (regression guard).

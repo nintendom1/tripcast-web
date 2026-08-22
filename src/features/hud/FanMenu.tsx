@@ -1,12 +1,12 @@
 import * as React from "react";
 import { useEffect, useMemo } from "react";
-import { Heart, MapPin, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
+import { Heart, Images, MapPin, Trophy, Vote as VoteIcon, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 
-export type FanAction = "checkin" | "transaction" | "mission" | "status" | "vote";
+export type FanAction = "checkin" | "photo_roulette" | "transaction" | "mission" | "status" | "vote";
 
 export interface FanMenuProps {
   open: boolean;
@@ -43,6 +43,11 @@ export function FanMenu({
         label: `${TERMS.checkIn} / ${TERMS.story}`,
         icon: <MapPin className="h-4 w-4" aria-hidden="true" />,
         color: "var(--flag)",
+      },
+      photo_roulette: {
+        label: "Photo Roulette",
+        icon: <Images className="h-4 w-4" aria-hidden="true" />,
+        color: "var(--amber)",
       },
       transaction: {
         label: "Add Spending",

@@ -120,7 +120,7 @@ describe("AddCheckpointSheet", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ showInStory: false }), undefined);
   });
 
-  it("passes the raw photo file to onSave on submit", async () => {
+  it("passes the selected photo draft to onSave on submit", async () => {
     const onSave = vi.fn();
     const user = userEvent.setup();
     render(<AddCheckpointSheet {...makeProps({ onSave })} />);
@@ -131,7 +131,7 @@ describe("AddCheckpointSheet", () => {
 
     expect(onSave).toHaveBeenCalledWith(
       expect.any(Object),
-      file
+      { file },
     );
   });
 

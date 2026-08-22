@@ -28,6 +28,9 @@ export interface PendingSave {
   };
   imageBlob?: Blob;
   imageType?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+  imageAlreadyCompressed?: boolean;
   status: "uploading" | "saving" | "failed" | "link-failed";
   progress: number; // 0 to 100
   error?: string;

@@ -7,7 +7,7 @@ import {
 } from "../lib/idb";
 import { useMutation } from "convex/react";
 import { tripcastApi } from "../convex/tripcastApi";
-import { uploadStoryImage } from "../features/journal/storyImageUpload";
+import { uploadStoryImage, type StoryImageDraft } from "../features/journal/storyImageUpload";
 import { registerPlugin } from "@capacitor/core";
 
 interface LiveActivityPlugin {
@@ -38,7 +38,7 @@ if (import.meta.env.DEV && (SIM_SLOW_MS || SIM_FAIL_RATE || SIM_LINK_FAIL_RATE))
 
 interface BackgroundSaveContextType {
   saves: PendingSave[];
-  startSave: (data: PendingSave["data"], file?: File, onComplete?: (id: string, prefill?: any) => void) => Promise<string>;
+  startSave: (data: PendingSave["data"], image?: StoryImageDraft, onComplete?: (id: string, prefill?: any) => void) => Promise<string>;
   retrySave: (id: string) => Promise<void>;
   dismissSave: (id: string) => Promise<void>;
 }
@@ -116,7 +116,15 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
           simMaybeFail(SIM_FAIL_RATE, "[sim] Upload failed");
 
           const file = new File([save.imageBlob], "image.jpg", { type: save.imageType });
-          const uploadResult = await uploadStoryImage(file, () => generateUploadUrl({ token }));
+          const uploadResult = await uploadStoryImage(
+            file,
+            () => generateUploadUrl({ token }),
+            {
+              width: save.imageWidth,
+              height: save.imageHeight,
+              alreadyCompressed: save.imageAlreadyCompressed,
+            },
+          );
           imageId = uploadResult.storageId;
           imageWidth = uploadResult.width;
           imageHeight = uploadResult.height;
@@ -282,7 +290,7 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
     return () => clearInterval(interval);
   }, [performSave]);
 
-  const startSave = useCallback(async (data: PendingSave["data"], file?: File, onComplete?: (id: string, prefill?: any) => void) => {
+  const startSave = useCallback(async (data: PendingSave["data"], image?: StoryImageDraft, onComplete?: (id: string, prefill?: any) => void) => {
     const id = crypto.randomUUID();
     if (onComplete) {
       completionCallbacks.current[id] = onComplete;
@@ -290,8 +298,11 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
     const newSave: PendingSave = {
       id,
       data,
-      imageBlob: file,
-      imageType: file?.type,
+      imageBlob: image?.file,
+      imageType: image?.file.type,
+      imageWidth: image?.width,
+      imageHeight: image?.height,
+      imageAlreadyCompressed: image?.alreadyCompressed,
       status: "uploading",
       progress: 0,
       createdAt: Date.now(),

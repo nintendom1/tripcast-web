@@ -102,7 +102,12 @@ import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import { GpsKillBanner, type GpsKillStatus } from "./GpsKillBanner";
 import { useImagePrefetch } from "../journal/useImagePrefetch";
 import { useEgressMeter } from "../journal/useEgressMeter";
-import { uploadStoryImage } from "../journal/storyImageUpload";
+import { uploadStoryImage, type StoryImageDraft } from "../journal/storyImageUpload";
+import {
+  PhotoRouletteSheet,
+  type PhotoRouletteSelection,
+} from "../photo-roulette/PhotoRouletteSheet";
+import { isPhotoRouletteAvailable } from "../photo-roulette/photoLibrary";
 import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
 import { useMessagingUnread } from "../messaging/useMessagingUnread";
 import { useJournalUnread } from "../journal/useJournalUnread";
@@ -340,6 +345,8 @@ const SHEET_RESIZE_THRESHOLD_PX = 8;
 const SHEET_MIN_OPEN_PX = 120;
 /** Debounce window collapsing animate-in resize frames into one recenter. */
 const SHEET_RESIZE_DEBOUNCE_MS = 120;
+/** Photo Roulette targets the center of the map area visible between HUD and sheet. */
+const PHOTO_ROULETTE_ANCHOR = { x: 0.5, y: 0.5 } as const;
 
 const UNKNOWN_DEBUG_SOURCE: DebugOpenSource = {
   source: "unknown",
@@ -988,23 +995,25 @@ function ConvexCheckpointSheet({
   token,
   onClose,
   prefill,
-  prefillFile,
+  prefillImage,
   onCheckpointCreated,
   onBack,
   setSelectedCoordinate,
   centerMapOnCoordinate,
   debugSource,
+  onSaveQueued,
 }: {
   selectedCoordinate: SelectedCoordinate | null;
   token: string;
   onClose: () => void;
   prefill?: CheckpointPrefill;
-  prefillFile?: File;
+  prefillImage?: StoryImageDraft;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
   setSelectedCoordinate: (coord: SelectedCoordinate | null) => void;
   centerMapOnCoordinate: (coord: { lat: number; lon: number }) => void;
   debugSource?: DebugOpenSource;
+  onSaveQueued?: () => void;
 }) {
   const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
   const bgSave = useBackgroundSave();
@@ -1043,8 +1052,8 @@ function ConvexCheckpointSheet({
     }
   }, [selectedCoordinate]);
 
-  function handleSave(args: Omit<AddCheckpointArgs, "token">, file?: File) {
-    bgSave.startSave({
+  function handleSave(args: Omit<AddCheckpointArgs, "token">, image?: StoryImageDraft) {
+    void bgSave.startSave({
       ...args,
       showInStory: args.showInStory ?? true,
       moodValue,
@@ -1059,7 +1068,8 @@ function ConvexCheckpointSheet({
         completeMission: prefill.completeMission,
         mysteryReveal: prefill.mysteryReveal,
       } : undefined,
-    } as any, file, onCheckpointCreated);
+    } as any, image, onCheckpointCreated);
+    onSaveQueued?.();
   }
 
   function Chips<T extends string>({ values, labels, selected, onSelect }: { values: T[]; labels: Record<T, string>; selected: T | undefined; onSelect: (v: T) => void }) {
@@ -1183,6 +1193,7 @@ function ConvexCheckpointSheet({
         onSave={handleSave}
         stateSection={stateSection}
         prefill={prefill}
+        prefillImage={prefillImage}
         onCheckpointCreated={onCheckpointCreated}
         onBack={onBack}
         onUploadImage={(file) => uploadStoryImage(file, () => convex.mutation(tripcastApi.checkpoints.generateStoryImageUploadUrl, { token }))}
@@ -1368,6 +1379,12 @@ export default function TripMap({
   const [isFollowing, setIsFollowing] = useState(false);
   const [selectedCoordinate, setSelectedCoordinate] = useState<SelectedCoordinate | null>(null);
   const [isPlacementMode, setIsPlacementMode] = useState(false);
+  const [isPhotoRouletteOpen, setIsPhotoRouletteOpen] = useState(false);
+  const [photoRouletteCoordinate, setPhotoRouletteCoordinate] = useState<{ lat: number; lon: number } | null>(null);
+  const [photoRouletteDraftAssetId, setPhotoRouletteDraftAssetId] = useState<string | null>(null);
+  const [photoRouletteQueuedAssetIds, setPhotoRouletteQueuedAssetIds] = useState<Set<string>>(() => new Set());
+  const photoRouletteZoomRef = useRef<number | null>(null);
+  const photoRouletteAvailable = useMemo(() => isPhotoRouletteAvailable(), []);
   const [isVotePanelOpen, setIsVotePanelOpen] = useState(false);
   const [isTravelerStateOpen, setIsTravelerStateOpen] = useState(false);
   const { dismissSave } = useBackgroundSave();
@@ -1442,7 +1459,7 @@ export default function TripMap({
   // view (the four-button action set the Traveler expects to return to).
   const [pendingOpenDetailMissionId, setPendingOpenDetailMissionId] = useState<string | null>(null);
   const [pendingOpenVoteId, setPendingOpenVoteId] = useState<string | null>(null);
-  const [prefillFile, setPrefillFile] = useState<File | undefined>();
+  const [prefillImage, setPrefillImage] = useState<StoryImageDraft | undefined>();
   const [replayActive, setReplayActive] = useState(false);
   const [replayPlayheadIndex, setReplayPlayheadIndex] = useState<number | null>(null);
   const [replaySpeed, setReplaySpeed] = useState(1);
@@ -1515,6 +1532,20 @@ export default function TripMap({
   );
   const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token });
   const cutoffPreview = useFollowerCutoffPreview(role, token);
+  const photoRouletteCutoffAt = useMemo<number | null | undefined>(() => {
+    if (role !== "traveler") return null;
+    if (movementPrefs === undefined || rawCheckpoints === undefined) return undefined;
+    const savedCutoff = movementPrefs?.followerContentCutoffEnabled
+      ? movementPrefs.followerContentCutoffAt
+      : undefined;
+    if (typeof savedCutoff === "number" && Number.isFinite(savedCutoff)) return savedCutoff;
+    let earliestCheckpoint = Number.POSITIVE_INFINITY;
+    for (const checkpoint of rawCheckpoints) {
+      const timestamp = checkpoint.happenedAt ?? checkpoint.createdAt;
+      if (Number.isFinite(timestamp)) earliestCheckpoint = Math.min(earliestCheckpoint, timestamp);
+    }
+    return Number.isFinite(earliestCheckpoint) ? earliestCheckpoint : null;
+  }, [movementPrefs, rawCheckpoints, role]);
   // True unless an active, narrowed replay window excludes the timestamp. Used to
   // filter every timestamped map layer to the selected window during Replay.
   const inReplayWindow = useCallback(
@@ -1821,6 +1852,9 @@ export default function TripMap({
   const hasUnseenVote = voteAlert?.hasUnseen ?? false;
 
   const [fanOpen, setFanOpen] = useState(false);
+  const fanMenuItems = useMemo<FanAction[]>(() => photoRouletteAvailable
+    ? ["checkin", "photo_roulette", "transaction", "mission", "status", "vote"]
+    : ["checkin", "transaction", "mission", "status", "vote"], [photoRouletteAvailable]);
   const isDesktop = useIsDesktop();
 
   // Re-measure the map canvas when the desktop/mobile layout switches so
@@ -2782,6 +2816,29 @@ export default function TripMap({
     music.sfx("tap");
     setFanOpen(false);
     switch (action) {
+      case "photo_roulette":
+        log.logInteraction("photo-roulette:open", { trigger: "fan-menu" });
+        performance.mark("tripcast:debug:photo-roulette:open");
+        stopFollowing();
+        setIsJournalOpen(false);
+        setIsMissionsPanelOpen(false);
+        setIsVotePanelOpen(false);
+        setIsTravelFundsSheetOpen(false);
+        setIsAchievementsOpen(false);
+        setIsMessagingOpen(false);
+        setIsTravelerStateOpen(false);
+        setSelectedCoordinate(null);
+        setStoryPrefill(null);
+        setPrefillImage(undefined);
+        setPhotoRouletteCoordinate(null);
+        setPhotoRouletteDraftAssetId(null);
+        setPhotoRouletteQueuedAssetIds(new Set());
+        photoRouletteZoomRef.current = mapRef.current
+          ? Math.max(10, Math.min(13, mapRef.current.getZoom()))
+          : 11;
+        setIsPhotoRouletteOpen(true);
+        setCheckInDebugSource({ source: "fan-menu:photo-roulette", sourceLabel: "FanMenu -> Photo Roulette" });
+        break;
       case "checkin":
         if (livePosition) {
           log.logInteraction("coordinate:picked", {
@@ -3500,6 +3557,102 @@ export default function TripMap({
     },
     [log, showToast],
   );
+
+  const resolvePhotoRouletteTrail = useCallback((capturedAtMs: number[]) => (
+    convex.query(tripcastApi.liveTrail.travelerFindNearestLiveTrailSamples, {
+      token,
+      capturedAtMs,
+    })
+  ), [convex, token]);
+
+  const handlePhotoRouletteMapCoordinate = useCallback((
+    coordinate: { lat: number; lon: number },
+    settled: boolean,
+  ) => {
+    setPhotoRouletteCoordinate(coordinate);
+    const map = mapRef.current;
+    if (!map || mapServiceUnavailableRef.current) return;
+    const zoom = photoRouletteZoomRef.current ?? Math.max(10, Math.min(13, map.getZoom()));
+    photoRouletteZoomRef.current = zoom;
+    const measuredGeometry = readFocusGeometry(map, {
+      topOccluderEl: cardsWrapperRef.current,
+      sheetSelector: "[data-role='photo-roulette-sheet']",
+      minZoom: zoom,
+      anchor: PHOTO_ROULETTE_ANCHOR,
+    });
+    const geometry: FocusGeometry = { ...measuredGeometry, zoom };
+    const camera = {
+      center: [coordinate.lon, coordinate.lat] as [number, number],
+      zoom,
+      padding: geometry.padding,
+    };
+    if (settled) {
+      log.logMap("map:camera:focus", {
+        trigger: "photo-roulette:swipe",
+        reason: "active-photo",
+        lat: coordinate.lat,
+        lon: coordinate.lon,
+        viewport: geometry.viewport,
+        topOccluder: geometry.topOccluder,
+        bottomOccluder: geometry.bottomOccluder,
+        band: geometry.band,
+        target: geometry.target,
+        anchor: geometry.anchor,
+        padding: geometry.padding,
+        zoom: geometry.zoom,
+      });
+      pendingFocusRef.current = {
+        coord: coordinate,
+        trigger: "photo-roulette:swipe",
+        sheetSelector: "[data-role='photo-roulette-sheet']",
+        minZoom: zoom,
+        geometry,
+      };
+      focusAdjustArmRef.current = null;
+      map.easeTo({ ...camera, duration: 180 });
+    } else {
+      pendingFocusRef.current = null;
+      focusAdjustArmRef.current = null;
+      map.jumpTo(camera);
+    }
+  }, [log]);
+
+  const handlePhotoRouletteSelection = useCallback((selection: PhotoRouletteSelection) => {
+    setPrefillImage(selection.image);
+    setStoryPrefill(selection.asset.capturedAt !== null
+      ? { happenedAt: selection.asset.capturedAt }
+      : null);
+    setPhotoRouletteDraftAssetId(selection.asset.id);
+    setCheckInDebugSource({
+      source: "fan-menu:photo-roulette",
+      sourceLabel: "Photo Roulette -> Check In",
+    });
+    if (selection.location) {
+      const coordinate: SelectedCoordinate = {
+        lat: selection.location.lat,
+        lon: selection.location.lon,
+        source: "fan_menu",
+      };
+      setSelectedCoordinate(coordinate);
+      centerMapOnCoordinate(coordinate);
+    } else {
+      setIsPlacementMode(true);
+    }
+  }, [centerMapOnCoordinate]);
+
+  const closePhotoRoulette = useCallback(() => {
+    setIsPhotoRouletteOpen(false);
+    setPhotoRouletteCoordinate(null);
+    setPhotoRouletteDraftAssetId(null);
+    setPhotoRouletteQueuedAssetIds(new Set());
+    setPrefillImage(undefined);
+    setStoryPrefill(null);
+    photoRouletteZoomRef.current = null;
+    const map = mapRef.current;
+    if (map) {
+      map.jumpTo({ padding: { top: 0, right: 0, bottom: 0, left: 0 } });
+    }
+  }, []);
 
   useEffect(() => {
     if (!isFollowing) return;
@@ -5006,9 +5159,14 @@ export default function TripMap({
 
     // Restore the image file if available
     if (save.imageBlob) {
-      setPrefillFile(new File([save.imageBlob], "image.jpg", { type: save.imageType }));
+      setPrefillImage({
+        file: new File([save.imageBlob], "image.jpg", { type: save.imageType }),
+        width: save.imageWidth,
+        height: save.imageHeight,
+        alreadyCompressed: save.imageAlreadyCompressed,
+      });
     } else {
-      setPrefillFile(undefined);
+      setPrefillImage(undefined);
     }
 
     // Dismiss the failed save from the background queue so it doesn't show the toast anymore
@@ -5176,7 +5334,10 @@ export default function TripMap({
       <div ref={mapContainerRef} className={mapClassName} />
 
       {/* Side-effect marker components */}
-      <PreviewPinMarker map={mapInstance} coord={previewCoord} />
+      <PreviewPinMarker
+        map={mapInstance}
+        coord={isPhotoRouletteOpen ? photoRouletteCoordinate : previewCoord}
+      />
       <CheckpointMarkers
         map={mapInstance}
         checkpoints={checkpoints}
@@ -5695,12 +5856,26 @@ export default function TripMap({
 
       <FanMenu
         open={fanOpen && role === "traveler"}
+        items={fanMenuItems}
         onClose={() => {
           music.sfx("close");
           setFanOpen(false);
         }}
         onPick={handleFanPick}
       />
+
+      {canWrite && photoRouletteAvailable ? (
+        <PhotoRouletteSheet
+          open={isPhotoRouletteOpen}
+          hidden={selectedCoordinate !== null || isPlacementMode}
+          cutoffAt={photoRouletteCutoffAt}
+          queuedAssetIds={photoRouletteQueuedAssetIds}
+          resolveNearestTrail={resolvePhotoRouletteTrail}
+          onMapCoordinate={handlePhotoRouletteMapCoordinate}
+          onUsePhoto={handlePhotoRouletteSelection}
+          onClose={closePhotoRoulette}
+        />
+      ) : null}
 
       {/* Checkpoint add sheet */}
       {canWrite && (
@@ -5711,19 +5886,28 @@ export default function TripMap({
             music.sfx("close");
             setSelectedCoordinate(null);
             setStoryPrefill(null);
-            setPrefillFile(undefined);
+            setPrefillImage(undefined);
+            setPhotoRouletteDraftAssetId(null);
             // Swipe-down / escape dismissal — drop the pending detail return
             // so a later unrelated open of the missions panel doesn't surprise
             // the Traveler by jumping to this mission's detail.
             setPendingOpenDetailMissionId(null);
           }}
           prefill={storyPrefill ?? undefined}
-          prefillFile={prefillFile}
+          prefillImage={prefillImage}
           onCheckpointCreated={handleStoryCheckpointCreated}
           onBack={storyPrefill?.missionId ? handleBackFromStory : undefined}
           setSelectedCoordinate={setSelectedCoordinate}
           centerMapOnCoordinate={centerMapOnCoordinate}
           debugSource={checkInDebugSource}
+          onSaveQueued={() => {
+            if (!photoRouletteDraftAssetId) return;
+            setPhotoRouletteQueuedAssetIds((current) => {
+              const next = new Set(current);
+              next.add(photoRouletteDraftAssetId);
+              return next;
+            });
+          }}
         />
       )}
 

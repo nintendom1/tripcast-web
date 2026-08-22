@@ -21,7 +21,7 @@ For FanMenu and Dock panel-open actions, pair each `log.logInteraction` with a `
 
 ## Map Focus Centering (observability + "teach by dragging")
 
-When a focused pin (mission/journal/story/replay) is moved into view, all triggers route through `src/features/map/focusCoordinate.ts`, which clamps the pin to the **center of the visible band** between the status card and the active bottom sheet. The result is observable through a three-event triad (category `map`):
+When a focused pin (mission/journal/story/replay/photo roulette) is moved into view, all triggers route through `src/features/map/focusCoordinate.ts`, which clamps the pin to the **center of the visible band** between the status card and the active bottom sheet. The result is observable through a three-event triad (category `map`):
 
 - **`map:camera:focus`** — fired before the move. Carries the full geometry: `viewport`, `topOccluder`, `bottomOccluder` (with `source` selector), `band` ({top,height} in map-local px), `target` screen point, `anchor`, computed `padding`, and `zoom`.
 - **`map:camera:focus:settled`** — fired on the programmatic `moveend`. Reports where the pin **actually** landed: `screen` px, `bandFraction` ({x,y}), and `occluded`. **`bandFraction` is the artifact to read** — `x` is the fraction across the full width, `y` is the fraction down the visible band. Ideal ≈ `{ x: 0.50, y: 0.50 }`. e.g. `{ y: 0.72 }` means the pin sits 72% down the band (too low).
@@ -29,7 +29,7 @@ When a focused pin (mission/journal/story/replay) is moved into view, all trigge
 
 ### SOP: teach the LLM the desired centering
 
-1. Open the map-linked sheet (Mission / Story / Votes) so the pin auto-focuses.
+1. Open the map-linked sheet (Mission / Story / Votes / Photo Roulette) so the pin auto-focuses.
 2. **Drag the map** so the pin sits exactly where you want it.
 3. Copy the single `map:camera:focus:user-adjust` log line and paste it to the LLM.
 4. `impliedAnchor` is the exact tuning target — the LLM updates `ANCHOR` (or a per-trigger anchor) in `focusCoordinate.ts` to match.
