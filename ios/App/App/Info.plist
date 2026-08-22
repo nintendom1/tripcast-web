@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TripCast lets you browse your photo library on the map and choose a photo for a Story.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>TripCast shows your live location on the trip map.</string>
 	<key>NSSupportsLiveActivities</key>

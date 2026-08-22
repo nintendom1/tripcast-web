@@ -188,6 +188,12 @@ export type NativeLocationBatchResult = {
 
 export type LatestLiveTrailSample = LiveTrailSample | FollowerLiveTrailSample | null;
 
+export type NearestLiveTrailSampleResult = {
+  capturedAtMs: number;
+  sample: LiveTrailSample | null;
+  deltaMs: number | null;
+};
+
 export type LiveTrailPreviewSample = {
   _id: string;
   lat: number;
@@ -1798,6 +1804,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       LatestLiveTrailSample
+    >,
+    travelerFindNearestLiveTrailSamples: (anyApi as any).liveTrail.travelerFindNearestLiveTrailSamples as FunctionReference<
+      "query",
+      "public",
+      { token: string; capturedAtMs: number[] },
+      NearestLiveTrailSampleResult[]
     >,
     listReplayLiveTrailSamples: (anyApi as any).liveTrail.listReplayLiveTrailSamples as FunctionReference<
       "query",

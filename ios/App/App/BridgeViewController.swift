@@ -5,5 +5,6 @@ class BridgeViewController: CAPBridgeViewController {
     override open func capacitorDidLoad() {
         bridge?.registerPluginInstance(ProvisioningProfilePlugin())
         bridge?.registerPluginInstance(AdaptiveLocationPlugin())
+        bridge?.registerPluginInstance(PhotoLibraryPlugin())
     }
 }

@@ -12,6 +12,7 @@ export interface ConfirmModalProps {
   cancelLabel?: string;
   onConfirm: () => void;
   variant?: "default" | "danger";
+  closeOnConfirm?: boolean;
 }
 
 /**
@@ -26,14 +27,16 @@ export function ConfirmModal({
   cancelLabel = "Cancel",
   onConfirm,
   variant = "default",
+  closeOnConfirm = true,
 }: ConfirmModalProps) {
   const isDanger = variant === "danger";
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm" />
+        <Dialog.Backdrop data-sheet-nested-dialog className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm" />
         <Dialog.Popup
+          data-sheet-nested-dialog
           className={cn(
             "fixed left-1/2 top-1/2 z-[101] w-[calc(100%-32px)] max-w-sm -translate-x-1/2 -translate-y-1/2",
             "rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-5 shadow-xl",
@@ -74,7 +77,7 @@ export function ConfirmModal({
               type="button"
               onClick={() => {
                 onConfirm();
-                onOpenChange(false);
+                if (closeOnConfirm) onOpenChange(false);
               }}
               className="rounded-full px-4 py-2 text-sm font-semibold text-[var(--bg-paper)] transition-opacity hover:opacity-90"
               style={{ background: isDanger ? "var(--ink-danger)" : "var(--flag)" }}

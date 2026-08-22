@@ -86,6 +86,13 @@ export type ImageMetadata = {
   lon?: number;
 };
 
+export type StoryImageDraft = {
+  file: File;
+  width?: number;
+  height?: number;
+  alreadyCompressed?: boolean;
+};
+
 export async function extractImageMetadata(file: File): Promise<ImageMetadata | null> {
   try {
     const tags = await ExifReader.load(file, {
@@ -126,32 +133,41 @@ export async function extractImageMetadata(file: File): Promise<ImageMetadata | 
 export async function uploadStoryImage(
   file: File,
   getUploadUrl: () => Promise<string>,
+  prepared?: Pick<StoryImageDraft, "width" | "height" | "alreadyCompressed">,
 ): Promise<{ storageId: string; width?: number; height?: number }> {
   validateStoryImageFile(file);
 
   let uploadBlob: Blob = file;
-  let finalWidth: number | undefined;
-  let finalHeight: number | undefined;
+  let finalWidth = prepared?.width;
+  let finalHeight = prepared?.height;
 
   const startedAt = performance.now();
   try {
-    const { blob: compressed, width, height } = await compressImage(file);
-    finalWidth = width;
-    finalHeight = height;
-
-    // Already-small JPEGs can grow after a re-encode — keep whichever is smaller.
-    if (compressed.size < file.size) {
-      uploadBlob = compressed;
-      log.logPerformance("story-image:compress", {
-        originalBytes: file.size,
-        compressedBytes: compressed.size,
-        elapsedMs: Math.round(performance.now() - startedAt),
+    if (prepared?.alreadyCompressed) {
+      log.logPerformance("story-image:compress:prepared", {
+        bytes: file.size,
+        width: prepared.width,
+        height: prepared.height,
       });
     } else {
-      log.logPerformance("story-image:compress:skipped-grew", {
-        originalBytes: file.size,
-        compressedBytes: compressed.size,
-      });
+      const { blob: compressed, width, height } = await compressImage(file);
+      finalWidth = width;
+      finalHeight = height;
+
+      // Already-small JPEGs can grow after a re-encode — keep whichever is smaller.
+      if (compressed.size < file.size) {
+        uploadBlob = compressed;
+        log.logPerformance("story-image:compress", {
+          originalBytes: file.size,
+          compressedBytes: compressed.size,
+          elapsedMs: Math.round(performance.now() - startedAt),
+        });
+      } else {
+        log.logPerformance("story-image:compress:skipped-grew", {
+          originalBytes: file.size,
+          compressedBytes: compressed.size,
+        });
+      }
     }
   } catch (e) {
     log.warn("story-image:compress:error", "performance", {

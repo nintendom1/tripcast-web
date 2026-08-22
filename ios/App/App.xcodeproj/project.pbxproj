@@ -13,6 +13,7 @@
 		A71C8D012F31000100A11CE1 /* BridgeViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D022F31000100A11CE1 /* BridgeViewController.swift */; };
 		A71C8D032F31000100A11CE1 /* ProvisioningProfilePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */; };
 		A71C8D052F31000100A11CE1 /* AdaptiveLocationPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */; };
+		C10000012F31000100C11CE1 /* PhotoLibraryPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000022F31000100C11CE1 /* PhotoLibraryPlugin.swift */; };
 		A71C8D072F31000100A11CE1 /* AdaptiveLocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */; };
 		A71C8D092F31000100A11CE1 /* NativeLocationPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */; };
 		A71C8D0B2F31000100A11CE1 /* LiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */; };
@@ -36,6 +37,7 @@
 		A71C8D022F31000100A11CE1 /* BridgeViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeViewController.swift; sourceTree = "<group>"; };
 		A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvisioningProfilePlugin.swift; sourceTree = "<group>"; };
 		A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLocationPlugin.swift; sourceTree = "<group>"; };
+		C10000022F31000100C11CE1 /* PhotoLibraryPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryPlugin.swift; sourceTree = "<group>"; };
 		A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveLocationService.swift; sourceTree = "<group>"; };
 		A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLocationPublisher.swift; sourceTree = "<group>"; };
 		A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
@@ -133,6 +135,7 @@
 				A71C8D022F31000100A11CE1 /* BridgeViewController.swift */,
 				A71C8D042F31000100A11CE1 /* ProvisioningProfilePlugin.swift */,
 				A71C8D062F31000100A11CE1 /* AdaptiveLocationPlugin.swift */,
+				C10000022F31000100C11CE1 /* PhotoLibraryPlugin.swift */,
 				A71C8D082F31000100A11CE1 /* AdaptiveLocationService.swift */,
 				A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */,
 				A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */,
@@ -317,6 +320,7 @@
 				A71C8D012F31000100A11CE1 /* BridgeViewController.swift in Sources */,
 				A71C8D032F31000100A11CE1 /* ProvisioningProfilePlugin.swift in Sources */,
 				A71C8D052F31000100A11CE1 /* AdaptiveLocationPlugin.swift in Sources */,
+				C10000012F31000100C11CE1 /* PhotoLibraryPlugin.swift in Sources */,
 				A71C8D072F31000100A11CE1 /* AdaptiveLocationService.swift in Sources */,
 				A71C8D092F31000100A11CE1 /* NativeLocationPublisher.swift in Sources */,
 				A71C8D0B2F31000100A11CE1 /* LiveActivityController.swift in Sources */,

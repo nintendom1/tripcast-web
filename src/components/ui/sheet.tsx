@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 const DEBUG_CHIP_SELECTOR = "[data-debug-chip]";
 const REACTION_TRAY_SELECTOR = "[data-reaction-tray]";
+const NESTED_DIALOG_SELECTOR = "[data-sheet-nested-dialog]";
 
 type SheetProps = React.ComponentPropsWithoutRef<typeof Dialog.Root>;
 
@@ -25,7 +26,8 @@ const Sheet = ({ onOpenChange, ...props }: SheetProps) => (
         !open &&
         (eventDetails.reason === "outside-press" || eventDetails.reason === "focus-out") &&
         (matchesSelector(eventDetails.event, DEBUG_CHIP_SELECTOR) ||
-          matchesSelector(eventDetails.event, REACTION_TRAY_SELECTOR))
+          matchesSelector(eventDetails.event, REACTION_TRAY_SELECTOR) ||
+          matchesSelector(eventDetails.event, NESTED_DIALOG_SELECTOR))
       ) {
         eventDetails.cancel();
         return;
