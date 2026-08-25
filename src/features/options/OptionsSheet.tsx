@@ -22,6 +22,7 @@ import {
   EyeOff,
   Flag,
   LogOut,
+  MapPin,
   Play,
   RadioTower,
   Route,
@@ -83,6 +84,7 @@ import BulkImportSheet from "./BulkImportSheet";
 import { useFollowerCutoffPreview } from "./followerCutoffPreview";
 import BulkExportSheet from "./BulkExportSheet";
 import MysteryMissionsSheet from "./MysteryMissionsSheet";
+import DeveloperMysteryPinSheet from "./DeveloperMysteryPinSheet";
 import QuickActivitySettingsView from "./QuickActivitySettings";
 import { TERMS } from "../../copy/terminology";
 import { useTicker, TripTicker } from "../hud";
@@ -2088,6 +2090,7 @@ function OptionsHome({
         <ConvexUsageRow />
         <IosSideloadProfileCountdown role={role} />
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
+        {role === "traveler" ? <DeveloperMysteryPinOptionsRow token={session.token} /> : null}
         {role === "traveler" ? <DeveloperScoringToggle token={session.token} /> : null}
         {role === "traveler" && onKillGpsServices ? (
           <OptionsRow
@@ -2717,6 +2720,26 @@ export function OptionsRow({
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ink-3)]" aria-hidden />
     </button>
+  );
+}
+
+function DeveloperMysteryPinOptionsRow({ token }: { token: string }) {
+  const [open, setOpen] = useState(false);
+  const log = useDebugLogger("DeveloperMysteryPinOptionsRow", "src/features/options/OptionsSheet.tsx");
+
+  return (
+    <>
+      <OptionsRow
+        icon={MapPin}
+        title="Create Test Mystery Pin"
+        detail="Place a Traveler-only audio test at this device's current location"
+        onClick={() => {
+          log.logUi("action:developer-mystery-pin");
+          setOpen(true);
+        }}
+      />
+      <DeveloperMysteryPinSheet open={open} token={token} onOpenChange={setOpen} />
+    </>
   );
 }
 

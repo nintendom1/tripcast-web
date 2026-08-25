@@ -5,6 +5,8 @@ import {
 } from "./nativeLocationManager";
 import type { NativePublishingConfiguration } from "./nativeLocationManager";
 import type { NativeStopOptions } from "./nativeLocationManager";
+import type { NativeMysteryMissionSync } from "./nativeLocationManager";
+import type { NativeMysteryNarrationPlaybackState } from "./nativeLocationManager";
 
 /**
  * Native (Capacitor) location source. iOS browsers / PWAs cannot emit GPS while
@@ -96,4 +98,38 @@ export function getNativeLocalTrailSnapshot() {
     return Promise.resolve({ queueRevision: 0, points: [] });
   }
   return nativeLocationManager.getLocalTrailSnapshot();
+}
+
+export function syncNativeMysteryMissions(payload: NativeMysteryMissionSync) {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve(null);
+  return nativeLocationManager.syncMysteryMissions(payload);
+}
+
+export function getNativeMysteryProximityState() {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve(null);
+  return nativeLocationManager.getMysteryProximityState();
+}
+
+export function setNativeMysteryAudioMuted(muted: boolean) {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve({ muted });
+  return nativeLocationManager.setMysteryAudioMuted(muted);
+}
+
+export function testNativeMysterySpeech() {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve();
+  return nativeLocationManager.testMysterySpeech();
+}
+
+export function getNativeMysteryNarrationPlaybackState(): Promise<NativeMysteryNarrationPlaybackState | null> {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve(null);
+  return nativeLocationManager.getMysteryNarrationPlaybackState();
+}
+
+export function controlNativeMysteryNarration(options: {
+  action: "play" | "pause" | "restart";
+  missionId: string;
+  narration?: string;
+}): Promise<NativeMysteryNarrationPlaybackState | null> {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve(null);
+  return nativeLocationManager.controlMysteryNarration(options);
 }

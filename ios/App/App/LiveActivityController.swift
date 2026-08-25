@@ -40,6 +40,8 @@ final class LiveActivityController {
     private var motionState = "unknown"
     private var motionConfidence = "unknown"
     private var motionStartedAt: Date?
+    private var narrationAvailable = false
+    private var mysteryAudioMuted = false
     private var activeFailureSources: Set<FailureSource> = []
     private var alertIncident: AlertIncident?
     private var lastDeduplicatedIncidentID: String?
@@ -191,6 +193,14 @@ final class LiveActivityController {
         stateQueue.async {
             self.queueDepth = queueDepth
             self.updateActivity()
+        }
+    }
+
+    func setMysteryNarration(available: Bool, muted: Bool) {
+        stateQueue.async {
+            self.narrationAvailable = available
+            self.mysteryAudioMuted = muted
+            self.updateActivity(force: true)
         }
     }
 
@@ -577,7 +587,9 @@ final class LiveActivityController {
             state.health,
             state.message,
             state.motionState ?? "",
-            state.motionStartedAt.map { String($0.timeIntervalSince1970) } ?? ""
+            state.motionStartedAt.map { String($0.timeIntervalSince1970) } ?? "",
+            state.narrationAvailable ? "narration" : "",
+            state.mysteryAudioMuted ? "muted" : "audible"
         ].joined(separator: "|")
     }
 
@@ -624,7 +636,9 @@ final class LiveActivityController {
             queueDepth: queueDepth,
             message: message,
             motionState: motionState,
-            motionStartedAt: motionStartedAt
+            motionStartedAt: motionStartedAt,
+            narrationAvailable: narrationAvailable,
+            mysteryAudioMuted: mysteryAudioMuted
         )
     }
 

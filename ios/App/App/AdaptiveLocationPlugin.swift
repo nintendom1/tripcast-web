@@ -13,11 +13,20 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "foreground", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHighFrequencyActive", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "getLocalTrailSnapshot", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "getLocalTrailSnapshot", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "syncMysteryMissions", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getMysteryProximityState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setMysteryAudioMuted", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "testMysterySpeech", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getMysteryNarrationPlaybackState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "controlMysteryNarration", returnType: CAPPluginReturnPromise)
     ]
 
     public override func load() {
         AdaptiveLocationService.shared.eventHandler = { [weak self] event in
+            self?.notifyListeners("locationUpdate", data: event, retainUntilConsumed: true)
+        }
+        MysteryProximityService.shared.eventHandler = { [weak self] event in
             self?.notifyListeners("locationUpdate", data: event, retainUntilConsumed: true)
         }
     }
@@ -65,7 +74,8 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
                 emissionIntervalSeconds: call.getInt("emissionIntervalSeconds") ?? 15,
                 alertThresholdSeconds: call.getDouble("alertThresholdSeconds") ?? 120,
                 cloakTimeoutSeconds: call.getDouble("cloakTimeoutSeconds") ?? 300,
-                cloakZones: zones
+                cloakZones: zones,
+                includeDebugMysteryMissions: call.getBool("includeDebugMysteryMissions") ?? false
             ) { result in
                 switch result {
                 case .success(let state): call.resolve(state)
@@ -101,5 +111,47 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         AdaptiveLocationService.shared.localTrailSnapshot { snapshot in call.resolve(snapshot) }
+    }
+
+    @objc func syncMysteryMissions(_ call: CAPPluginCall) {
+        guard let payload = call.getObject("payload") else {
+            call.reject("payload is required")
+            return
+        }
+        MysteryProximityService.shared.apply(syncObject: payload)
+        MysteryProximityService.shared.currentState { state in call.resolve(state) }
+    }
+
+    @objc func getMysteryProximityState(_ call: CAPPluginCall) {
+        MysteryProximityService.shared.currentState { state in call.resolve(state) }
+    }
+
+    @objc func setMysteryAudioMuted(_ call: CAPPluginCall) {
+        guard let muted = call.getBool("muted") else {
+            call.reject("muted is required")
+            return
+        }
+        MysteryProximityService.shared.setMuted(muted) { state in call.resolve(state) }
+    }
+
+    @objc func testMysterySpeech(_ call: CAPPluginCall) {
+        MysteryProximityService.shared.testSpeech()
+        call.resolve()
+    }
+
+    @objc func getMysteryNarrationPlaybackState(_ call: CAPPluginCall) {
+        MysteryProximityService.shared.playbackState { state in call.resolve(state) }
+    }
+
+    @objc func controlMysteryNarration(_ call: CAPPluginCall) {
+        guard let action = call.getString("action") else {
+            call.reject("action is required")
+            return
+        }
+        MysteryProximityService.shared.controlPlayback(
+            action: action,
+            missionID: call.getString("missionId"),
+            narration: call.getString("narration")
+        ) { state in call.resolve(state) }
     }
 }

@@ -448,6 +448,7 @@ function makeMysteryMission(overrides: Partial<MysteryMissionFeedItem> = {}): My
     lon: -122.35,
     mysteryText: "Follow the signal",
     spawnRadiusMiles: 0.5,
+    resolveRadiusMeters: 75,
     priority: 1,
     ...overrides,
   };

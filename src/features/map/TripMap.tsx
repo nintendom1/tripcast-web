@@ -78,6 +78,7 @@ import {
   isNativeLocationAvailable,
   openNativeLocationSettings,
   retryNativeLocationTracking,
+  syncNativeMysteryMissions,
   startNativeLocationWatch,
   stopNativeLocationTracking,
 } from "../../native/locationWatcher";
@@ -1529,6 +1530,12 @@ export default function TripMap({
   const cloakingPinsData = useQuery(
     tripcastApi.cloakingPins.travelerListCloakingPins,
     role === "traveler" ? { token } : "skip",
+  );
+  const nativeMysteryMissionSync = useQuery(
+    tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionSync,
+    role === "traveler" && isAdaptiveLocationAvailable()
+      ? { token, includeDebugAll: debugShowAllMysteryPins || undefined }
+      : "skip",
   );
   const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token });
   const cutoffPreview = useFollowerCutoffPreview(role, token);
@@ -3398,6 +3405,24 @@ export default function TripMap({
   }, [samplerMode]);
 
   useEffect(() => {
+    if (!nativeMysteryMissionSync || !isAdaptiveLocationAvailable()) return;
+    void syncNativeMysteryMissions(nativeMysteryMissionSync).catch((error) => {
+      log.error("mystery:native:sync", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+    });
+  }, [log, nativeMysteryMissionSync]);
+
+  useEffect(() => {
+    function handleNativeMysteryArrival() {
+      music.sfx("success");
+      showToast("Mystery Mission revealed.", "mystery");
+    }
+    window.addEventListener("tripcast:mystery-native-arrival", handleNativeMysteryArrival);
+    return () => window.removeEventListener("tripcast:mystery-native-arrival", handleNativeMysteryArrival);
+  }, [music, showToast]);
+
+  useEffect(() => {
     const pins = cloakingPinsData ?? [];
     cloakingPinsRef.current = pins;
 
@@ -3455,6 +3480,7 @@ export default function TripMap({
         lon: pin.lon,
         radiusMeters: pin.radiusMeters,
       })),
+      includeDebugMysteryMissions: debugShowAllMysteryPins,
     })
       .then(() => {
         if (!cancelled && isLocationSharingRef.current && !gpsSuppressedRef.current) {
@@ -3474,6 +3500,7 @@ export default function TripMap({
   }, [
     adaptiveGpsEnabled,
     cloakingPinsData,
+    debugShowAllMysteryPins,
     liveTrailEnabled,
     liveGpsUploadIntervalSeconds,
     log,

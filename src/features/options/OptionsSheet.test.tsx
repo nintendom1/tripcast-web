@@ -21,6 +21,9 @@ const capacitorMocks = {
   isNativePlatform: vi.fn().mockReturnValue(false),
   getPlatform: vi.fn().mockReturnValue("web"),
   getExpiration: vi.fn().mockResolvedValue({}),
+  getMysteryProximityState: vi.fn().mockResolvedValue({ muted: false }),
+  setMysteryAudioMuted: vi.fn().mockResolvedValue({ muted: true }),
+  testMysterySpeech: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock("@capacitor/core", async (importOriginal) => {
@@ -32,9 +35,13 @@ vi.mock("@capacitor/core", async (importOriginal) => {
       isNativePlatform: () => capacitorMocks.isNativePlatform(),
       getPlatform: () => capacitorMocks.getPlatform(),
     },
-    registerPlugin: () => ({
+    registerPlugin: (name: string) => name === "AdaptiveLocation" ? {
+      getMysteryProximityState: () => capacitorMocks.getMysteryProximityState(),
+      setMysteryAudioMuted: (options: { muted: boolean }) => capacitorMocks.setMysteryAudioMuted(options),
+      testMysterySpeech: () => capacitorMocks.testMysterySpeech(),
+    } : {
       getExpiration: () => capacitorMocks.getExpiration(),
-    }),
+    },
   };
 });
 
@@ -661,12 +668,26 @@ describe("OptionsSheet Live Trail settings", () => {
 });
 
 describe("OptionsSheet Mystery Mission settings", () => {
-  it("saves the Traveler reveal interval hours", async () => {
+  it("shows native audio controls only on native iOS", async () => {
+    capacitorMocks.isNativePlatform.mockReturnValue(true);
+    capacitorMocks.getPlatform.mockReturnValue("ios");
+    setupMocks();
+    renderOptions();
+
+    await userEvent.click(screen.getByRole("button", { name: /Mystery Missions/i }));
+    expect(await screen.findByText("Automatic audio reveals")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Test audio" })).toBeEnabled();
+
+    capacitorMocks.isNativePlatform.mockReturnValue(false);
+    capacitorMocks.getPlatform.mockReturnValue("web");
+  });
+
+  it("saves the Traveler reveal interval minutes", async () => {
     const { setMysterySettingsFn } = setupMocks();
     renderOptions();
 
     await userEvent.click(screen.getByRole("button", { name: /Mystery Missions/i }));
-    const input = await screen.findByLabelText(/Reveal interval hours/i);
+    const input = await screen.findByLabelText(/Reveal interval minutes/i);
     await userEvent.clear(input);
     await userEvent.type(input, "6");
     await userEvent.click(screen.getByRole("button", { name: /Save interval/i }));
@@ -675,7 +696,7 @@ describe("OptionsSheet Mystery Mission settings", () => {
       expect(setMysterySettingsFn).toHaveBeenCalledWith({
         token: "test-token",
         enabled: true,
-        revealIntervalHours: 6,
+        revealIntervalHours: 0.1,
       });
     });
   });
@@ -685,12 +706,12 @@ describe("OptionsSheet Mystery Mission settings", () => {
     renderOptions();
 
     await userEvent.click(screen.getByRole("button", { name: /Mystery Missions/i }));
-    const input = await screen.findByLabelText(/Reveal interval hours/i);
+    const input = await screen.findByLabelText(/Reveal interval minutes/i);
     await userEvent.clear(input);
-    await userEvent.type(input, "169");
+    await userEvent.type(input, "10081");
     await userEvent.click(screen.getByRole("button", { name: /Save interval/i }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/0 to 168 hours/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/0 to 10,080 minutes/i);
     expect(setMysterySettingsFn).not.toHaveBeenCalled();
   });
 });

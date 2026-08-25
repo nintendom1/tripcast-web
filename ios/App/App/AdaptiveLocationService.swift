@@ -155,6 +155,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         startOperation = operation
         emitOperationLog(operation, stage: "requested", timeout: false)
         liveRequested = true
+        MysteryProximityService.shared.setLiveActive(true)
         defaults.set(true, forKey: DefaultsKey.liveRequested)
         requestAuthorization()
         startMotionUpdates()
@@ -200,6 +201,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             ]
         ])
         liveRequested = false
+        MysteryProximityService.shared.setLiveActive(false)
         highFrequencyActive = false
         stationaryTimer?.invalidate()
         stationaryTimer = nil
@@ -361,6 +363,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         alertThresholdSeconds: TimeInterval,
         cloakTimeoutSeconds: TimeInterval,
         cloakZones: [NativeLocationPublisher.CloakZone],
+        includeDebugMysteryMissions: Bool,
         completion: @escaping (Result<JSObject, Error>) -> Void
     ) {
         LiveActivityController.shared.configure(alertThresholdSeconds: alertThresholdSeconds)
@@ -372,7 +375,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             emissionIntervalSeconds: emissionIntervalSeconds,
             alertThresholdSeconds: alertThresholdSeconds,
             cloakTimeoutSeconds: cloakTimeoutSeconds,
-            cloakZones: cloakZones
+            cloakZones: cloakZones,
+            includeDebugMysteryMissions: includeDebugMysteryMissions
         ) { [weak self] result in
             guard let self else { return }
             switch result {
@@ -835,6 +839,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard liveRequested, let location = locations.last, location.horizontalAccuracy >= 0 else { return }
+        MysteryProximityService.shared.accept(location)
         LiveActivityController.shared.setLocationAcquisitionHealthy()
 
         if mode == .powerSaving {

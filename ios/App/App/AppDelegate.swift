@@ -7,6 +7,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            Unmanaged.passUnretained(self).toOpaque(),
+            { _, observer, _, _, _ in
+                guard let observer else { return }
+                let delegate = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
+                delegate.applyMysteryAudioPreference()
+            },
+            MysteryAudioPreference.changedNotification,
+            nil,
+            .deliverImmediately
+        )
+        applyMysteryAudioPreference()
         if launchOptions?[.location] != nil {
             AdaptiveLocationService.shared.bootstrapLocationRelaunch()
         }
@@ -27,7 +40,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
+        applyMysteryAudioPreference()
         AdaptiveLocationService.shared.applicationDidBecomeActive()
+    }
+
+    private func applyMysteryAudioPreference() {
+        guard UserDefaults.standard.object(forKey: MysteryAudioPreference.mutedKey) != nil else {
+            return
+        }
+        MysteryProximityService.shared.setMuted(
+            UserDefaults.standard.bool(forKey: MysteryAudioPreference.mutedKey)
+        )
     }
 
     func applicationWillTerminate(_ application: UIApplication) {

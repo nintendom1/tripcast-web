@@ -22,6 +22,7 @@ final class NativeLocationPublisher {
         let alertThresholdSeconds: TimeInterval
         let cloakTimeoutSeconds: TimeInterval
         let cloakZones: [CloakZone]
+        let includeDebugMysteryMissions: Bool
 
         private enum CodingKeys: String, CodingKey {
             case endpoint
@@ -31,6 +32,7 @@ final class NativeLocationPublisher {
             case alertThresholdSeconds
             case cloakTimeoutSeconds
             case cloakZones
+            case includeDebugMysteryMissions
         }
 
         init(
@@ -40,7 +42,8 @@ final class NativeLocationPublisher {
             emissionIntervalSeconds: Int,
             alertThresholdSeconds: TimeInterval,
             cloakTimeoutSeconds: TimeInterval,
-            cloakZones: [CloakZone]
+            cloakZones: [CloakZone],
+            includeDebugMysteryMissions: Bool
         ) {
             self.endpoint = endpoint
             self.liveTrailEnabled = liveTrailEnabled
@@ -49,6 +52,7 @@ final class NativeLocationPublisher {
             self.alertThresholdSeconds = alertThresholdSeconds
             self.cloakTimeoutSeconds = cloakTimeoutSeconds
             self.cloakZones = cloakZones
+            self.includeDebugMysteryMissions = includeDebugMysteryMissions
         }
 
         init(from decoder: Decoder) throws {
@@ -65,6 +69,10 @@ final class NativeLocationPublisher {
             alertThresholdSeconds = try values.decode(TimeInterval.self, forKey: .alertThresholdSeconds)
             cloakTimeoutSeconds = try values.decode(TimeInterval.self, forKey: .cloakTimeoutSeconds)
             cloakZones = try values.decode([CloakZone].self, forKey: .cloakZones)
+            includeDebugMysteryMissions = try values.decodeIfPresent(
+                Bool.self,
+                forKey: .includeDebugMysteryMissions
+            ) ?? false
         }
 
         private static func normalizedInterval(_ value: Int) -> Int {
@@ -86,6 +94,13 @@ final class NativeLocationPublisher {
     struct PendingMotion: Codable, Equatable {
         let classification: String
         let sampledAt: Double
+    }
+
+    struct PendingMysteryCompletion: Codable, Equatable {
+        let mysteryMissionId: String
+        let clientTriggerId: String
+        let queuedAt: Double
+        let debugArrival: Bool?
     }
 
     private enum KeychainKey {
@@ -112,6 +127,10 @@ final class NativeLocationPublisher {
     private var batchStartedAt: Date?
     private var activePublishTask: URLSessionDataTask?
     private var pendingMotion: PendingMotion?
+    private var mysteryCompletions: [PendingMysteryCompletion] = []
+    private var mysteryCompletionInFlight = false
+    private var activeMysteryCompletionTask: URLSessionDataTask?
+    private var scheduledMysteryRetryWorkItem: DispatchWorkItem?
     private var motionPublishInFlight = false
     private var activeMotionPublishTask: URLSessionDataTask?
     private var scheduledMotionPublishWorkItem: DispatchWorkItem?
@@ -149,6 +168,7 @@ final class NativeLocationPublisher {
         configuration = loadConfiguration()
         samples = loadSamples()
         pendingMotion = loadPendingMotion()
+        mysteryCompletions = loadMysteryCompletions()
         motionPublishStatus = pendingMotion == nil ? "idle" : "pending"
         recoveryActive = !samples.isEmpty
         pathMonitor.pathUpdateHandler = { [weak self] path in
@@ -201,6 +221,7 @@ final class NativeLocationPublisher {
         alertThresholdSeconds: TimeInterval,
         cloakTimeoutSeconds: TimeInterval,
         cloakZones: [CloakZone],
+        includeDebugMysteryMissions: Bool,
         completion: @escaping (Result<JSObject, Error>) -> Void
     ) {
         workQueue.async { [weak self] in
@@ -222,7 +243,8 @@ final class NativeLocationPublisher {
                 emissionIntervalSeconds: emissionIntervalSeconds,
                 alertThresholdSeconds: max(0, alertThresholdSeconds),
                 cloakTimeoutSeconds: max(0, cloakTimeoutSeconds),
-                cloakZones: cloakZones
+                cloakZones: cloakZones,
+                includeDebugMysteryMissions: includeDebugMysteryMissions
             )
             generation += 1
             isPublishing = false
@@ -250,6 +272,8 @@ final class NativeLocationPublisher {
                 queueRevision += 1
                 clearPendingMotionLocked()
                 lastAcknowledgedMotionClassification = nil
+                self.clearMysteryCompletionsLocked()
+                MysteryProximityService.shared.clearIdentity()
             } else if !next.movementDetectionEnabled {
                 clearPendingMotionLocked()
                 lastAcknowledgedMotionClassification = nil
@@ -263,6 +287,7 @@ final class NativeLocationPublisher {
                 "queueDepth": samples.count
             ])
             publishIfPossibleLocked(reason: "configuration")
+            publishMysteryCompletionIfPossibleLocked(reason: "configuration")
             let state = currentPublishingStateLocked()
             DispatchQueue.main.async { completion(.success(state)) }
             } catch {
@@ -328,6 +353,11 @@ final class NativeLocationPublisher {
             motionPublishInFlight = false
             scheduledMotionPublishWorkItem?.cancel()
             scheduledMotionPublishWorkItem = nil
+            activeMysteryCompletionTask?.cancel()
+            activeMysteryCompletionTask = nil
+            mysteryCompletionInFlight = false
+            scheduledMysteryRetryWorkItem?.cancel()
+            scheduledMysteryRetryWorkItem = nil
             clearPendingMotionLocked()
             lastAcknowledgedMotionClassification = nil
             currentMode = "off"
@@ -385,8 +415,13 @@ final class NativeLocationPublisher {
                 deleteToken()
                 acknowledgedTrail.removeAll()
                 queueRevision += 1
+                clearMysteryCompletionsLocked()
+                MysteryProximityService.shared.clearIdentity()
             }
             emit("gps:native-publish:stopped", details: ["queueDepth": samples.count])
+            if !clearCredentials {
+                publishMysteryCompletionIfPossibleLocked(reason: "live-stop")
+            }
             let state = currentPublishingStateLocked()
             DispatchQueue.main.async { completion(state) }
         }
@@ -481,6 +516,27 @@ final class NativeLocationPublisher {
                 reason: self.samples.count >= 20 ? "queue-limit" : "sample-accepted",
                 force: self.samples.count >= 20
             )
+        }
+    }
+
+    func enqueueMysteryCompletion(missionID: String, triggerID: String, debugArrival: Bool) {
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            guard !self.mysteryCompletions.contains(where: { $0.mysteryMissionId == missionID }) else {
+                return
+            }
+            self.mysteryCompletions.append(.init(
+                mysteryMissionId: missionID,
+                clientTriggerId: triggerID,
+                queuedAt: Date().timeIntervalSince1970 * 1_000,
+                debugArrival: debugArrival
+            ))
+            self.persistMysteryCompletionsLocked()
+            self.emit("mystery:native:completion-queued", details: [
+                "mysteryMissionId": missionID,
+                "queueDepth": self.mysteryCompletions.count
+            ])
+            self.publishMysteryCompletionIfPossibleLocked(reason: "arrival")
         }
     }
 
@@ -705,7 +761,11 @@ final class NativeLocationPublisher {
         }
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
             "path": "nativeLocationIngest:travelerIngestNativeLocationBatch",
-            "args": ["token": token, "samples": encodedSamples],
+            "args": [
+                "token": token,
+                "samples": encodedSamples,
+                "includeDebugMysteryMissions": config.includeDebugMysteryMissions
+            ],
             "format": "json"
         ])
 
@@ -757,6 +817,9 @@ final class NativeLocationPublisher {
                 let accepted = value["acceptedClientSampleIds"] as? [String] ?? []
                 let duplicates = value["duplicateClientSampleIds"] as? [String] ?? []
                 let delivered = Set(accepted + duplicates)
+                if let mysterySync = value["mysteryMissionSync"] as? [String: Any] {
+                    MysteryProximityService.shared.apply(syncObject: mysterySync)
+                }
                 let acknowledged = batch.filter {
                     delivered.contains($0.clientSampleId) && $0.recordTrail
                 }
@@ -831,6 +894,92 @@ final class NativeLocationPublisher {
             }
         }
         activePublishTask = task
+        task.resume()
+    }
+
+    private func publishMysteryCompletionIfPossibleLocked(reason: String) {
+        guard !mysteryCompletionInFlight,
+              let completion = mysteryCompletions.first,
+              let config = configuration,
+              let token = readToken(),
+              let baseURL = URL(string: config.endpoint),
+              networkAvailable != false else { return }
+
+        mysteryCompletionInFlight = true
+        let requestGeneration = generation
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/mutation"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var completionArgs: [String: Any] = [
+            "token": token,
+            "mysteryMissionId": completion.mysteryMissionId,
+            "clientTriggerId": completion.clientTriggerId
+        ]
+        if completion.debugArrival == true { completionArgs["debugArrival"] = true }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "path": "mysteryMissions:travelerCompleteMysteryMissionNative",
+            "args": completionArgs,
+            "format": "json"
+        ])
+        let backgroundTask = beginBackgroundTask()
+        emit("mystery:native:completion-flush", details: [
+            "reason": reason,
+            "mysteryMissionId": completion.mysteryMissionId,
+            "queueDepth": mysteryCompletions.count
+        ])
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            self?.workQueue.async {
+                guard let self else { return }
+                guard requestGeneration == self.generation else {
+                    self.endBackgroundTask(backgroundTask)
+                    return
+                }
+                self.activeMysteryCompletionTask = nil
+                self.mysteryCompletionInFlight = false
+                let root = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                let value = root?["value"] as? [String: Any]
+                let outcome = value?["outcome"] as? String
+                let terminal = ["completed", "already_completed", "ineligible", "not_found"]
+                if error == nil,
+                   let http = response as? HTTPURLResponse,
+                   (200..<300).contains(http.statusCode),
+                   root?["status"] as? String == "success",
+                   let outcome,
+                   terminal.contains(outcome) {
+                    self.mysteryCompletions.removeAll {
+                        $0.clientTriggerId == completion.clientTriggerId
+                    }
+                    self.persistMysteryCompletionsLocked()
+                    self.emit("mystery:native:completion-ack", details: [
+                        "mysteryMissionId": completion.mysteryMissionId,
+                        "outcome": outcome,
+                        "queueDepth": self.mysteryCompletions.count
+                    ])
+                    MysteryProximityService.shared.completionAcknowledged(
+                        missionID: completion.mysteryMissionId,
+                        outcome: outcome
+                    )
+                    self.endBackgroundTask(backgroundTask)
+                    self.publishMysteryCompletionIfPossibleLocked(reason: "queue-remainder")
+                    return
+                }
+
+                self.emit("mystery:native:completion-failure", level: "warn", details: [
+                    "mysteryMissionId": completion.mysteryMissionId,
+                    "failureClass": error == nil ? "server" : "network",
+                    "queueDepth": self.mysteryCompletions.count
+                ])
+                self.endBackgroundTask(backgroundTask)
+                self.scheduledMysteryRetryWorkItem?.cancel()
+                let item = DispatchWorkItem { [weak self] in
+                    self?.scheduledMysteryRetryWorkItem = nil
+                    self?.publishMysteryCompletionIfPossibleLocked(reason: "retry")
+                }
+                self.scheduledMysteryRetryWorkItem = item
+                self.workQueue.asyncAfter(deadline: .now() + 30, execute: item)
+            }
+        }
+        activeMysteryCompletionTask = task
         task.resume()
     }
 
@@ -952,6 +1101,9 @@ final class NativeLocationPublisher {
         if wasAvailable != true, pendingMotion != nil {
             publishMotionIfPossibleLocked(reason: "network-restored")
         }
+        if wasAvailable != true, !mysteryCompletions.isEmpty {
+            publishMysteryCompletionIfPossibleLocked(reason: "network-restored")
+        }
     }
 
     private func emit(
@@ -1042,6 +1194,7 @@ final class NativeLocationPublisher {
     private var configurationURL: URL { applicationSupportURL.appendingPathComponent("config.json") }
     private var samplesURL: URL { applicationSupportURL.appendingPathComponent("queue.json") }
     private var pendingMotionURL: URL { applicationSupportURL.appendingPathComponent("pending-motion.json") }
+    private var mysteryCompletionsURL: URL { applicationSupportURL.appendingPathComponent("mystery-completions.json") }
 
     private func persistSamples() {
         do {
@@ -1105,6 +1258,27 @@ final class NativeLocationPublisher {
     private func loadPendingMotion() -> PendingMotion? {
         guard let data = try? Data(contentsOf: pendingMotionURL) else { return nil }
         return try? JSONDecoder().decode(PendingMotion.self, from: data)
+    }
+
+    private func persistMysteryCompletionsLocked() {
+        do {
+            try persist(mysteryCompletions, to: mysteryCompletionsURL)
+        } catch {
+            emit("mystery:native:completion-persist-failure", level: "warn", details: [
+                "failureClass": "storage",
+                "queueDepth": mysteryCompletions.count
+            ])
+        }
+    }
+
+    private func loadMysteryCompletions() -> [PendingMysteryCompletion] {
+        guard let data = try? Data(contentsOf: mysteryCompletionsURL) else { return [] }
+        return (try? JSONDecoder().decode([PendingMysteryCompletion].self, from: data)) ?? []
+    }
+
+    private func clearMysteryCompletionsLocked() {
+        mysteryCompletions.removeAll()
+        try? fileManager.removeItem(at: mysteryCompletionsURL)
     }
 
     private func isAllowedEndpoint(_ url: URL) -> Bool {

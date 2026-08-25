@@ -18,6 +18,11 @@
 		A71C8D092F31000100A11CE1 /* NativeLocationPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */; };
 		A71C8D0B2F31000100A11CE1 /* LiveActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */; };
 		A71C8D0D2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */; };
+		D20000012F31000100D11CE1 /* MysteryProximityService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000022F31000100D11CE1 /* MysteryProximityService.swift */; };
+		D20000032F31000100D11CE1 /* MysteryProximityEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000042F31000100D11CE1 /* MysteryProximityEngine.swift */; };
+		E30000012F31000100E11CE1 /* MysteryProximityEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000042F31000100D11CE1 /* MysteryProximityEngine.swift */; };
+		E30000022F31000100E11CE1 /* MysteryProximityEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000032F31000100E11CE1 /* MysteryProximityEngineTests.swift */; };
+		E30000042F31000100E11CE1 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E30000052F31000100E11CE1 /* XCTest.framework */; };
 		B10000012F31000100B11CE1 /* TripCastLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */; };
 		B10000022F31000100B11CE1 /* TripCastLiveActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */; };
 		B10000032F31000100B11CE1 /* TripCastLiveActivity.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -42,6 +47,11 @@
 		A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeLocationPublisher.swift; sourceTree = "<group>"; };
 		A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityController.swift; sourceTree = "<group>"; };
 		A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCastLiveActivityAttributes.swift; sourceTree = "<group>"; };
+		D20000022F31000100D11CE1 /* MysteryProximityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MysteryProximityService.swift; sourceTree = "<group>"; };
+		D20000042F31000100D11CE1 /* MysteryProximityEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MysteryProximityEngine.swift; sourceTree = "<group>"; };
+		E30000032F31000100E11CE1 /* MysteryProximityEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MysteryProximityEngineTests.swift; sourceTree = "<group>"; };
+		E30000052F31000100E11CE1 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
+		E30000062F31000100E11CE1 /* MysteryProximityTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MysteryProximityTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripCastLiveActivityWidget.swift; sourceTree = "<group>"; };
 		B10000112F31000100B11CE1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TripCastLiveActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -96,6 +106,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E30000102F31000100E11CE1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E30000042F31000100E11CE1 /* XCTest.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -112,6 +130,7 @@
 			children = (
 				504EC3061FED79650016851F /* App */,
 				B10000202F31000100B11CE1 /* TripCastLiveActivity */,
+				E30000202F31000100E11CE1 /* MysteryProximityTests */,
 				504EC3051FED79650016851F /* Products */,
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
@@ -123,6 +142,7 @@
 			children = (
 				504EC3041FED79650016851F /* App.app */,
 				B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */,
+				E30000062F31000100E11CE1 /* MysteryProximityTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -140,6 +160,8 @@
 				A71C8D0A2F31000100A11CE1 /* NativeLocationPublisher.swift */,
 				A71C8D0C2F31000100A11CE1 /* LiveActivityController.swift */,
 				A71C8D0E2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift */,
+				D20000022F31000100D11CE1 /* MysteryProximityService.swift */,
+				D20000042F31000100D11CE1 /* MysteryProximityEngine.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -158,6 +180,14 @@
 				B10000142F31000100B11CE1 /* Assets.xcassets */,
 			);
 			path = TripCastLiveActivity;
+			sourceTree = "<group>";
+		};
+		E30000202F31000100E11CE1 /* MysteryProximityTests */ = {
+			isa = PBXGroup;
+			children = (
+				E30000032F31000100E11CE1 /* MysteryProximityEngineTests.swift */,
+			);
+			path = MysteryProximityTests;
 			sourceTree = "<group>";
 		};
 		7F8756D8B27F46E3366F6CEA /* Pods */ = {
@@ -210,6 +240,23 @@
 			productReference = B10000122F31000100B11CE1 /* TripCastLiveActivity.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		E30000302F31000100E11CE1 /* MysteryProximityTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E30000602F31000100E11CE1 /* Build configuration list for PBXNativeTarget "MysteryProximityTests" */;
+			buildPhases = (
+				E30000112F31000100E11CE1 /* Sources */,
+				E30000102F31000100E11CE1 /* Frameworks */,
+				E30000122F31000100E11CE1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MysteryProximityTests;
+			productName = MysteryProximityTests;
+			productReference = E30000062F31000100E11CE1 /* MysteryProximityTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -225,6 +272,10 @@
 						ProvisioningStyle = Automatic;
 					};
 					B10000402F31000100B11CE1 = {
+						CreatedOnToolsVersion = 16.0;
+						ProvisioningStyle = Automatic;
+					};
+					E30000302F31000100E11CE1 = {
 						CreatedOnToolsVersion = 16.0;
 						ProvisioningStyle = Automatic;
 					};
@@ -247,6 +298,7 @@
 			targets = (
 				504EC3031FED79650016851F /* App */,
 				B10000402F31000100B11CE1 /* TripCastLiveActivity */,
+				E30000302F31000100E11CE1 /* MysteryProximityTests */,
 			);
 		};
 /* End PBXProject section */
@@ -270,6 +322,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				B10000052F31000100B11CE1 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E30000122F31000100E11CE1 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -325,6 +384,8 @@
 				A71C8D092F31000100A11CE1 /* NativeLocationPublisher.swift in Sources */,
 				A71C8D0B2F31000100A11CE1 /* LiveActivityController.swift in Sources */,
 				A71C8D0D2F31000100A11CE1 /* TripCastLiveActivityAttributes.swift in Sources */,
+				D20000012F31000100D11CE1 /* MysteryProximityService.swift in Sources */,
+				D20000032F31000100D11CE1 /* MysteryProximityEngine.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -334,6 +395,15 @@
 			files = (
 				B10000012F31000100B11CE1 /* TripCastLiveActivityWidget.swift in Sources */,
 				B10000022F31000100B11CE1 /* TripCastLiveActivityAttributes.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E30000112F31000100E11CE1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E30000012F31000100E11CE1 /* MysteryProximityEngine.swift in Sources */,
+				E30000022F31000100E11CE1 /* MysteryProximityEngineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -554,6 +624,39 @@
 			};
 			name = Release;
 		};
+		E30000502F31000100E11CE1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tripcast.app.MysteryProximityTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "";
+			};
+			name = Debug;
+		};
+		E30000512F31000100E11CE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tripcast.app.MysteryProximityTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -580,6 +683,15 @@
 			buildConfigurations = (
 				B10000502F31000100B11CE1 /* Debug */,
 				B10000512F31000100B11CE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E30000602F31000100E11CE1 /* Build configuration list for PBXNativeTarget "MysteryProximityTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E30000502F31000100E11CE1 /* Debug */,
+				E30000512F31000100E11CE1 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
