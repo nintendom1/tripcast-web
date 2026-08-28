@@ -17,6 +17,12 @@ import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import MysteryMissionEditSheet from "../missions/MysteryMissionEditSheet";
 import { cn } from "@/lib/utils";
+import {
+  getNativeMysteryProximityState,
+  isAdaptiveLocationAvailable,
+  setNativeMysteryAudioMuted,
+  testNativeMysterySpeech,
+} from "../../native/locationWatcher";
 
 const SAMPLE_JSON = `{
   "version": 1,
@@ -30,14 +36,15 @@ const SAMPLE_JSON = `{
       "mysteryText": "ReD PAth",
       "trueIntent": "Fushimi Inari is known for its thousands of vermilion torii gates.",
       "spawnRadiusMiles": 30,
+      "resolveRadiusMeters": 75,
       "priority": 3,
       "tags": ["japan", "kyoto", "shrine"]
     }
   ]
 }`;
 
-const MIN_REVEAL_INTERVAL_HOURS = 0;
-const MAX_REVEAL_INTERVAL_HOURS = 168;
+const MIN_REVEAL_INTERVAL_MINUTES = 0;
+const MAX_REVEAL_INTERVAL_MINUTES = 168 * 60;
 
 const SCHEMA_REFERENCE = `TripCast Mystery Mission Pack JSON
 
@@ -55,7 +62,7 @@ Required mission fields:
 - trueIntent: reveal text explaining the real reason, fun fact, or contextual note after completion.
 
 Optional fields:
-region, locationName, spawnRadiusMiles, priority, tags, recommendedTimeOfDay,
+region, locationName, spawnRadiusMiles, resolveRadiusMeters, priority, tags, recommendedTimeOfDay,
 estimatedVisitMinutes, difficulty, sourceHint, expiresAt, spoilerSummary,
 locationType, indoorOutdoor, transitFriendly, requiresTicket, timeSensitive.
 
@@ -110,11 +117,13 @@ export default function MysteryMissionsSheet({
       return false;
     }
   });
-  const [revealIntervalInput, setRevealIntervalInput] = useState("4");
+  const [revealIntervalInput, setRevealIntervalInput] = useState("1");
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsWorking, setSettingsWorking] = useState(false);
   const [editingMissionId, setEditingMissionId] = useState<string | null>(null);
   const [deleteMissionId, setDeleteMissionId] = useState<string | null>(null);
+  const [nativeAudioMuted, setNativeAudioMutedState] = useState(false);
+  const [nativeAudioReady, setNativeAudioReady] = useState(false);
   const log = useDebugLogger("MysteryMissionsSheet", "src/features/options/MysteryMissionsSheet.tsx");
   const music = useMusicSafe();
 
@@ -127,6 +136,18 @@ export default function MysteryMissionsSheet({
       setWorking(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !isAdaptiveLocationAvailable()) return;
+    let cancelled = false;
+    void getNativeMysteryProximityState().then((state) => {
+      if (!cancelled && state) {
+        setNativeAudioMutedState(state.muted);
+        setNativeAudioReady(true);
+      }
+    });
+    return () => { cancelled = true; };
   }, [open]);
 
   useActiveUiContext(open, {
@@ -158,7 +179,7 @@ export default function MysteryMissionsSheet({
   const deleteMission = useMutation(tripcastApi.mysteryMissions.travelerDeleteMysteryMission);
 
   const enabled = settings?.enabled ?? false;
-  const revealIntervalHours = settings?.revealIntervalHours ?? 4;
+  const revealIntervalHours = settings?.revealIntervalHours ?? 1 / 60;
   const counts = management?.counts;
   const managementRows = management?.rows ?? [];
   const exportText = useMemo(
@@ -191,7 +212,7 @@ export default function MysteryMissionsSheet({
 
   useEffect(() => {
     if (settings?.revealIntervalHours !== undefined) {
-      setRevealIntervalInput(String(settings.revealIntervalHours));
+      setRevealIntervalInput(String(Math.round(settings.revealIntervalHours * 60)));
     }
   }, [settings?.revealIntervalHours]);
 
@@ -199,17 +220,18 @@ export default function MysteryMissionsSheet({
     const parsed = Number(revealIntervalInput);
     if (
       !Number.isInteger(parsed) ||
-      parsed < MIN_REVEAL_INTERVAL_HOURS ||
-      parsed > MAX_REVEAL_INTERVAL_HOURS
+      parsed < MIN_REVEAL_INTERVAL_MINUTES ||
+      parsed > MAX_REVEAL_INTERVAL_MINUTES
     ) {
-      setSettingsError("Reveal interval must be an integer from 0 to 168 hours.");
+      setSettingsError("Reveal interval must be an integer from 0 to 10,080 minutes.");
       return;
     }
     setSettingsWorking(true);
     setSettingsError(null);
     try {
-      await setEnabled({ token, enabled: nextEnabled, revealIntervalHours: parsed });
-      log.logUi("action:save-settings", { enabled: nextEnabled, revealIntervalHours: parsed });
+      const revealIntervalHours = parsed / 60;
+      await setEnabled({ token, enabled: nextEnabled, revealIntervalHours });
+      log.logUi("action:save-settings", { enabled: nextEnabled, revealIntervalHours });
       music.sfx("success");
     } catch (error) {
       setSettingsError(errorText(error));
@@ -319,19 +341,58 @@ export default function MysteryMissionsSheet({
               />
             </label>
 
+            {isAdaptiveLocationAvailable() ? (
+              <div className="grid gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3">
+                <label className="flex min-h-10 cursor-pointer items-center justify-between gap-3">
+                  <span>
+                    <span className="block text-sm font-semibold">Automatic audio reveals</span>
+                    <span className="block text-xs text-[var(--ink-3)]">Narrates the true intent when you arrive.</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={!nativeAudioMuted}
+                    disabled={!nativeAudioReady}
+                    onChange={(event) => {
+                      const muted = !event.target.checked;
+                      setNativeAudioMutedState(muted);
+                      void setNativeMysteryAudioMuted(muted);
+                      log.logUi("action:native-audio-muted", { muted });
+                    }}
+                    className="h-5 w-5"
+                    style={{ accentColor: "var(--ink-1)" }}
+                  />
+                </label>
+                <p className="text-xs text-[var(--ink-3)]">
+                  TripCast Live must be on for automatic arrival detection in the background or while locked.
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={!nativeAudioReady || nativeAudioMuted}
+                  onClick={() => {
+                    void testNativeMysterySpeech();
+                    log.logUi("action:native-audio-test");
+                  }}
+                >
+                  Test audio
+                </Button>
+              </div>
+            ) : null}
+
             <div className="grid gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3">
               <label className="grid gap-1 text-sm font-semibold">
-                Reveal interval hours
+                Reveal interval minutes
                 <input
                   type="number"
-                  min={MIN_REVEAL_INTERVAL_HOURS}
-                  max={MAX_REVEAL_INTERVAL_HOURS}
+                  min={MIN_REVEAL_INTERVAL_MINUTES}
+                  max={MAX_REVEAL_INTERVAL_MINUTES}
                   step={1}
                   value={revealIntervalInput}
                   onChange={(event) => setRevealIntervalInput(event.target.value)}
                   onBlur={() => {
                     if (revealIntervalInput.trim() === "") {
-                      setRevealIntervalInput(String(revealIntervalHours));
+                      setRevealIntervalInput(String(Math.round(revealIntervalHours * 60)));
                     }
                   }}
                   className="h-10 rounded-lg border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 text-sm font-semibold text-[var(--ink-1)] outline-none focus:border-[var(--ink-1)] focus:ring-1 focus:ring-[var(--ink-1)]"

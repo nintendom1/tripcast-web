@@ -13,11 +13,13 @@ import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
+import MysteryNarrationPlayer from "./MysteryNarrationPlayer";
 import CrypticText from "./CrypticText";
 import { ReactionSection } from "../../components/ui/ReactionSection";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { cn } from "@/lib/utils";
+import { isAdaptiveLocationAvailable } from "../../native/locationWatcher";
 
 
 const RESPONSE_PRESETS = [
@@ -883,7 +885,13 @@ export default function MissionDetailSheet({
             </p>
           </section>
 
-          {linkedMysteryMission?.trueIntent ? (
+          {linkedMysteryMission?.debugOnly ? (
+            <p className="rounded-lg border border-amber-400/50 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-200">
+              Traveler debug preview — this signal has not entered the normal reveal cadence.
+            </p>
+          ) : null}
+
+          {linkedMysteryMission?.trueIntent && status === "completed" ? (
             <section className="grid gap-2 rounded-xl border border-zinc-500/40 bg-[var(--bg-card)] p-3">
               <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--ink-3)]">
                 <Eye className="h-3.5 w-3.5" aria-hidden="true" />
@@ -897,6 +905,13 @@ export default function MissionDetailSheet({
                 <p className="text-xs text-[var(--ink-3)]">{linkedMysteryMission.spoilerSummary}</p>
               ) : null}
             </section>
+          ) : null}
+
+          {isTraveler && linkedMysteryMission?.trueIntent && isAdaptiveLocationAvailable() ? (
+            <MysteryNarrationPlayer
+              missionId={linkedMysteryMission._id}
+              narration={linkedMysteryMission.trueIntent}
+            />
           ) : null}
 
           {linkedMysteryMission ? (

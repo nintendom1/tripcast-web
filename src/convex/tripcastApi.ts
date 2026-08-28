@@ -184,7 +184,34 @@ export type NativeLocationBatchResult = {
   currentLocationSampledAt: number | null;
   serverAcknowledgedAt: number;
   trailInsertedCount: number;
+  mysteryMissionSync?: NativeMysteryMissionSync;
 };
+
+export type NativeMysteryMission = {
+  mysteryMissionDocumentId: string;
+  stablePackId: string;
+  linkedMissionId: string;
+  lat: number;
+  lon: number;
+  resolveRadiusMeters: number;
+  narration: string;
+  priority: number;
+  expiresAt?: number;
+  updatedAt: number;
+  debugOnly?: boolean;
+};
+
+export type NativeMysteryMissionSync = {
+  enabled: boolean;
+  revision: number;
+  missions: NativeMysteryMission[];
+};
+
+export type NativeMysteryCompletionOutcome =
+  | "completed"
+  | "already_completed"
+  | "ineligible"
+  | "not_found";
 
 export type LatestLiveTrailSample = LiveTrailSample | FollowerLiveTrailSample | null;
 
@@ -425,6 +452,7 @@ export type MysteryMissionFeedItem = {
   kind: "mystery_mission";
   _id: string;
   mysteryMissionId: string;
+  developerTest?: boolean;
   state: MysteryMissionState;
   lat: number;
   lon: number;
@@ -434,6 +462,7 @@ export type MysteryMissionFeedItem = {
   locationName?: string;
   spoilerSummary?: string;
   spawnRadiusMiles: number;
+  resolveRadiusMeters: number;
   priority: number;
   tags?: string[];
   recommendedTimeOfDay?: string;
@@ -488,6 +517,7 @@ export type MysteryMissionImportResult = {
 export type MysteryMissionExportRow = {
   _id: string;
   id: string;
+  developerTest?: boolean;
   lat: number;
   lon: number;
   region?: string;
@@ -495,6 +525,7 @@ export type MysteryMissionExportRow = {
   mysteryText: string;
   trueIntent: string;
   spawnRadiusMiles: number;
+  resolveRadiusMeters: number;
   priority: number;
   tags?: string[];
   recommendedTimeOfDay?: string;
@@ -531,6 +562,13 @@ export type MysteryMissionExport = {
   version: 1;
   exportedAt: number;
   missions: MysteryMissionExportRow[];
+};
+
+export type DeveloperTestMysteryMissionResult = {
+  mysteryMissionId: string;
+  linkedMissionId: string;
+  lat: number;
+  lon: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -1277,6 +1315,7 @@ export type BulkImportEntry =
       mysteryText: string;
       trueIntent: string;
       spawnRadiusMiles?: number;
+      resolveRadiusMeters?: number;
       priority?: number;
       tags?: string[];
       recommendedTimeOfDay?: string;
@@ -1746,7 +1785,7 @@ export const tripcastApi = {
     travelerIngestNativeLocationBatch: (anyApi as any).nativeLocationIngest.travelerIngestNativeLocationBatch as FunctionReference<
       "mutation",
       "public",
-      { token: string; samples: NativeLocationSampleInput[] },
+      { token: string; samples: NativeLocationSampleInput[]; includeDebugMysteryMissions?: boolean },
       NativeLocationBatchResult
     >,
   },
@@ -2088,6 +2127,12 @@ export const tripcastApi = {
       { token: string; enabled: boolean; revealIntervalHours?: number },
       null
     >,
+    travelerCreateDeveloperTestMysteryMission: (anyApi as any).mysteryMissions.travelerCreateDeveloperTestMysteryMission as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; lat: number; lon: number; mysteryText: string; trueIntent: string },
+      DeveloperTestMysteryMissionResult
+    >,
     previewMysteryMissionImport: (anyApi as any).mysteryMissions.previewMysteryMissionImport as FunctionReference<
       "query",
       "public",
@@ -2105,6 +2150,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       MysteryMissionManagementList
+    >,
+    travelerGetNativeMysteryMissionSync: (anyApi as any).mysteryMissions.travelerGetNativeMysteryMissionSync as FunctionReference<
+      "query",
+      "public",
+      { token: string; includeDebugAll?: boolean },
+      NativeMysteryMissionSync
     >,
     travelerGetMysteryMissionForEdit: (anyApi as any).mysteryMissions.travelerGetMysteryMissionForEdit as FunctionReference<
       "query",
@@ -2148,6 +2199,12 @@ export const tripcastApi = {
       { token: string; mysteryMissionId: string; checkpointId?: string },
       null
     >,
+    travelerCompleteMysteryMissionNative: (anyApi as any).mysteryMissions.travelerCompleteMysteryMissionNative as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; mysteryMissionId: string; clientTriggerId: string; debugArrival?: boolean },
+      { outcome: NativeMysteryCompletionOutcome }
+    >,
     travelerPatchMysteryMission: (anyApi as any).mysteryMissions.travelerPatchMysteryMission as FunctionReference<
       "mutation",
       "public",
@@ -2161,6 +2218,7 @@ export const tripcastApi = {
         mysteryText?: string;
         trueIntent?: string;
         spawnRadiusMiles?: number;
+        resolveRadiusMeters?: number;
         priority?: number;
         tags?: string[];
         recommendedTimeOfDay?: string | null;

@@ -18,6 +18,23 @@
   filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.28));
 }
 
+.mystery-pin__debug-badge {
+  position: absolute;
+  top: -7px;
+  right: -9px;
+  z-index: 2;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: #d97706;
+  color: #fff;
+  font: 700 10px/1 ui-monospace, monospace;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
 .mystery-pin__fizzle,
 .mystery-card-fizzle {
   position: absolute;

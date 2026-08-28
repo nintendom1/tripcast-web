@@ -13,7 +13,10 @@
 	<key>NSMotionUsageDescription</key>
 	<string>TripCast uses motion activity to update your Traveler activity, avoid delayed-breadcrumb warnings while stationary, and resume precise tracking when you move.</string>
 	<key>UIBackgroundModes</key>
-	<array><string>location</string></array>
+	<array>
+		<string>location</string>
+		<string>audio</string>
+	</array>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>

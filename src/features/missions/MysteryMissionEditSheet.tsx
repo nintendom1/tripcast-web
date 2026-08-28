@@ -33,6 +33,7 @@ type FormState = {
   mysteryText: string;
   trueIntent: string;
   spawnRadiusMiles: string;
+  resolveRadiusMeters: string;
   priority: string;
   tags: string;
   recommendedTimeOfDay: string;
@@ -56,6 +57,7 @@ const EMPTY_FORM: FormState = {
   mysteryText: "",
   trueIntent: "",
   spawnRadiusMiles: "30",
+  resolveRadiusMeters: "75",
   priority: "0",
   tags: "",
   recommendedTimeOfDay: "",
@@ -106,6 +108,7 @@ function formFromMission(row: MysteryMissionExportRow): FormState {
     mysteryText: row.mysteryText,
     trueIntent: row.trueIntent,
     spawnRadiusMiles: String(row.spawnRadiusMiles),
+    resolveRadiusMeters: String(row.resolveRadiusMeters),
     priority: String(row.priority),
     tags: row.tags?.join(", ") ?? "",
     recommendedTimeOfDay: row.recommendedTimeOfDay ?? "",
@@ -197,6 +200,7 @@ export default function MysteryMissionEditSheet({
         mysteryText: form.mysteryText,
         trueIntent: form.trueIntent,
         spawnRadiusMiles: Number(form.spawnRadiusMiles),
+        resolveRadiusMeters: Number(form.resolveRadiusMeters),
         priority: Number(form.priority),
         tags: form.tags.split(",").map((tag) => tag.trim()).filter(Boolean),
         recommendedTimeOfDay: nullableString(form.recommendedTimeOfDay),
@@ -260,6 +264,9 @@ export default function MysteryMissionEditSheet({
                 <Field label="Spawn radius miles">
                   <Input value={form.spawnRadiusMiles} type="number" onChange={(event) => update("spawnRadiusMiles", event.target.value)} />
                 </Field>
+                <Field label="Arrival radius meters">
+                  <Input value={form.resolveRadiusMeters} type="number" min={0.01} max={5000} onChange={(event) => update("resolveRadiusMeters", event.target.value)} />
+                </Field>
                 <Field label="Priority">
                   <Input value={form.priority} type="number" onChange={(event) => update("priority", event.target.value)} />
                 </Field>
@@ -275,7 +282,7 @@ export default function MysteryMissionEditSheet({
                 <Input value={form.mysteryText} maxLength={120} onChange={(event) => update("mysteryText", event.target.value)} />
               </Field>
               <Field label="True intent">
-                <Textarea value={form.trueIntent} rows={4} maxLength={1000} onChange={(event) => update("trueIntent", event.target.value)} />
+                <Textarea value={form.trueIntent} rows={4} maxLength={3000} onChange={(event) => update("trueIntent", event.target.value)} />
               </Field>
               <Field label="Spoiler summary">
                 <Textarea value={form.spoilerSummary} rows={3} onChange={(event) => update("spoilerSummary", event.target.value)} />

@@ -8,6 +8,10 @@ const mocks = vi.hoisted(() => ({
   adaptiveStop: vi.fn(),
   adaptiveAddListener: vi.fn(),
   adaptiveSetCalibrationActive: vi.fn(),
+  adaptiveSyncMysteryMissions: vi.fn(),
+  adaptiveGetMysteryProximityState: vi.fn(),
+  adaptiveSetMysteryAudioMuted: vi.fn(),
+  adaptiveTestMysterySpeech: vi.fn(),
 }));
 
 vi.mock("@capacitor/core", () => ({
@@ -17,6 +21,10 @@ vi.mock("@capacitor/core", () => ({
         stop: mocks.adaptiveStop,
         addListener: mocks.adaptiveAddListener,
         setCalibrationActive: mocks.adaptiveSetCalibrationActive,
+        syncMysteryMissions: mocks.adaptiveSyncMysteryMissions,
+        getMysteryProximityState: mocks.adaptiveGetMysteryProximityState,
+        setMysteryAudioMuted: mocks.adaptiveSetMysteryAudioMuted,
+        testMysterySpeech: mocks.adaptiveTestMysterySpeech,
       }
     : {
         start: mocks.start,
@@ -40,6 +48,7 @@ describe("nativeLocationManager", () => {
       liveRequested: true,
       changedAt: 1,
     });
+    mocks.adaptiveSyncMysteryMissions.mockResolvedValue({ muted: false });
     // Reset private state for testing
     // @ts-expect-error accessing private for test
     nativeLocationManager.watchers = [];
@@ -85,6 +94,28 @@ describe("nativeLocationManager", () => {
 
     expect(mocks.stop).toHaveBeenCalledTimes(1);
     expect(mocks.adaptiveStop).toHaveBeenCalledWith({ pendingSamples: "preserve" });
+  });
+
+  it("serializes full Mystery Mission replacement syncs through the bridge", async () => {
+    const payload = {
+      enabled: true,
+      revision: 42,
+      missions: [{
+        mysteryMissionDocumentId: "mm-1",
+        stablePackId: "pack-1",
+        linkedMissionId: "mission-1",
+        lat: 47.61,
+        lon: -122.33,
+        resolveRadiusMeters: 75,
+        narration: "Reveal",
+        priority: 2,
+        updatedAt: 40,
+      }],
+    };
+
+    await nativeLocationManager.syncMysteryMissions(payload);
+
+    expect(mocks.adaptiveSyncMysteryMissions).toHaveBeenCalledWith({ payload });
   });
 
   it("aggregates distanceFilter by taking the minimum", async () => {

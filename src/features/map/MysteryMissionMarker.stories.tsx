@@ -1,17 +1,18 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
-function MarkerPreview({ revealed = false }: { revealed?: boolean }) {
+function MarkerPreview({ revealed = false, debug = false }: { revealed?: boolean; debug?: boolean }) {
   const color = revealed ? "#3f3f46" : "#18181b";
 
   return (
     <div className="grid min-h-40 place-items-center bg-[var(--bg-paper)]">
       <div
-        className={revealed ? "mystery-pin mystery-pin--revealed" : "mystery-pin mystery-pin--signal"}
+        className={`${revealed ? "mystery-pin mystery-pin--revealed" : "mystery-pin mystery-pin--signal"}${debug ? " mystery-pin--debug-only" : ""}`}
         aria-label={revealed ? "Revealed Mystery Mission" : "Mystery Mission signal"}
         role="button"
         tabIndex={0}
         style={{ position: "relative", width: 27, height: 41 }}
       >
+        {debug ? <span className="mystery-pin__debug-badge" aria-hidden="true">D</span> : null}
         <svg width="27" height="41" viewBox="0 0 27 41" aria-hidden="true">
           <path
             fill={color}
@@ -46,4 +47,8 @@ export const Signal: Story = {};
 
 export const Revealed: Story = {
   args: { revealed: true },
+};
+
+export const DebugPreview: Story = {
+  args: { debug: true },
 };

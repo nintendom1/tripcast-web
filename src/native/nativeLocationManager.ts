@@ -33,9 +33,9 @@ const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>(
 );
 
 type AdaptiveLocationEvent = {
-  mode: Exclude<NativeTrackingMode, "legacy">;
-  liveRequested: boolean;
-  changedAt: number;
+  mode?: Exclude<NativeTrackingMode, "legacy">;
+  liveRequested?: boolean;
+  changedAt?: number;
   reason?: string;
   lat?: number;
   lon?: number;
@@ -66,6 +66,42 @@ type AdaptiveLocationEvent = {
 
 type NativeTrailSnapshot = { queueRevision: number; points: LocalTrailPoint[] };
 
+export type NativeMysteryMissionSync = {
+  enabled: boolean;
+  revision: number;
+  missions: Array<{
+    mysteryMissionDocumentId: string;
+    stablePackId: string;
+    linkedMissionId: string;
+    lat: number;
+    lon: number;
+    resolveRadiusMeters: number;
+    narration: string;
+    priority: number;
+    expiresAt?: number;
+    updatedAt: number;
+    debugOnly?: boolean;
+  }>;
+};
+
+export type NativeMysteryProximityState = {
+  enabled: boolean;
+  revision: number;
+  missionCount: number;
+  triggeredCount: number;
+  speechQueueDepth: number;
+  muted: boolean;
+};
+
+export type NativeMysteryNarrationPlaybackState = {
+  state: "idle" | "playing" | "paused";
+  missionId: string | null;
+  source: "arrival" | "manual" | "test" | null;
+  characterOffset: number;
+  characterLength: number;
+  totalCharacters: number;
+};
+
 export type NativePublishingConfiguration = {
   endpoint: string;
   token: string;
@@ -75,6 +111,7 @@ export type NativePublishingConfiguration = {
   alertThresholdSeconds: number;
   cloakTimeoutSeconds: number;
   cloakZones: Array<{ lat: number; lon: number; radiusMeters: number }>;
+  includeDebugMysteryMissions: boolean;
 };
 
 interface AdaptiveLocationPlugin {
@@ -85,6 +122,16 @@ interface AdaptiveLocationPlugin {
   setHighFrequencyActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
   getState(): Promise<AdaptiveLocationEvent>;
   getLocalTrailSnapshot(): Promise<NativeTrailSnapshot>;
+  syncMysteryMissions(options: { payload: NativeMysteryMissionSync }): Promise<NativeMysteryProximityState>;
+  getMysteryProximityState(): Promise<NativeMysteryProximityState>;
+  setMysteryAudioMuted(options: { muted: boolean }): Promise<{ muted: boolean }>;
+  testMysterySpeech(): Promise<void>;
+  getMysteryNarrationPlaybackState(): Promise<NativeMysteryNarrationPlaybackState>;
+  controlMysteryNarration(options: {
+    action: "play" | "pause" | "restart";
+    missionId: string;
+    narration?: string;
+  }): Promise<NativeMysteryNarrationPlaybackState>;
   addListener(
     eventName: "locationUpdate",
     listener: (event: AdaptiveLocationEvent) => void,
@@ -242,6 +289,34 @@ class NativeLocationManager {
 
   public async getLocalTrailSnapshot(): Promise<NativeTrailSnapshot> {
     return AdaptiveLocation.getLocalTrailSnapshot();
+  }
+
+  public syncMysteryMissions(payload: NativeMysteryMissionSync) {
+    return AdaptiveLocation.syncMysteryMissions({ payload });
+  }
+
+  public getMysteryProximityState() {
+    return AdaptiveLocation.getMysteryProximityState();
+  }
+
+  public setMysteryAudioMuted(muted: boolean) {
+    return AdaptiveLocation.setMysteryAudioMuted({ muted });
+  }
+
+  public testMysterySpeech() {
+    return AdaptiveLocation.testMysterySpeech();
+  }
+
+  public getMysteryNarrationPlaybackState() {
+    return AdaptiveLocation.getMysteryNarrationPlaybackState();
+  }
+
+  public controlMysteryNarration(options: {
+    action: "play" | "pause" | "restart";
+    missionId: string;
+    narration?: string;
+  }) {
+    return AdaptiveLocation.controlMysteryNarration(options);
   }
 
   public foreground(): void {
@@ -487,6 +562,16 @@ class NativeLocationManager {
     }
     if (event.action) {
       log.logGps(event.action, event.details ?? {}, event.level === "warn" ? "warn" : undefined);
+      if (event.action === "mystery:native:arrival") {
+        window.dispatchEvent(new CustomEvent("tripcast:mystery-native-arrival", {
+          detail: event.details,
+        }));
+      }
+      if (event.action === "mystery:native:playback-state") {
+        window.dispatchEvent(new CustomEvent("tripcast:mystery-native-playback-state", {
+          detail: event.details,
+        }));
+      }
     }
     if (!event.mode) return;
     log.logGps("gps:adaptive:mode", {

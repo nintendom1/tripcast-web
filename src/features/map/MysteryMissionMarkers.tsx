@@ -27,8 +27,18 @@ function decorateMarkerElement(element: HTMLElement, mission: MysteryMissionFeed
   element.setAttribute("tabindex", "0");
   element.setAttribute(
     "aria-label",
-    mission.state === "revealed" ? "Revealed Mystery Mission" : "Mystery Mission signal",
+    mission.debugOnly === true
+      ? "Traveler debug preview Mystery Mission"
+      : mission.state === "revealed" ? "Revealed Mystery Mission" : "Mystery Mission signal",
   );
+
+  if (mission.debugOnly === true) {
+    const badge = document.createElement("span");
+    badge.className = "mystery-pin__debug-badge";
+    badge.textContent = "D";
+    badge.setAttribute("aria-hidden", "true");
+    element.appendChild(badge);
+  }
 
   if (mission.state === "signal") {
     for (let i = 0; i < 5; i++) {
@@ -44,7 +54,9 @@ function createPopupContent(mission: MysteryMissionFeedItem) {
   wrapper.className = "checkpoint-popup";
 
   const label = document.createElement("small");
-  label.textContent = mission.state === "revealed" ? "Mystery revealed" : "Mystery signal";
+  label.textContent = mission.debugOnly === true
+    ? "Traveler debug preview"
+    : mission.state === "revealed" ? "Mystery revealed" : "Mystery signal";
   label.style.color = "#3f3f46";
   label.style.fontWeight = "700";
   label.style.textTransform = "uppercase";
