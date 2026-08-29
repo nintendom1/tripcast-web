@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   adaptiveStart: vi.fn(),
   adaptiveStop: vi.fn(),
   adaptiveAddListener: vi.fn(),
+  adaptiveGetBootstrapPublishingState: vi.fn(),
+  adaptiveBeginLegacyBootstrapPublishing: vi.fn(),
+  adaptiveAcceptLegacyBootstrapFix: vi.fn(),
   adaptiveSetCalibrationActive: vi.fn(),
   adaptiveSyncMysteryMissions: vi.fn(),
   adaptiveGetMysteryProximityState: vi.fn(),
@@ -20,6 +23,9 @@ vi.mock("@capacitor/core", () => ({
         start: mocks.adaptiveStart,
         stop: mocks.adaptiveStop,
         addListener: mocks.adaptiveAddListener,
+        getBootstrapPublishingState: mocks.adaptiveGetBootstrapPublishingState,
+        beginLegacyBootstrapPublishing: mocks.adaptiveBeginLegacyBootstrapPublishing,
+        acceptLegacyBootstrapFix: mocks.adaptiveAcceptLegacyBootstrapFix,
         setCalibrationActive: mocks.adaptiveSetCalibrationActive,
         syncMysteryMissions: mocks.adaptiveSyncMysteryMissions,
         getMysteryProximityState: mocks.adaptiveGetMysteryProximityState,
@@ -43,6 +49,15 @@ describe("nativeLocationManager", () => {
     mocks.adaptiveStart.mockResolvedValue({ mode: "precise", liveRequested: true, changedAt: 1 });
     mocks.adaptiveStop.mockResolvedValue({ mode: "off", liveRequested: false, changedAt: 2 });
     mocks.adaptiveAddListener.mockResolvedValue({ remove: vi.fn() });
+    mocks.adaptiveGetBootstrapPublishingState.mockResolvedValue({
+      configurationReady: true,
+      liveTrailEnabled: true,
+    });
+    mocks.adaptiveBeginLegacyBootstrapPublishing.mockResolvedValue({
+      mode: "off",
+      publishingPhase: "idle",
+    });
+    mocks.adaptiveAcceptLegacyBootstrapFix.mockResolvedValue(undefined);
     mocks.adaptiveSetCalibrationActive.mockResolvedValue({
       mode: "precise",
       liveRequested: true,
@@ -94,6 +109,34 @@ describe("nativeLocationManager", () => {
 
     expect(mocks.stop).toHaveBeenCalledTimes(1);
     expect(mocks.adaptiveStop).toHaveBeenCalledWith({ pendingSamples: "preserve" });
+  });
+
+  it("reads cached publishing readiness before verification completes", async () => {
+    await expect(nativeLocationManager.getBootstrapPublishingState()).resolves.toEqual({
+      configurationReady: true,
+      liveTrailEnabled: true,
+    });
+
+    expect(mocks.adaptiveGetBootstrapPublishingState).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts Legacy bootstrap publishing and forwards provisional fixes", async () => {
+    await nativeLocationManager.beginLegacyBootstrapPublishing();
+    await nativeLocationManager.acceptLegacyBootstrapFix({
+      lat: 47.61,
+      lon: -122.33,
+      accuracy: 8,
+      at: 1234,
+    });
+
+    expect(mocks.adaptiveAddListener).toHaveBeenCalledTimes(1);
+    expect(mocks.adaptiveBeginLegacyBootstrapPublishing).toHaveBeenCalledTimes(1);
+    expect(mocks.adaptiveAcceptLegacyBootstrapFix).toHaveBeenCalledWith({
+      lat: 47.61,
+      lon: -122.33,
+      accuracy: 8,
+      timestamp: 1234,
+    });
   });
 
   it("serializes full Mystery Mission replacement syncs through the bridge", async () => {

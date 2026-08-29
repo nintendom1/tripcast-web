@@ -392,6 +392,26 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    func bootstrapPublishingState(completion: @escaping (JSObject) -> Void) {
+        NativeLocationPublisher.shared.currentPublishingState { [weak self] state in
+            guard let self else { return }
+            self.mergePublishingState(state)
+            completion(self.currentState())
+        }
+    }
+
+    func beginLegacyBootstrapPublishing(completion: @escaping (JSObject) -> Void) {
+        NativeLocationPublisher.shared.startLive(mode: "legacy") { [weak self] state in
+            guard let self else { return }
+            self.mergePublishingState(state)
+            completion(self.currentState())
+        }
+    }
+
+    func acceptLegacyBootstrapFix(_ location: CLLocation) {
+        NativeLocationPublisher.shared.accept(location)
+    }
+
     func localTrailSnapshot(completion: @escaping (JSObject) -> Void) {
         NativeLocationPublisher.shared.localTrailSnapshot(completion: completion)
     }
