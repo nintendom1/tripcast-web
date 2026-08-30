@@ -4,6 +4,10 @@ import CoreLocation
 import Foundation
 import UIKit
 
+enum MysteryAudioPreference {
+    static let mutedKey = "tripcast.mysteryAudioMuted"
+}
+
 final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
     static let shared = MysteryProximityService()
 
@@ -46,7 +50,6 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
         }
         persistLocked()
         queue.async { [weak self] in self?.speakNextLocked() }
-        updateLiveActivity()
     }
 
     func accept(_ location: CLLocation) {
@@ -88,7 +91,6 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
             if self.liveActive, let latestLocation = self.latestLocation {
                 self.evaluateLocked(latestLocation)
             }
-            self.updateLiveActivity()
         }
     }
 
@@ -130,7 +132,6 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
                 }
             }
             self.persistLocked()
-            self.updateLiveActivity()
             self.emit("mystery:native:audio-preference", details: ["muted": muted])
             if let completion {
                 DispatchQueue.main.async { completion(["muted": muted]) }
@@ -214,7 +215,6 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
                     options: .notifyOthersOnDeactivation
                 )
             }
-            self.updateLiveActivity()
         }
     }
 
@@ -232,7 +232,6 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
             }
         }
         persistLocked()
-        updateLiveActivity()
     }
 
     private func evaluateLocked(_ location: CLLocation) {
@@ -469,10 +468,6 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
             self.characterLength = characterRange.length
             self.emitPlaybackStateLocked()
         }
-    }
-
-    private func updateLiveActivity() {
-        LiveActivityController.shared.setMysteryNarration(available: state.enabled, muted: state.muted)
     }
 
     private var stateURL: URL {

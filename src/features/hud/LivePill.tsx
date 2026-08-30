@@ -65,7 +65,7 @@ export function LivePill({
   const isSyncing = on && publishingPhase === "syncing" && pendingBreadcrumbs > 0;
   const isStarting = on && captureReadiness === "starting";
   const isCaptureDegraded = on && captureReadiness === "degraded";
-  const isActivityUnavailable = on && captureReadiness === "ready" && ["disabled", "unsupported", "failed"].includes(activityStatus);
+  const isActivityUnavailable = on && captureReadiness === "ready" && ["disabled", "unsupported", "failed", "ended", "dismissed"].includes(activityStatus);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

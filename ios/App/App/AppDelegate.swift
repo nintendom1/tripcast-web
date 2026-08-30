@@ -7,18 +7,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        CFNotificationCenterAddObserver(
-            CFNotificationCenterGetDarwinNotifyCenter(),
-            Unmanaged.passUnretained(self).toOpaque(),
-            { _, observer, _, _, _ in
-                guard let observer else { return }
-                let delegate = Unmanaged<AppDelegate>.fromOpaque(observer).takeUnretainedValue()
-                delegate.applyMysteryAudioPreference()
-            },
-            MysteryAudioPreference.changedNotification,
-            nil,
-            .deliverImmediately
-        )
         applyMysteryAudioPreference()
         if launchOptions?[.location] != nil {
             AdaptiveLocationService.shared.bootstrapLocationRelaunch()

@@ -1,5 +1,4 @@
 import ActivityKit
-import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -22,9 +21,6 @@ struct TripCastLiveActivityWidget: Widget {
                     statusLines(context.state)
                 }
                 Spacer()
-                if #available(iOS 17.0, *), context.state.narrationAvailable {
-                    mysteryAudioButton(context.state)
-                }
             }
             .padding()
             .activityBackgroundTint(Color.black.opacity(0.86))
@@ -38,11 +34,6 @@ struct TripCastLiveActivityWidget: Widget {
                         Text(title(context.state.mode))
                     }
                 }
-                DynamicIslandExpandedRegion(.trailing) {
-                    if #available(iOS 17.0, *), context.state.narrationAvailable {
-                        mysteryAudioButton(context.state)
-                    }
-                }
                 DynamicIslandExpandedRegion(.bottom) {
                     expandedStatusLines(context.state)
                 }
@@ -54,19 +45,6 @@ struct TripCastLiveActivityWidget: Widget {
                 accessibleBrandedIcon(size: 20, state: context.state)
             }
         }
-    }
-
-    @available(iOS 17.0, *)
-    private func mysteryAudioButton(
-        _ state: TripCastLiveActivityAttributes.ContentState
-    ) -> some View {
-        Button(intent: SetMysteryAudioMutedIntent(muted: !state.mysteryAudioMuted)) {
-            Image(systemName: state.mysteryAudioMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                .frame(width: 30, height: 30)
-        }
-        .buttonStyle(.bordered)
-        .tint(.white.opacity(0.18))
-        .accessibilityLabel(state.mysteryAudioMuted ? "Unmute Mystery audio" : "Mute Mystery audio")
     }
 
     private func accessibleBrandedIcon(
