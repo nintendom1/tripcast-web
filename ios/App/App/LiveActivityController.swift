@@ -40,8 +40,6 @@ final class LiveActivityController {
     private var motionState = "unknown"
     private var motionConfidence = "unknown"
     private var motionStartedAt: Date?
-    private var narrationAvailable = false
-    private var mysteryAudioMuted = false
     private var activeFailureSources: Set<FailureSource> = []
     private var alertIncident: AlertIncident?
     private var lastDeduplicatedIncidentID: String?
@@ -193,14 +191,6 @@ final class LiveActivityController {
         stateQueue.async {
             self.queueDepth = queueDepth
             self.updateActivity()
-        }
-    }
-
-    func setMysteryNarration(available: Bool, muted: Bool) {
-        stateQueue.async {
-            self.narrationAvailable = available
-            self.mysteryAudioMuted = muted
-            self.updateActivity(force: true)
         }
     }
 
@@ -533,12 +523,20 @@ final class LiveActivityController {
         defaults.set(data, forKey: DefaultsKey.alertIncident)
     }
 
-    private func emit(_ action: String, level: String = "info", details: JSObject) {
-        let event: JSObject = [
+    private func emit(
+        _ action: String,
+        level: String = "info",
+        details: JSObject,
+        activityStatus: String? = nil
+    ) {
+        var event: JSObject = [
             "action": action,
             "level": level,
             "details": details
         ]
+        if let activityStatus {
+            event["activityStatus"] = activityStatus
+        }
         DispatchQueue.main.async { [weak self] in
             self?.eventHandler?(event)
         }
@@ -587,9 +585,7 @@ final class LiveActivityController {
             state.health,
             state.message,
             state.motionState ?? "",
-            state.motionStartedAt.map { String($0.timeIntervalSince1970) } ?? "",
-            state.narrationAvailable ? "narration" : "",
-            state.mysteryAudioMuted ? "muted" : "audible"
+            state.motionStartedAt.map { String($0.timeIntervalSince1970) } ?? ""
         ].joined(separator: "|")
     }
 
@@ -598,7 +594,16 @@ final class LiveActivityController {
         if let existing = availableImplementation as? AvailableLiveActivityController {
             return existing
         }
-        let created = AvailableLiveActivityController()
+        let created = AvailableLiveActivityController { [weak self] action, level, details, activityStatus in
+            self?.stateQueue.async {
+                self?.emit(
+                    action,
+                    level: level,
+                    details: details,
+                    activityStatus: activityStatus
+                )
+            }
+        }
         availableImplementation = created
         return created
     }
@@ -636,9 +641,7 @@ final class LiveActivityController {
             queueDepth: queueDepth,
             message: message,
             motionState: motionState,
-            motionStartedAt: motionStartedAt,
-            narrationAvailable: narrationAvailable,
-            mysteryAudioMuted: mysteryAudioMuted
+            motionStartedAt: motionStartedAt
         )
     }
 
@@ -669,13 +672,33 @@ final class LiveActivityController {
 
 @available(iOS 16.1, *)
 private final class AvailableLiveActivityController: NSObject {
+    typealias EventHandler = (String, String, JSObject, String?) -> Void
+
     private var activity: Activity<TripCastLiveActivityAttributes>?
     private var lastState: TripCastLiveActivityAttributes.ContentState?
+    private var observedActivityIDs: Set<String> = []
+    private let eventHandler: EventHandler
+
+    init(eventHandler: @escaping EventHandler) {
+        self.eventHandler = eventHandler
+    }
 
     func startIfNeeded(state: TripCastLiveActivityAttributes.ContentState) -> String {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return "disabled" }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            eventHandler(
+                "gps:live-activity:authorization",
+                "warn",
+                [
+                    "activitiesEnabled": false,
+                    "activeActivityCount": Activity<TripCastLiveActivityAttributes>.activities.count
+                ],
+                "disabled"
+            )
+            return "disabled"
+        }
         if let existing = Activity<TripCastLiveActivityAttributes>.activities.first {
             activity = existing
+            observe(existing)
             lastState = nil
             update(state: state)
             return "reused"
@@ -686,12 +709,69 @@ private final class AvailableLiveActivityController: NSObject {
                 contentState: state,
                 pushType: nil
             )
+            if let activity { observe(activity) }
             lastState = state
             return "created"
         } catch {
             activity = nil
             lastState = nil
+            let nsError = error as NSError
+            eventHandler(
+                "gps:live-activity:request-failure",
+                "error",
+                [
+                    "errorDomain": nsError.domain,
+                    "errorCode": nsError.code,
+                    "activitiesEnabled": ActivityAuthorizationInfo().areActivitiesEnabled,
+                    "activeActivityCount": Activity<TripCastLiveActivityAttributes>.activities.count
+                ],
+                "failed"
+            )
             return "failed"
+        }
+    }
+
+    private func observe(_ activity: Activity<TripCastLiveActivityAttributes>) {
+        guard observedActivityIDs.insert(activity.id).inserted else { return }
+        Task { [weak self] in
+            for await state in activity.activityStateUpdates {
+                guard let self else { return }
+                let stateName: String
+                let activityStatus: String?
+                let level: String
+                switch state {
+                case .active:
+                    stateName = "active"
+                    activityStatus = nil
+                    level = "info"
+                case .stale:
+                    stateName = "stale"
+                    activityStatus = nil
+                    level = "warn"
+                case .ended:
+                    stateName = "ended"
+                    activityStatus = "ended"
+                    level = "info"
+                case .dismissed:
+                    stateName = "dismissed"
+                    activityStatus = "dismissed"
+                    level = "warn"
+                @unknown default:
+                    stateName = "unknown"
+                    activityStatus = nil
+                    level = "warn"
+                }
+                self.eventHandler(
+                    "gps:live-activity:lifecycle",
+                    level,
+                    [
+                        "activityId": activity.id,
+                        "state": stateName,
+                        "activeActivityCount": Activity<TripCastLiveActivityAttributes>.activities.count
+                    ],
+                    activityStatus
+                )
+            }
         }
     }
 

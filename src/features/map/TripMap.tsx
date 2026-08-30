@@ -1903,9 +1903,19 @@ export default function TripMap({
           queueRevision: snapshot.queueRevision,
         });
       })
-      .catch((error) => log.error("map:pending-trail:native-sync-failure", "error", {
-        errorType: error instanceof Error ? error.name : typeof error,
-      }));
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes("Local trail snapshots are foreground-only")) {
+          log.logMap("map:pending-trail:native-sync", {
+            result: "skipped",
+            reason: "app-transition",
+          });
+          return;
+        }
+        log.error("map:pending-trail:native-sync-failure", "error", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+      });
     return () => { cancelled = true; };
   }, [isAppActive, log, nativeReadinessState.queueRevision, role, token]);
 
@@ -6061,7 +6071,7 @@ export default function TripMap({
         ) : null}
         {role === "traveler" && isLocationSharing && nativeReadinessState.captureReadiness === "degraded" ? (
           <LiveSafetyNotice kind="capture" onRetry={() => setNativeRetryNonce((value) => value + 1)} onOpenSettings={openNativeLocationSettings} />
-        ) : role === "traveler" && isLocationSharing && nativeReadinessState.captureReadiness === "ready" && ["disabled", "unsupported", "failed"].includes(nativeReadinessState.activityStatus) ? (
+        ) : role === "traveler" && isLocationSharing && nativeReadinessState.captureReadiness === "ready" && ["disabled", "unsupported", "failed", "ended", "dismissed"].includes(nativeReadinessState.activityStatus) ? (
           <LiveSafetyNotice kind="activity" onRetry={() => setNativeRetryNonce((value) => value + 1)} onOpenSettings={openNativeLocationSettings} />
         ) : null}
         <FeatureBoundary

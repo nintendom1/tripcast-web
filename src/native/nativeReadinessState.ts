@@ -5,6 +5,8 @@ export type NativeActivityStatus =
   | "idle"
   | "created"
   | "reused"
+  | "ended"
+  | "dismissed"
   | "disabled"
   | "unsupported"
   | "failed";

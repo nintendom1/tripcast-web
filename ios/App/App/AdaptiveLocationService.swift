@@ -108,6 +108,9 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
         LiveActivityController.shared.eventHandler = { [weak self] event in
             guard let self else { return }
+            if let activityStatus = event["activityStatus"] as? String {
+                self.cachedPublishingState["activityStatus"] = activityStatus
+            }
             var merged = self.currentState()
             for (key, value) in event { merged[key] = value }
             self.emit(merged)
