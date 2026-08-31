@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { MysteryMissionFeedItem } from "../../convex/tripcastApi";
+import { useNativeMysteryNarrationPlayback } from "../../native/useNativeMysteryNarrationPlayback";
 
 type Props = {
   map: maplibregl.Map | null;
@@ -18,19 +19,31 @@ function getMysteryMarkerColor(mission: MysteryMissionFeedItem) {
   return mission.state === "signal" ? "#18181b" : "#3f3f46";
 }
 
-function decorateMarkerElement(element: HTMLElement, mission: MysteryMissionFeedItem) {
+function decorateMarkerElement(
+  element: HTMLElement,
+  mission: MysteryMissionFeedItem,
+  isNarrating: boolean,
+) {
   element.classList.add("mystery-pin");
   element.classList.toggle("mystery-pin--signal", mission.state === "signal");
   element.classList.toggle("mystery-pin--revealed", mission.state === "revealed");
   element.classList.toggle("mystery-pin--debug-only", mission.debugOnly === true);
+  element.classList.toggle("mystery-pin--narrating", isNarrating);
   element.setAttribute("role", "button");
   element.setAttribute("tabindex", "0");
-  element.setAttribute(
-    "aria-label",
-    mission.debugOnly === true
-      ? "Traveler debug preview Mystery Mission"
-      : mission.state === "revealed" ? "Revealed Mystery Mission" : "Mystery Mission signal",
-  );
+  const markerLabel = mission.debugOnly === true
+    ? "Traveler debug preview Mystery Mission"
+    : mission.state === "revealed" ? "Revealed Mystery Mission" : "Mystery Mission signal";
+  element.setAttribute("aria-label", isNarrating ? `${markerLabel}, narration active` : markerLabel);
+
+  if (isNarrating) {
+    for (let i = 0; i < 2; i++) {
+      const halo = document.createElement("span");
+      halo.className = `mystery-pin__narration-halo mystery-pin__narration-halo--${i + 1}`;
+      halo.setAttribute("aria-hidden", "true");
+      element.appendChild(halo);
+    }
+  }
 
   if (mission.debugOnly === true) {
     const badge = document.createElement("span");
@@ -49,14 +62,15 @@ function decorateMarkerElement(element: HTMLElement, mission: MysteryMissionFeed
   }
 }
 
-function createPopupContent(mission: MysteryMissionFeedItem) {
+function createPopupContent(mission: MysteryMissionFeedItem, isNarrating: boolean) {
   const wrapper = document.createElement("div");
   wrapper.className = "checkpoint-popup";
 
   const label = document.createElement("small");
   label.textContent = mission.debugOnly === true
     ? "Traveler debug preview"
-    : mission.state === "revealed" ? "Mystery revealed" : "Mystery signal";
+    : isNarrating ? "Narration active"
+      : mission.state === "revealed" ? "Mystery revealed" : "Mystery signal";
   label.style.color = "#3f3f46";
   label.style.fontWeight = "700";
   label.style.textTransform = "uppercase";
@@ -82,6 +96,7 @@ export default function MysteryMissionMarkers({
   onMysteryMissionReveal,
 }: Props) {
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
+  const pinCacheRef = useRef<Map<string, MysteryMissionFeedItem>>(new Map());
   const signalIdsRef = useRef<Set<string>>(new Set());
   const revealedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
@@ -90,6 +105,32 @@ export default function MysteryMissionMarkers({
     debugShowAll ? { token, includeDebugAll: true } : { token },
   );
   const pins = useMemo(() => result?.rows ?? [], [result?.rows]);
+  const playback = useNativeMysteryNarrationPlayback();
+  const narratingMissionId = playback.state !== "idle" && playback.source !== "test"
+    ? playback.missionId
+    : null;
+  const narratingPinInFeed = useMemo(
+    () => pins.find((pin) => pin._id === narratingMissionId) ?? null,
+    [narratingMissionId, pins],
+  );
+  const narratingPinFallback = useQuery(
+    tripcastApi.mysteryMissions.getMysteryMission,
+    narratingMissionId && !narratingPinInFeed
+      ? { token, mysteryMissionId: narratingMissionId }
+      : "skip",
+  );
+  const narratingPin = narratingPinInFeed
+    ?? (narratingMissionId ? pinCacheRef.current.get(narratingMissionId) : null)
+    ?? narratingPinFallback
+    ?? null;
+  const displayedPins = useMemo(() => {
+    if (!narratingPin || pins.some((pin) => pin._id === narratingPin._id)) return pins;
+    return [...pins, narratingPin];
+  }, [narratingPin, pins]);
+
+  useEffect(() => {
+    for (const pin of pins) pinCacheRef.current.set(pin._id, pin);
+  }, [pins]);
 
   useEffect(() => {
     if (result === undefined) return;
@@ -122,16 +163,17 @@ export default function MysteryMissionMarkers({
     markersRef.current.forEach(({ marker }) => marker.remove());
     markersRef.current = [];
 
-    markersRef.current = pins.map((mission) => {
+    markersRef.current = displayedPins.map((mission) => {
+      const isNarrating = mission._id === narratingMissionId;
       const popup = new maplibregl.Popup({ offset: 20 }).setDOMContent(
-        createPopupContent(mission),
+        createPopupContent(mission, isNarrating),
       );
       const marker = new maplibregl.Marker({ color: getMysteryMarkerColor(mission) })
         .setLngLat([mission.lon, mission.lat])
         .setPopup(popup)
         .addTo(map);
       const element = marker.getElement();
-      decorateMarkerElement(element, mission);
+      decorateMarkerElement(element, mission, isNarrating);
 
       if (onMysteryMissionClick) {
         element.addEventListener("click", () => onMysteryMissionClick(mission._id));
@@ -150,7 +192,7 @@ export default function MysteryMissionMarkers({
       markersRef.current.forEach(({ marker }) => marker.remove());
       markersRef.current = [];
     };
-  }, [map, onMysteryMissionClick, pins]);
+  }, [displayedPins, map, narratingMissionId, onMysteryMissionClick]);
 
   return null;
 }
