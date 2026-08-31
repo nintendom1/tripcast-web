@@ -1,17 +1,31 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 
-function MarkerPreview({ revealed = false, debug = false }: { revealed?: boolean; debug?: boolean }) {
+function MarkerPreview({
+  revealed = false,
+  debug = false,
+  narrating = false,
+}: {
+  revealed?: boolean;
+  debug?: boolean;
+  narrating?: boolean;
+}) {
   const color = revealed ? "#3f3f46" : "#18181b";
 
   return (
     <div className="grid min-h-40 place-items-center bg-[var(--bg-paper)]">
       <div
-        className={`${revealed ? "mystery-pin mystery-pin--revealed" : "mystery-pin mystery-pin--signal"}${debug ? " mystery-pin--debug-only" : ""}`}
-        aria-label={revealed ? "Revealed Mystery Mission" : "Mystery Mission signal"}
+        className={`${revealed ? "mystery-pin mystery-pin--revealed" : "mystery-pin mystery-pin--signal"}${debug ? " mystery-pin--debug-only" : ""}${narrating ? " mystery-pin--narrating" : ""}`}
+        aria-label={`${revealed ? "Revealed Mystery Mission" : "Mystery Mission signal"}${narrating ? ", narration active" : ""}`}
         role="button"
         tabIndex={0}
         style={{ position: "relative", width: 27, height: 41 }}
       >
+        {narrating ? (
+          <>
+            <span className="mystery-pin__narration-halo mystery-pin__narration-halo--1" aria-hidden="true" />
+            <span className="mystery-pin__narration-halo mystery-pin__narration-halo--2" aria-hidden="true" />
+          </>
+        ) : null}
         {debug ? <span className="mystery-pin__debug-badge" aria-hidden="true">D</span> : null}
         <svg width="27" height="41" viewBox="0 0 27 41" aria-hidden="true">
           <path
@@ -51,4 +65,8 @@ export const Revealed: Story = {
 
 export const DebugPreview: Story = {
   args: { debug: true },
+};
+
+export const Narrating: Story = {
+  args: { narrating: true },
 };

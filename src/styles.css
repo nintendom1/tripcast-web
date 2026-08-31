@@ -12,10 +12,50 @@
 
 .mystery-pin {
   cursor: pointer;
+  isolation: isolate;
 }
 
 .mystery-pin > svg {
+  position: relative;
+  z-index: 1;
   filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.28));
+}
+
+.mystery-pin__narration-halo {
+  position: absolute;
+  left: 50%;
+  top: 14px;
+  z-index: -1;
+  width: 44px;
+  height: 44px;
+  pointer-events: none;
+  border: 3px solid rgba(24, 24, 27, 0.58);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.34);
+  animation: mystery-narration-halo 1.8s ease-out infinite;
+}
+
+.mystery-pin__narration-halo--2 {
+  animation-delay: 900ms;
+}
+
+.mystery-pin--narrating .mystery-pin__fizzle {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes mystery-narration-halo {
+  0% {
+    opacity: 0.72;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  80% {
+    opacity: 0.08;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.45);
+  }
 }
 
 .mystery-pin__debug-badge {
@@ -134,6 +174,16 @@
   .mystery-card-fizzle {
     animation: none;
     opacity: 0.18;
+  }
+
+  .mystery-pin__narration-halo {
+    animation: none;
+    opacity: 0.52;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+
+  .mystery-pin__narration-halo--2 {
+    display: none;
   }
 }
 

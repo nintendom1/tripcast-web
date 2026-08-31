@@ -101,6 +101,7 @@ vi.mock("../../native/locationWatcher", () => ({
   stopNativeLocationTracking: nativeLocationMocks.stopNativeLocationTracking,
   configureNativeLocationPublishing: nativeLocationMocks.configureNativeLocationPublishing,
   getNativeLocalTrailSnapshot: nativeLocationMocks.getNativeLocalTrailSnapshot,
+  getNativeMysteryNarrationPlaybackState: () => Promise.resolve(null),
   foregroundNativeLocationTracking: nativeLocationMocks.foregroundNativeLocationTracking,
   retryNativeLocationTracking: nativeLocationMocks.retryNativeLocationTracking,
 }));

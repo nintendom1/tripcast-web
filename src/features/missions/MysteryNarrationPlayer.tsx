@@ -1,51 +1,23 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Pause, Play, RotateCcw } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
-import {
-  controlNativeMysteryNarration,
-  getNativeMysteryNarrationPlaybackState,
-} from "../../native/locationWatcher";
-import type { NativeMysteryNarrationPlaybackState } from "../../native/nativeLocationManager";
+import { controlNativeMysteryNarration } from "../../native/locationWatcher";
+import { useNativeMysteryNarrationPlayback } from "../../native/useNativeMysteryNarrationPlayback";
 
 type Props = {
   missionId: string;
   narration: string;
 };
 
-const IDLE_STATE: NativeMysteryNarrationPlaybackState = {
-  state: "idle",
-  missionId: null,
-  source: null,
-  characterOffset: 0,
-  characterLength: 0,
-  totalCharacters: 0,
-};
-
 export default function MysteryNarrationPlayer({ missionId, narration }: Props) {
-  const [playback, setPlayback] = useState(IDLE_STATE);
+  const playback = useNativeMysteryNarrationPlayback();
   const [working, setWorking] = useState(false);
   const isCurrentMission = playback.missionId === missionId;
   const isPlaying = isCurrentMission && playback.state === "playing";
   const progress = isCurrentMission && playback.totalCharacters > 0
     ? Math.min(100, ((playback.characterOffset + playback.characterLength) / playback.totalCharacters) * 100)
     : 0;
-
-  useEffect(() => {
-    let cancelled = false;
-    void getNativeMysteryNarrationPlaybackState().then((state) => {
-      if (!cancelled && state) setPlayback(state);
-    });
-    function handlePlayback(event: Event) {
-      const detail = (event as CustomEvent<NativeMysteryNarrationPlaybackState>).detail;
-      if (detail) setPlayback(detail);
-    }
-    window.addEventListener("tripcast:mystery-native-playback-state", handlePlayback);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("tripcast:mystery-native-playback-state", handlePlayback);
-    };
-  }, []);
 
   async function control(action: "play" | "pause" | "restart") {
     setWorking(true);
@@ -55,7 +27,9 @@ export default function MysteryNarrationPlayer({ missionId, narration }: Props) 
         missionId,
         ...(action === "pause" ? {} : { narration }),
       });
-      if (next) setPlayback(next);
+      // The native bridge emits the authoritative playback-state event. The
+      // returned value only acknowledges that this command was accepted.
+      void next;
     } finally {
       setWorking(false);
     }
