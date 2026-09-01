@@ -491,6 +491,10 @@ export type MysteryMissionFeed = {
   };
 };
 
+export type MysteryMissionMapPins = {
+  rows: MysteryMissionFeedItem[];
+};
+
 export type MysteryMissionImportPreview = {
   valid: boolean;
   maxMissions: number;
@@ -2179,7 +2183,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string; includeDebugAll?: boolean },
-      MysteryMissionFeed
+      MysteryMissionMapPins
     >,
     getMysteryMission: (anyApi as any).mysteryMissions.getMysteryMission as FunctionReference<
       "query",
