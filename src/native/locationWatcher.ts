@@ -72,6 +72,13 @@ export function stopNativeLocationTracking(options: NativeStopOptions = {}): Pro
   return nativeLocationManager.explicitStop(options);
 }
 
+export function snoozeNativeLocationTracking(until: number): Promise<boolean | undefined> {
+  if (!isAdaptiveLocationAvailable()) {
+    return nativeLocationManager.explicitStop({ pendingSamples: "preserve" }).then(() => undefined);
+  }
+  return nativeLocationManager.snooze(until);
+}
+
 export function isAdaptiveNativeTrackingActive(): boolean {
   return nativeLocationManager.isAdaptiveActive();
 }
@@ -83,9 +90,9 @@ export function configureNativeLocationPublishing(
   return nativeLocationManager.configurePublishing(configuration);
 }
 
-export function foregroundNativeLocationTracking(): void {
+export function foregroundNativeLocationTracking(options?: { clearSnooze?: boolean }): void {
   if (!isAdaptiveLocationAvailable()) return;
-  nativeLocationManager.foreground();
+  nativeLocationManager.foreground(options?.clearSnooze === true);
 }
 
 export function retryNativeLocationTracking(): Promise<void> {

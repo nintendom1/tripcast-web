@@ -60,6 +60,7 @@ import {
   type FanAction,
   FundsCompactConnected,
   LivePill,
+  SnoozeLiveSheet,
   LiveSafetyNotice,
   OfflineBreadcrumbNotice,
   PendingBreadcrumbPauseDialog,
@@ -81,7 +82,9 @@ import {
   syncNativeMysteryMissions,
   startNativeLocationWatch,
   stopNativeLocationTracking,
+  snoozeNativeLocationTracking,
 } from "../../native/locationWatcher";
+import { clearLiveSnooze, readLiveSnooze, writeLiveSnooze } from "../../lib/liveSnooze";
 import { useAdaptiveGpsEnabled } from "../../lib/adaptiveGpsPreference";
 import { useStaleBreadcrumbAlertSeconds } from "../../lib/staleBreadcrumbAlertPreference";
 import { useLiveGpsUploadIntervalSeconds } from "../../lib/liveGpsUploadIntervalPreference";
@@ -1392,6 +1395,10 @@ export default function TripMap({
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [isLocationSharing, setIsLocationSharing] = useState(initialLiveSharing);
+  const [snoozedUntil, setSnoozedUntil] = useState<number | null>(() =>
+    role === "traveler" ? readLiveSnooze() : null,
+  );
+  const [isSnoozeLiveOpen, setIsSnoozeLiveOpen] = useState(false);
   const [localTrailPoints, setLocalTrailPoints] = useState<LocalTrailPoint[]>([]);
   const localTrailSnapshotRef = useRef<{ queueRevision: number; signature: string } | null>(null);
   const [nativeRetryNonce, setNativeRetryNonce] = useState(0);
@@ -3357,9 +3364,22 @@ export default function TripMap({
   }, [isLocationSharing]);
 
   useEffect(() => {
+    if (role !== "traveler" || snoozedUntil === null || !isAppActive) return;
+    const resumeIfExpired = () => {
+      if (Date.now() >= snoozedUntil) resumeLocationSharing("snooze-expired");
+    };
+    resumeIfExpired();
+    const timeout = setTimeout(resumeIfExpired, Math.max(0, snoozedUntil - Date.now()));
+    return () => clearTimeout(timeout);
+  // resumeLocationSharing reads current refs and is intentionally a function declaration.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAppActive, role, snoozedUntil]);
+
+  useEffect(() => {
     if (
       role !== "traveler" ||
       isLocationSharing ||
+      snoozedUntil !== null ||
       nativeOffReconciledRef.current ||
       !isAdaptiveLocationAvailable()
     ) {
@@ -3373,7 +3393,7 @@ export default function TripMap({
         errorType: error instanceof Error ? error.name : typeof error,
       });
     });
-  }, [isLocationSharing, log, role]);
+  }, [isLocationSharing, log, role, snoozedUntil]);
 
   useEffect(() => {
     isFollowingRef.current = isFollowing;
@@ -4226,6 +4246,7 @@ export default function TripMap({
       if (nextActive) {
         if (
           !isLocationSharingRef.current &&
+          readLiveSnooze() === null &&
           !nativeOffReconciledRef.current &&
           isAdaptiveLocationAvailable()
         ) {
@@ -4464,6 +4485,8 @@ export default function TripMap({
   }
 
   function stopLocationSharing(pendingSamples: "discard" | "preserve" = "discard") {
+    clearLiveSnooze();
+    setSnoozedUntil(null);
     // Symmetric to the start-side forced emit: capture a closing breadcrumb at
     // the current position before tearing down sampler state, so the trail's
     // tail reflects where the user actually stopped sharing.
@@ -4499,6 +4522,85 @@ export default function TripMap({
     stopTravelerLocationSharing({ token }).catch(() => {});
   }
 
+  function resumeLocationSharing(trigger: "manual" | "snooze-expired") {
+    if (insideCloakingZoneRef.current) {
+      clearLiveSnooze();
+      setSnoozedUntil(null);
+      nativeOffReconciledRef.current = true;
+      void stopNativeLocationTracking({ pendingSamples: "preserve" });
+      showToast("Live remains paused because you are currently in a cloaked zone.");
+      return;
+    }
+    clearLiveSnooze();
+    setSnoozedUntil(null);
+    if (isAdaptiveLocationAvailable()) {
+      foregroundNativeLocationTracking({ clearSnooze: true });
+    }
+    isLocationSharingRef.current = true;
+    nativeOffReconciledRef.current = false;
+    try {
+      localStorage.setItem("tripcast.live-sharing.enabled", "true");
+    } catch {
+      // The in-memory Live state remains authoritative for this session.
+    }
+    setIsLocationSharing(true);
+    if (livePosition) {
+      publishTravelerLocation(livePosition, livePosition.accuracy);
+      if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
+        publishLiveTrailSample(livePosition, livePosition.accuracy, true);
+      }
+    }
+    log.logGps("gps:live:resumed", { trigger });
+  }
+
+  function handleSnoozeLocationSharing(until: number) {
+    try {
+      writeLiveSnooze(until);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Choose a valid resume time.");
+      return;
+    }
+    setSnoozedUntil(until);
+    isLocationSharingRef.current = false;
+    nativeOffReconciledRef.current = true;
+    try {
+      localStorage.setItem("tripcast.live-sharing.enabled", "false");
+    } catch {
+      // The in-memory snooze remains authoritative for this session.
+    }
+    setIsLocationSharing(false);
+    stopFollowing();
+    stopTravelerLocationSharing({ token }).catch(() => {});
+    void snoozeNativeLocationTracking(until)
+      .then((notificationsAllowed) => {
+        if (notificationsAllowed === false) {
+          showToast("Notifications are off. Reopen TripCast to resume Live after the snooze.");
+        }
+      })
+      .catch((error) => {
+        log.error("gps:adaptive:snooze-unacknowledged", "error", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+      });
+  }
+
+  function handleCancelLocationSnooze() {
+    clearLiveSnooze();
+    setSnoozedUntil(null);
+    isLocationSharingRef.current = false;
+    nativeOffReconciledRef.current = true;
+    try {
+      localStorage.setItem("tripcast.live-sharing.enabled", "false");
+    } catch {
+      // The in-memory paused state remains authoritative for this session.
+    }
+    setIsLocationSharing(false);
+    if (isAdaptiveLocationAvailable()) {
+      foregroundNativeLocationTracking({ clearSnooze: true });
+    }
+    log.logGps("gps:live:snooze-cancelled");
+  }
+
   function handleNavigateToMessageItem(type: string, id: string) {
     music.sfx("page");
     setIsMessagingOpen(false);
@@ -4522,6 +4624,10 @@ export default function TripMap({
 
   function handleToggleLocationSharing() {
     music.sfx("tap");
+    if (snoozedUntil !== null) {
+      resumeLocationSharing("manual");
+      return;
+    }
     if (isLocationSharing) {
       if (
         isAdaptiveLocationAvailable() &&
@@ -4552,24 +4658,7 @@ export default function TripMap({
           available: Boolean(navigator.geolocation),
         });
       }
-      if (insideCloakingZoneRef.current) {
-        showToast("You are currently in a cloaked zone.");
-        return;
-      }
-      isLocationSharingRef.current = true;
-      nativeOffReconciledRef.current = false;
-      try {
-        localStorage.setItem("tripcast.live-sharing.enabled", "true");
-      } catch {
-        // The mount synchronization effect will retry if storage becomes available.
-      }
-      setIsLocationSharing(true);
-      if (livePosition) {
-        publishTravelerLocation(livePosition, livePosition.accuracy);
-        if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
-          publishLiveTrailSample(livePosition, livePosition.accuracy, true);
-        }
-      }
+      resumeLocationSharing("manual");
     }
   }
 
@@ -6102,6 +6191,8 @@ export default function TripMap({
                 pendingBreadcrumbs={nativePublishingState.breadcrumbQueueDepth}
                 captureReadiness={nativeReadinessState.captureReadiness}
                 activityStatus={nativeReadinessState.activityStatus}
+                snoozedUntil={snoozedUntil}
+                onSnoozeRequest={() => setIsSnoozeLiveOpen(true)}
                 className="pointer-events-auto"
               />
             ) : null}
@@ -6330,6 +6421,14 @@ export default function TripMap({
         onOpenChange={setIsPauseWithBreadcrumbsOpen}
         onKeep={() => stopLocationSharing("preserve")}
         onDiscard={() => stopLocationSharing("discard")}
+      />
+
+      <SnoozeLiveSheet
+        open={isSnoozeLiveOpen}
+        snoozedUntil={snoozedUntil}
+        onOpenChange={setIsSnoozeLiveOpen}
+        onConfirm={handleSnoozeLocationSharing}
+        onCancelSnooze={handleCancelLocationSnooze}
       />
 
       <Suspense fallback={null}>

@@ -31,6 +31,8 @@ final class LiveActivityController {
 
     private let staleNotificationIdentifier = "tripcast-live-stale"
     private let renewalNotificationIdentifier = "tripcast-live-activity-renewal"
+    private let snoozeNotificationIdentifier = "tripcast-live-snooze-expired"
+    private let snoozeCategoryIdentifier = "tripcast-live-snooze"
     private let stateQueue = DispatchQueue(label: "com.tripcast.live-activity-controller")
     private let defaults = UserDefaults.standard
     private var alertThresholdSeconds: TimeInterval = 120
@@ -40,6 +42,7 @@ final class LiveActivityController {
     private var motionState = "unknown"
     private var motionConfidence = "unknown"
     private var motionStartedAt: Date?
+    private var snoozeUntil: Date?
     private var activeFailureSources: Set<FailureSource> = []
     private var alertIncident: AlertIncident?
     private var lastDeduplicatedIncidentID: String?
@@ -61,6 +64,22 @@ final class LiveActivityController {
                 activeFailureSources = Set(persistedSources.compactMap { FailureSource(rawValue: $0) })
             }
         }
+    }
+
+    func registerNotificationCategory() {
+        let action = UNNotificationAction(
+            identifier: "tripcast-resume-live",
+            title: "Resume Live",
+            options: [.foreground]
+        )
+        UNUserNotificationCenter.current().setNotificationCategories([
+            UNNotificationCategory(
+                identifier: snoozeCategoryIdentifier,
+                actions: [action],
+                intentIdentifiers: [],
+                options: []
+            )
+        ])
     }
 
     func configure(alertThresholdSeconds: TimeInterval) {
@@ -106,6 +125,7 @@ final class LiveActivityController {
             self.motionState = "unknown"
             self.motionConfidence = "unknown"
             self.motionStartedAt = nil
+            self.snoozeUntil = nil
             self.activeFailureSources.removeAll()
             self.healthyRefreshWorkItem?.cancel()
             self.healthyRefreshWorkItem = nil
@@ -138,6 +158,32 @@ final class LiveActivityController {
             } else {
                 self.finishStop(.init(requestedCount: 0, remainingCount: 0))
             }
+        }
+    }
+
+    func snooze(until: Date, queueDepth: Int, completion: @escaping (Bool) -> Void) {
+        stateQueue.async {
+            self.mode = "snoozed"
+            self.snoozeUntil = until
+            self.queueDepth = queueDepth
+            self.lastAcknowledgedAt = nil
+            self.motionState = "unknown"
+            self.motionConfidence = "unknown"
+            self.motionStartedAt = nil
+            self.activeFailureSources.removeAll()
+            self.clearAlertIncident(reason: "snoozed", removeDelivered: true)
+            self.cancelRenewalNotification()
+            self.updateExistingActivityForSnooze()
+            self.scheduleSnoozeNotification(until: until, completion: completion)
+        }
+    }
+
+    func cancelSnooze() {
+        stateQueue.async {
+            self.snoozeUntil = nil
+            let center = UNUserNotificationCenter.current()
+            center.removePendingNotificationRequests(withIdentifiers: [self.snoozeNotificationIdentifier])
+            center.removeDeliveredNotifications(withIdentifiers: [self.snoozeNotificationIdentifier])
         }
     }
 
@@ -612,8 +658,11 @@ final class LiveActivityController {
     private func state() -> TripCastLiveActivityAttributes.ContentState {
         let health: String
         let message: String
-        let displayedMode = activeFailureSources.isEmpty ? mode : "recovering"
+        let displayedMode = mode == "snoozed" ? mode : (activeFailureSources.isEmpty ? mode : "recovering")
         switch displayedMode {
+        case "snoozed":
+            health = "neutral"
+            message = "Live Snoozed"
         case "power-saving":
             health = "neutral"
             message = "Waiting for movement"
@@ -641,8 +690,45 @@ final class LiveActivityController {
             queueDepth: queueDepth,
             message: message,
             motionState: motionState,
-            motionStartedAt: motionStartedAt
+            motionStartedAt: motionStartedAt,
+            snoozeUntil: snoozeUntil
         )
+    }
+
+    private func updateExistingActivityForSnooze() {
+        guard #available(iOS 16.1, *) else { return }
+        let nextState = state()
+        implementation().updateExisting(state: nextState)
+        recordActivitySubmission(nextState)
+    }
+
+    private func scheduleSnoozeNotification(until: Date, completion: @escaping (Bool) -> Void) {
+        let center = UNUserNotificationCenter.current()
+        registerNotificationCategory()
+        center.removePendingNotificationRequests(withIdentifiers: [snoozeNotificationIdentifier])
+        center.removeDeliveredNotifications(withIdentifiers: [snoozeNotificationIdentifier])
+        let content = UNMutableNotificationContent()
+        content.title = "Live snooze ended"
+        content.body = "Open TripCast to resume Live location sharing."
+        content.sound = .default
+        content.categoryIdentifier = snoozeCategoryIdentifier
+        let request = UNNotificationRequest(
+            identifier: snoozeNotificationIdentifier,
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(
+                timeInterval: max(1, until.timeIntervalSinceNow),
+                repeats: false
+            )
+        )
+        center.requestAuthorization(options: [.alert, .sound]) { allowed, _ in
+            if allowed { center.add(request) }
+            center.getNotificationSettings { settings in
+                let enabled = settings.authorizationStatus == .authorized ||
+                    settings.authorizationStatus == .provisional ||
+                    settings.authorizationStatus == .ephemeral
+                DispatchQueue.main.async { completion(enabled) }
+            }
+        }
     }
 
     private func scheduleRenewalNotification() {
@@ -779,6 +865,14 @@ private final class AvailableLiveActivityController: NSObject {
         guard let activity, state != lastState else { return }
         lastState = state
         Task { await activity.update(using: state) }
+    }
+
+    func updateExisting(state: TripCastLiveActivityAttributes.ContentState) {
+        if activity == nil, let existing = Activity<TripCastLiveActivityAttributes>.activities.first {
+            activity = existing
+            observe(existing)
+        }
+        update(state: state)
     }
 
     func stop(

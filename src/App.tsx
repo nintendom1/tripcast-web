@@ -31,6 +31,7 @@ import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 import { BackgroundSaveProvider } from "./providers/BackgroundSaveProvider";
 import { clearLiveTrailCachesForToken } from "./features/map/liveTrailCache";
 import { stopNativeLocationTracking } from "./native/locationWatcher";
+import { clearLiveSnooze } from "./lib/liveSnooze";
 
 import OptionsSheet from "./features/options/OptionsSheet";
 
@@ -224,6 +225,7 @@ function ConnectedApp() {
 
   useEffect(() => {
     if (session !== null && activeSessionCheck === null) {
+      clearLiveSnooze();
       stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
       void clearLiveTrailCachesForToken(session.token);
       clearStoredSession();
@@ -300,6 +302,7 @@ function ConnectedApp() {
   }
 
   async function handleSignOut() {
+    clearLiveSnooze();
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     if (session) {
@@ -321,6 +324,7 @@ function ConnectedApp() {
   }
 
   function handleLocalSignOut() {
+    clearLiveSnooze();
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
@@ -340,6 +344,7 @@ function ConnectedApp() {
   }
 
   function handleLoggedOut() {
+    clearLiveSnooze();
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
@@ -568,7 +573,10 @@ function ConnectedApp() {
             setIsIntroReplayOpen(true);
           }}
           onLoggedOut={handleLoggedOut}
-          onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
+          onLocationDataCleared={() => {
+            clearLiveSnooze();
+            setLocationResetNonce((value) => value + 1);
+          }}
           onTripDataDeleted={() => {
             void clearLiveTrailCachesForToken(session.token);
             setTripDataResetNonce((value) => value + 1);

@@ -8,6 +8,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         applyMysteryAudioPreference()
+        LiveActivityController.shared.registerNotificationCategory()
         if launchOptions?[.location] != nil {
             AdaptiveLocationService.shared.bootstrapLocationRelaunch()
         }

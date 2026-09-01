@@ -3,6 +3,7 @@ export { FanMenu, type FanAction, type FanMenuProps } from "./FanMenu";
 export { FundsCompact, type FundsCompactProps } from "./FundsCompact";
 export { FundsCompactConnected, type FundsCompactConnectedProps } from "./FundsCompactConnected";
 export { LivePill, type LivePillProps } from "./LivePill";
+export { SnoozeLiveSheet, type SnoozeLiveSheetProps } from "./SnoozeLiveSheet";
 export { LiveSafetyNotice, type LiveSafetyNoticeProps } from "./LiveSafetyNotice";
 export {
   OfflineBreadcrumbNotice,
