@@ -7,6 +7,7 @@ Read only when touching the related area.
 - Consume backend functions only through `src/convex/tripcastApi.ts`.
 - Backend API changes must be made in `tripcast-backend`, exported with `npm run export:web-api`, then copied into the web repo.
 - Mutations and queries that require auth pass explicit `token` args.
+- `useQuery` subscribes to the backend query's complete database read set. Consuming only `result.rows`, ignoring `result.meta`, or memoizing the selected value does not reduce server recomputation; inspect the backend reads and API response when a subscription is hot.
 - A `null` route vote detail means the vote was deleted; show the deleted-vote recovery state, not loading.
 
 ## React And Tests
