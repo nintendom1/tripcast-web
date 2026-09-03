@@ -83,6 +83,11 @@ import {
   stopNativeLocationTracking,
 } from "../../native/locationWatcher";
 import { useAdaptiveGpsEnabled } from "../../lib/adaptiveGpsPreference";
+import {
+  getLiveSharingEnabled,
+  setLiveSharingEnabled,
+  useLiveSharingEnabled,
+} from "../../lib/liveSharingPreference";
 import { useStaleBreadcrumbAlertSeconds } from "../../lib/staleBreadcrumbAlertPreference";
 import { useLiveGpsUploadIntervalSeconds } from "../../lib/liveGpsUploadIntervalPreference";
 import { useNativeTrackingState } from "../../native/nativeTrackingState";
@@ -1242,6 +1247,9 @@ type TripMapProps = {
   finaleReplayActive?: boolean;
   onOpenDebugPanel?: () => void;
   onMapLoaded?: () => void;
+  /** Fires after the map's normal GPS watcher has registered, allowing App to
+   * release its session-verification bootstrap watcher without a gap. */
+  onGpsWatcherReady?: () => void;
   /** Fires when the crosshair location picker enters or exits. Used by App to
    * hide the TopBar / TripTicker so they don't overlap the helper banner. */
   onPickerActiveChange?: (active: boolean) => void;
@@ -1257,16 +1265,11 @@ export default function TripMap({
   finaleReplayActive = false,
   onOpenDebugPanel,
   onMapLoaded,
+  onGpsWatcherReady,
   onPickerActiveChange,
 }: TripMapProps) {
-  const initialLiveSharing = (() => {
-    if (role !== "traveler") return false;
-    try {
-      return localStorage.getItem("tripcast.live-sharing.enabled") === "true";
-    } catch {
-      return false;
-    }
-  })();
+  const storedLiveSharing = useLiveSharingEnabled();
+  const isLocationSharing = role === "traveler" && storedLiveSharing;
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -1294,7 +1297,7 @@ export default function TripMap({
   const suppressedSamplerRejectionsRef = useRef(0);
   const currentLocationPublishIdRef = useRef(0);
   const liveTrailPublishIdRef = useRef(0);
-  const isLocationSharingRef = useRef(initialLiveSharing);
+  const isLocationSharingRef = useRef(role === "traveler" && getLiveSharingEnabled());
   const liveTrailEnabledRef = useRef(false);
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
@@ -1334,6 +1337,8 @@ export default function TripMap({
   // `map.on("load", ...)` handler always invokes the freshest version.
   const onMapLoadedRef = useRef(onMapLoaded);
   onMapLoadedRef.current = onMapLoaded;
+  const onGpsWatcherReadyRef = useRef(onGpsWatcherReady);
+  onGpsWatcherReadyRef.current = onGpsWatcherReady;
   const mapInteractionsFrozenRef = useRef(false);
   const snappedReplayEventRef = useRef<string | null>(null);
   const finaleReplayStartedRef = useRef(false);
@@ -1391,7 +1396,6 @@ export default function TripMap({
   const { dismissSave } = useBackgroundSave();
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
-  const [isLocationSharing, setIsLocationSharing] = useState(initialLiveSharing);
   const [localTrailPoints, setLocalTrailPoints] = useState<LocalTrailPoint[]>([]);
   const localTrailSnapshotRef = useRef<{ queueRevision: number; signature: string } | null>(null);
   const [nativeRetryNonce, setNativeRetryNonce] = useState(0);
@@ -3349,12 +3353,8 @@ export default function TripMap({
 
   useEffect(() => {
     isLocationSharingRef.current = isLocationSharing;
-    try {
-      localStorage.setItem("tripcast.live-sharing.enabled", isLocationSharing ? "true" : "false");
-    } catch {
-      // storage unavailable or full
-    }
-  }, [isLocationSharing]);
+    if (role === "traveler") setLiveSharingEnabled(isLocationSharing);
+  }, [isLocationSharing, role]);
 
   useEffect(() => {
     if (
@@ -3456,7 +3456,6 @@ export default function TripMap({
   useEffect(() => {
     if (
       role !== "traveler" ||
-      !adaptiveGpsEnabled ||
       !isAdaptiveLocationAvailable()
     ) {
       nativePublishingReadyRef.current = false;
@@ -3493,7 +3492,12 @@ export default function TripMap({
       includeDebugMysteryMissions: debugShowAllMysteryPins,
     })
       .then(() => {
-        if (!cancelled && isLocationSharingRef.current && !gpsSuppressedRef.current) {
+        if (
+          !cancelled &&
+          adaptiveGpsEnabled &&
+          isLocationSharingRef.current &&
+          !gpsSuppressedRef.current
+        ) {
           void retryNativeLocationTracking();
         }
       })
@@ -3939,6 +3943,7 @@ export default function TripMap({
         adaptiveGpsEnabled,
         fixOverlayEnabled,
       );
+      onGpsWatcherReadyRef.current?.();
       cleanup = () => {
         if (gpsOwnerRef.current?.kind === "native") {
           log.logGps("gps:watcher:stop", {
@@ -4477,11 +4482,7 @@ export default function TripMap({
     }
     isLocationSharingRef.current = false;
     nativeOffReconciledRef.current = true;
-    try {
-      localStorage.setItem("tripcast.live-sharing.enabled", "false");
-    } catch {
-      // The in-memory Off state remains authoritative for this session.
-    }
+    setLiveSharingEnabled(false);
     void stopNativeLocationTracking({ pendingSamples }).catch((error) => {
       nativeOffReconciledRef.current = false;
       log.error("gps:adaptive:stop-unacknowledged", "error", {
@@ -4494,7 +4495,6 @@ export default function TripMap({
     }
     lastSentLocationRef.current = null;
     breadcrumbSamplerStateRef.current = {};
-    setIsLocationSharing(false);
     stopFollowing();
     stopTravelerLocationSharing({ token }).catch(() => {});
   }
@@ -4525,7 +4525,6 @@ export default function TripMap({
     if (isLocationSharing) {
       if (
         isAdaptiveLocationAvailable() &&
-        adaptiveGpsEnabled &&
         nativePublishingState.breadcrumbQueueDepth > 0
       ) {
         if (
@@ -4558,12 +4557,7 @@ export default function TripMap({
       }
       isLocationSharingRef.current = true;
       nativeOffReconciledRef.current = false;
-      try {
-        localStorage.setItem("tripcast.live-sharing.enabled", "true");
-      } catch {
-        // The mount synchronization effect will retry if storage becomes available.
-      }
-      setIsLocationSharing(true);
+      setLiveSharingEnabled(true);
       if (livePosition) {
         publishTravelerLocation(livePosition, livePosition.accuracy);
         if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {

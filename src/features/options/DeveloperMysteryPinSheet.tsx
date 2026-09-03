@@ -15,9 +15,9 @@ import {
 import { tripcastApi, type DeveloperTestMysteryMissionResult } from "../../convex/tripcastApi";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { getLiveSharingEnabled } from "../../lib/liveSharingPreference";
 
 const DEBUG_PINS_STORAGE_KEY = "tripcast.mystery.showAllPinsDebug";
-const LIVE_STORAGE_KEY = "tripcast.live-sharing.enabled";
 
 export const DEVELOPER_MYSTERY_SAMPLE = {
   mysteryText: "LOOK UP // OLD STORIES",
@@ -248,7 +248,7 @@ function DeveloperMysteryPinBody({ open, token }: { open: boolean; token: string
         // The test still exists and remains accessible from Missions and Mystery Mission management.
       }
 
-      const liveEnabled = getStoredBoolean(LIVE_STORAGE_KEY);
+      const liveEnabled = getLiveSharingEnabled();
       setStatus({ type: "created", result, accuracyMeters: position.coords.accuracy, liveEnabled });
       log.logUi("action:developer-mystery-pin:created", {
         mysteryMissionId: result.mysteryMissionId,

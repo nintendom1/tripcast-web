@@ -15,6 +15,8 @@ import LandingPage from "./features/auth/LandingPage";
 import LoginModal from "./features/auth/LoginModal";
 import type { OptionsView } from "./features/options/OptionsSheet";
 import { TopBar, TripTicker, useTicker } from "./features/hud";
+import { PendingBreadcrumbPauseDialog } from "./features/hud/PendingBreadcrumbPauseDialog";
+import { SessionVerificationLiveControl } from "./features/auth/SessionVerificationLiveControl";
 import { markLocalIntroSeen } from "./features/onboarding/introUtils";
 import { FullScreenErrorFallback } from "./components/resilience/ErrorFallbacks";
 import { FeatureBoundary } from "./components/resilience/FeatureBoundary";
@@ -30,7 +32,18 @@ import { log as debugLog } from "./debug/debugLogger";
 import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 import { BackgroundSaveProvider } from "./providers/BackgroundSaveProvider";
 import { clearLiveTrailCachesForToken } from "./features/map/liveTrailCache";
-import { stopNativeLocationTracking } from "./native/locationWatcher";
+import {
+  isAdaptiveLocationAvailable,
+  stopNativeLocationTracking,
+} from "./native/locationWatcher";
+import { useAdaptiveGpsEnabled } from "./lib/adaptiveGpsPreference";
+import {
+  setLiveSharingEnabled,
+  useLiveSharingEnabled,
+} from "./lib/liveSharingPreference";
+import { useNativePublishingState } from "./native/nativePublishingState";
+import { useNativeTrackingState } from "./native/nativeTrackingState";
+import { useVerificationLiveBootstrap } from "./native/useVerificationLiveBootstrap";
 
 import OptionsSheet from "./features/options/OptionsSheet";
 
@@ -127,6 +140,7 @@ function ConnectedApp() {
   const [isEndTripOpen, setIsEndTripOpen] = useState(false);
   const [isCreditsOpen, setIsCreditsOpen] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapGpsWatcherReady, setMapGpsWatcherReady] = useState(false);
   // True while TripMap is in crosshair coordinate-pick mode. Used to hide the
   // TopBar / TripTicker so they don't overlap the picker's helper banner.
   const [isPickerActive, setIsPickerActive] = useState(false);
@@ -143,6 +157,7 @@ function ConnectedApp() {
   const [resetToastMessage, setResetToastMessage] = useState<string | null>(null);
   const [testToastMessage, setTestToastMessage] = useState<string | null>(null);
   const [gpsSuppressedUntil, setGpsSuppressedUntil] = useState<number | null>(null);
+  const [isVerificationPauseOpen, setIsVerificationPauseOpen] = useState(false);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const testToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -202,6 +217,25 @@ function ConnectedApp() {
 
   const activeSessionCheck =
     session?.sessionType === "follower" ? followerSessionCheck : legacySessionCheck;
+  const liveSharingEnabled = useLiveSharingEnabled();
+  const adaptiveGpsEnabled = useAdaptiveGpsEnabled();
+  const nativePublishingState = useNativePublishingState();
+  const nativeTrackingState = useNativeTrackingState();
+  const nativeVerificationControlAvailable =
+    session?.role === "traveler" && isAdaptiveLocationAvailable();
+  const sessionVerified = activeSessionCheck !== undefined && activeSessionCheck !== null;
+  const shouldHoldVerificationLiveLease = Boolean(
+    nativeVerificationControlAvailable &&
+    liveSharingEnabled &&
+    !pendingInviteToken &&
+    !pendingResetToken &&
+    activeSessionCheck !== null &&
+    (!sessionVerified || !mapGpsWatcherReady),
+  );
+  const verificationLiveBootstrap = useVerificationLiveBootstrap({
+    holdLease: shouldHoldVerificationLiveLease,
+    adaptiveEnabled: adaptiveGpsEnabled,
+  });
   const verifiedSessionToken =
     session !== null && activeSessionCheck ? session.token : undefined;
   const { currentMessage, isPriority, onFunFactComplete } = useTicker(verifiedSessionToken);
@@ -214,6 +248,9 @@ function ConnectedApp() {
   const signOutMutation = useMutation(tripcastApi.auth.signOut);
   const followerSignOutMutation = useMutation(tripcastApi.followers.followerSignOut);
   const recordDailyVisit = useMutation(tripcastApi.scoring.recordDailyVisit);
+  const stopTravelerLocationSharing = useMutation(
+    tripcastApi.travelerLocations.stopTravelerLocationSharing,
+  );
   const dailyVisitTokenRef = useRef<string | null>(null);
   const sessionCheckIsDelayed = useDelayedPending(
     session !== null && activeSessionCheck === undefined,
@@ -224,6 +261,7 @@ function ConnectedApp() {
 
   useEffect(() => {
     if (session !== null && activeSessionCheck === null) {
+      setLiveSharingEnabled(false);
       stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
       void clearLiveTrailCachesForToken(session.token);
       clearStoredSession();
@@ -231,6 +269,10 @@ function ConnectedApp() {
       setIsLoginModalOpen(false);
     }
   }, [session, activeSessionCheck]);
+
+  useEffect(() => {
+    setMapGpsWatcherReady(false);
+  }, [session?.token]);
 
   useEffect(() => {
     return () => {
@@ -300,6 +342,7 @@ function ConnectedApp() {
   }
 
   async function handleSignOut() {
+    setLiveSharingEnabled(false);
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     if (session) {
@@ -321,6 +364,7 @@ function ConnectedApp() {
   }
 
   function handleLocalSignOut() {
+    setLiveSharingEnabled(false);
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
@@ -340,6 +384,7 @@ function ConnectedApp() {
   }
 
   function handleLoggedOut() {
+    setLiveSharingEnabled(false);
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
     clearStoredSession();
@@ -390,6 +435,33 @@ function ConnectedApp() {
         gpsSuppressedUntil === null ? 0 : Math.max(0, gpsSuppressedUntil - Date.now()),
     });
     setGpsSuppressedUntil(null);
+  }
+
+  function stopLiveDuringVerification(pendingSamples: "discard" | "preserve") {
+    setLiveSharingEnabled(false);
+    void stopNativeLocationTracking({ pendingSamples }).catch(() => {});
+    if (session) {
+      void stopTravelerLocationSharing({ token: session.token }).catch(() => {});
+    }
+  }
+
+  function handleVerificationLiveToggle() {
+    if (!liveSharingEnabled) {
+      setLiveSharingEnabled(true);
+      return;
+    }
+    if (
+      nativePublishingState.breadcrumbQueueDepth > 0 &&
+      (nativePublishingState.phase === "offline" ||
+        nativePublishingState.phase === "retrying" ||
+        nativePublishingState.phase === "storage-error")
+    ) {
+      setIsVerificationPauseOpen(true);
+      return;
+    }
+    stopLiveDuringVerification(
+      nativePublishingState.breadcrumbQueueDepth > 0 ? "preserve" : "discard",
+    );
   }
 
   // URL-param screens (no session required)
@@ -454,6 +526,17 @@ function ConnectedApp() {
             pending={activeSessionCheck === undefined}
             className="text-sm text-muted-foreground"
           />
+          {nativeVerificationControlAvailable ? (
+            <SessionVerificationLiveControl
+              live={liveSharingEnabled}
+              phase={verificationLiveBootstrap.phase}
+              trackingMode={nativeTrackingState.mode}
+              publishingPhase={nativePublishingState.phase}
+              pendingBreadcrumbs={nativePublishingState.breadcrumbQueueDepth}
+              liveTrailEnabled={verificationLiveBootstrap.liveTrailEnabled}
+              onToggle={handleVerificationLiveToggle}
+            />
+          ) : null}
           {sessionCheckIsDelayed ? (
             <div role="status" className="grid gap-3 rounded-md border bg-background p-4 shadow-sm">
               <p className="text-sm text-muted-foreground">
@@ -475,6 +558,13 @@ function ConnectedApp() {
               </div>
             </div>
           ) : null}
+          <PendingBreadcrumbPauseDialog
+            open={isVerificationPauseOpen}
+            breadcrumbCount={nativePublishingState.breadcrumbQueueDepth}
+            onOpenChange={setIsVerificationPauseOpen}
+            onKeep={() => stopLiveDuringVerification("preserve")}
+            onDiscard={() => stopLiveDuringVerification("discard")}
+          />
         </div>
       </div>
     );
@@ -633,6 +723,7 @@ function ConnectedApp() {
             onEnableGps={handleEnableGps}
             finaleReplayActive={isCreditsOpen}
             onMapLoaded={() => setMapLoaded(true)}
+            onGpsWatcherReady={() => setMapGpsWatcherReady(true)}
             onPickerActiveChange={setIsPickerActive}
             onOpenDebugPanel={() => {
               music.sfx("open");
