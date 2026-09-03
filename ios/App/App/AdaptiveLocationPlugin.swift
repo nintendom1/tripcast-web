@@ -1,4 +1,5 @@
 import Capacitor
+import CoreLocation
 import Foundation
 import UIKit
 
@@ -12,6 +13,9 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "snooze", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearSnooze", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "configurePublishing", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getBootstrapPublishingState", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "beginLegacyBootstrapPublishing", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "acceptLegacyBootstrapFix", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "foreground", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setHighFrequencyActive", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
@@ -105,6 +109,49 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
         }
+    }
+
+    @objc func getBootstrapPublishingState(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.bootstrapPublishingState { state in
+                call.resolve(state)
+            }
+        }
+    }
+
+    @objc func beginLegacyBootstrapPublishing(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.beginLegacyBootstrapPublishing { state in
+                call.resolve(state)
+            }
+        }
+    }
+
+    @objc func acceptLegacyBootstrapFix(_ call: CAPPluginCall) {
+        guard
+            let lat = call.getDouble("lat"),
+            let lon = call.getDouble("lon"),
+            (-90...90).contains(lat),
+            (-180...180).contains(lon)
+        else {
+            call.reject("A valid latitude and longitude are required")
+            return
+        }
+        let accuracy = call.getDouble("accuracy") ?? -1
+        let timestamp = call.getDouble("timestamp") ?? Date().timeIntervalSince1970 * 1_000
+        guard accuracy.isFinite, timestamp.isFinite else {
+            call.reject("accuracy and timestamp must be finite")
+            return
+        }
+        let location = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lon),
+            altitude: 0,
+            horizontalAccuracy: accuracy >= 0 ? accuracy : -1,
+            verticalAccuracy: -1,
+            timestamp: Date(timeIntervalSince1970: timestamp / 1_000)
+        )
+        AdaptiveLocationService.shared.acceptLegacyBootstrapFix(location)
+        call.resolve()
     }
 
     @objc func foreground(_ call: CAPPluginCall) {

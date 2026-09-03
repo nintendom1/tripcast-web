@@ -90,6 +90,23 @@ export function configureNativeLocationPublishing(
   return nativeLocationManager.configurePublishing(configuration);
 }
 
+export function getNativeBootstrapPublishingState() {
+  if (!isAdaptiveLocationAvailable()) {
+    return Promise.resolve({ configurationReady: false, liveTrailEnabled: null });
+  }
+  return nativeLocationManager.getBootstrapPublishingState();
+}
+
+export function beginNativeLegacyBootstrapPublishing(): Promise<void> {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve();
+  return nativeLocationManager.beginLegacyBootstrapPublishing();
+}
+
+export function acceptNativeLegacyBootstrapFix(fix: NativeLocationFix): Promise<void> {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve();
+  return nativeLocationManager.acceptLegacyBootstrapFix(fix);
+}
+
 export function foregroundNativeLocationTracking(options?: { clearSnooze?: boolean }): void {
   if (!isAdaptiveLocationAvailable()) return;
   nativeLocationManager.foreground(options?.clearSnooze === true);

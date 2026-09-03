@@ -50,6 +50,8 @@ type AdaptiveLocationEvent = {
   publishingPhase?: NativePublishingPhase;
   queueDepth?: number;
   breadcrumbQueueDepth?: number;
+  configurationReady?: boolean;
+  liveTrailEnabled?: boolean;
   capacityReached?: boolean;
   completedDrainCount?: number;
   captureReadiness?: NativeCaptureReadiness;
@@ -122,6 +124,14 @@ interface AdaptiveLocationPlugin {
   snooze(options: { until: number; pendingSamples: "preserve" }): Promise<AdaptiveLocationEvent>;
   clearSnooze(): Promise<AdaptiveLocationEvent>;
   configurePublishing(options: NativePublishingConfiguration): Promise<AdaptiveLocationEvent>;
+  getBootstrapPublishingState(): Promise<AdaptiveLocationEvent>;
+  beginLegacyBootstrapPublishing(): Promise<AdaptiveLocationEvent>;
+  acceptLegacyBootstrapFix(options: {
+    lat: number;
+    lon: number;
+    accuracy?: number;
+    timestamp: number;
+  }): Promise<void>;
   foreground(): Promise<AdaptiveLocationEvent>;
   setHighFrequencyActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
   getState(): Promise<AdaptiveLocationEvent>;
@@ -145,6 +155,11 @@ interface AdaptiveLocationPlugin {
 export type NativeStopOptions = {
   clearCredentials?: boolean;
   pendingSamples?: "discard" | "preserve";
+};
+
+export type NativeBootstrapPublishingState = {
+  configurationReady: boolean;
+  liveTrailEnabled: boolean | null;
 };
 
 const AdaptiveLocation = registerPlugin<AdaptiveLocationPlugin>("AdaptiveLocation");
@@ -300,6 +315,31 @@ class NativeLocationManager {
       setNativeReadinessState({ captureReadiness: "degraded", failureReason: "configuration-failed" });
       throw error;
     }
+  }
+
+  public async getBootstrapPublishingState(): Promise<NativeBootstrapPublishingState> {
+    const state = await AdaptiveLocation.getBootstrapPublishingState();
+    this.applyAdaptiveState(state);
+    return {
+      configurationReady: state.configurationReady === true,
+      liveTrailEnabled:
+        typeof state.liveTrailEnabled === "boolean" ? state.liveTrailEnabled : null,
+    };
+  }
+
+  public async beginLegacyBootstrapPublishing(): Promise<void> {
+    await this.ensureAdaptiveListener();
+    const state = await AdaptiveLocation.beginLegacyBootstrapPublishing();
+    this.applyAdaptiveState(state);
+  }
+
+  public acceptLegacyBootstrapFix(fix: NativeLocationFix): Promise<void> {
+    return AdaptiveLocation.acceptLegacyBootstrapFix({
+      lat: fix.lat,
+      lon: fix.lon,
+      accuracy: fix.accuracy,
+      timestamp: fix.at,
+    });
   }
 
   public async retryAdaptiveStart(): Promise<void> {
@@ -510,12 +550,7 @@ class NativeLocationManager {
       this.currentOptions = null;
     }
 
-    if (!this.adaptiveListener) {
-      this.adaptiveListener = await AdaptiveLocation.addListener(
-        "locationUpdate",
-        (event) => this.handleAdaptiveEvent(event),
-      );
-    }
+    await this.ensureAdaptiveListener();
 
     markNativeCaptureStarting();
     if (this.publishingConfigurationPromise) await this.publishingConfigurationPromise;
@@ -531,6 +566,14 @@ class NativeLocationManager {
       active: this.watchers.some((watcher) => watcher.options.highFrequency === true),
     });
     this.applyAdaptiveState(highFrequencyState);
+  }
+
+  private async ensureAdaptiveListener(): Promise<void> {
+    if (this.adaptiveListener) return;
+    this.adaptiveListener = await AdaptiveLocation.addListener(
+      "locationUpdate",
+      (event) => this.handleAdaptiveEvent(event),
+    );
   }
 
   private hasAdaptiveLiveWatcher(): boolean {
@@ -628,13 +671,20 @@ class NativeLocationManager {
       }
     }
     if (!event.mode) return;
+    const effectiveMode =
+      event.mode === "off" &&
+      this.isStarted &&
+      this.watchers.length > 0 &&
+      !this.hasAdaptiveLiveWatcher()
+        ? "legacy"
+        : event.mode;
     log.logGps("gps:adaptive:mode", {
-      mode: event.mode,
+      mode: effectiveMode,
       liveRequested: event.liveRequested,
       changedAt: event.changedAt,
       reason: event.reason,
     });
-    setNativeTrackingMode(event.mode, event.changedAt);
+    setNativeTrackingMode(effectiveMode, event.changedAt);
   }
 
   private aggregateOptions(): WatcherOptions {

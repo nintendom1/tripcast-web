@@ -192,6 +192,7 @@ final class NativeLocationPublisher {
             "breadcrumbQueueDepth": breadcrumbQueueDepth,
             "capacityReached": capacityReached,
             "configurationReady": configuration != nil && readToken() != nil,
+            "liveTrailEnabled": configuration?.liveTrailEnabled == true,
             "durableStorageReady": storageHealthy,
             "motionPublishStatus": motionPublishStatus,
             "motionPendingClassification": pendingMotion?.classification ?? NSNull(),
@@ -438,7 +439,7 @@ final class NativeLocationPublisher {
 
     func accept(_ location: CLLocation, forcedReason: String? = nil) {
         workQueue.async { [weak self] in
-            guard let self, self.configuration != nil else { return }
+            guard let self, self.configuration != nil, self.currentMode != "off" else { return }
             if self.shouldSuppress(location) {
                 LiveActivityController.shared.setPrivacyPaused(lastAcknowledgedAt: nil)
                 return
