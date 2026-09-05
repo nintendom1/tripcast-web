@@ -543,6 +543,7 @@ beforeEach(async () => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("TripMap location marker", () => {
@@ -2464,6 +2465,7 @@ describe("TripMap location marker", () => {
     });
 
     it("passes the movement preference to native publishing", async () => {
+      vi.stubEnv("VITE_CONVEX_URL", "https://example.invalid");
       nativeLocationMocks.isAdaptiveLocationAvailable.mockReturnValue(true);
       setupQueries({
         travelerPreferences: {
