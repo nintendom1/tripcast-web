@@ -128,6 +128,33 @@ export const PausedWithTrail: Story = {
   ],
 };
 
+export const PausedOptions: Story = {
+  args: {
+    on: false,
+    onSnoozeRequest: fn(),
+  },
+  decorators: Live.decorators,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const pill = await canvas.findByRole("button", { name: /start sharing live location/i });
+    const rect = pill.getBoundingClientRect();
+    fireEvent.pointerDown(pill, {
+      button: 0,
+      pointerId: 1,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    });
+    await waitFor(() => expect(canvas.getByRole("menu")).toBeVisible());
+    fireEvent.pointerUp(pill, {
+      button: 0,
+      pointerId: 1,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    });
+    await expect(canvas.getByRole("menuitem", { name: "Snooze…" })).toBeVisible();
+  },
+};
+
 export const LivePowerSaving: Story = {
   args: {
     on: true,
@@ -146,6 +173,47 @@ export const Starting: Story = { args: { captureReadiness: "starting" } };
 export const CaptureDegraded: Story = { args: { captureReadiness: "degraded" } };
 export const LiveActivityUnavailable: Story = {
   args: { captureReadiness: "ready", activityStatus: "disabled" },
+};
+
+export const Snoozed: Story = {
+  args: {
+    on: false,
+    snoozedUntil: new Date(2030, 0, 1, 14, 30).getTime(),
+    onSnoozeRequest: fn(),
+  },
+  decorators: [
+    (Story) => (
+      <div className="flex min-h-72 items-center justify-center bg-[var(--bg-canvas)] p-8">
+        <Story />
+      </div>
+    ),
+  ],
+};
+
+export const SnoozedOptions: Story = {
+  args: {
+    ...Snoozed.args,
+  },
+  decorators: Snoozed.decorators,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const pill = await canvas.findByRole("button", { name: /live location snoozed/i });
+    const rect = pill.getBoundingClientRect();
+    fireEvent.pointerDown(pill, {
+      button: 0,
+      pointerId: 1,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    });
+    await waitFor(() => expect(canvas.getByRole("menu")).toBeVisible());
+    fireEvent.pointerUp(pill, {
+      button: 0,
+      pointerId: 1,
+      clientX: rect.left + rect.width / 2,
+      clientY: rect.top + rect.height / 2,
+    });
+    await expect(canvas.getByRole("menuitem", { name: "Edit snooze…" })).toBeVisible();
+  },
 };
 
 export const LiveOfflineSaving: Story = {

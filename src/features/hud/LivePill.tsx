@@ -15,6 +15,8 @@ export interface LivePillProps {
   pendingBreadcrumbs?: number;
   captureReadiness?: NativeCaptureReadiness;
   activityStatus?: NativeActivityStatus;
+  snoozedUntil?: number | null;
+  onSnoozeRequest?: () => void;
   className?: string;
 }
 
@@ -29,6 +31,7 @@ const MOVE_CANCEL_THRESHOLD_PX = 8;
 const CLICK_SUPPRESSION_MS = 500;
 
 type GesturePhase = "idle" | "pending" | "active" | "cancelled";
+type MenuValue = SamplerMode | "snooze";
 
 function vibrate(duration: number): void {
   try {
@@ -56,11 +59,14 @@ export function LivePill({
   pendingBreadcrumbs = 0,
   captureReadiness = "idle",
   activityStatus = "idle",
+  snoozedUntil = null,
+  onSnoozeRequest,
   className,
 }: LivePillProps) {
   const samplerMode = useSamplerMode();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [hoveredMode, setHoveredMode] = useState<SamplerMode | null>(null);
+  const [hoveredMode, setHoveredMode] = useState<MenuValue | null>(null);
+  const isSnoozed = snoozedUntil !== null;
   const isOffline = on && publishingPhase === "offline";
   const isSyncing = on && publishingPhase === "syncing" && pendingBreadcrumbs > 0;
   const isStarting = on && captureReadiness === "starting";
@@ -191,9 +197,11 @@ export function LivePill({
 
     if (gesturePhaseRef.current === "active") {
       const element = document.elementFromPoint(e.clientX, e.clientY);
-      const optionEl = element?.closest<HTMLElement>("[data-mode]");
-      const mode = optionEl?.getAttribute("data-mode");
-      const validMode = OPTIONS.find((option) => option.value === mode)?.value ?? null;
+      const optionEl = element?.closest<HTMLElement>("[data-menu-value]");
+      const mode = optionEl?.getAttribute("data-menu-value");
+      const validMode: MenuValue | null = mode === "snooze"
+        ? "snooze"
+        : OPTIONS.find((option) => option.value === mode)?.value ?? null;
       const isOwnOption = Boolean(
         optionEl && containerRef.current?.contains(optionEl) && validMode,
       );
@@ -214,7 +222,8 @@ export function LivePill({
     } else if (phase === "active") {
       suppressNextClick();
       if (hoveredMode) {
-        setSamplerMode(hoveredMode);
+        if (hoveredMode === "snooze") onSnoozeRequest?.();
+        else setSamplerMode(hoveredMode);
         setIsMenuOpen(false);
         setHoveredMode(null);
         vibrate(10);
@@ -256,7 +265,7 @@ export function LivePill({
       {isMenuOpen && (
         <div
           role="menu"
-          aria-label="GPS Precision options"
+          aria-label="GPS Precision options and Live controls"
           style={{ top: "calc(100% + 0.5rem)" }}
           className="pointer-events-auto absolute left-0 z-50 flex w-36 touch-none flex-col gap-1 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1.5 shadow-[var(--shadow-card)] animate-in fade-in slide-in-from-top-2 duration-150"
         >
@@ -268,7 +277,7 @@ export function LivePill({
                 key={option.value}
                 type="button"
                 role="menuitem"
-                data-mode={option.value}
+                data-menu-value={option.value}
                 onClick={() => {
                   setSamplerMode(option.value);
                   setIsMenuOpen(false);
@@ -287,6 +296,24 @@ export function LivePill({
               </button>
             );
           })}
+          {onSnoozeRequest ? (
+            <button
+              type="button"
+              role="menuitem"
+              data-menu-value="snooze"
+              onClick={() => {
+                setIsMenuOpen(false);
+                setHoveredMode(null);
+                onSnoozeRequest();
+              }}
+              className={cn(
+                "pointer-events-auto min-h-11 w-full select-none rounded-lg border-t border-[var(--line-soft)] px-3 py-2 text-center text-xs font-bold text-[var(--ink-2)] transition-all hover:bg-[var(--line-soft)]/50",
+                hoveredMode === "snooze" && "bg-[var(--line-soft)] text-[var(--ink-1)]",
+              )}
+            >
+              {isSnoozed ? "Edit snooze…" : "Snooze…"}
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -301,7 +328,9 @@ export function LivePill({
         aria-expanded={isMenuOpen}
         aria-haspopup="menu"
         aria-label={
-          isOffline
+          isSnoozed
+            ? `Live location snoozed until ${new Date(snoozedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Tap to resume.`
+            : isOffline
             ? `Live location on. Offline. ${pendingBreadcrumbs} breadcrumbs saved locally and not transmitting.`
             : isSyncing
               ? `Live location on. Sending ${pendingBreadcrumbs} saved breadcrumbs.`
@@ -319,6 +348,8 @@ export function LivePill({
           "inline-flex touch-none select-none items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] shadow-[var(--shadow-card)] transition-colors",
           on
             ? "bg-[var(--flag)] text-white"
+            : isSnoozed
+              ? "bg-[var(--bg-card)] text-[var(--ink-1)]"
             : "bg-[var(--bg-card)] text-[var(--ink-2)]",
           isOffline && "ring-2 ring-[var(--amber)] ring-offset-1 ring-offset-transparent",
           (isCaptureDegraded || isActivityUnavailable) && "bg-[var(--amber)] text-[var(--ink-1)] ring-2 ring-[var(--amber)] ring-offset-1 ring-offset-transparent",
@@ -332,9 +363,9 @@ export function LivePill({
               "rounded-full bg-[var(--bg-card)] text-[var(--green)]",
           )}
         >
-          <Compass className="h-3 w-3" aria-hidden="true" />
+          {isSnoozed ? <span aria-hidden="true">💤</span> : <Compass className="h-3 w-3" aria-hidden="true" />}
         </span>
-        {on ? "LIVE" : "PAUSED"}
+        {isSnoozed ? "SNOOZED" : on ? "LIVE" : "PAUSED"}
         {trailEnabled ? (
           <Route className="h-3 w-3" aria-hidden="true" />
         ) : null}

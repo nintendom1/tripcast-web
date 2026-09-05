@@ -89,6 +89,7 @@ struct TripCastLiveActivityWidget: Widget {
 
     private func title(_ mode: String) -> String {
         switch mode {
+        case "snoozed": return "Live Snoozed"
         case "power-saving": return "Power Saving"
         case "privacy": return "Privacy pause"
         case "recovering": return "Recovering"
@@ -134,7 +135,9 @@ struct TripCastLiveActivityWidget: Widget {
 
     @ViewBuilder
     private func primaryStatus(_ state: TripCastLiveActivityAttributes.ContentState) -> some View {
-        if state.mode == "privacy" {
+        if state.mode == "snoozed", let snoozeUntil = state.snoozeUntil {
+            Text(timerInterval: Date()...max(Date(), snoozeUntil), countsDown: true)
+        } else if state.mode == "privacy" {
             Text("Location hidden")
         } else if state.mode == "recovering" {
             Text(state.queueDepth > 0 ? "\(state.queueDepth) breadcrumbs queued" : "Reconnecting…")

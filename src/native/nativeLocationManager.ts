@@ -64,6 +64,8 @@ type AdaptiveLocationEvent = {
   motionPublishStatus?: NativeMotionPublishStatus;
   motionPendingClassification?: NativeMotionClassification | null;
   motionPublishFailureReason?: string | null;
+  snoozeUntil?: number | null;
+  notificationsAllowed?: boolean;
 };
 
 type NativeTrailSnapshot = { queueRevision: number; points: LocalTrailPoint[] };
@@ -119,6 +121,8 @@ export type NativePublishingConfiguration = {
 interface AdaptiveLocationPlugin {
   start(options?: { trigger?: "javascript" | "retry" }): Promise<AdaptiveLocationEvent>;
   stop(options?: NativeStopOptions): Promise<AdaptiveLocationEvent>;
+  snooze(options: { until: number; pendingSamples: "preserve" }): Promise<AdaptiveLocationEvent>;
+  clearSnooze(): Promise<AdaptiveLocationEvent>;
   configurePublishing(options: NativePublishingConfiguration): Promise<AdaptiveLocationEvent>;
   getBootstrapPublishingState(): Promise<AdaptiveLocationEvent>;
   beginLegacyBootstrapPublishing(): Promise<AdaptiveLocationEvent>;
@@ -204,6 +208,7 @@ class NativeLocationManager {
   private hasAttemptedAlreadyStartedRecovery = false;
   private publishingConfigurationPromise: Promise<AdaptiveLocationEvent> | null = null;
   private adaptiveStopRequested = false;
+  private snoozedUntil: number | null = null;
 
   public addWatcher(
     options: WatcherOptions,
@@ -214,6 +219,7 @@ class NativeLocationManager {
     this.watchers.push({ id, options, onFix, onError });
     if (options.purpose === "live" && options.adaptive === true) {
       this.adaptiveStopRequested = false;
+      this.snoozedUntil = null;
     }
     this.scheduleSync();
     return id;
@@ -230,6 +236,7 @@ class NativeLocationManager {
 
   public explicitStop(options: NativeStopOptions = {}): Promise<void> {
     this.adaptiveStopRequested = true;
+    this.snoozedUntil = null;
     this.adaptiveStarted = false;
     log.logGps("gps:adaptive:stop:requested", {
       preserveSamples: options.pendingSamples === "preserve",
@@ -253,7 +260,7 @@ class NativeLocationManager {
         });
       });
     const operation = Promise.all([this.syncPromise.catch(() => {}), nativeStop]).then(() => {});
-    this.syncPromise = operation.catch((error) => {
+    this.syncPromise = operation.then(() => {}).catch((error) => {
       log.error("gps:adaptive:stop:failure", "error", {
         errorType: error instanceof Error ? error.name : typeof error,
       });
@@ -265,8 +272,37 @@ class NativeLocationManager {
     return operation;
   }
 
+  public snooze(until: number): Promise<boolean | undefined> {
+    this.adaptiveStopRequested = true;
+    this.snoozedUntil = until;
+    this.adaptiveStarted = false;
+    const legacyStop = BackgroundGeolocation.stop();
+    this.isStarted = false;
+    this.currentOptions = null;
+    const nativeSnooze = AdaptiveLocation.snooze({ until, pendingSamples: "preserve" });
+    const operation = Promise.all([legacyStop, nativeSnooze]).then(([, event]) => {
+      this.applyAdaptiveState(event);
+      return event.notificationsAllowed;
+    });
+    this.syncPromise = operation.then(() => {}).catch((error) => {
+      log.error("gps:adaptive:snooze:failure", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+    });
+    setNativeTrackingMode("off");
+    resetNativeReadinessState();
+    resetNativeMotionState();
+    return operation;
+  }
+
   public isAdaptiveActive(): boolean {
     return this.adaptiveStarted;
+  }
+
+  public async clearSnooze(): Promise<void> {
+    this.snoozedUntil = null;
+    const state = await AdaptiveLocation.clearSnooze();
+    this.applyAdaptiveState(state);
   }
 
   public async configurePublishing(options: NativePublishingConfiguration): Promise<void> {
@@ -359,7 +395,25 @@ class NativeLocationManager {
     return AdaptiveLocation.controlMysteryNarration(options);
   }
 
-  public foreground(): void {
+  public foreground(clearSnooze = false): void {
+    if (clearSnooze) {
+      void this.clearSnooze().catch((error) => {
+        log.error("gps:adaptive:snooze-clear-failure", "error", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+      });
+      return;
+    }
+    if (this.snoozedUntil !== null) {
+      const operation = AdaptiveLocation.foreground().then((state) => {
+        this.applyAdaptiveState(state);
+        if (this.snoozedUntil !== null && this.snoozedUntil <= Date.now()) {
+          this.snoozedUntil = null;
+        }
+      });
+      this.syncPromise = operation.catch(() => {});
+      return;
+    }
     if (this.adaptiveStopRequested) {
       void this.explicitStop({ pendingSamples: "preserve" });
       return;

@@ -10,6 +10,8 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "stop", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "snooze", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearSnooze", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "configurePublishing", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getBootstrapPublishingState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "beginLegacyBootstrapPublishing", returnType: CAPPluginReturnPromise),
@@ -50,6 +52,25 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
                 clearCredentials: call.getBool("clearCredentials") ?? false,
                 preserveSamples: preserveSamples
             ) { state in call.resolve(state) }
+        }
+    }
+
+    @objc func snooze(_ call: CAPPluginCall) {
+        guard let until = call.getDouble("until") else {
+            call.reject("until is required")
+            return
+        }
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.snoozeLive(
+                until: Date(timeIntervalSince1970: until / 1_000)
+            ) { state in call.resolve(state) }
+        }
+    }
+
+    @objc func clearSnooze(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            AdaptiveLocationService.shared.clearSnooze()
+            call.resolve(AdaptiveLocationService.shared.currentState())
         }
     }
 

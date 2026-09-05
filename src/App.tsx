@@ -37,6 +37,7 @@ import {
   stopNativeLocationTracking,
 } from "./native/locationWatcher";
 import { useAdaptiveGpsEnabled } from "./lib/adaptiveGpsPreference";
+import { clearLiveSnooze } from "./lib/liveSnooze";
 import {
   setLiveSharingEnabled,
   useLiveSharingEnabled,
@@ -261,6 +262,7 @@ function ConnectedApp() {
 
   useEffect(() => {
     if (session !== null && activeSessionCheck === null) {
+      clearLiveSnooze();
       setLiveSharingEnabled(false);
       stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
       void clearLiveTrailCachesForToken(session.token);
@@ -342,6 +344,7 @@ function ConnectedApp() {
   }
 
   async function handleSignOut() {
+    clearLiveSnooze();
     setLiveSharingEnabled(false);
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
@@ -364,6 +367,7 @@ function ConnectedApp() {
   }
 
   function handleLocalSignOut() {
+    clearLiveSnooze();
     setLiveSharingEnabled(false);
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
@@ -384,6 +388,7 @@ function ConnectedApp() {
   }
 
   function handleLoggedOut() {
+    clearLiveSnooze();
     setLiveSharingEnabled(false);
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
@@ -438,6 +443,7 @@ function ConnectedApp() {
   }
 
   function stopLiveDuringVerification(pendingSamples: "discard" | "preserve") {
+    clearLiveSnooze();
     setLiveSharingEnabled(false);
     void stopNativeLocationTracking({ pendingSamples }).catch(() => {});
     if (session) {
@@ -447,6 +453,7 @@ function ConnectedApp() {
 
   function handleVerificationLiveToggle() {
     if (!liveSharingEnabled) {
+      clearLiveSnooze();
       setLiveSharingEnabled(true);
       return;
     }
@@ -658,7 +665,10 @@ function ConnectedApp() {
             setIsIntroReplayOpen(true);
           }}
           onLoggedOut={handleLoggedOut}
-          onLocationDataCleared={() => setLocationResetNonce((value) => value + 1)}
+          onLocationDataCleared={() => {
+            clearLiveSnooze();
+            setLocationResetNonce((value) => value + 1);
+          }}
           onTripDataDeleted={() => {
             void clearLiveTrailCachesForToken(session.token);
             setTripDataResetNonce((value) => value + 1);

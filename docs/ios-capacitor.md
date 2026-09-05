@@ -207,6 +207,25 @@ available, and the latest event is retained until JavaScript reattaches. Explici
 sign-out, Emergency Reset, and cloaking auto-shutoff clear all native location services and the
 temporary region.
 
+Holding the Traveler's Live pill also offers a timed **Snooze**. Snooze completely stops Core
+Location and Motion capture while preserving the native publishing configuration and credentials.
+Breadcrumbs that were already queued remain uploadable, but their current-location publication is
+disabled; when the network is available, TripCast continues draining those queued breadcrumbs.
+
+An existing Live Activity changes to a neutral **Live Snoozed** countdown. TripCast does not create
+a replacement if Live Activities are unavailable or the user dismissed the activity. iOS may end a
+Live Activity after its approximately eight-hour lifetime even when a longer system notification is
+still pending. The uniquely identified local notification includes a foreground **Resume Live**
+action and is replaced when the snooze is edited. If notification permission is denied, snooze still
+works, but the Traveler must reopen TripCast to resume.
+
+The snooze deadline is persisted in both the WebView and native service. TripCast resumes at the
+deadline only when the app can execute: immediately while foregrounded, or when the app is next
+opened or brought forward after suspension or force-quit. A Live Activity and notification are
+status and reminder surfaces; they do not keep TripCast alive or guarantee background execution.
+Explicit Pause, sign-out, invalid-session cleanup, and Emergency Reset clear the deadline and all
+snooze notifications.
+
 ### iOS wake-up limits
 
 iOS controls the effective region cushion, significant-change threshold, delivery timing, and

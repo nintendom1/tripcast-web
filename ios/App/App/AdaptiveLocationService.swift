@@ -40,6 +40,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         static let lastMeaningfulAt = "tripcast.adaptiveLocation.lastMeaningfulAt"
         static let modeChangedAt = "tripcast.adaptiveLocation.modeChangedAt"
         static let modeChangedReason = "tripcast.adaptiveLocation.modeChangedReason"
+        static let snoozeUntil = "tripcast.adaptiveLocation.snoozeUntil"
     }
 
     private let manager = CLLocationManager()
@@ -87,6 +88,13 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     private var captureFailureReason: String?
     private var startOperation: StartOperation?
     private var lastStartCompletedAt: Date?
+    private var snoozeUntil: Date? {
+        get { date(forKey: DefaultsKey.snoozeUntil) }
+        set {
+            if let newValue { defaults.set(newValue.timeIntervalSince1970, forKey: DefaultsKey.snoozeUntil) }
+            else { defaults.removeObject(forKey: DefaultsKey.snoozeUntil) }
+        }
+    }
 
     var eventHandler: ((JSObject) -> Void)? {
         didSet { deliverPendingEventIfNeeded() }
@@ -125,6 +133,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func bootstrapLocationRelaunch() {
+        if let snoozeUntil, snoozeUntil > Date() { return }
+        self.snoozeUntil = nil
         guard defaults.bool(forKey: DefaultsKey.liveRequested) else {
             LiveActivityController.shared.stop()
             return
@@ -138,6 +148,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     private func coordinateStart(trigger: String, completion: ((JSObject) -> Void)?) {
+        snoozeUntil = nil
+        LiveActivityController.shared.cancelSnooze()
         if let operation = startOperation {
             if let completion { operation.completions.append(completion) }
             emitOperationLog(operation, stage: "coalesced", timeout: false)
@@ -196,6 +208,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         preserveSamples: Bool = false,
         completion: ((JSObject) -> Void)? = nil
     ) {
+        snoozeUntil = nil
+        LiveActivityController.shared.cancelSnooze()
         emit([
             "action": "gps:adaptive:stop:requested",
             "details": [
@@ -259,6 +273,54 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    func snoozeLive(until: Date, completion: @escaping (JSObject) -> Void) {
+        guard until > Date() else {
+            completion(currentState())
+            return
+        }
+        snoozeUntil = until
+        liveRequested = false
+        defaults.set(false, forKey: DefaultsKey.liveRequested)
+        MysteryProximityService.shared.setLiveActive(false)
+        highFrequencyActive = false
+        stationaryTimer?.invalidate()
+        stationaryTimer = nil
+        stopAllLocationServices()
+        stopMotionUpdates()
+        stationaryAnchor = nil
+        lastPreciseFix = nil
+        lastMeaningfulAt = nil
+        waitingForFreshPreciseFix = false
+        freshFixAcquisitionBeganAt = nil
+        forcedPublishReason = nil
+        mode = .off
+        modeChangedAt = Date()
+        modeChangedReason = "live-snooze"
+        cancelStartOperation(reason: "snoozed")
+        let suppressedEvents = suppressedBridgeEventCount
+        suppressedBridgeEventCount = 0
+        NativeLocationPublisher.shared.stopLive(
+            clearCredentials: false,
+            preserveSamples: true,
+            suppressedBridgeEvents: suppressedEvents
+        ) { [weak self] state in
+            guard let self else { return }
+            self.mergePublishingState(state)
+            LiveActivityController.shared.snooze(until: until, queueDepth: self.cachedQueueDepth) { notificationsAllowed in
+                var result = self.currentState()
+                result["snoozeUntil"] = until.timeIntervalSince1970 * 1_000
+                result["notificationsAllowed"] = notificationsAllowed
+                self.emit(result)
+                completion(result)
+            }
+        }
+    }
+
+    func clearSnooze() {
+        snoozeUntil = nil
+        LiveActivityController.shared.cancelSnooze()
+    }
+
     func currentState() -> JSObject {
         var state: JSObject = [
             "mode": mode.rawValue,
@@ -268,6 +330,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             "motionState": motionState,
             "motionConfidence": motionConfidence
         ]
+        if let snoozeUntil { state["snoozeUntil"] = snoozeUntil.timeIntervalSince1970 * 1_000 }
         if motionChangedAt != Date.distantPast {
             state["motionChangedAt"] = motionChangedAt.timeIntervalSince1970 * 1_000
         }
@@ -324,6 +387,16 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         mainThreadHeartbeat.setActive(true)
         let suppressedEvents = suppressedBridgeEventCount
         suppressedBridgeEventCount = 0
+        if let snoozeUntil {
+            if snoozeUntil > Date() {
+                completion?(currentState())
+                return
+            }
+            self.snoozeUntil = nil
+            LiveActivityController.shared.cancelSnooze()
+            completion?(currentState())
+            return
+        }
         if liveRequested || defaults.bool(forKey: DefaultsKey.liveRequested) {
             NativeLocationPublisher.shared.emitSessionSummary(
                 reason: "foreground",
@@ -831,7 +904,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             DefaultsKey.anchorTimestamp,
             DefaultsKey.lastMeaningfulAt,
             DefaultsKey.modeChangedAt,
-            DefaultsKey.modeChangedReason
+            DefaultsKey.modeChangedReason,
+            DefaultsKey.snoozeUntil
         ]
         keys.forEach { defaults.removeObject(forKey: $0) }
     }
