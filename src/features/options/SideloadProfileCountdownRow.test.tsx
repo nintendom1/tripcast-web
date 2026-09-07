@@ -8,7 +8,7 @@ const nativeMocks = vi.hoisted(() => ({
 
 vi.mock("../../native/provisioningProfile", () => ({
   isNativeIos: nativeMocks.isNativeIos,
-  getProvisioningProfileExpiration: nativeMocks.getExpiration,
+  getProvisioningProfileDiagnostics: async () => ({ expiresAtMs: await nativeMocks.getExpiration() }),
 }));
 
 import {

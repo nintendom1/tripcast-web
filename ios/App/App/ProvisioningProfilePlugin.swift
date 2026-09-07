@@ -10,12 +10,44 @@ public class ProvisioningProfilePlugin: CAPPlugin, CAPBridgedPlugin {
     ]
 
     @objc func getExpiration(_ call: CAPPluginCall) {
-        guard
-            let profileURL = Bundle.main.url(
-                forResource: "embedded",
-                withExtension: "mobileprovision"
-            ),
-            let profileData = try? Data(contentsOf: profileURL),
+        call.resolve(InstalledProvisioningProfiles.snapshot)
+    }
+}
+
+// The installed profiles are immutable for the life of this process. Share the
+// same reader between Developer options and Live Activity diagnostics.
+enum InstalledProvisioningProfiles {
+    static let snapshot: JSObject = {
+        let app = readProfile(bundle: Bundle.main)
+        let extensionURL = Bundle.main.builtInPlugInsURL?.appendingPathComponent("TripCastLiveActivity.appex")
+        let activityBundle = extensionURL.flatMap { Bundle(url: $0) }
+        let activity = readProfile(bundle: activityBundle)
+        var result: JSObject = [
+            "appProfileStatus": app.status,
+            "activityExtensionPresent": activityBundle != nil,
+            "activityProfileStatus": activity.status
+        ]
+        if let expiration = app.expiration { result["expiresAtMs"] = expiration.timeIntervalSince1970 * 1_000 }
+        if let expiration = activity.expiration { result["activityExpiresAtMs"] = expiration.timeIntervalSince1970 * 1_000 }
+        return result
+    }()
+
+    static func diagnostics() -> JSObject {
+        var result = snapshot
+        result["appVersion"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        result["appBuild"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+        result["iosVersion"] = ProcessInfo.processInfo.operatingSystemVersionString
+        let now = Date().timeIntervalSince1970 * 1_000
+        if let expiration = snapshot["expiresAtMs"] as? Double { result["appProfileExpired"] = expiration <= now }
+        if let expiration = snapshot["activityExpiresAtMs"] as? Double { result["activityProfileExpired"] = expiration <= now }
+        return result
+    }
+
+    private static func readProfile(bundle: Bundle?) -> (status: String, expiration: Date?) {
+        guard let profileURL = bundle?.url(forResource: "embedded", withExtension: "mobileprovision") else {
+            return ("missing", nil)
+        }
+        guard let profileData = try? Data(contentsOf: profileURL),
             let plistData = extractPlist(from: profileData),
             let plist = try? PropertyListSerialization.propertyList(
                 from: plistData,
@@ -24,16 +56,13 @@ public class ProvisioningProfilePlugin: CAPPlugin, CAPBridgedPlugin {
             ) as? [String: Any],
             let expirationDate = plist["ExpirationDate"] as? Date
         else {
-            call.resolve()
-            return
+            return ("unreadable", nil)
         }
 
-        call.resolve([
-            "expiresAtMs": expirationDate.timeIntervalSince1970 * 1_000
-        ])
+        return ("available", expirationDate)
     }
 
-    private func extractPlist(from profileData: Data) -> Data? {
+    private static func extractPlist(from profileData: Data) -> Data? {
         guard
             let startMarker = "<?xml".data(using: .utf8),
             let endMarker = "</plist>".data(using: .utf8),

@@ -658,7 +658,7 @@ class NativeLocationManager {
       });
     }
     if (event.action) {
-      log.logGps(event.action, event.details ?? {}, event.level === "warn" ? "warn" : undefined);
+      log.logGps(event.action, event.details ?? {}, event.level === "error" ? "error" : event.level === "warn" ? "warn" : undefined);
       if (event.action === "mystery:native:arrival") {
         window.dispatchEvent(new CustomEvent("tripcast:mystery-native-arrival", {
           detail: event.details,
