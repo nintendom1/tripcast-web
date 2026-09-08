@@ -101,6 +101,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
     private var pendingEvent: JSObject?
     private var pendingHangSummary: JSObject?
+    private var deliveredProfileDiagnostics = false
 
     private override init() {
         super.init()
@@ -186,7 +187,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             self.publishCurrentMotion()
             self.finishStartStage(operationID: operation.id, capability: "capture")
         }
-        LiveActivityController.shared.start(mode: mode.rawValue, queueDepth: cachedQueueDepth) { [weak self] outcome in
+        LiveActivityController.shared.start(mode: mode.rawValue, queueDepth: cachedQueueDepth, operationID: operation.id, trigger: trigger) { [weak self] outcome in
             guard let self else { return }
             self.cachedPublishingState["activityStatus"] = outcome
             self.emit([
@@ -864,6 +865,14 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
 
     private func deliverPendingEventIfNeeded() {
         guard let eventHandler else { return }
+        if !deliveredProfileDiagnostics {
+            deliveredProfileDiagnostics = true
+            eventHandler([
+                "action": "gps:live-activity:profiles",
+                "level": "info",
+                "details": InstalledProvisioningProfiles.diagnostics()
+            ])
+        }
         if let pendingHangSummary {
             self.pendingHangSummary = nil
             eventHandler([

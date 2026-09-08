@@ -1,11 +1,12 @@
 import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
-import { basename, join, resolve } from "path";
+import { join, resolve } from "path";
 import { spawnSync } from "child_process";
 import {
   finishProvisioningProfileRefresh,
   prepareProvisioningProfileRefresh,
   restoreProvisioningProfiles,
+  verifyEmbeddedProvisioningProfiles,
 } from "./ios-profile-refresh.mjs";
 
 const envFile = join(process.cwd(), ".env.capacitor.local");
@@ -99,47 +100,39 @@ if (teamId) {
   }
 }
 
-const profileRefresh = options.refreshProfile
-  ? prepareProvisioningProfileRefresh({
-      applicationIdentifier: `${teamId}.${appBundleId}`,
+let profileRefresh;
+try {
+  if (options.refreshProfile) {
+    profileRefresh = prepareProvisioningProfileRefresh({
+      applicationIdentifiers: [
+        `${teamId}.${appBundleId}`,
+        `${teamId}.${appBundleId}.TripCastLiveActivity`,
+      ],
       profileDir: provisioningProfileDir,
-    })
-  : undefined;
-if (profileRefresh) {
-  if (profileRefresh.movedProfiles.length === 0) {
-    console.log(
-      `\x1b[33mNo cached profile matched ${profileRefresh.applicationIdentifier}; Xcode will request one.\x1b[0m`,
-    );
-  } else {
-    console.log(
-      `\x1b[32mRefreshing ${profileRefresh.applicationIdentifier}: temporarily moved ${profileRefresh.movedProfiles.length} cached profile(s).\x1b[0m`,
-    );
+    });
+    console.log(`Refreshing App and Lock Screen activity profiles (${profileRefresh.movedProfiles.length} cached profiles backed up).`);
   }
-}
-const buildResult = run("xcrun", xcodebuildArgs, {
-  cwd: nativeProjectDir,
-  exitOnFailure: !profileRefresh,
-});
+  const buildResult = run("xcrun", xcodebuildArgs, {
+    cwd: nativeProjectDir,
+    exitOnFailure: false,
+  });
+  if (buildResult.status !== 0) throw new Error("Native build failed.");
 
-if (buildResult.status !== 0) {
-  restoreProvisioningProfiles(profileRefresh);
-  console.error(
-    "\x1b[33mNative build failed; restored the cached TripCast provisioning profile(s).\x1b[0m",
-  );
-  process.exit(buildResult.status ?? 1);
-}
-
-if (profileRefresh) {
-  let replacementProfile;
-  try {
-    replacementProfile = finishProvisioningProfileRefresh(profileRefresh);
-  } catch (error) {
-    console.error(error.message);
-    process.exit(1);
+  if (!buildsForSimulator) {
+    const profiles = verifyEmbeddedProvisioningProfiles({ appPath, teamId, profileRefresh });
+    for (const profile of profiles) {
+      console.log(`${profile.label} profile expires: ${new Date(profile.expiresAtMs).toISOString()}`);
+    }
+    console.log(`Renew both before: ${new Date(Math.min(...profiles.map(profile => profile.expiresAtMs))).toISOString()}`);
   }
-  console.log(
-    `\x1b[32mProvisioning profile refreshed: ${basename(replacementProfile)}\x1b[0m`,
-  );
+  if (profileRefresh) finishProvisioningProfileRefresh(profileRefresh);
+} catch (error) {
+  if (profileRefresh) {
+    restoreProvisioningProfiles(profileRefresh);
+    console.error("Restored the original App and Lock Screen activity profiles.");
+  }
+  console.error(error.message);
+  process.exit(1);
 }
 
 console.log("\x1b[32m[TripCast iOS] Deploying to device...\x1b[0m");
@@ -302,7 +295,7 @@ Options:
   --device                   Prefer a physical iOS device.
   --virtual                  Build and deploy to a simulator.
   --connect                  Tie native-run to the app process.
-  --refresh-profile          Request a fresh TripCast profile before a physical-device build.
+  --refresh-profile          Renew App and Lock Screen activity profiles before a device build.
   --scheme <name>            Xcode scheme. Defaults to App.
   --configuration <name>     Xcode configuration. Defaults to Debug.
   -h, --help                 Show this help.

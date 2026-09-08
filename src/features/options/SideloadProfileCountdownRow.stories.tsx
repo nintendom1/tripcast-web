@@ -47,3 +47,31 @@ export const Expired: Story = {
     expiresAtMs: NOW - 30 * 60 * 1000,
   },
 };
+
+export const BothValid: Story = {
+  args: {
+    expiresAtMs: NOW + 6 * 24 * 60 * 60 * 1000,
+    activityProfile: { status: "available", extensionPresent: true, expiresAtMs: NOW + 5 * 24 * 60 * 60 * 1000 },
+  },
+};
+
+export const ExtensionExpiringFirst: Story = {
+  args: {
+    expiresAtMs: NOW + 6 * 24 * 60 * 60 * 1000,
+    activityProfile: { status: "available", extensionPresent: true, expiresAtMs: NOW + 8 * 60 * 60 * 1000 },
+  },
+};
+
+export const ExtensionExpired: Story = {
+  args: {
+    expiresAtMs: NOW + 3 * 24 * 60 * 60 * 1000,
+    activityProfile: { status: "available", extensionPresent: true, expiresAtMs: NOW - 60 * 60 * 1000 },
+  },
+};
+
+export const ExtensionInformationUnavailable: Story = {
+  args: {
+    expiresAtMs: NOW + 3 * 24 * 60 * 60 * 1000,
+    activityProfile: { status: "unknown", expiresAtMs: null },
+  },
+};

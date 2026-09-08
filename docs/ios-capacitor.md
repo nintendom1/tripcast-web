@@ -102,8 +102,9 @@ npm run ios:run -- --target <device-id>
 
 Xcode normally reuses a still-valid cached provisioning profile. An ordinary rebuild therefore
 does **not** reset its lifetime to seven days. On native iOS, open Traveler options → Developer and
-check **Sideload Profile** for the remaining time and exact expiration embedded in the installed
-app. The row is intentionally absent on web, Android, and Follower views.
+check **Sideload Profile** for the separate **App** and **Lock Screen activity** expirations
+embedded in the installed build. Renew before the earlier expiration. The section is intentionally
+absent on web, Android, and Follower views. An unavailable profile is not reported as expired.
 
 To deliberately request a new profile and deploy it:
 
@@ -111,11 +112,18 @@ To deliberately request a new profile and deploy it:
 npm run ios:run -- --refresh-profile --target <device-id>
 ```
 
-`--refresh-profile` selects only the cached profile matching
-`<DEVELOPMENT_TEAM>.com.tripcast.app`, moves it out of Xcode's profile cache during signing, and
-restores it automatically if the native build fails. After a successful renewal, the installed
-app should report approximately seven days remaining. Use this option near expiration rather than
-on every routine build, because renewal requires Apple's provisioning service.
+`--refresh-profile` selects the cached profiles matching exactly
+`<DEVELOPMENT_TEAM>.com.tripcast.app` and
+`<DEVELOPMENT_TEAM>.com.tripcast.app.TripCastLiveActivity`. It moves both out of Xcode's profile
+cache during signing and restores the originals if preparation, signing, or verification fails.
+Unrelated profiles are left alone. After a successful renewal, both installed profiles should
+report approximately seven days remaining. Use this option near the earliest expiration rather
+than on every routine build, because renewal requires Apple's provisioning service.
+
+Before every physical-device installation, the script checks both embedded profiles, bundle IDs,
+signing teams, signatures, and expiration dates. A refresh also requires that both embedded profiles
+match cached replacements and extend the previous expirations. Failed verification stops installation;
+backups are discarded only after both components pass. The script prints both expirations in UTC.
 
 - `npm run ios:sync` (build + sync, no launch) if you prefer to run from Xcode.
 - List devices: `npm run ios:run -- --list` or `npx cap run ios --list`.
@@ -146,9 +154,32 @@ on every routine build, because renewal requires Apple's provisioning service.
 - [ ] Tapping a local thumbnail opens Check In; an iCloud-only photo does not download while
       browsing and shows a **Download & use** confirmation before any network-backed request.
 - [ ] Saving a selected photo queues one compressed Story image and returns to Photo Roulette.
-- [ ] Traveler Developer options show the embedded profile's actual expiration on physical iOS.
-- [ ] `--refresh-profile` renews the profile to approximately seven days and deploys it.
+- [ ] Traveler Developer options show both embedded profile expirations on physical iOS.
+- [ ] `--refresh-profile` renews both profiles to approximately seven days and deploys them.
 - [ ] `npm run validate` passes (regression guard).
+
+### Diagnosing immediate Live Activity dismissal
+
+The September 6, 2026 incident matched the local signed extension profile expiring at
+`2026-09-06T09:51:57Z` (6:51 p.m. Korea time), while the app profile remained valid until
+`2026-09-10T13:24:12Z`. The previous renewal script refreshed only the app. This evidence was
+recorded before rebuilding; confirm installed-device behavior after renewal to establish recovery.
+
+With local debug logging enabled, Copy JSON includes `gps:live-activity:profiles` on the first
+native bridge connection of a process. `request`, `request-accepted`, and `lifecycle` events correlate
+operation IDs, activity IDs, triggers, elapsed time since request, authorization, and app-requested
+ending. Failure and dismissal events include installed profile metadata again, so the evidence
+survives a short export window. Raw profiles, certificates, and device identifiers are not logged.
+
+If profiles are valid but dismissal continues, capture device Console logs for the extension and
+ActivityKit around one Retry, plus any extension crash report. `dismissed` alone does not identify
+why iOS removed an activity. Do not treat request acceptance as proof that it stayed visible.
+
+For this fix, manually check Live through five minutes with the phone locked, foreground return,
+force-quit/relaunch, off/on, and snooze/resume while uploads continue. After developer verification,
+add regression tests for two-profile selection, rollback, partial renewal, embedded validation,
+and the paired countdown states. Review stories under `Options/SideloadProfileCountdownRow`:
+`BothValid`, `ExtensionExpiringFirst`, `ExtensionExpired`, and `ExtensionInformationUnavailable`.
 
 ## Adaptive background GPS emission
 
