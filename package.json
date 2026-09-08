@@ -38,7 +38,7 @@
     "@zip.js/zip.js": "^2.7.53",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "convex": "^1.38.0",
+    "convex": "^1.45.0",
     "dayjs": "^1.11.20",
     "exifreader": "^4.41.0",
     "framer-motion": "^12.38.0",
