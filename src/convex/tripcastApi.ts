@@ -2073,6 +2073,12 @@ export const tripcastApi = {
       { token: string; status?: MissionStatus },
       Mission[]
     >,
+    travelerGetMissionBadgeState: (anyApi as any).missions.travelerGetMissionBadgeState as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { proposedCount: number }
+    >,
     followerListMissions: (anyApi as any).missions.followerListMissions as FunctionReference<
       "query",
       "public",
@@ -2476,6 +2482,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       null
+    >,
+    getTripFinaleStatus: (anyApi as any).endTrip.getTripFinaleStatus as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { ended: boolean; endedAt?: number }
     >,
     getTripCredits: (anyApi as any).endTrip.getTripCredits as FunctionReference<
       "query",

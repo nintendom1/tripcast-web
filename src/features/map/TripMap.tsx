@@ -1818,19 +1818,14 @@ export default function TripMap({
     useMessagingUnread(messages, currentUserId, role, currentSessionId);
   const visibleMessagingUnread = isMessagingOpen ? 0 : messagingUnread;
 
-  const allMissionsForBadge = useQuery(
-    tripcastApi.missions.travelerListMissions,
+  const missionBadgeState = useQuery(
+    tripcastApi.missions.travelerGetMissionBadgeState,
     role === "traveler" ? { token } : "skip",
-  );
-  const followerMissions = useQuery(
-    tripcastApi.missions.followerListMissions,
-    role === "follower" ? { token } : "skip",
   );
   const missionBadgeCount =
     role === "traveler"
-      ? (allMissionsForBadge ?? []).filter((c) => c.status === "proposed").length
+      ? missionBadgeState?.proposedCount ?? 0
       : 0;
-  const missionsForLookup = role === "traveler" ? allMissionsForBadge : followerMissions;
   const selectedStoryEvent = useMemo(() => {
     if (!selectedStoryDetail) return null;
     const freshEvent = journalEvents.find((event) => event._id === selectedStoryDetail.eventId)
@@ -1842,6 +1837,12 @@ export default function TripMap({
     if (freshEvent) return freshEvent;
     return queriedJournalEvents === undefined ? selectedStoryDetail.fallbackEvent : null;
   }, [journalEvents, queriedJournalEvents, selectedStoryDetail]);
+  const selectedStoryMission = useQuery(
+    tripcastApi.missions.getMission,
+    selectedStoryEvent?.missionId
+      ? { token, missionId: selectedStoryEvent.missionId }
+      : "skip",
+  );
   const storyNavigation = useMemo(() => {
     if (!selectedStoryEvent || selectedStoryEvent.type !== "story") return null;
     const chronologicalStories = journalEvents
@@ -6430,7 +6431,7 @@ export default function TripMap({
           onLocationFocus={handleStoryDetailLocationFocus}
           missionTitle={
             selectedStoryEvent?.missionId
-              ? (missionsForLookup ?? []).find((c) => c._id === selectedStoryEvent.missionId)?.title
+              ? selectedStoryMission?.title
               : undefined
           }
           missionId={selectedStoryEvent?.missionId ?? undefined}
