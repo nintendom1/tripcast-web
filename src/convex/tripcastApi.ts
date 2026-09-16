@@ -2472,6 +2472,18 @@ export const tripcastApi = {
       { token: string },
       JournalEvent[]
     >,
+    getJournalUnreadCount: (anyApi as any).journalEvents.getJournalUnreadCount as FunctionReference<
+      "query",
+      "public",
+      { token: string; after: number },
+      number
+    >,
+    getStoryEventByCheckpoint: (anyApi as any).journalEvents.getStoryEventByCheckpoint as FunctionReference<
+      "query",
+      "public",
+      { token: string; checkpointId: string },
+      JournalEvent | null
+    >,
     listReplayStoryEvents: (anyApi as any).journalEvents.listReplayStoryEvents as FunctionReference<
       "query",
       "public",

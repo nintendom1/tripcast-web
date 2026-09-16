@@ -1746,7 +1746,10 @@ export default function TripMap({
   const currentUserId = sessionData?.userId || followerSession?.userId;
   const currentSessionId = sessionData?.sessionId || followerSession?.sessionId;
 
-  const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
+  const queriedJournalEvents = useQuery(
+    tripcastApi.journalEvents.listJournalEvents,
+    isJournalOpen || selectedStoryDetail !== null || replayActive ? { token } : "skip",
+  );
   const journalEvents = useMemo(() => {
     const all = queriedJournalEvents ?? [];
     return cutoffPreview.cutoffAt
@@ -1815,7 +1818,16 @@ export default function TripMap({
     resolvedTheme,
   );
 
-  const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
+  const {
+    unreadCount: loadedJournalUnreadCount,
+    markAllRead,
+    lastReadAt: journalLastReadAt,
+  } = useJournalUnread(journalEvents);
+  const journalUnreadCount = useQuery(tripcastApi.journalEvents.getJournalUnreadCount, {
+    token,
+    after: journalLastReadAt,
+  });
+  const unreadCount = journalUnreadCount ?? loadedJournalUnreadCount;
 
   const messages = useQuery(tripcastApi.messages.listMessages, { token }) ?? [];
   const { unreadCount: messagingUnread, markAllRead: markMessagingRead, lastReadAt } = 
@@ -5491,15 +5503,23 @@ export default function TripMap({
         checkpoints={checkpoints}
         onCheckpointClick={(checkpoint) => {
           if (isPlacementMode || coordinatePickMode) return;
-          const event = journalEvents.find((e) => e.checkpointId === checkpoint._id);
-          if (!event) return;
-          music.sfx("page");
-          setStoryOpenedFromJournal(false);
-          setStoryDebugSource({ source: "story-pin", sourceLabel: "Story Pin" });
-          setSelectedStoryDetail({
-            eventId: event._id,
-            checkpointId: event.checkpointId,
-            fallbackEvent: event,
+          void convex.query(tripcastApi.journalEvents.getStoryEventByCheckpoint, {
+            token,
+            checkpointId: checkpoint._id,
+          }).then((event) => {
+            if (!event) return;
+            music.sfx("page");
+            setStoryOpenedFromJournal(false);
+            setStoryDebugSource({ source: "story-pin", sourceLabel: "Story Pin" });
+            setSelectedStoryDetail({
+              eventId: event._id,
+              checkpointId: event.checkpointId,
+              fallbackEvent: event,
+            });
+          }).catch((error) => {
+            log.error("story-pin:load", "error", {
+              errorType: error instanceof Error ? error.name : typeof error,
+            });
           });
         }}
       />
