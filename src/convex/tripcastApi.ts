@@ -34,6 +34,14 @@ export type Checkpoint = {
   updatedAt: number;
 };
 
+export type CheckpointMapPin = {
+  _id: string;
+  lat?: number;
+  lon?: number;
+  happenedAt?: number;
+  createdAt: number;
+};
+
 export type AddCheckpointArgs = {
   token: string;
   title?: string;
@@ -1690,6 +1698,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       Checkpoint[]
+    >,
+    listCheckpointMapPins: (anyApi as any).checkpoints.listCheckpointMapPins as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      CheckpointMapPin[]
     >,
     getStoryImageUrl: (anyApi as any).checkpoints.getStoryImageUrl as FunctionReference<
       "query",

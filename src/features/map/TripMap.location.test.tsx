@@ -304,7 +304,7 @@ function setupQueries({
   } | null;
 } = {}) {
   (vi.mocked(convexReact.useQuery) as any).mockImplementation((query: unknown) => {
-    if (query === tripcastApi.checkpoints.listCheckpoints) return checkpoints;
+    if (query === tripcastApi.checkpoints.listCheckpointMapPins) return checkpoints;
     if (query === tripcastApi.travelerLocations.getTravelerLocation) {
       return travelerLocation;
     }

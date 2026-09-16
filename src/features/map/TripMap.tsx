@@ -11,7 +11,7 @@ import {
   tripcastApi,
   type AddCheckpointArgs,
   type BadgeType,
-  type Checkpoint,
+  type CheckpointMapPin,
   type CloakingPin,
   type JournalEvent,
   type Role,
@@ -205,10 +205,10 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const FOLLOW_RESTORE_GRACE_MS = 2000;
 
 function pickLatestCheckpointCenter(
-  checkpoints: Checkpoint[] | undefined,
+  checkpoints: CheckpointMapPin[] | undefined,
 ): [number, number] | null {
   if (!checkpoints?.length) return null;
-  let best: Checkpoint | null = null;
+  let best: CheckpointMapPin | null = null;
   let bestTs = -Infinity;
   for (const c of checkpoints) {
     if (!Number.isFinite(c.lat) || !Number.isFinite(c.lon)) continue;
@@ -476,8 +476,8 @@ function CheckpointMarkers({
   onCheckpointClick,
 }: {
   map: maplibregl.Map | null;
-  checkpoints: Checkpoint[];
-  onCheckpointClick: (checkpoint: Checkpoint) => void;
+  checkpoints: CheckpointMapPin[];
+  onCheckpointClick: (checkpoint: CheckpointMapPin) => void;
 }) {
   const markersRef = useRef<Marker[]>([]);
   const onClickRef = useRef(onCheckpointClick);
@@ -1552,7 +1552,7 @@ export default function TripMap({
   const lastNativeMysterySyncKeyRef = useRef<string | null>(null);
   const nativeMysteryRevision = nativeMysteryMissionRevision?.revision;
   const nativeMysteryDebugIncluded = nativeMysteryMissionRevision?.debugIncluded;
-  const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token });
+  const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpointMapPins, { token });
   const cutoffPreview = useFollowerCutoffPreview(role, token);
   const photoRouletteCutoffAt = useMemo<number | null | undefined>(() => {
     if (role !== "traveler") return null;
