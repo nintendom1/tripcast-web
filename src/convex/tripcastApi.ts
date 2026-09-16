@@ -204,6 +204,7 @@ export type NativeMysteryMission = {
 export type NativeMysteryMissionSync = {
   enabled: boolean;
   revision: number;
+  debugIncluded?: boolean;
   missions: NativeMysteryMission[];
 };
 
@@ -1789,7 +1790,7 @@ export const tripcastApi = {
     travelerIngestNativeLocationBatch: (anyApi as any).nativeLocationIngest.travelerIngestNativeLocationBatch as FunctionReference<
       "mutation",
       "public",
-      { token: string; samples: NativeLocationSampleInput[]; includeDebugMysteryMissions?: boolean },
+      { token: string; samples: NativeLocationSampleInput[]; includeDebugMysteryMissions?: boolean; knownMysteryMissionSyncRevision?: number },
       NativeLocationBatchResult
     >,
   },
@@ -2166,6 +2167,12 @@ export const tripcastApi = {
       "public",
       { token: string; includeDebugAll?: boolean },
       NativeMysteryMissionSync
+    >,
+    travelerGetNativeMysteryMissionRevision: (anyApi as any).mysteryMissions.travelerGetNativeMysteryMissionRevision as FunctionReference<
+      "query",
+      "public",
+      { token: string; includeDebugAll?: boolean },
+      { revision: number; debugIncluded: boolean }
     >,
     travelerGetMysteryMissionForEdit: (anyApi as any).mysteryMissions.travelerGetMysteryMissionForEdit as FunctionReference<
       "query",

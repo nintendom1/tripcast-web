@@ -73,6 +73,7 @@ type NativeTrailSnapshot = { queueRevision: number; points: LocalTrailPoint[] };
 export type NativeMysteryMissionSync = {
   enabled: boolean;
   revision: number;
+  debugIncluded?: boolean;
   missions: Array<{
     mysteryMissionDocumentId: string;
     stablePackId: string;

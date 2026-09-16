@@ -1542,12 +1542,16 @@ export default function TripMap({
     tripcastApi.cloakingPins.travelerListCloakingPins,
     role === "traveler" ? { token } : "skip",
   );
-  const nativeMysteryMissionSync = useQuery(
-    tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionSync,
+  const nativeMysteryMissionRevision = useQuery(
+    tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionRevision,
     role === "traveler" && isAdaptiveLocationAvailable()
       ? { token, includeDebugAll: debugShowAllMysteryPins || undefined }
       : "skip",
   );
+  const [nativeMysterySyncRetryNonce, setNativeMysterySyncRetryNonce] = useState(0);
+  const lastNativeMysterySyncKeyRef = useRef<string | null>(null);
+  const nativeMysteryRevision = nativeMysteryMissionRevision?.revision;
+  const nativeMysteryDebugIncluded = nativeMysteryMissionRevision?.debugIncluded;
   const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token });
   const cutoffPreview = useFollowerCutoffPreview(role, token);
   const photoRouletteCutoffAt = useMemo<number | null | undefined>(() => {
@@ -3436,13 +3440,46 @@ export default function TripMap({
   }, [samplerMode]);
 
   useEffect(() => {
-    if (!nativeMysteryMissionSync || !isAdaptiveLocationAvailable()) return;
-    void syncNativeMysteryMissions(nativeMysteryMissionSync).catch((error) => {
-      log.error("mystery:native:sync", "error", {
-        errorType: error instanceof Error ? error.name : typeof error,
+    if (nativeMysteryRevision === undefined || !isAdaptiveLocationAvailable()) return;
+    const requestedKey = `${nativeMysteryRevision}:${nativeMysteryDebugIncluded === true}`;
+    if (lastNativeMysterySyncKeyRef.current === requestedKey) return;
+
+    let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+    void convex
+      .query(tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionSync, {
+        token,
+        includeDebugAll: nativeMysteryDebugIncluded || undefined,
+      })
+      .then(async (sync) => {
+        if (cancelled) return;
+        await syncNativeMysteryMissions(sync);
+        if (!cancelled) {
+          lastNativeMysterySyncKeyRef.current =
+            `${sync.revision}:${sync.debugIncluded === true}`;
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        log.error("mystery:native:sync", "error", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+        retryTimeout = setTimeout(() => {
+          setNativeMysterySyncRetryNonce((value) => value + 1);
+        }, 30_000);
       });
-    });
-  }, [log, nativeMysteryMissionSync]);
+    return () => {
+      cancelled = true;
+      if (retryTimeout !== null) clearTimeout(retryTimeout);
+    };
+  }, [
+    convex,
+    log,
+    nativeMysteryDebugIncluded,
+    nativeMysteryRevision,
+    nativeMysterySyncRetryNonce,
+    token,
+  ]);
 
   useEffect(() => {
     function handleNativeMysteryArrival() {
