@@ -11,7 +11,7 @@ import {
   tripcastApi,
   type AddCheckpointArgs,
   type BadgeType,
-  type Checkpoint,
+  type CheckpointMapPin,
   type CloakingPin,
   type JournalEvent,
   type Role,
@@ -205,10 +205,10 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const FOLLOW_RESTORE_GRACE_MS = 2000;
 
 function pickLatestCheckpointCenter(
-  checkpoints: Checkpoint[] | undefined,
+  checkpoints: CheckpointMapPin[] | undefined,
 ): [number, number] | null {
   if (!checkpoints?.length) return null;
-  let best: Checkpoint | null = null;
+  let best: CheckpointMapPin | null = null;
   let bestTs = -Infinity;
   for (const c of checkpoints) {
     if (!Number.isFinite(c.lat) || !Number.isFinite(c.lon)) continue;
@@ -476,8 +476,8 @@ function CheckpointMarkers({
   onCheckpointClick,
 }: {
   map: maplibregl.Map | null;
-  checkpoints: Checkpoint[];
-  onCheckpointClick: (checkpoint: Checkpoint) => void;
+  checkpoints: CheckpointMapPin[];
+  onCheckpointClick: (checkpoint: CheckpointMapPin) => void;
 }) {
   const markersRef = useRef<Marker[]>([]);
   const onClickRef = useRef(onCheckpointClick);
@@ -1542,13 +1542,17 @@ export default function TripMap({
     tripcastApi.cloakingPins.travelerListCloakingPins,
     role === "traveler" ? { token } : "skip",
   );
-  const nativeMysteryMissionSync = useQuery(
-    tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionSync,
+  const nativeMysteryMissionRevision = useQuery(
+    tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionRevision,
     role === "traveler" && isAdaptiveLocationAvailable()
       ? { token, includeDebugAll: debugShowAllMysteryPins || undefined }
       : "skip",
   );
-  const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpoints, { token });
+  const [nativeMysterySyncRetryNonce, setNativeMysterySyncRetryNonce] = useState(0);
+  const lastNativeMysterySyncKeyRef = useRef<string | null>(null);
+  const nativeMysteryRevision = nativeMysteryMissionRevision?.revision;
+  const nativeMysteryDebugIncluded = nativeMysteryMissionRevision?.debugIncluded;
+  const rawCheckpoints = useQuery(tripcastApi.checkpoints.listCheckpointMapPins, { token });
   const cutoffPreview = useFollowerCutoffPreview(role, token);
   const photoRouletteCutoffAt = useMemo<number | null | undefined>(() => {
     if (role !== "traveler") return null;
@@ -1742,7 +1746,10 @@ export default function TripMap({
   const currentUserId = sessionData?.userId || followerSession?.userId;
   const currentSessionId = sessionData?.sessionId || followerSession?.sessionId;
 
-  const queriedJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
+  const queriedJournalEvents = useQuery(
+    tripcastApi.journalEvents.listJournalEvents,
+    isJournalOpen || selectedStoryDetail !== null || replayActive ? { token } : "skip",
+  );
   const journalEvents = useMemo(() => {
     const all = queriedJournalEvents ?? [];
     return cutoffPreview.cutoffAt
@@ -1811,26 +1818,30 @@ export default function TripMap({
     resolvedTheme,
   );
 
-  const { unreadCount, markAllRead } = useJournalUnread(journalEvents);
+  const {
+    unreadCount: loadedJournalUnreadCount,
+    markAllRead,
+    lastReadAt: journalLastReadAt,
+  } = useJournalUnread(journalEvents);
+  const journalUnreadCount = useQuery(tripcastApi.journalEvents.getJournalUnreadCount, {
+    token,
+    after: journalLastReadAt,
+  });
+  const unreadCount = journalUnreadCount ?? loadedJournalUnreadCount;
 
   const messages = useQuery(tripcastApi.messages.listMessages, { token }) ?? [];
   const { unreadCount: messagingUnread, markAllRead: markMessagingRead, lastReadAt } = 
     useMessagingUnread(messages, currentUserId, role, currentSessionId);
   const visibleMessagingUnread = isMessagingOpen ? 0 : messagingUnread;
 
-  const allMissionsForBadge = useQuery(
-    tripcastApi.missions.travelerListMissions,
+  const missionBadgeState = useQuery(
+    tripcastApi.missions.travelerGetMissionBadgeState,
     role === "traveler" ? { token } : "skip",
-  );
-  const followerMissions = useQuery(
-    tripcastApi.missions.followerListMissions,
-    role === "follower" ? { token } : "skip",
   );
   const missionBadgeCount =
     role === "traveler"
-      ? (allMissionsForBadge ?? []).filter((c) => c.status === "proposed").length
+      ? missionBadgeState?.proposedCount ?? 0
       : 0;
-  const missionsForLookup = role === "traveler" ? allMissionsForBadge : followerMissions;
   const selectedStoryEvent = useMemo(() => {
     if (!selectedStoryDetail) return null;
     const freshEvent = journalEvents.find((event) => event._id === selectedStoryDetail.eventId)
@@ -1842,6 +1853,12 @@ export default function TripMap({
     if (freshEvent) return freshEvent;
     return queriedJournalEvents === undefined ? selectedStoryDetail.fallbackEvent : null;
   }, [journalEvents, queriedJournalEvents, selectedStoryDetail]);
+  const selectedStoryMission = useQuery(
+    tripcastApi.missions.getMission,
+    selectedStoryEvent?.missionId
+      ? { token, missionId: selectedStoryEvent.missionId }
+      : "skip",
+  );
   const storyNavigation = useMemo(() => {
     if (!selectedStoryEvent || selectedStoryEvent.type !== "story") return null;
     const chronologicalStories = journalEvents
@@ -3435,13 +3452,46 @@ export default function TripMap({
   }, [samplerMode]);
 
   useEffect(() => {
-    if (!nativeMysteryMissionSync || !isAdaptiveLocationAvailable()) return;
-    void syncNativeMysteryMissions(nativeMysteryMissionSync).catch((error) => {
-      log.error("mystery:native:sync", "error", {
-        errorType: error instanceof Error ? error.name : typeof error,
+    if (nativeMysteryRevision === undefined || !isAdaptiveLocationAvailable()) return;
+    const requestedKey = `${nativeMysteryRevision}:${nativeMysteryDebugIncluded === true}`;
+    if (lastNativeMysterySyncKeyRef.current === requestedKey) return;
+
+    let cancelled = false;
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null;
+    void convex
+      .query(tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionSync, {
+        token,
+        includeDebugAll: nativeMysteryDebugIncluded || undefined,
+      })
+      .then(async (sync) => {
+        if (cancelled) return;
+        await syncNativeMysteryMissions(sync);
+        if (!cancelled) {
+          lastNativeMysterySyncKeyRef.current =
+            `${sync.revision}:${sync.debugIncluded === true}`;
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        log.error("mystery:native:sync", "error", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
+        retryTimeout = setTimeout(() => {
+          setNativeMysterySyncRetryNonce((value) => value + 1);
+        }, 30_000);
       });
-    });
-  }, [log, nativeMysteryMissionSync]);
+    return () => {
+      cancelled = true;
+      if (retryTimeout !== null) clearTimeout(retryTimeout);
+    };
+  }, [
+    convex,
+    log,
+    nativeMysteryDebugIncluded,
+    nativeMysteryRevision,
+    nativeMysterySyncRetryNonce,
+    token,
+  ]);
 
   useEffect(() => {
     function handleNativeMysteryArrival() {
@@ -5453,15 +5503,23 @@ export default function TripMap({
         checkpoints={checkpoints}
         onCheckpointClick={(checkpoint) => {
           if (isPlacementMode || coordinatePickMode) return;
-          const event = journalEvents.find((e) => e.checkpointId === checkpoint._id);
-          if (!event) return;
-          music.sfx("page");
-          setStoryOpenedFromJournal(false);
-          setStoryDebugSource({ source: "story-pin", sourceLabel: "Story Pin" });
-          setSelectedStoryDetail({
-            eventId: event._id,
-            checkpointId: event.checkpointId,
-            fallbackEvent: event,
+          void convex.query(tripcastApi.journalEvents.getStoryEventByCheckpoint, {
+            token,
+            checkpointId: checkpoint._id,
+          }).then((event) => {
+            if (!event) return;
+            music.sfx("page");
+            setStoryOpenedFromJournal(false);
+            setStoryDebugSource({ source: "story-pin", sourceLabel: "Story Pin" });
+            setSelectedStoryDetail({
+              eventId: event._id,
+              checkpointId: event.checkpointId,
+              fallbackEvent: event,
+            });
+          }).catch((error) => {
+            log.error("story-pin:load", "error", {
+              errorType: error instanceof Error ? error.name : typeof error,
+            });
           });
         }}
       />
@@ -6430,7 +6488,7 @@ export default function TripMap({
           onLocationFocus={handleStoryDetailLocationFocus}
           missionTitle={
             selectedStoryEvent?.missionId
-              ? (missionsForLookup ?? []).find((c) => c._id === selectedStoryEvent.missionId)?.title
+              ? selectedStoryMission?.title
               : undefined
           }
           missionId={selectedStoryEvent?.missionId ?? undefined}

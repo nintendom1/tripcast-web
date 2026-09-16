@@ -20,6 +20,7 @@ struct NativeMysteryMission: Codable, Equatable {
 struct NativeMysteryMissionSync: Codable {
     let enabled: Bool
     let revision: Double
+    let debugIncluded: Bool?
     let missions: [NativeMysteryMission]
 }
 

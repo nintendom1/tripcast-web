@@ -760,13 +760,19 @@ final class NativeLocationPublisher {
             if let accuracy = sample.accuracy { value["accuracy"] = accuracy }
             return value
         }
+        var mutationArgs: [String: Any] = [
+            "token": token,
+            "samples": encodedSamples,
+            "includeDebugMysteryMissions": config.includeDebugMysteryMissions
+        ]
+        if let knownRevision = MysteryProximityService.shared.knownSyncRevision(
+            includeDebugAll: config.includeDebugMysteryMissions
+        ) {
+            mutationArgs["knownMysteryMissionSyncRevision"] = knownRevision
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
             "path": "nativeLocationIngest:travelerIngestNativeLocationBatch",
-            "args": [
-                "token": token,
-                "samples": encodedSamples,
-                "includeDebugMysteryMissions": config.includeDebugMysteryMissions
-            ],
+            "args": mutationArgs,
             "format": "json"
         ])
 

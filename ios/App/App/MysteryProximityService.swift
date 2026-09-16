@@ -6,6 +6,7 @@ import UIKit
 
 enum MysteryAudioPreference {
     static let mutedKey = "tripcast.mysteryAudioMuted"
+    static let syncDebugIncludedKey = "tripcast.mysterySyncDebugIncluded"
 }
 
 final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
@@ -75,11 +76,16 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
     func apply(sync: NativeMysteryMissionSync) {
         queue.async { [weak self] in
             guard let self else { return }
+            if sync.revision < self.state.revision { return }
             self.refreshSharedMuteLocked()
             let incomingIDs = Set(sync.missions.map(\.mysteryMissionDocumentId))
             self.state.enabled = sync.enabled
             self.state.revision = sync.revision
             self.state.missions = sync.missions
+            UserDefaults.standard.set(
+                sync.debugIncluded == true,
+                forKey: MysteryAudioPreference.syncDebugIncludedKey
+            )
             self.state.triggeredIDs.formIntersection(incomingIDs)
             self.state.speech.removeAll { !incomingIDs.contains($0.missionID) }
             self.persistLocked()
@@ -91,6 +97,19 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
             if self.liveActive, let latestLocation = self.latestLocation {
                 self.evaluateLocked(latestLocation)
             }
+        }
+    }
+
+    func knownSyncRevision(includeDebugAll: Bool) -> Double? {
+        queue.sync {
+            guard state.revision > 0,
+                  UserDefaults.standard.object(
+                    forKey: MysteryAudioPreference.syncDebugIncludedKey
+                  ) != nil,
+                  UserDefaults.standard.bool(
+                    forKey: MysteryAudioPreference.syncDebugIncludedKey
+                  ) == includeDebugAll else { return nil }
+            return state.revision
         }
     }
 
@@ -208,6 +227,9 @@ final class MysteryProximityService: NSObject, AVSpeechSynthesizerDelegate, @unc
             self.currentUtterance = nil
             self.playbackStatus = "idle"
             try? FileManager.default.removeItem(at: self.stateURL)
+            UserDefaults.standard.removeObject(
+                forKey: MysteryAudioPreference.syncDebugIncludedKey
+            )
             DispatchQueue.main.async {
                 self.synthesizer.stopSpeaking(at: .immediate)
                 try? AVAudioSession.sharedInstance().setActive(

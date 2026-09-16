@@ -77,8 +77,8 @@ function setupSessionMocks(role: "traveler" | "follower", creditsEnded = false) 
     if (query === tripcastApi.auth.currentSession || query === tripcastApi.followers.followerCurrentSession) {
       return { role, sessionId: "test-session" };
     }
-    if (query === tripcastApi.endTrip.getTripCredits) {
-      return { ended: creditsEnded, totals: { points: 0, badges: 0, followers: 0 } };
+    if (query === tripcastApi.endTrip.getTripFinaleStatus) {
+      return { ended: creditsEnded };
     }
     return undefined;
   });

@@ -303,8 +303,8 @@ function setupQueries({
     accuracy?: number;
   } | null;
 } = {}) {
-  (vi.mocked(convexReact.useQuery) as any).mockImplementation((query: unknown) => {
-    if (query === tripcastApi.checkpoints.listCheckpoints) return checkpoints;
+  (vi.mocked(convexReact.useQuery) as any).mockImplementation((query: unknown, args: unknown) => {
+    if (query === tripcastApi.checkpoints.listCheckpointMapPins) return checkpoints;
     if (query === tripcastApi.travelerLocations.getTravelerLocation) {
       return travelerLocation;
     }
@@ -326,7 +326,12 @@ function setupQueries({
     if (query === tripcastApi.travelerPreferences.travelerGetPreferences) {
       return travelerPreferences;
     }
-    if (query === tripcastApi.journalEvents.listJournalEvents) return journalEvents;
+    if (query === tripcastApi.journalEvents.listJournalEvents) {
+      return args === "skip" ? undefined : journalEvents;
+    }
+    if (query === tripcastApi.journalEvents.getJournalUnreadCount) {
+      return journalEvents.filter((event) => event.narrativeLevel === "narrative").length;
+    }
     if (query === tripcastApi.mysteryMissions.listMysteryMissionMapPins) {
       if (mysteryPinsLoading) return undefined;
       return { rows: mysteryPins };
@@ -352,6 +357,15 @@ function setupQueries({
       };
     }
     return null;
+  });
+  const previousQueryImplementation = convexQuery.getMockImplementation();
+  convexQuery.mockImplementation(async (query: unknown, args: { checkpointId?: string }) => {
+    if (query === tripcastApi.journalEvents.getStoryEventByCheckpoint) {
+      return journalEvents.find((event) => event.checkpointId === args.checkpointId) ?? null;
+    }
+    return previousQueryImplementation
+      ? previousQueryImplementation(query, args)
+      : null;
   });
 }
 
