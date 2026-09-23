@@ -20,5 +20,5 @@ export function useJournalUnread(events: JournalEvent[]) {
     setLastReadAt(now);
   }
 
-  return { unreadCount, markAllRead };
+  return { unreadCount, markAllRead, lastReadAt };
 }

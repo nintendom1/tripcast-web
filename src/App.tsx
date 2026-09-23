@@ -241,8 +241,8 @@ function ConnectedApp() {
     session !== null && activeSessionCheck ? session.token : undefined;
   const { currentMessage, isPriority, onFunFactComplete } = useTicker(verifiedSessionToken);
 
-  const credits = useQuery(
-    tripcastApi.endTrip.getTripCredits,
+  const finaleStatus = useQuery(
+    tripcastApi.endTrip.getTripFinaleStatus,
     verifiedSessionToken ? { token: verifiedSessionToken } : "skip",
   );
 
@@ -291,7 +291,7 @@ function ConnectedApp() {
   // Respects priority flows (intro sequence) and fires once per session.
   useEffect(() => {
     if (
-      credits?.ended &&
+      finaleStatus?.ended &&
       mapLoaded &&
       !hasAutoOpenedCredits &&
       !isIntroReplayOpen &&
@@ -301,7 +301,7 @@ function ConnectedApp() {
       setHasAutoOpenedCredits(true);
     }
   }, [
-    credits?.ended,
+    finaleStatus?.ended,
     mapLoaded,
     hasAutoOpenedCredits,
     isIntroReplayOpen,

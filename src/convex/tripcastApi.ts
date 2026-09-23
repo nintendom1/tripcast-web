@@ -34,6 +34,14 @@ export type Checkpoint = {
   updatedAt: number;
 };
 
+export type CheckpointMapPin = {
+  _id: string;
+  lat?: number;
+  lon?: number;
+  happenedAt?: number;
+  createdAt: number;
+};
+
 export type AddCheckpointArgs = {
   token: string;
   title?: string;
@@ -204,6 +212,7 @@ export type NativeMysteryMission = {
 export type NativeMysteryMissionSync = {
   enabled: boolean;
   revision: number;
+  debugIncluded?: boolean;
   missions: NativeMysteryMission[];
 };
 
@@ -1690,6 +1699,12 @@ export const tripcastApi = {
       { token: string },
       Checkpoint[]
     >,
+    listCheckpointMapPins: (anyApi as any).checkpoints.listCheckpointMapPins as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      CheckpointMapPin[]
+    >,
     getStoryImageUrl: (anyApi as any).checkpoints.getStoryImageUrl as FunctionReference<
       "query",
       "public",
@@ -1789,7 +1804,7 @@ export const tripcastApi = {
     travelerIngestNativeLocationBatch: (anyApi as any).nativeLocationIngest.travelerIngestNativeLocationBatch as FunctionReference<
       "mutation",
       "public",
-      { token: string; samples: NativeLocationSampleInput[]; includeDebugMysteryMissions?: boolean },
+      { token: string; samples: NativeLocationSampleInput[]; includeDebugMysteryMissions?: boolean; knownMysteryMissionSyncRevision?: number },
       NativeLocationBatchResult
     >,
   },
@@ -2073,6 +2088,12 @@ export const tripcastApi = {
       { token: string; status?: MissionStatus },
       Mission[]
     >,
+    travelerGetMissionBadgeState: (anyApi as any).missions.travelerGetMissionBadgeState as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { proposedCount: number }
+    >,
     followerListMissions: (anyApi as any).missions.followerListMissions as FunctionReference<
       "query",
       "public",
@@ -2160,6 +2181,12 @@ export const tripcastApi = {
       "public",
       { token: string; includeDebugAll?: boolean },
       NativeMysteryMissionSync
+    >,
+    travelerGetNativeMysteryMissionRevision: (anyApi as any).mysteryMissions.travelerGetNativeMysteryMissionRevision as FunctionReference<
+      "query",
+      "public",
+      { token: string; includeDebugAll?: boolean },
+      { revision: number; debugIncluded: boolean }
     >,
     travelerGetMysteryMissionForEdit: (anyApi as any).mysteryMissions.travelerGetMysteryMissionForEdit as FunctionReference<
       "query",
@@ -2445,6 +2472,18 @@ export const tripcastApi = {
       { token: string },
       JournalEvent[]
     >,
+    getJournalUnreadCount: (anyApi as any).journalEvents.getJournalUnreadCount as FunctionReference<
+      "query",
+      "public",
+      { token: string; after: number },
+      number
+    >,
+    getStoryEventByCheckpoint: (anyApi as any).journalEvents.getStoryEventByCheckpoint as FunctionReference<
+      "query",
+      "public",
+      { token: string; checkpointId: string },
+      JournalEvent | null
+    >,
     listReplayStoryEvents: (anyApi as any).journalEvents.listReplayStoryEvents as FunctionReference<
       "query",
       "public",
@@ -2476,6 +2515,12 @@ export const tripcastApi = {
       "public",
       { token: string },
       null
+    >,
+    getTripFinaleStatus: (anyApi as any).endTrip.getTripFinaleStatus as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      { ended: boolean; endedAt?: number }
     >,
     getTripCredits: (anyApi as any).endTrip.getTripCredits as FunctionReference<
       "query",

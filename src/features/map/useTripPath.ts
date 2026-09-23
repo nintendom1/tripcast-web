@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import maplibregl from "maplibre-gl";
-import { Checkpoint } from "../../convex/tripcastApi";
+import type { CheckpointMapPin } from "../../convex/tripcastApi";
 import { LiveTrailPoint } from "./useLiveTrailPath";
 import { logMapEvent } from "../../debug/debugLogger";
 
@@ -64,7 +64,7 @@ function bucketOpacity(raw: number): number {
  */
 export function useTripPath(
   map: maplibregl.Map | null,
-  checkpoints: Checkpoint[],
+  checkpoints: CheckpointMapPin[],
   livePosition: { lat: number; lon: number } | null,
   visible: boolean,
   playheadTime: number | null = null,
