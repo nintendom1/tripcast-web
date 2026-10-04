@@ -1,5 +1,6 @@
+import { prepareUploadedReplayImage } from "./replayImagePreparation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import {
   CalendarClock,
   Camera,
@@ -215,6 +216,7 @@ export default function JournalSheet({
   const containerRef = useRef<HTMLDivElement>(null);
   const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, open ? { token } : "skip");
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
+  const replayImageClient = useConvex();
   const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
   const calibration = useCenteringCalibration();
@@ -400,6 +402,7 @@ export default function JournalSheet({
         source: "inline_form",
         ...(happenedAtMs !== null ? { happenedAt: happenedAtMs } : {}),
       });
+      if (imageId) prepareUploadedReplayImage(replayImageClient, token, imageId);
       setStoryTitle("");
       setStoryBody("");
       setStoryLocation("");

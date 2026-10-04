@@ -26,6 +26,7 @@ import ReplayPoiCard from "./ReplayPoiCard";
 import { TripReplayHud, formatReplayTime } from "./TripReplayHud";
 import {
   ProgressiveReplaySession,
+  replayTransitionMs,
   REPLAY_PREFETCH_SECONDS,
   REPLAY_TARGET_BUFFER_SECONDS,
   clearReplayResume,
@@ -779,7 +780,7 @@ function ReplayCheckpointOverlay({
   }, [pin.eventId, pin.imageId]);
 
   const imageUrl = useQuery(
-    tripcastApi.checkpoints.getStoryImageUrl,
+    tripcastApi.replayImages.getUrl,
     pin.imageId ? { token, imageId: pin.imageId } : "skip",
   );
 
@@ -814,6 +815,7 @@ function ReplayCheckpointOverlay({
     >
       <ReplayPoiCard
         imageUrl={imageUrl}
+        photoPending={!!pin.imageId && !imageUrl}
         title={pin.title || "Checkpoint"}
         note={note}
         tilt={tilt}
@@ -1484,6 +1486,8 @@ export default function TripMap({
     pins: [], stories: [], breadcrumbs: [], hasMore: false, reachedTrueEnd: false, loading: false, error: null,
   });
   const replaySessionRef = useRef<ProgressiveReplaySession | null>(null);
+  const replayManifest = useQuery(tripcastApi.replayRoutes.manifest, { token });
+  const [replayContent, setReplayContent] = useState<"route" | "stories">("route");
   const replayWasActiveRef = useRef(false);
   const [replaySource, setReplaySource] = useState<ReplaySource | null>(null);
   const [replayBuffering, setReplayBuffering] = useState(false);
@@ -1675,7 +1679,7 @@ export default function TripMap({
   );
 
   useEffect(() => {
-    if (!cacheAuthorized) return;
+    if (!cacheAuthorized || replaySessionState.breadcrumbs.some(sample => sample.compact)) return;
     if (replaySessionState.loading || replayActive || replaySessionState.breadcrumbs.length > 0) {
       liveTrailCache.replaceReplay(replaySessionState.breadcrumbs);
     }
@@ -1706,10 +1710,12 @@ export default function TripMap({
   const canAttemptReplay = showPath;
 
   useEffect(() => {
-    setReplayCacheIdentity(token, role, cutoffPreview.cutoffAt ?? null);
+    setReplayCacheIdentity(token, role, cutoffPreview.cutoffAt ?? null, `${replayManifest?.authorization}:${replayManifest?.revision}:${replayManifest?.contentRevision}:${replayManifest?.ready}`);
+    setReplayPaused(true);
+    setCurrentOverlayPin(null);
     replaySessionRef.current = null;
     setReplaySessionState({ pins: [], stories: [], breadcrumbs: [], hasMore: false, reachedTrueEnd: false, loading: false, error: null });
-  }, [token, role, cutoffPreview.cutoffAt]);
+  }, [token, role, cutoffPreview.cutoffAt, replayManifest?.authorization, replayManifest?.revision, replayManifest?.contentRevision, replayManifest?.ready]);
 
   const handleCloakingPinClick = useCallback(
     (pin: CloakingPin) => {
@@ -2032,11 +2038,11 @@ export default function TripMap({
     const isAtEnd = replayPlayheadIndex >= replayEndIndex;
     const beatMs = isAtEnd
       ? 5000 // Pause for 5 seconds at the end before looping
-      : replayBeatMs(pin?.kind === "checkpoint" ? "checkpoint" : "breadcrumb", effectiveReplaySpeed);
+      : replayTransitionMs(pin ?? undefined, replayPins[(replayPlayheadIndex ?? 0) + 1], effectiveReplaySpeed, replayBeatMs);
 
     // At high speed the beat floors at 60ms, so advance several breadcrumbs per beat
     // (without skipping stories) to make higher multipliers genuinely traverse faster.
-    const step = replayPinStep(effectiveReplaySpeed);
+    const step = pin?.compact ? 1 : replayPinStep(effectiveReplaySpeed);
     const timeout = window.setTimeout(() => {
       setReplayPlayheadIndex((current) => {
         if (current === null) return current;
@@ -2109,9 +2115,16 @@ export default function TripMap({
     resume?: { eventId: string; occurredAt?: number; fallbackIndex: number },
   ) => {
     if (cacheAuthorized) liveTrailCache.replaceReplay([]);
-    const sessionKey = `${source.mode}:${source.startAt ?? ""}:${source.endAt}`;
+    source = { ...source, content: source.content ?? replayContent };
+    const manifest = await convex.query(tripcastApi.replayRoutes.manifest, { token });
+    const compact = source.content !== "stories" && (manifest.enabled || (role === "traveler" && manifest.ready));
+    const sessionKey = `${source.content}:${manifest.revision}:${manifest.contentRevision}:${source.mode}:${source.startAt ?? ""}:${source.endAt}`;
     const session = new ProgressiveReplaySession(sessionKey, source, {
-      breadcrumbs: (args) => convex.query(tripcastApi.liveTrail.listReplayLiveTrailSamples, {
+      authorize: async () => {
+        const access = await convex.query(tripcastApi.replayRoutes.manifest, { token });
+        if (access.authorization !== manifest.authorization || access.revision !== manifest.revision || access.contentRevision !== manifest.contentRevision || access.ready !== manifest.ready) throw new Error("Replay changed. Restart to refresh access and content.");
+      },
+      breadcrumbs: (args) => compact ? convex.query(tripcastApi.replayRoutes.page, { token, revision: manifest.revision, ...args }) : convex.query(tripcastApi.liveTrail.listReplayLiveTrailSamples, {
         token,
         startAt: args.startAt,
         endAt: args.endAt,
@@ -2120,6 +2133,7 @@ export default function TripMap({
       }),
       stories: (args) => convex.query(tripcastApi.journalEvents.listReplayStoryEvents, {
         token,
+        includeLocationless: true,
         startAt: args.startAt,
         endAt: args.endAt,
         direction: args.direction,
@@ -2141,13 +2155,15 @@ export default function TripMap({
     ) {
       next = await session.loadMore("resume-search");
     }
+    if (replaySessionRef.current !== session) return false;
     setReplaySessionState({ ...next });
     if (next.error) return false;
-    if (next.pins.length <= 1) {
-      showToast("Trip Replay needs at least two located breadcrumbs or stories.");
+    if (next.pins.length === 0) {
+      showToast("Trip Replay needs a Story or a located breadcrumb.");
       return false;
     }
-    const byId = resume ? next.pins.findIndex((pin) => pin.eventId === resume.eventId) : -1;
+    let byId = resume ? next.pins.findIndex((pin) => pin.eventId === resume.eventId) : -1;
+    if (byId < 0 && resume?.occurredAt !== undefined) byId = next.pins.findIndex(pin => pin.occurredAt >= resume.occurredAt!);
     const startIndex = byId >= 0
       ? byId
       : resume ? Math.min(Math.max(0, resume.fallbackIndex), next.pins.length - 1) : 0;
@@ -2160,7 +2176,7 @@ export default function TripMap({
     setReplayActive(true);
     setCurrentOverlayPin(null);
     return true;
-  }, [cacheAuthorized, convex, liveTrailCache, log, replaySpeed, showToast, token]);
+  }, [cacheAuthorized, convex, liveTrailCache, log, replaySpeed, showToast, token, replayContent, role]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || !replaySessionState.hasMore || replaySessionState.loading) return;
@@ -2194,6 +2210,7 @@ export default function TripMap({
       }
       let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
       for (const pin of replayPins) {
+        if (pin.locationless) continue;
         if (pin.lat < minLat) minLat = pin.lat;
         if (pin.lat > maxLat) maxLat = pin.lat;
         if (pin.lon < minLon) minLon = pin.lon;
@@ -2214,6 +2231,7 @@ export default function TripMap({
           : cardsWrapperRef.current,
         sheetSelector: finaleReplayActive ? "[data-finale-banner]" : "[data-replay-hud]",
       });
+      if (!Number.isFinite(minLat)) return;
       map.fitBounds(
         [[minLon, minLat], [maxLon, maxLat]],
         { padding, duration: 800, maxZoom: finaleReplayActive ? FINALE_FIT_MAX_ZOOM : 14 },
@@ -2257,6 +2275,7 @@ export default function TripMap({
     // Geometry-driven focus (no bottom sheet during replay). Mirrors
     // focusCoordinate() so the observability triad still fires; defined inline
     // because that closure is declared later in the component body.
+    if (target.locationless) return;
     const coord = { lat: target.lat, lon: target.lon };
     const isBreadcrumb = target.kind === "breadcrumb";
     const geometry = readFocusGeometry(map, {
@@ -2279,7 +2298,7 @@ export default function TripMap({
     // Checkpoint ease is capped at 550ms but shrinks to fit a short high-speed dwell so
     // the camera settles before the beat advances. Breadcrumbs match their beat exactly.
     const duration = isBreadcrumb
-      ? replayBeatMs("breadcrumb", effectiveReplaySpeed)
+      ? (target.breakBefore ? 0 : replayTransitionMs(target, replayPins[replayPlayheadIndex + 1], effectiveReplaySpeed, replayBeatMs))
       : Math.min(550, Math.round(replayBeatMs("checkpoint", effectiveReplaySpeed) * 0.6));
     const easing = isBreadcrumb ? (t: number) => t : (t: number) => t * (2 - t);
 
@@ -4738,8 +4757,8 @@ export default function TripMap({
         const saved = readReplayResume(token);
         const legacy = readLegacyReplayResume(token);
         if (!legacy) return;
-        const target = await convex.query(tripcastApi.journalEvents.resolveReplayResumeTarget, { token, eventId: legacy.eventId });
-        if (saved) source = saved.source;
+        const target = replayContent === "stories" ? (saved ? { eventId: saved.eventId, occurredAt: saved.occurredAt } : null) : await convex.query(tripcastApi.journalEvents.resolveReplayResumeTarget, { token, eventId: legacy.eventId });
+        if (saved) source = { ...saved.source, content: replayContent };
         if (target) {
           resume = { eventId: target.eventId, occurredAt: target.occurredAt, fallbackIndex: legacy.index };
         } else {
@@ -5465,10 +5484,10 @@ export default function TripMap({
     return Array.from(ids);
   }, [currentOverlayPin?.imageId, replayActive, replayPins, replayPlayheadIndex, selectedStoryEvent?.imageId]);
 
-  useImagePrefetch(token, imageIdsToPrefetch);
+  useImagePrefetch(token, imageIdsToPrefetch, "replay");
   // Record served sizes of the images this device fetches for the Developer
   // egress estimate (same set the prefetch warms).
-  useEgressMeter(token, imageIdsToPrefetch);
+  useEgressMeter(token, selectedStoryEvent?.imageId ? [selectedStoryEvent.imageId] : []);
 
   return (
     <section className="relative min-h-0 flex-1 overflow-hidden" aria-label="Checkpoint map">
@@ -5526,10 +5545,10 @@ export default function TripMap({
       {replayActive && (
         <ReplayFocusMarker
           map={mapInstance}
-          position={currentReplayPin ? { lat: currentReplayPin.lat, lon: currentReplayPin.lon } : null}
+          position={currentReplayPin && !currentReplayPin.locationless ? { lat: currentReplayPin.lat, lon: currentReplayPin.lon } : null}
           duration={
             currentReplayPin?.kind === "breadcrumb"
-              ? replayBeatMs("breadcrumb", effectiveReplaySpeed)
+              ? (currentReplayPin.breakBefore ? 0 : replayTransitionMs(currentReplayPin, replayPins[(replayPlayheadIndex ?? 0) + 1], effectiveReplaySpeed, replayBeatMs))
               : 0
           }
         />
@@ -5792,6 +5811,8 @@ export default function TripMap({
         <ReplayStartSheet
           open={isReplayStartSheetOpen}
           hasResume={readLegacyReplayResume(token) !== null}
+          content={replayContent}
+          onChangeContent={setReplayContent}
           loading={replaySessionState.loading && !replayActive}
           error={replayStartError}
           onSelect={(mode) => void handleSelectReplaySource(mode)}
@@ -5804,6 +5825,11 @@ export default function TripMap({
       <Suspense fallback={null}>
         <ReplaySettingsSheet
           open={isReplaySettingsSheetOpen}
+          content={replaySource?.content ?? replayContent}
+          onChangeContent={(content) => {
+            setReplayContent(content);
+            if (replaySource) void startReplaySession({ ...replaySource, content });
+          }}
           speed={replaySpeed}
           onChangeSource={() => {
             setIsReplaySettingsSheetOpen(false);

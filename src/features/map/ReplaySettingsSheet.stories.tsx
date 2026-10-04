@@ -21,3 +21,6 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const StoriesOnly: Story = { args: { content: "stories", onChangeContent: () => {} } };
+export const FollowRoute: Story = { args: { content: "route", onChangeContent: () => {} } };

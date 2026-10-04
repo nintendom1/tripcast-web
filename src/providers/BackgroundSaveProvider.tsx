@@ -1,3 +1,4 @@
+import { prepareUploadedReplayImage } from "../features/journal/replayImagePreparation";
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import {
   PendingSave,
@@ -5,7 +6,7 @@ import {
   deletePendingSave,
   getAllPendingSaves
 } from "../lib/idb";
-import { useMutation } from "convex/react";
+import { useConvex, useMutation } from "convex/react";
 import { tripcastApi } from "../convex/tripcastApi";
 import { uploadStoryImage, type StoryImageDraft } from "../features/journal/storyImageUpload";
 import { registerPlugin } from "@capacitor/core";
@@ -59,6 +60,7 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
   const retryingIds = useRef<Set<string>>(new Set());
   const savesRef = useRef<PendingSave[]>([]);
 
+  const replayImageClient = useConvex();
   const generateUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
   const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
   const completeMissionAsStory = useMutation(tripcastApi.missions.travelerCompleteMissionAsStory);
@@ -190,6 +192,8 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
           } as any);
         }
 
+        if (imageId) prepareUploadedReplayImage(replayImageClient, token, imageId);
+
         // Persist checkpointId before linking — crash-safe two-phase commit
         const withCheckpoint = { ...save, checkpointId, linkStatus: "pending" as const, progress: 80 };
         setSaves(prev => prev.map(s => s.id === save.id ? withCheckpoint : s));
@@ -264,7 +268,7 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
       setSaves(prev => prev.map(s => s.id === save.id ? failedSave : s));
       await savePendingSave(failedSave);
     }
-  }, [token, generateUploadUrl, addCheckpoint, completeMissionAsStory, updateTransaction]);
+  }, [token, generateUploadUrl, addCheckpoint, completeMissionAsStory, updateTransaction, replayImageClient]);
 
   // Auto-retry saves whose backoff timer has expired
   useEffect(() => {

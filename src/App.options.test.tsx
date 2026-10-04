@@ -7,6 +7,7 @@ import App from "./App";
 import { clearLogs, log, setEnabled, setPreset } from "./debug/debugLogger";
 
 vi.mock("convex/react", () => ({
+  useConvex: vi.fn(() => ({ query: vi.fn(), mutation: vi.fn(), action: vi.fn() })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
   ConvexProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,

@@ -1,5 +1,6 @@
+import { prepareUploadedReplayImage } from "./replayImagePreparation";
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import { CalendarClock, ChevronLeft, ChevronRight, ImagePlus, MapPin as MapPinIcon, Trash2 } from "lucide-react";
 import Zoom from "react-medium-image-zoom";
 
@@ -172,6 +173,7 @@ export default function StoryDetailSheet({
   const music = useMusicSafe();
   const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
+  const replayImageClient = useConvex();
   const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -482,6 +484,7 @@ export default function StoryDetailSheet({
         showInStory: editShowInStory,
         ...(happenedAtChanged ? { happenedAt: happenedAtMs } : {}),
       });
+      if (imageId) prepareUploadedReplayImage(replayImageClient, token, imageId);
       music.sfx("success");
       log.logInteraction("form:submit:success", {});
       setOptimisticEvent({

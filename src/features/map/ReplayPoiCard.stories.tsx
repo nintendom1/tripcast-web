@@ -72,3 +72,7 @@ export const FastTransition: StoryObj<typeof meta> = {
     transitionScale: 0.25,
   },
 };
+
+export const PreviewPending: StoryObj<typeof meta> = {
+  args: { title: "Mountain overlook", note: "The Story stays available while its preview is prepared.", photoPending: true },
+};

@@ -14,13 +14,18 @@ export const REPLAY_PREFETCH_SECONDS = 15;
 export const REPLAY_TARGET_BUFFER_SECONDS = 25;
 
 export type ReplaySourceMode = "recent" | "beginning" | "custom";
+export type ReplayContent = "route" | "stories";
 export type ReplaySource = {
+  content?: ReplayContent;
   mode: ReplaySourceMode;
   startAt?: number;
   endAt: number;
 };
 
 export type ReplayPin = {
+  compact?: boolean;
+  breakBefore?: boolean;
+  locationless?: boolean;
   eventId: string;
   occurredAt: number;
   lat: number;
@@ -65,6 +70,7 @@ type PageArgs = {
   cursor: string | null;
 };
 type ReplayQueries = {
+  authorize?: () => Promise<void>;
   breadcrumbs: (args: PageArgs) => Promise<LiveTrailReplayPage>;
   stories: (args: PageArgs) => Promise<ReplayStoryPage>;
 };
@@ -120,20 +126,22 @@ export function clearReplayResume(token: string) {
   }
 }
 
-export function mergeReplayPins(stories: JournalEvent[], breadcrumbs: LiveTrailSample[]) {
+export function mergeReplayPins(stories: JournalEvent[], breadcrumbs: LiveTrailSample[], includeLocationless = false) {
   const pins: ReplayPin[] = stories.flatMap((event) => {
-    if (
-      event.type !== "story" ||
+    if (event.type !== "story") return [];
+    const locationless = (
       typeof event.lat !== "number" ||
       !Number.isFinite(event.lat) ||
       typeof event.lon !== "number" ||
       !Number.isFinite(event.lon)
-    ) return [];
+    );
+    if (locationless && !includeLocationless) return [];
     return [{
+      locationless,
       eventId: event._id,
       occurredAt: event.occurredAt,
-      lat: event.lat,
-      lon: event.lon,
+      lat: event.lat ?? 0,
+      lon: event.lon ?? 0,
       kind: "checkpoint" as const,
       title: event.title,
       imageId: event.imageId,
@@ -143,13 +151,15 @@ export function mergeReplayPins(stories: JournalEvent[], breadcrumbs: LiveTrailS
   let lastBreadcrumbAt = Number.NEGATIVE_INFINITY;
   for (const sample of [...breadcrumbs].sort((a, b) => a.sampledAt - b.sampledAt)) {
     if (!Number.isFinite(sample.lat) || !Number.isFinite(sample.lon)) continue;
-    if (sample.sampledAt - lastBreadcrumbAt < 5_000) continue;
+    if (!sample.compact && sample.sampledAt - lastBreadcrumbAt < 5_000) continue;
     pins.push({
       eventId: sample._id,
       occurredAt: sample.sampledAt,
       lat: sample.lat,
       lon: sample.lon,
       kind: "breadcrumb",
+      compact: sample.compact,
+      breakBefore: sample.breakBefore,
     });
     lastBreadcrumbAt = sample.sampledAt;
   }
@@ -168,8 +178,8 @@ export function estimateReplayBufferMs(
   let index = Math.max(0, playhead);
   const step = Math.max(1, pinStep(speed));
   while (index < pins.length - 1) {
-    total += beatMs(pins[index]?.kind ?? "breadcrumb", speed);
-    const target = Math.min(index + step, pins.length - 1);
+    total += replayTransitionMs(pins[index], pins[index + 1], speed, beatMs);
+    const target = Math.min(index + (pins[index]?.compact ? 1 : step), pins.length - 1);
     let next = target;
     for (let i = index + 1; i <= target; i += 1) {
       if (pins[i]?.kind === "checkpoint") {
@@ -188,8 +198,8 @@ const pageCache = new Map<string, CacheEntry>();
 let cacheIdentity = "";
 let nextReplayLogSessionId = 1;
 
-export function setReplayCacheIdentity(token: string, role: Role, cutoffAt: number | null) {
-  const next = `${token}:${role}:${cutoffAt ?? "none"}`;
+export function setReplayCacheIdentity(token: string, role: Role, cutoffAt: number | null, revision = "") {
+  const next = `${token}:${role}:${cutoffAt ?? "none"}:${revision}`;
   if (cacheIdentity !== next) {
     cacheIdentity = next;
     pageCache.clear();
@@ -207,7 +217,9 @@ async function cachedPage<T>(sessionKey: string, source: string, args: PageArgs,
     cached.touchedAt = Date.now();
     return { value: cached.value as T, cache: "hit" };
   }
+  const identity = cacheIdentity;
   const value = await load();
+  if (identity !== cacheIdentity) return { value, cache: "miss" };
   pageCache.set(key, { value, touchedAt: Date.now(), sessionKey });
   const activeSessions = [...new Set([...pageCache.values()]
     .sort((a, b) => b.touchedAt - a.touchedAt)
@@ -240,6 +252,7 @@ export class ProgressiveReplaySession {
     legacyFallback = false,
     private readonly loadLogger?: ReplayLoadLogger,
   ) {
+    if (source.content === "stories") { this.breadcrumbScan.hasMore = false; this.breadcrumbScan.trueEnd = true; }
     this.direction = legacyFallback ? "asc" : source.mode === "recent" || resumeAt !== undefined ? "desc" : "asc";
     this.fetchStartAt = source.startAt;
     this.fetchEndAt = resumeAt ?? source.endAt;
@@ -277,9 +290,9 @@ export class ProgressiveReplaySession {
         this.fetchEndAt = this.source.endAt;
         this.breadcrumbScan.cursor = null;
         this.storyScan.cursor = null;
-        this.breadcrumbScan.hasMore = true;
+        this.breadcrumbScan.hasMore = this.source.content !== "stories";
         this.storyScan.hasMore = true;
-        this.breadcrumbScan.trueEnd = false;
+        this.breadcrumbScan.trueEnd = this.source.content === "stories";
         this.storyScan.trueEnd = false;
         await this.fetchPair("resume-forward");
       }
@@ -335,6 +348,8 @@ export class ProgressiveReplaySession {
   }
 
   private async fetchPair(reason: ReplayLoadReason) {
+    await this.queries.authorize?.();
+    const identity = cacheIdentity;
     const startedAt = performance.now();
     const batch = ++this.batch;
     const argsFor = (cursor: string | null): PageArgs => ({
@@ -380,6 +395,7 @@ export class ProgressiveReplaySession {
       }));
     }
     await Promise.all(tasks);
+    if (identity !== cacheIdentity) throw new Error("Replay access changed. Restart replay.");
     const rebuild = this.rebuild();
     this.emit("replay:load:batch", "info", {
       batch,
@@ -397,8 +413,8 @@ export class ProgressiveReplaySession {
   }
 
   private rebuild() {
-    const allPins = mergeReplayPins(this.storyScan.rows, this.breadcrumbScan.rows);
-    const boundaries = [this.breadcrumbScan, this.storyScan].map((scan) => {
+    const allPins = mergeReplayPins(this.storyScan.rows, this.breadcrumbScan.rows, true);
+    const boundaries = (this.source.content === "stories" ? [this.storyScan] : [this.breadcrumbScan, this.storyScan]).map((scan) => {
       if (scan.boundary !== null) return scan.boundary;
       return this.direction === "asc" ? this.fetchEndAt : (this.fetchStartAt ?? Number.NEGATIVE_INFINITY);
     });
@@ -427,4 +443,18 @@ export class ProgressiveReplaySession {
   private emit(action: ReplayLoadLogEntry["action"], level: ReplayLoadLogEntry["level"], details: Record<string, unknown>) {
     this.loadLogger?.({ action, level, details: { sessionId: this.logSessionId, ...details } });
   }
+}
+
+// Elapsed sample time, not retained vertex count, determines compact-route travel.
+// Gaps are jumps; Stories retain their independent dwell and are never skipped.
+export function replayTransitionMs(pin: ReplayPin | undefined, next: ReplayPin | undefined, speed: number, beatMs: (kind: ReplayPin["kind"], speed: number) => number) {
+  if (pin?.kind === "breadcrumb" && pin.compact && next && !next.breakBefore) {
+    return Math.max(1, Math.max(0, next.occurredAt - pin.occurredAt) / 300 / Math.max(0.1, speed));
+  }
+  return beatMs(pin?.kind ?? "breadcrumb", speed);
+}
+
+export function clearReplayPageCache() {
+  cacheIdentity = "";
+  pageCache.clear();
 }

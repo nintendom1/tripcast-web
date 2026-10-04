@@ -4,13 +4,15 @@ import type { ReplaySourceMode } from "./replaySession";
 export type ReplayStartSheetProps = {
   open: boolean;
   hasResume: boolean;
+  content?: "route" | "stories";
+  onChangeContent?: (mode: "route" | "stories") => void;
   loading?: boolean;
   error?: string | null;
   onSelect: (source: ReplaySourceMode | "continue") => void;
   onClose: () => void;
 };
 
-export default function ReplayStartSheet({ open, hasResume, loading = false, error = null, onSelect, onClose }: ReplayStartSheetProps) {
+export default function ReplayStartSheet({ open, hasResume, content = "route", onChangeContent, loading = false, error = null, onSelect, onClose }: ReplayStartSheetProps) {
   const choices: Array<{ value: ReplaySourceMode | "continue"; label: string; detail: string; disabled?: boolean }> = [
     { value: "recent", label: "Recent activity", detail: "Replay the latest 50 located moments." },
     { value: "continue", label: "Continue where you left off", detail: hasResume ? "Resume your last Replay source and position." : "No saved Replay position yet.", disabled: !hasResume },
@@ -22,6 +24,7 @@ export default function ReplayStartSheet({ open, hasResume, loading = false, err
       <SheetContent side="bottom" showBackdrop={false} className="z-[60] mx-auto max-w-md gap-4 rounded-t-xl px-5 pb-8 pt-3" aria-label="Start Trip Replay">
         <div className="mx-auto h-1 w-12 rounded-full bg-[var(--line-soft)]" aria-hidden="true" />
         <SheetTitle className="text-center text-base font-semibold text-[var(--ink-1)]">Start Trip Replay</SheetTitle>
+        {onChangeContent ? <fieldset className="flex gap-4"><legend>Replay mode</legend>{(["route", "stories"] as const).map(mode => <label className="flex items-center gap-1" key={mode}><input type="radio" name="start-replay-mode" disabled={loading} checked={content === mode} onChange={() => onChangeContent(mode)} />{mode === "route" ? "Follow route" : "Stories only"}</label>)}</fieldset> : null}
         {loading ? <p role="status" className="text-center text-sm font-medium text-[var(--ink-2)]">Loading Replay…</p> : null}
         {error ? <p role="alert" className="rounded-lg bg-[var(--bg-danger)] px-3 py-2 text-sm text-[var(--ink-danger)]">{error}</p> : null}
         <div className="grid gap-2">

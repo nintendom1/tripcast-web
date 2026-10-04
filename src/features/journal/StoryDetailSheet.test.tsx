@@ -9,6 +9,7 @@ import { getActiveUiContext, resetActiveUiContextForTests } from "../../debug/ac
 import type { JournalEvent } from "../../convex/tripcastApi";
 
 vi.mock("convex/react", () => ({
+  useConvex: vi.fn(() => ({ query: vi.fn(), mutation: vi.fn(), action: vi.fn() })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
 }));
