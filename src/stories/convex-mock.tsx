@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
 const ConvexMockContext = createContext<any>({ queries: new Map(), mutations: new Map(), setQueryMock: () => {}, setMutationMock: () => {} });
 export const useQuery = (query: any, args: any) => {
   const context = useContext(ConvexMockContext);
@@ -17,13 +17,17 @@ export const useMutation = (mutation: any) => {
 };
 export const useConvex = () => {
   const context = useContext(ConvexMockContext);
-  return {
+  return useMemo(() => ({
     query: async (query: any, args: any) => {
       if (args === "skip") return undefined;
-      if (context.queries.has(query)) return context.queries.get(query);
-      return undefined;
-    }
-  };
+      const result = context.queries.get(query);
+      return typeof result === "function" ? result(args) : result;
+    },
+    mutation: async (mutation: any, args: any) => {
+      const result = context.mutations.get(mutation);
+      return typeof result === "function" ? result(args) : result ?? null;
+    },
+  }), [context.queries, context.mutations]);
 };
 export const useQueries = (queries: Record<string, any>) => {
     const context = useContext(ConvexMockContext);

@@ -13,6 +13,8 @@ import {
   Bell,
   Bomb,
   Bug,
+  PackageMinus,
+  MapPinMinus,
   ChevronRight,
   Clock,
   Compass,
@@ -84,6 +86,7 @@ import BulkImportSheet from "./BulkImportSheet";
 import { useFollowerCutoffPreview } from "./followerCutoffPreview";
 import BulkExportSheet from "./BulkExportSheet";
 import MysteryMissionsSheet from "./MysteryMissionsSheet";
+import TrailCompressionReview from "./TrailCompressionReview";
 import ReplayImagePreparationSheet from "./ReplayImagePreparationSheet";
 import DeveloperMysteryPinSheet from "./DeveloperMysteryPinSheet";
 import QuickActivitySettingsView from "./QuickActivitySettings";
@@ -3329,8 +3332,11 @@ export function TripTickerSettings({ token }: { token: string }) {
 
 function ReplayImagePreparationRow({ token }: { token: string }) {
   const [open, setOpen] = useState(false);
+  const [trailOpen, setTrailOpen] = useState(false);
   return <>
-    <OptionsRow icon={Bug} title="Prepare replay images" detail="Smaller previews for automatic replay" onClick={() => setOpen(true)} />
+    <OptionsRow icon={PackageMinus} title="Prepare images" detail="Smaller previews for automatic replay" onClick={() => setOpen(true)} />
+    <OptionsRow icon={MapPinMinus} title="Compress trail" detail="Compare original and compact replay routes" onClick={() => setTrailOpen(true)} />
     <ReplayImagePreparationSheet token={token} open={open} onOpenChange={setOpen} />
+    <TrailCompressionReview token={token} open={trailOpen} onOpenChange={setTrailOpen} />
   </>;
 }

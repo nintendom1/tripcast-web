@@ -1592,12 +1592,15 @@ export type FollowerInfo = {
 // ---------------------------------------------------------------------------
 
 export type ReplayImageInventoryItem = { source: string; bytes: number; status: "pending" | "ready" | "failed"; previewBytes: number };
-export type ReplayRouteManifest = { contentRevision: number; revision: number; ready: boolean; enabled: boolean; visible: boolean; cutoff: number | null; authorization: string; ended: boolean };
+export type ReplayRoutePreviewPoint = { id: string; lat: number; lon: number; t: number; breakBefore?: boolean; kept: boolean };
+export type ReplayRoutePreview = { points: ReplayRoutePreviewPoint[]; day: number | null; cursor: string | null; done: boolean; sourceRevision: string; compressionVersion: number };
+export type ReplayRouteManifest = { sourceRevision: string; compressionVersion: number; contentRevision: number; revision: number; ready: boolean; enabled: boolean; visible: boolean; cutoff: number | null; authorization: string; ended: boolean };
 export type ReplayRouteMetrics = { days: number; truncated: boolean; rawPoints: number; retainedPoints: number; chunks: number; payloadBytes: number; mysteryReady: boolean; checkpointPinsReady: boolean };
 export const tripcastApi = {
   replayRoutes: {
+    preview: (anyApi as any).replayRoutes.preview as FunctionReference<"query", "public", { token: string; sourceRevision: string; compressionVersion: number; day: number | null; cursor: string | null }, ReplayRoutePreview>,
     manifest: (anyApi as any).replayRoutes.manifest as FunctionReference<"query", "public", { token: string }, ReplayRouteManifest>,
-    prepare: (anyApi as any).replayRoutes.prepare as FunctionReference<"mutation", "public", { token: string }, null>,
+    prepare: (anyApi as any).replayRoutes.prepare as FunctionReference<"mutation", "public", { token: string; sourceRevision?: string; compressionVersion?: number }, null>,
     enable: (anyApi as any).replayRoutes.enable as FunctionReference<"mutation", "public", { token: string; enabled: boolean }, null>,
     metrics: (anyApi as any).replayRoutes.metrics as FunctionReference<"query", "public", { token: string }, ReplayRouteMetrics>,
     page: (anyApi as any).replayRoutes.page as FunctionReference<"query", "public", { token: string; revision: number; startAt?: number; endAt?: number; direction: "asc" | "desc"; cursor: string | null }, LiveTrailReplayPage>,
