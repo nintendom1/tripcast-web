@@ -29,7 +29,8 @@ export default function TrailCompressionMap({ points }: { points: ReplayRoutePre
   const [showPoints, setShowPoints] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const accent = resolvedTheme === "constellation" ? "#ffd86a" : "#d92332";
+  const accent = resolvedTheme === "constellation" ? "#ffd86a" : "#176bba";
+  const omittedColor = resolvedTheme === "constellation" ? "#ff6b6b" : "#c81e32";
   const fit = () => {
     const map = mapRef.current;
     if (!map || !points.length) return;
@@ -70,9 +71,10 @@ export default function TrailCompressionMap({ points }: { points: ReplayRoutePre
       }
       if (!map.getLayer("compression-original")) map.addLayer({ id: "compression-original", type: "line", source: "compression-original", paint: { "line-color": "#8a8f98", "line-width": 5, "line-opacity": 0.65 } });
       if (!map.getLayer("compression-compact")) map.addLayer({ id: "compression-compact", type: "line", source: "compression-compact", paint: { "line-color": accent, "line-width": 2 } });
-      if (!map.getLayer("compression-points")) map.addLayer({ id: "compression-points", type: "circle", source: "compression-points", paint: { "circle-radius": 4, "circle-color": ["case", ["get", "kept"], accent, "#ffffff"], "circle-stroke-width": 1.5, "circle-stroke-color": "#505660" } });
+      if (!map.getLayer("compression-points")) map.addLayer({ id: "compression-points", type: "circle", source: "compression-points", paint: { "circle-radius": 4, "circle-color": ["case", ["get", "kept"], accent, "#ffffff"], "circle-opacity": ["case", ["get", "kept"], 1, 0], "circle-stroke-width": ["case", ["get", "kept"], 1, 2.5], "circle-stroke-color": ["case", ["get", "kept"], "#505660", omittedColor] } });
       map.setPaintProperty("compression-compact", "line-color", accent);
       map.setPaintProperty("compression-points", "circle-color", ["case", ["get", "kept"], accent, "#ffffff"]);
+      map.setPaintProperty("compression-points", "circle-stroke-color", ["case", ["get", "kept"], "#505660", omittedColor]);
       for (const [name, visible] of [["original", original], ["compact", compact], ["points", showPoints]] as const) map.setLayoutProperty(`compression-${name}`, "visibility", visible ? "visible" : "none");
       if (!fitted.current && points.length) {
         const bounds = new maplibregl.LngLatBounds();
@@ -83,7 +85,7 @@ export default function TrailCompressionMap({ points }: { points: ReplayRoutePre
     map.on("style.load", update);
     if (parsed.current || map.isStyleLoaded()) update();
     return () => { map.off("style.load", update); };
-  }, [points, original, compact, showPoints, accent, resolvedMapBase]);
+  }, [points, original, compact, showPoints, accent, omittedColor, resolvedMapBase]);
   return <section className="space-y-2" aria-label="Trail comparison map">
     <div className="flex flex-wrap gap-3 text-sm">
       <label><input type="checkbox" checked={original} onChange={e => setOriginal(e.target.checked)} /> Original (gray)</label>
@@ -92,7 +94,7 @@ export default function TrailCompressionMap({ points }: { points: ReplayRoutePre
       <Button variant="outline" onClick={fit} disabled={!points.length}>Fit loaded trail</Button>
     </div>
     <div ref={container} className="h-[40dvh] min-h-60 overflow-hidden rounded-lg border" data-trail-compression-map />
-    <p className="text-sm">Filled points: Kept. Outlined points: Omitted from replay. Select a point for its time.</p>
+    <p className="text-sm">Points outlined red will be omitted from replay. Original GPS is preserved. Select a point for its time.</p>
     {selected ? <p role="status">{selected}</p> : null}
     {error ? <p role="alert">{error}</p> : null}
   </section>;

@@ -10,6 +10,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Partial: Story = {};
+export const DarkMode: Story = { globals: { theme: "constellation" } };
 export const LoadingAll: Story = { args: { loading: true } };
 export const Stopping: Story = { args: { loading: true, stopping: true } };
 export const Stopped: Story = {};
