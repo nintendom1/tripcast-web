@@ -1594,7 +1594,7 @@ export type FollowerInfo = {
 export type ReplayImageInventoryItem = { source: string; bytes: number; status: "pending" | "ready" | "failed"; previewBytes: number };
 export type ReplayRoutePreviewPoint = { id: string; lat: number; lon: number; t: number; breakBefore?: boolean; kept: boolean };
 export type ReplayRoutePreview = { points: ReplayRoutePreviewPoint[]; day: number | null; cursor: string | null; done: boolean; sourceRevision: string; compressionVersion: number };
-export type ReplayRouteManifest = { sourceRevision: string; compressionVersion: number; contentRevision: number; revision: number; ready: boolean; enabled: boolean; visible: boolean; cutoff: number | null; authorization: string; ended: boolean };
+export type ReplayRouteManifest = { originalOnly: boolean; sourceRevision: string; compressionVersion: number; contentRevision: number; revision: number; ready: boolean; enabled: boolean; visible: boolean; cutoff: number | null; authorization: string; ended: boolean };
 export type ReplayRouteMetrics = { days: number; truncated: boolean; rawPoints: number; retainedPoints: number; chunks: number; payloadBytes: number; mysteryReady: boolean; checkpointPinsReady: boolean };
 export const tripcastApi = {
   replayRoutes: {
@@ -1606,6 +1606,9 @@ export const tripcastApi = {
     page: (anyApi as any).replayRoutes.page as FunctionReference<"query", "public", { token: string; revision: number; startAt?: number; endAt?: number; direction: "asc" | "desc"; cursor: string | null }, LiveTrailReplayPage>,
   },
   replayImages: {
+    preference: (anyApi as any).replayImages.preference as FunctionReference<"query", "public", { token: string }, { original: boolean }>,
+    setPreference: (anyApi as any).replayImages.setPreference as FunctionReference<"mutation", "public", { token: string; original: boolean }, null>,
+    resolveUrl: (anyApi as any).replayImages.resolveUrl as FunctionReference<"query", "public", { token: string; imageId: string; context: "story" | "replay"; original?: boolean }, { url: string; original: boolean } | null>,
     inventory: (anyApi as any).replayImages.inventory as FunctionReference<"query", "public", { token: string; paginationOpts: { numItems: number; cursor: string | null } }, { page: ReplayImageInventoryItem[]; isDone: boolean; continueCursor: string }>,
     acquire: (anyApi as any).replayImages.acquire as FunctionReference<"mutation", "public", { token: string; owner: string }, boolean>,
     claim: (anyApi as any).replayImages.claim as FunctionReference<"mutation", "public", { token: string; owner: string; source: string }, { originalUrl: string | null } | null>,

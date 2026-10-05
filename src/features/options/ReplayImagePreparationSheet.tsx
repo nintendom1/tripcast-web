@@ -1,7 +1,8 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useConvex } from "convex/react";
 import { tripcastApi, type ReplayImageInventoryItem } from "../../convex/tripcastApi";
 import { Sheet, SheetBody, SheetContent, SheetTitle, SheetCloseButton } from "../../components/ui/sheet";
+import PhotoQualityControl from "./PhotoQualityControl";
 import { PackageMinus } from "lucide-react";
 import { Button } from "../../components/ui/button";
 import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
@@ -9,10 +10,11 @@ import { preparationStore, prepareReplayImages, readPreparationInventory, type P
 
 export type PreparationViewProps = {
   open: boolean; onOpenChange: (open: boolean) => void; items: ReplayImageInventoryItem[];
+  children?: ReactNode;
   progress: PreparationState; loading?: boolean; previewUrl?: string | null;
   onPreview: () => void; onPrepare: () => void; onStop: () => void;
 };
-export function ReplayImagePreparationView({ open, onOpenChange, items, progress, loading, previewUrl, onPreview, onPrepare, onStop }: PreparationViewProps) {
+export function ReplayImagePreparationView({ open, onOpenChange, items, progress, loading, previewUrl, onPreview, onPrepare, onStop, children }: PreparationViewProps) {
   const [reviewed, setReviewed] = useState(false);
   const ready = items.filter(item => item.status === "ready").length;
   const failed = items.filter(item => item.status === "failed").length;
@@ -21,6 +23,7 @@ export function ReplayImagePreparationView({ open, onOpenChange, items, progress
     <SheetContent side="bottom" className="mx-auto max-h-[85dvh] max-w-lg">
       <div className="flex items-center justify-between gap-3 px-4 pt-4"><SheetTitle className="flex items-center gap-2"><PackageMinus aria-hidden="true" />Prepare images</SheetTitle><SheetCloseButton /></div>
       <SheetBody className="space-y-4">
+        {children}
         <p>Runs in this browser while the app stays open. Originals are preserved. Interrupted work can resume; an interrupted image may download again.</p>
         <p>{loading ? "Loading photo inventory…" : `${items.length} unique Story photos · ${ready} Ready · ${items.length - ready - failed} Pending · ${failed} Failed`}</p>
         <p>Estimated remaining original downloads: {(pendingBytes / 1_000_000).toFixed(1)} MB. Prepared previews: {(items.reduce((sum, item) => sum + item.previewBytes, 0) / 1_000_000).toFixed(2)} MB.</p>
@@ -53,7 +56,7 @@ function PreparationBody({ open, token, onOpenChange }: { open: boolean; token: 
   return <ReplayImagePreparationView open={open} onOpenChange={onOpenChange} items={items} loading={loading} progress={{ ...progress, error: error ?? progress.error }} previewUrl={previewUrl}
     onStop={preparationStore.stop}
     onPrepare={() => { void prepareReplayImages(client, token, remaining); }}
-    onPreview={() => { const source = remaining[0]; if (source) void prepareReplayImages(client, token, [source]).then(async () => setPreviewUrl(await client.query(tripcastApi.replayImages.getUrl, { token, imageId: source }))).catch(reason => setError(String(reason))); }} />;
+    onPreview={() => { const source = remaining[0]; if (source) void prepareReplayImages(client, token, [source]).then(async () => setPreviewUrl(await client.query(tripcastApi.replayImages.getUrl, { token, imageId: source }))).catch(reason => setError(String(reason))); }}><PhotoQualityControl token={token} /></ReplayImagePreparationView>;
 }
 export default function ReplayImagePreparationSheet(props: { open: boolean; token: string; onOpenChange: (open: boolean) => void }) {
   return <FeatureBoundary title="Replay preparation unavailable" resetKeys={[props.token, props.open]}>{props.open ? <PreparationBody {...props} /> : null}</FeatureBoundary>;

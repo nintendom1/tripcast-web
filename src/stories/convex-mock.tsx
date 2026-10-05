@@ -3,7 +3,10 @@ const ConvexMockContext = createContext<any>({ queries: new Map(), mutations: ne
 export const useQuery = (query: any, args: any) => {
   const context = useContext(ConvexMockContext);
   if (args === "skip") return undefined;
-  if (context.queries.has(query)) return context.queries.get(query);
+  if (context.queries.has(query)) {
+    const result = context.queries.get(query);
+    return typeof result === "function" ? result(args) : result;
+  }
   return undefined;
 };
 export const useMutation = (mutation: any) => {

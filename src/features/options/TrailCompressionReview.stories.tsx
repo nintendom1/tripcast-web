@@ -24,7 +24,8 @@ export const ActiveTrip: Story = { args: { points: [], started: false, ended: fa
 export const InteractiveFlow: Story = {
   render: () => <TrailCompressionReview token="storybook-local" open onOpenChange={() => {}} />,
   parameters: { convexMocks: { queries: [
-    { query: tripcastApi.replayRoutes.manifest, result: { sourceRevision: "fixture:1", compressionVersion: 1, contentRevision: 1, revision: 0, ready: false, enabled: false, visible: true, cutoff: null, authorization: "fixture", ended: true } },
+    { query: tripcastApi.replayRoutes.manifest, result: { originalOnly: false, sourceRevision: "fixture:1", compressionVersion: 1, contentRevision: 1, revision: 0, ready: false, enabled: false, visible: true, cutoff: null, authorization: "fixture", ended: true } },
+    { query: tripcastApi.replayImages.preference, result: { original: false } },
     { query: tripcastApi.replayImages.inventory, result: { page: [{ source: "pending", bytes: 2_000_000, status: "pending", previewBytes: 0 }], isDone: true, continueCursor: "" } },
     { query: tripcastApi.replayRoutes.preview, result: async ({ cursor }: { cursor: string | null }) => {
       await new Promise(resolve => setTimeout(resolve, 80));
@@ -32,4 +33,18 @@ export const InteractiveFlow: Story = {
       return { points: Array.from({ length: 128 }, (_, i) => ({ ...points[i % points.length], id: String(offset + i), lat: points[i % points.length].lat + Math.floor((offset + i) / 48) * .002 })), day: 0, cursor: String(offset + 128), done: offset + 128 >= 3072, sourceRevision: "fixture:1", compressionVersion: 1 };
     } },
   ] } },
+};
+
+export const OriginalTrailSelected: Story = {
+  ...InteractiveFlow,
+  parameters: { convexMocks: { queries: [
+    { query: tripcastApi.replayRoutes.manifest, result: { originalOnly: true, sourceRevision: "fixture:1", compressionVersion: 1, contentRevision: 1, revision: 2, ready: true, enabled: false, visible: true, cutoff: null, authorization: "fixture", ended: true } },
+    { query: tripcastApi.replayRoutes.preview, result: { points, day: null, cursor: null, done: true, sourceRevision: "fixture:1", compressionVersion: 1 } },
+    { query: tripcastApi.replayImages.preference, result: { original: true } },
+    { query: tripcastApi.replayImages.inventory, result: { page: [], isDone: true, continueCursor: "" } },
+  ] } },
+};
+export const CompactTrailSelected: Story = {
+  ...OriginalTrailSelected,
+  parameters: { convexMocks: { queries: OriginalTrailSelected.parameters!.convexMocks.queries.map((entry: { query: unknown; result: object }) => entry.query === tripcastApi.replayRoutes.manifest ? { ...entry, result: { ...entry.result, originalOnly: false, enabled: true } } : entry) } },
 };

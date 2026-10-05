@@ -779,10 +779,11 @@ function ReplayCheckpointOverlay({
     metricsRef.current = pin.imageId ? { startAt: performance.now(), imageId: pin.imageId } : null;
   }, [pin.eventId, pin.imageId]);
 
-  const imageUrl = useQuery(
-    tripcastApi.replayImages.getUrl,
-    pin.imageId ? { token, imageId: pin.imageId } : "skip",
+  const image = useQuery(
+    tripcastApi.replayImages.resolveUrl,
+    pin.imageId ? { token, imageId: pin.imageId, context: "replay" } : "skip",
   );
+  const imageUrl = image?.url;
 
   useEffect(() => {
     const m = metricsRef.current;
@@ -1487,6 +1488,7 @@ export default function TripMap({
   });
   const replaySessionRef = useRef<ProgressiveReplaySession | null>(null);
   const replayManifest = useQuery(tripcastApi.replayRoutes.manifest, { token });
+  const photoPreference = useQuery(tripcastApi.replayImages.preference, { token });
   const [replayContent, setReplayContent] = useState<"route" | "stories">("route");
   const replayWasActiveRef = useRef(false);
   const [replaySource, setReplaySource] = useState<ReplaySource | null>(null);
@@ -1710,12 +1712,12 @@ export default function TripMap({
   const canAttemptReplay = showPath;
 
   useEffect(() => {
-    setReplayCacheIdentity(token, role, cutoffPreview.cutoffAt ?? null, `${replayManifest?.authorization}:${replayManifest?.revision}:${replayManifest?.contentRevision}:${replayManifest?.ready}`);
+    setReplayCacheIdentity(token, role, cutoffPreview.cutoffAt ?? null, `${replayManifest?.authorization}:${replayManifest?.revision}:${replayManifest?.contentRevision}:${replayManifest?.ready}:${replayManifest?.originalOnly}`);
     setReplayPaused(true);
     setCurrentOverlayPin(null);
     replaySessionRef.current = null;
     setReplaySessionState({ pins: [], stories: [], breadcrumbs: [], hasMore: false, reachedTrueEnd: false, loading: false, error: null });
-  }, [token, role, cutoffPreview.cutoffAt, replayManifest?.authorization, replayManifest?.revision, replayManifest?.contentRevision, replayManifest?.ready]);
+  }, [token, role, cutoffPreview.cutoffAt, replayManifest?.authorization, replayManifest?.revision, replayManifest?.contentRevision, replayManifest?.ready, replayManifest?.originalOnly]);
 
   const handleCloakingPinClick = useCallback(
     (pin: CloakingPin) => {
@@ -2005,6 +2007,17 @@ export default function TripMap({
     }, 3200);
   }, []);
 
+  const previousTrailChoice = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (!replayManifest) return;
+    if (previousTrailChoice.current !== undefined && previousTrailChoice.current !== `${replayManifest.originalOnly}:${replayManifest.enabled}` && replayActive) {
+      setReplayPaused(true);
+      setIsReplayStartSheetOpen(true);
+      showToast("Trail quality changed. Continue replay from your saved trip time.");
+    }
+    previousTrailChoice.current = `${replayManifest.originalOnly}:${replayManifest.enabled}`;
+  }, [replayManifest, replayActive, showToast]);
+
   useEffect(() => {
     const count = nativePublishingState.completedDrainCount;
     if (count === null) return;
@@ -2117,12 +2130,12 @@ export default function TripMap({
     if (cacheAuthorized) liveTrailCache.replaceReplay([]);
     source = { ...source, content: source.content ?? replayContent };
     const manifest = await convex.query(tripcastApi.replayRoutes.manifest, { token });
-    const compact = source.content !== "stories" && (manifest.enabled || (role === "traveler" && manifest.ready));
-    const sessionKey = `${source.content}:${manifest.revision}:${manifest.contentRevision}:${source.mode}:${source.startAt ?? ""}:${source.endAt}`;
+    const compact = source.content !== "stories" && !manifest.originalOnly && (manifest.enabled || (role === "traveler" && manifest.ready));
+    const sessionKey = `${source.content}:${manifest.originalOnly}:${manifest.revision}:${manifest.contentRevision}:${source.mode}:${source.startAt ?? ""}:${source.endAt}`;
     const session = new ProgressiveReplaySession(sessionKey, source, {
       authorize: async () => {
         const access = await convex.query(tripcastApi.replayRoutes.manifest, { token });
-        if (access.authorization !== manifest.authorization || access.revision !== manifest.revision || access.contentRevision !== manifest.contentRevision || access.ready !== manifest.ready) throw new Error("Replay changed. Restart to refresh access and content.");
+        if (access.originalOnly !== manifest.originalOnly || access.authorization !== manifest.authorization || access.revision !== manifest.revision || access.contentRevision !== manifest.contentRevision || access.ready !== manifest.ready) throw new Error("Replay changed. Restart to refresh access and content.");
       },
       breadcrumbs: (args) => compact ? convex.query(tripcastApi.replayRoutes.page, { token, revision: manifest.revision, ...args }) : convex.query(tripcastApi.liveTrail.listReplayLiveTrailSamples, {
         token,
@@ -5484,7 +5497,7 @@ export default function TripMap({
     return Array.from(ids);
   }, [currentOverlayPin?.imageId, replayActive, replayPins, replayPlayheadIndex, selectedStoryEvent?.imageId]);
 
-  useImagePrefetch(token, imageIdsToPrefetch, "replay");
+  useImagePrefetch(token, imageIdsToPrefetch, photoPreference?.original ? "replay-original" : "replay");
   // Record served sizes of the images this device fetches for the Developer
   // egress estimate (same set the prefetch warms).
   useEgressMeter(token, selectedStoryEvent?.imageId ? [selectedStoryEvent.imageId] : []);

@@ -60,6 +60,7 @@ function ReviewBody({ token, onOpenChange }: { token: string; onOpenChange: (ope
   const [imageStatus, setImageStatus] = useState("Loading image status…");
   const progress = useSyncExternalStore(preparationStore.subscribe, preparationStore.getSnapshot);
   const [busy, setBusy] = useState(false);
+  const [deliveryMessage, setDeliveryMessage] = useState("");
   const [requested, setRequested] = useState(false);
   const [reviewedRevision, setReviewedRevision] = useState<string | null>(null);
   const stale = !!snapshot && !!manifest && (!manifest.ended || snapshot.sourceRevision !== manifest.sourceRevision || snapshot.compressionVersion !== manifest.compressionVersion);
@@ -107,17 +108,26 @@ function ReviewBody({ token, onOpenChange }: { token: string; onOpenChange: (ope
     catch (reason) { setPreview(p => ({ ...p, error: String(reason) })); }
     finally { setBusy(false); }
   }
-  async function enable() {
+  async function enable(enabled: boolean) {
+    setDeliveryMessage("");
     setBusy(true);
-    try { await client.mutation(tripcastApi.replayRoutes.enable, { token, enabled: !manifest?.enabled }); }
+    try { await client.mutation(tripcastApi.replayRoutes.enable, { token, enabled }); setDeliveryMessage("Trail quality saved for everyone."); }
     catch (reason) { setPreview(p => ({ ...p, error: String(reason) })); }
     finally { setBusy(false); }
   }
   return <>
     <TrailCompressionView {...preview} open hidden={imagesOpen} onOpenChange={onOpenChange} stale={stale} ended={manifest?.ended} imageStatus={imageStatus} onImages={() => setImagesOpen(true)} onLoad={all => { void load(all); }} onStop={() => { worker.current.stop = true; setPreview(p => ({ ...p, stopping: true })); }} onReload={() => { void load(false, true); }} onCompress={() => { void compress(); }} busy={busy} ready={!!manifest?.ready}>
+      <section className="space-y-3 border-t pt-4">
+        <h3 className="font-semibold">Trail viewing quality</h3>
+        <p>Applies to you and all Followers. {manifest?.originalOnly ? "Original trail selected for everyone." : manifest?.enabled ? "Compact trail selected for everyone." : manifest?.ready ? "Traveler preview: compact. Followers: original until enabled." : "Original trail is in use while no compact route is ready."}</p>
+        <p>Original trail uses all recorded GPS points. It may load more slowly and use more data. The compact copy is retained. Switching does not delete GPS or start or stop preparation.</p>
+        <p>Active replay pauses when trail quality changes. Continue resumes from the saved trip time. Requests already in flight may finish.</p>
+        <Button disabled={busy || !manifest || manifest.originalOnly} onClick={() => { void enable(false); }}>{busy ? "Saving…" : "Use original trail"}</Button>
+        {deliveryMessage ? <p role="status">{deliveryMessage}</p> : null}
+      </section>
       {requested && !manifest?.ready ? <p role="status">Compression requested. Convex continues processing when this view closes. If interrupted, use Compress entire trip to resume.</p> : null}
       {metrics ? <p>{metrics.rawPoints} raw points → {metrics.retainedPoints} replay points in {metrics.chunks} chunks. Coordinate payload: {(metrics.payloadBytes / 1_000_000).toFixed(2)} MB (database overhead and Stories excluded). Mystery projection: {metrics.mysteryReady ? "Ready" : "Not ready"}. Checkpoint pins: {metrics.checkpointPinsReady ? "Ready" : "Not ready"}.</p> : null}
-      {manifest?.ready ? <section className="space-y-3 border-t pt-4"><p>Compact route ready. Review Follow route as Traveler before enabling it for Followers.</p><label className="flex gap-2"><input type="checkbox" checked={reviewedRevision === manifest.sourceRevision} onChange={e => setReviewedRevision(e.target.checked ? manifest.sourceRevision : null)} />I verified turns, Story coverage, timing, resume and privacy.</label><Button disabled={busy || (!manifest.enabled && reviewedRevision !== manifest.sourceRevision)} onClick={() => { void enable(); }}>{manifest.enabled ? "Disable compact route for Followers" : "Enable validated compact route"}</Button></section> : null}
+      {manifest?.ready ? <section className="space-y-3 border-t pt-4"><p>Compact route ready. Review Follow route as Traveler before enabling it for Followers.</p><label className="flex gap-2"><input type="checkbox" checked={reviewedRevision === manifest.sourceRevision} onChange={e => setReviewedRevision(e.target.checked ? manifest.sourceRevision : null)} />I verified turns, Story coverage, timing, resume and privacy.</label><Button disabled={busy || manifest.enabled || reviewedRevision !== manifest.sourceRevision} onClick={() => { void enable(true); }}>{manifest.enabled ? "Compact trail enabled" : "Use compact trail for everyone"}</Button></section> : null}
       <ReplayImagePreparationSheet token={token} open={imagesOpen} onOpenChange={setImagesOpen} />
     </TrailCompressionView>
   </>;

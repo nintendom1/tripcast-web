@@ -37,8 +37,8 @@ export const Narrative: Story = {
     convexMocks: {
       queries: [
         {
-          query: tripcastApi.checkpoints.getStoryImageUrl,
-          result: "https://picsum.photos/seed/tripcast/800/600",
+          query: tripcastApi.replayImages.resolveUrl,
+          result: ({ original }: { original?: boolean }) => ({ url: original ? "https://picsum.photos/seed/tripcast/1600/1200" : "https://picsum.photos/seed/tripcast/800/600", original: !!original }),
         },
         {
           query: tripcastApi.attributions.listAttributionsForSource,
@@ -114,3 +114,8 @@ export const HeaderWrapStress: Story = {
     onLocationFocus: () => {},
   },
 };
+
+export const OriginalPhoto: Story = { ...Narrative, parameters: { convexMocks: { queries: [{ query: tripcastApi.replayImages.resolveUrl, result: { url: "https://picsum.photos/seed/tripcast/1600/1200", original: true } }] } } };
+export const MissingPreviewFallback: Story = { ...OriginalPhoto };
+export const LoadingOriginal: Story = { ...Narrative, parameters: { convexMocks: { queries: [{ query: tripcastApi.replayImages.resolveUrl, result: undefined }] } } };
+export const PhotoUnavailable: Story = { ...Narrative, parameters: { convexMocks: { queries: [{ query: tripcastApi.replayImages.resolveUrl, result: null }] } } };
