@@ -1,5 +1,6 @@
+import { prepareUploadedReplayImage } from "./replayImagePreparation";
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import { CalendarClock, ChevronLeft, ChevronRight, ImagePlus, MapPin as MapPinIcon, Trash2 } from "lucide-react";
 import Zoom from "react-medium-image-zoom";
 
@@ -172,6 +173,7 @@ export default function StoryDetailSheet({
   const music = useMusicSafe();
   const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
   const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
+  const replayImageClient = useConvex();
   const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
 
   const [isEditing, setIsEditing] = useState(false);
@@ -230,10 +232,15 @@ export default function StoryDetailSheet({
     effectiveCutoff !== undefined && event !== null && event !== undefined && event.occurredAt < effectiveCutoff;
 
   const displayEvent = isHiddenByCutoff ? null : optimisticEvent?._id === event?._id ? optimisticEvent : event;
-  const currentImageUrl = useQuery(
-    tripcastApi.checkpoints.getStoryImageUrl,
-    displayEvent?.imageId && token ? { token, imageId: displayEvent.imageId } : "skip",
+  const photoKey = `${token}:${displayEvent?._id}:${displayEvent?.imageId}`;
+  const [originalPhotoKey, setOriginalPhotoKey] = useState<string | null>(null);
+  const [failedPhotoKey, setFailedPhotoKey] = useState<string | null>(null);
+  const photo = useQuery(
+    tripcastApi.replayImages.resolveUrl,
+    displayEvent?.imageId && token ? { token, imageId: displayEvent.imageId, context: "story", original: originalPhotoKey === photoKey } : "skip",
   );
+  const currentImageUrl = photo?.url;
+  useEffect(() => { setOriginalPhotoKey(null); setFailedPhotoKey(null); }, [photoKey]);
   const isNarrative = displayEvent?.narrativeLevel === "narrative";
 
   const isTraveler = role === "traveler";
@@ -482,6 +489,7 @@ export default function StoryDetailSheet({
         showInStory: editShowInStory,
         ...(happenedAtChanged ? { happenedAt: happenedAtMs } : {}),
       });
+      if (imageId) prepareUploadedReplayImage(replayImageClient, token, imageId);
       music.sfx("success");
       log.logInteraction("form:submit:success", {});
       setOptimisticEvent({
@@ -920,7 +928,9 @@ export default function StoryDetailSheet({
                   missionId={missionId}
                   onNavigateToMission={onNavigateToMission}
                   imageUrl={currentImageUrl ?? undefined}
+                  photoControls={displayEvent.imageId ? <StoryPhotoControls preview={photo?.original === false} loading={photo === undefined} failed={failedPhotoKey === photoKey || photo === null} onOriginal={() => { setOriginalPhotoKey(photoKey); setFailedPhotoKey(null); }} /> : null}
                   onImageLoad={(e) => {
+                    setFailedPhotoKey(null);
                     const m = imageLoadMetricsRef.current;
                     const now = performance.now();
                     const totalMs = m ? Math.round(now - m.startAt) : undefined;
@@ -935,7 +945,11 @@ export default function StoryDetailSheet({
                       naturalHeight: e.currentTarget.naturalHeight,
                     });
                   }}
-                  onImageError={() => log.error("story-image:render:error", "ui", { source: "stored" })}
+                  onImageError={() => {
+                    if (photo?.original === false) setOriginalPhotoKey(photoKey);
+                    else setFailedPhotoKey(photoKey);
+                    log.error("story-image:render:error", "ui", { source: "stored" });
+                  }}
                   isTraveler={isTraveler}
                 />
               ) : (
@@ -980,6 +994,7 @@ function NarrativeContent({
   missionId,
   onNavigateToMission,
   imageUrl,
+  photoControls,
   onImageLoad,
   onImageError,
   isTraveler,
@@ -991,6 +1006,7 @@ function NarrativeContent({
   missionId?: string;
   onNavigateToMission?: (id: string) => void;
   imageUrl?: string;
+  photoControls?: React.ReactNode;
   onImageLoad?: (e: React.SyntheticEvent<HTMLImageElement>) => void;
   onImageError?: () => void;
   isTraveler: boolean;
@@ -1000,6 +1016,7 @@ function NarrativeContent({
   return (
     <>
       <div className="flow-root">
+        {photoControls}
         {imageUrl ? (
           <div
             data-testid="story-image-container"
@@ -1130,4 +1147,10 @@ function ActivityContent({ event }: { event: JournalEvent }) {
 
     </div>
   );
+}
+
+export function StoryPhotoControls({ preview, loading, failed, onOriginal }: { preview: boolean; loading: boolean; failed: boolean; onOriginal: () => void }) {
+  return <div className="mb-3 space-y-2 text-sm">
+    {loading ? <p role="status">Loading photo…</p> : failed ? <p role="alert">Photo unavailable. Close and reopen this Story to retry.</p> : preview ? <><p>Smaller preview. The original has full detail and may use several megabytes of data.</p><Button variant="outline" onClick={onOriginal}>View original photo</Button></> : <p>Original photo.</p>}
+  </div>;
 }

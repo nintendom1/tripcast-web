@@ -146,6 +146,8 @@ export type TravelerLocation = {
 } | null;
 
 export type LiveTrailSample = {
+  compact?: boolean;
+  breakBefore?: boolean;
   _id: string;
   lat: number;
   lon: number;
@@ -1589,7 +1591,32 @@ export type FollowerInfo = {
 // API namespace
 // ---------------------------------------------------------------------------
 
+export type ReplayImageInventoryItem = { source: string; bytes: number; status: "pending" | "ready" | "failed"; previewBytes: number };
+export type ReplayRoutePreviewPoint = { id: string; lat: number; lon: number; t: number; breakBefore?: boolean; kept: boolean };
+export type ReplayRoutePreview = { points: ReplayRoutePreviewPoint[]; day: number | null; cursor: string | null; done: boolean; sourceRevision: string; compressionVersion: number };
+export type ReplayRouteManifest = { originalOnly: boolean; sourceRevision: string; compressionVersion: number; contentRevision: number; revision: number; ready: boolean; enabled: boolean; visible: boolean; cutoff: number | null; authorization: string; ended: boolean };
+export type ReplayRouteMetrics = { days: number; truncated: boolean; rawPoints: number; retainedPoints: number; chunks: number; payloadBytes: number; mysteryReady: boolean; checkpointPinsReady: boolean };
 export const tripcastApi = {
+  replayRoutes: {
+    preview: (anyApi as any).replayRoutes.preview as FunctionReference<"query", "public", { token: string; sourceRevision: string; compressionVersion: number; day: number | null; cursor: string | null }, ReplayRoutePreview>,
+    manifest: (anyApi as any).replayRoutes.manifest as FunctionReference<"query", "public", { token: string }, ReplayRouteManifest>,
+    prepare: (anyApi as any).replayRoutes.prepare as FunctionReference<"mutation", "public", { token: string; sourceRevision?: string; compressionVersion?: number }, null>,
+    enable: (anyApi as any).replayRoutes.enable as FunctionReference<"mutation", "public", { token: string; enabled: boolean }, null>,
+    metrics: (anyApi as any).replayRoutes.metrics as FunctionReference<"query", "public", { token: string }, ReplayRouteMetrics>,
+    page: (anyApi as any).replayRoutes.page as FunctionReference<"query", "public", { token: string; revision: number; startAt?: number; endAt?: number; direction: "asc" | "desc"; cursor: string | null }, LiveTrailReplayPage>,
+  },
+  replayImages: {
+    preference: (anyApi as any).replayImages.preference as FunctionReference<"query", "public", { token: string }, { original: boolean }>,
+    setPreference: (anyApi as any).replayImages.setPreference as FunctionReference<"mutation", "public", { token: string; original: boolean }, null>,
+    resolveUrl: (anyApi as any).replayImages.resolveUrl as FunctionReference<"query", "public", { token: string; imageId: string; context: "story" | "replay"; original?: boolean }, { url: string; original: boolean } | null>,
+    inventory: (anyApi as any).replayImages.inventory as FunctionReference<"query", "public", { token: string; paginationOpts: { numItems: number; cursor: string | null } }, { page: ReplayImageInventoryItem[]; isDone: boolean; continueCursor: string }>,
+    acquire: (anyApi as any).replayImages.acquire as FunctionReference<"mutation", "public", { token: string; owner: string }, boolean>,
+    claim: (anyApi as any).replayImages.claim as FunctionReference<"mutation", "public", { token: string; owner: string; source: string }, { originalUrl: string | null } | null>,
+    finish: (anyApi as any).replayImages.finish as FunctionReference<"action", "public", { token: string; owner: string; source: string; bytes: ArrayBuffer; width: number; height: number }, boolean>,
+    fail: (anyApi as any).replayImages.fail as FunctionReference<"mutation", "public", { token: string; owner: string; source: string }, null>,
+    release: (anyApi as any).replayImages.release as FunctionReference<"mutation", "public", { token: string; owner: string }, null>,
+    getUrl: (anyApi as any).replayImages.getUrl as FunctionReference<"query", "public", { token: string; imageId: string }, string | null>,
+  },
   photoCompanion: {
     travelerListPhotoCompanionPage: (anyApi as any).photoCompanion.travelerListPhotoCompanionPage as FunctionReference<
       "query",
@@ -2488,7 +2515,7 @@ export const tripcastApi = {
       "query",
       "public",
       {
-        token: string;
+        token: string; includeLocationless?: boolean;
         paginationOpts: PaginationOpts;
         startAt?: number;
         endAt?: number;

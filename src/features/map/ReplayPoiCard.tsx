@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "../../lib/utils";
 import { LoadingImage } from "../../components/ui/LoadingImage";
@@ -6,6 +5,7 @@ import { LoadingImage } from "../../components/ui/LoadingImage";
 export type ReplayPoiCardProps = {
   /** Resolved story image URL. When absent, the scrapbook photo is omitted. */
   imageUrl?: string | null;
+  photoPending?: boolean;
   title: string;
   /** Optional note/body snippet; clamped to two lines. */
   note?: string | null;
@@ -31,6 +31,7 @@ const EASE = [0.25, 0.46, 0.45, 0.94] as const;
  */
 export function ReplayPoiCard({
   imageUrl,
+  photoPending,
   title,
   note,
   tilt = 0,
@@ -105,7 +106,7 @@ export function ReplayPoiCard({
             onLoad={(e) => onImageLoad?.(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight)}
           />
         </motion.div>
-      ) : null}
+      ) : photoPending ? <div className="rounded-lg bg-[var(--bg-card)] p-4 text-xs">Replay photo not prepared<br /><span className="underline">Open original photo</span></div> : null}
       <motion.div
         {...textMotion}
         className="max-w-[260px] rounded-2xl border-l-4 border-[var(--flag)] bg-[var(--bg-card)]/95 px-4 py-3 text-left shadow-2xl backdrop-blur-md"

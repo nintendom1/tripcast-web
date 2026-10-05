@@ -3,6 +3,8 @@ import maplibregl from "maplibre-gl";
 import { logMapEvent } from "../../debug/debugLogger";
 
 export type LiveTrailPoint = {
+  compact?: boolean;
+  breakBefore?: boolean;
   lat: number;
   lon: number;
   sampledAt: number;

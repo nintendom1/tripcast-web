@@ -7,6 +7,7 @@ import App from "./App";
 import { getLiveTrailCache, resetLiveTrailCachesForTests } from "./features/map/liveTrailCache";
 
 vi.mock("convex/react", () => ({
+  useConvex: vi.fn(() => ({ query: vi.fn(), mutation: vi.fn(), action: vi.fn() })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
   ConvexProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,

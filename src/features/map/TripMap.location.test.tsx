@@ -407,6 +407,7 @@ function mockReplayQueries({
     direction?: "asc" | "desc";
     paginationOpts?: { cursor?: string | null };
   }) => {
+    if (query === tripcastApi.replayRoutes.manifest) return Promise.resolve({ revision: 0, ready: false, enabled: false, visible: true, cutoff: null, authorization: "test", ended: false });
     const startAt = args?.startAt ?? Number.NEGATIVE_INFINITY;
     const endAt = args?.endAt ?? Number.POSITIVE_INFINITY;
     const direction = args?.direction ?? "asc";

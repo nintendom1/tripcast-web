@@ -13,6 +13,8 @@ import {
   Bell,
   Bomb,
   Bug,
+  PackageMinus,
+  MapPinMinus,
   ChevronRight,
   Clock,
   Compass,
@@ -84,6 +86,8 @@ import BulkImportSheet from "./BulkImportSheet";
 import { useFollowerCutoffPreview } from "./followerCutoffPreview";
 import BulkExportSheet from "./BulkExportSheet";
 import MysteryMissionsSheet from "./MysteryMissionsSheet";
+import TrailCompressionReview from "./TrailCompressionReview";
+import ReplayImagePreparationSheet from "./ReplayImagePreparationSheet";
 import DeveloperMysteryPinSheet from "./DeveloperMysteryPinSheet";
 import QuickActivitySettingsView from "./QuickActivitySettings";
 import { TERMS } from "../../copy/terminology";
@@ -2088,6 +2092,7 @@ function OptionsHome({
     <OptionsSection label="Developer">
       <OptionsGroup>
         <ConvexUsageRow />
+        {role === "traveler" ? <ReplayImagePreparationRow token={session.token} /> : null}
         <IosSideloadProfileCountdown role={role} />
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
         {role === "traveler" ? <DeveloperMysteryPinOptionsRow token={session.token} /> : null}
@@ -3323,4 +3328,15 @@ export function TripTickerSettings({ token }: { token: string }) {
       </OptionsSection>
     </div>
   );
+}
+
+function ReplayImagePreparationRow({ token }: { token: string }) {
+  const [open, setOpen] = useState(false);
+  const [trailOpen, setTrailOpen] = useState(false);
+  return <>
+    <OptionsRow icon={PackageMinus} title="Prepare images" detail="Smaller previews for automatic replay" onClick={() => setOpen(true)} />
+    <OptionsRow icon={MapPinMinus} title="Compress trail" detail="Compare original and compact replay routes" onClick={() => setTrailOpen(true)} />
+    <ReplayImagePreparationSheet token={token} open={open} onOpenChange={setOpen} />
+    <TrailCompressionReview token={token} open={trailOpen} onOpenChange={setTrailOpen} />
+  </>;
 }

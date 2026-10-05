@@ -5,7 +5,7 @@ import { logMapEvent } from "../../debug/debugLogger";
 
 const MAX_CONCURRENT_PREFETCHES = 3;
 
-export function useImagePrefetch(token: string, imageIds: string[]) {
+export function useImagePrefetch(token: string, imageIds: string[], mode: "original" | "replay" | "replay-original" = "original") {
   const convex = useConvex();
   // Track image IDs we've already resolved (or warmed) so a re-render with the
   // same array doesn't fan out duplicate Convex queries. Keyed by token so a
@@ -17,7 +17,7 @@ export function useImagePrefetch(token: string, imageIds: string[]) {
     if (!token || imageIds.length === 0) return;
     let cancelled = false;
 
-    const cacheKey = (id: string) => `${token}:${id}`;
+    const cacheKey = (id: string) => `${token}:${mode}:${id}`;
     const queue = imageIds.filter((id) => id && !fetched.current.has(cacheKey(id)));
     let inFlight = 0;
     let cursor = 0;
@@ -37,11 +37,10 @@ export function useImagePrefetch(token: string, imageIds: string[]) {
     const runOne = async (imageId: string) => {
       const start = performance.now();
       try {
-        const url = await convex.query(tripcastApi.checkpoints.getStoryImageUrl, {
-          token,
-          imageId,
-        });
-        if (cancelled || !url) return;
+        const url = mode === "original"
+          ? await convex.query(tripcastApi.checkpoints.getStoryImageUrl, { token, imageId })
+          : (await convex.query(tripcastApi.replayImages.resolveUrl, { token, imageId, context: "replay" }))?.url;
+        if (cancelled || !url) { fetched.current.delete(cacheKey(imageId)); return; }
         const urlMs = Math.round(performance.now() - start);
         await new Promise<void>((resolve) => {
           const img = new Image();
@@ -82,5 +81,5 @@ export function useImagePrefetch(token: string, imageIds: string[]) {
     return () => {
       cancelled = true;
     };
-  }, [convex, token, imageIds]);
+  }, [convex, token, imageIds, mode]);
 }

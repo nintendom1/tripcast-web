@@ -9,6 +9,7 @@ import { getActiveUiContext, resetActiveUiContextForTests } from "../../debug/ac
 import type { JournalEvent } from "../../convex/tripcastApi";
 
 vi.mock("convex/react", () => ({
+  useConvex: vi.fn(() => ({ query: vi.fn(), mutation: vi.fn(), action: vi.fn() })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
 }));
@@ -125,8 +126,8 @@ describe("StoryDetailSheet", () => {
 
   it("renders a Story photo in a magazine-style floated layout", () => {
     (vi.mocked(useQuery) as any).mockImplementation((ref: unknown) =>
-      ref === tripcastApi.checkpoints.getStoryImageUrl
-        ? "https://signed.example.test/story-image"
+      ref === tripcastApi.replayImages.resolveUrl
+        ? { url: "https://signed.example.test/story-image", original: true }
         : undefined,
     );
     renderSheet(
@@ -297,8 +298,8 @@ describe("StoryDetailSheet — inline edit mode", () => {
 
   it("can remove an existing Story photo while editing", () => {
     (vi.mocked(useQuery) as any).mockImplementation((ref: unknown) =>
-      ref === tripcastApi.checkpoints.getStoryImageUrl
-        ? "https://signed.example.test/story-image"
+      ref === tripcastApi.replayImages.resolveUrl
+        ? { url: "https://signed.example.test/story-image", original: true }
         : undefined,
     );
     render(

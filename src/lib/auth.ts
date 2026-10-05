@@ -1,3 +1,5 @@
+import { clearReplayPageCache } from "../features/map/replaySession";
+import { stopReplayPreparationForSignOut } from "../features/journal/replayImagePreparation";
 import type { Role } from "../convex/tripcastApi";
 
 const SESSION_KEY = "tripcast.session";
@@ -46,5 +48,7 @@ export function setStoredSession(session: StoredSession): void {
 }
 
 export function clearStoredSession(): void {
+  clearReplayPageCache();
+  stopReplayPreparationForSignOut();
   localStorage.removeItem(SESSION_KEY);
 }

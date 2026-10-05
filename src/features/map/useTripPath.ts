@@ -5,6 +5,8 @@ import { LiveTrailPoint } from "./useLiveTrailPath";
 import { logMapEvent } from "../../debug/debugLogger";
 
 type UnifiedPoint = {
+  compact?: boolean;
+  breakBefore?: boolean;
   lat: number;
   lon: number;
   timestamp: number;
@@ -29,7 +31,7 @@ function decimatePoints(points: UnifiedPoint[], minMeters: number): UnifiedPoint
   const result: UnifiedPoint[] = [points[0]];
   for (let i = 1; i < points.length; i++) {
     const curr = points[i];
-    if (curr.kind === "checkpoint") {
+    if (curr.kind === "checkpoint" || curr.compact || curr.breakBefore) {
       result.push(curr);
       continue;
     }
@@ -93,6 +95,8 @@ export function useTripPath(
             lat: s.lat,
             lon: s.lon,
             timestamp: s.sampledAt,
+            compact: s.compact,
+            breakBefore: s.breakBefore,
             kind: "breadcrumb" as const,
           }))
       : [];
@@ -128,6 +132,11 @@ export function useTripPath(
     for (let i = 0; i < totalSegments; i++) {
       const a = points[i];
       const b = points[i + 1];
+      if (b.breakBefore || ((a.compact || b.compact) && (Math.abs(a.lon - b.lon) > 180))) {
+        if (groupCoords && groupCoords.length >= 2) features.push({ type: "Feature", properties: { opacity: groupOpacityBucket, width: groupIsPrimary ? 3.5 : 2.0 }, geometry: { type: "LineString", coordinates: groupCoords } });
+        groupCoords = null;
+        continue;
+      }
       const isPrimary = a.kind === "checkpoint" && b.kind === "checkpoint";
       let opacityBucket: number;
       if (i >= tailLength) {
