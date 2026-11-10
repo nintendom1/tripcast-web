@@ -386,6 +386,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     func applicationDidBecomeActive(completion: ((JSObject) -> Void)? = nil) {
         isApplicationForeground = true
         mainThreadHeartbeat.setActive(true)
+        NativeLocationPublisher.shared.applicationDidBecomeActive()
         let suppressedEvents = suppressedBridgeEventCount
         suppressedBridgeEventCount = 0
         if let snoozeUntil {
@@ -747,6 +748,9 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         configurePowerSavingManager()
         persistState()
         NativeLocationPublisher.shared.setMode(mode.rawValue)
+        if let lastFix = lastPreciseFix ?? stationaryAnchor {
+            NativeLocationPublisher.shared.accept(lastFix, forcedReason: "heartbeat", parked: true)
+        }
         emitState()
     }
 

@@ -6,7 +6,9 @@ export type NativePublishingPhase =
   | "offline"
   | "syncing"
   | "retrying"
-  | "storage-error";
+  | "storage-error"
+  | "paused"
+  | "sign-in-expired";
 
 export type NativePublishingState = {
   phase: NativePublishingPhase;

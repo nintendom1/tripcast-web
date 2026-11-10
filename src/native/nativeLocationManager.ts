@@ -70,6 +70,43 @@ type AdaptiveLocationEvent = {
 
 type NativeTrailSnapshot = { queueRevision: number; points: LocalTrailPoint[] };
 
+export type NativeUsageBucket = {
+  hourStart: number;
+  requests: number;
+  samplesSent: number;
+  samplesAcked: number;
+  bytesSent: number;
+  bytesReceived: number;
+  retries: number;
+  failures: {
+    network: number;
+    server: number;
+    rateLimited: number;
+    auth: number;
+    paused: number;
+    rejected: number;
+  };
+  samplesSetAside: number;
+  samplesThinned: number;
+  secondsByMode: Partial<Record<Exclude<NativeTrackingMode, "off">, number>>;
+};
+
+export type NativeUsagePolicy = {
+  emissionIntervalSeconds: LiveGpsUploadIntervalSeconds | null;
+  maxBatchSize: number;
+  maxQueueDepth: number;
+  minEmissionIntervalSeconds: number;
+  heartbeatIntervalSeconds: number;
+  minDistanceMeters: number;
+  minBearingDistanceMeters: number;
+  turnThresholdDegrees: number;
+};
+
+export type NativeUsageLedger = {
+  buckets: NativeUsageBucket[];
+  policy: NativeUsagePolicy;
+};
+
 export type NativeMysteryMissionSync = {
   enabled: boolean;
   revision: number;
@@ -137,6 +174,8 @@ interface AdaptiveLocationPlugin {
   setHighFrequencyActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
   getState(): Promise<AdaptiveLocationEvent>;
   getLocalTrailSnapshot(): Promise<NativeTrailSnapshot>;
+  getUsageLedger(): Promise<NativeUsageLedger>;
+  resetUsageLedger(): Promise<NativeUsageLedger>;
   syncMysteryMissions(options: { payload: NativeMysteryMissionSync }): Promise<NativeMysteryProximityState>;
   getMysteryProximityState(): Promise<NativeMysteryProximityState>;
   setMysteryAudioMuted(options: { muted: boolean }): Promise<{ muted: boolean }>;
@@ -366,6 +405,14 @@ class NativeLocationManager {
 
   public async getLocalTrailSnapshot(): Promise<NativeTrailSnapshot> {
     return AdaptiveLocation.getLocalTrailSnapshot();
+  }
+
+  public getUsageLedger(): Promise<NativeUsageLedger> {
+    return AdaptiveLocation.getUsageLedger();
+  }
+
+  public resetUsageLedger(): Promise<NativeUsageLedger> {
+    return AdaptiveLocation.resetUsageLedger();
   }
 
   public syncMysteryMissions(payload: NativeMysteryMissionSync) {

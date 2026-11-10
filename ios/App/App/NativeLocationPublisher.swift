@@ -89,6 +89,7 @@ final class NativeLocationPublisher {
         let recordTrail: Bool
         let publishCurrentLocation: Bool?
         let reason: String
+        var parked: Bool? = nil
     }
 
     struct PendingMotion: Codable, Equatable {
@@ -103,6 +104,67 @@ final class NativeLocationPublisher {
         let debugArrival: Bool?
     }
 
+    private enum FailureClass: String {
+        case network
+        case server
+        case rateLimited = "rate-limited"
+        case rejected
+        case auth
+        case paused
+    }
+
+    private struct UsageFailures: Codable {
+        var network = 0
+        var server = 0
+        var rateLimited = 0
+        var auth = 0
+        var paused = 0
+        var rejected = 0
+    }
+
+    private struct UsageBucket: Codable {
+        var hourStart: Double
+        var requests = 0
+        var samplesSent = 0
+        var samplesAcked = 0
+        var bytesSent = 0
+        var bytesReceived = 0
+        var retries = 0
+        var failures = UsageFailures()
+        var samplesSetAside = 0
+        var samplesThinned = 0
+        var secondsByMode: [String: Double] = [:]
+
+        var hasActivity: Bool {
+            requests > 0 || samplesThinned > 0 || samplesSetAside > 0 || !secondsByMode.isEmpty
+        }
+
+        var jsObject: JSObject {
+            [
+                "hourStart": hourStart,
+                "requests": requests,
+                "samplesSent": samplesSent,
+                "samplesAcked": samplesAcked,
+                "bytesSent": bytesSent,
+                "bytesReceived": bytesReceived,
+                "retries": retries,
+                "failures": [
+                    "network": failures.network,
+                    "server": failures.server,
+                    "rateLimited": failures.rateLimited,
+                    "auth": failures.auth,
+                    "paused": failures.paused,
+                    "rejected": failures.rejected
+                ] as JSObject,
+                "samplesSetAside": samplesSetAside,
+                "samplesThinned": samplesThinned,
+                "secondsByMode": secondsByMode.reduce(into: JSObject()) { result, entry in
+                    result[entry.key] = Int(entry.value.rounded())
+                }
+            ]
+        }
+    }
+
     private enum KeychainKey {
         static let service = "com.tripcast.app.native-location"
         static let account = "traveler-token"
@@ -112,6 +174,14 @@ final class NativeLocationPublisher {
     private let fileManager = FileManager.default
     private let pathMonitor = NWPathMonitor()
     private let maxQueueDepth = 10_000
+    private let maxBatchSize = 20
+    private let thinningWindow = 2_000
+    private let persistThrottleQueueDepth = 200
+    private let persistThrottleInterval: TimeInterval = 15
+    private let maxSetAsideSamples = 500
+    private let maxUsageBuckets = 840
+    private let networkBackoffSeconds: [TimeInterval] = [5, 15, 30, 60, 120, 300]
+    private let pausedBackoffSeconds: [TimeInterval] = [15 * 60, 30 * 60, 60 * 60]
     private let minEmissionInterval: TimeInterval = 3
     private let heartbeatInterval: TimeInterval = 60
     private let minDistanceMeters: CLLocationDistance = 10
@@ -160,6 +230,18 @@ final class NativeLocationPublisher {
     private var queueRevision = 0
     private var acknowledgedTrail: [PendingSample] = []
     private let recentTrailLimit = 100
+    private var failureAttempts: [FailureClass: Int] = [:]
+    private var consecutiveFailures = 0
+    private var retryDueAt: Date?
+    private var signInExpired = false
+    private var pausedSince: Date?
+    private var parkedMarkerDelivered = false
+    private var lastSamplesPersistAt: Date?
+    private var scheduledPersistWorkItem: DispatchWorkItem?
+    private var usageHistory: [UsageBucket] = []
+    private var usageCurrent = UsageBucket(hourStart: 0)
+    private var usageHistoryDirty = false
+    private var usageModeSince: Date?
 
     var eventHandler: ((JSObject) -> Void)?
     var onCloakTimeout: (() -> Void)?
@@ -169,6 +251,9 @@ final class NativeLocationPublisher {
         samples = loadSamples()
         pendingMotion = loadPendingMotion()
         mysteryCompletions = loadMysteryCompletions()
+        usageHistory = loadDecoded([UsageBucket].self, from: usageHistoryURL) ?? []
+        usageCurrent = loadDecoded(UsageBucket.self, from: usageCurrentURL)
+            ?? UsageBucket(hourStart: Self.hourStart(of: Date()))
         motionPublishStatus = pendingMotion == nil ? "idle" : "pending"
         recoveryActive = !samples.isEmpty
         pathMonitor.pathUpdateHandler = { [weak self] path in
@@ -187,7 +272,7 @@ final class NativeLocationPublisher {
 
     private func currentPublishingStateLocked() -> JSObject {
         var state: JSObject = [
-            "publishingPhase": publishingPhase,
+            "publishingPhase": reportedPublishingPhase,
             "queueDepth": samples.count,
             "breadcrumbQueueDepth": breadcrumbQueueDepth,
             "capacityReached": capacityReached,
@@ -287,8 +372,11 @@ final class NativeLocationPublisher {
                 "movementDetectionEnabled": next.movementDetectionEnabled,
                 "queueDepth": samples.count
             ])
+            let resumeHeldMotion = signInExpired
+            signInExpired = false
             publishIfPossibleLocked(reason: "configuration")
             publishMysteryCompletionIfPossibleLocked(reason: "configuration")
+            if resumeHeldMotion { publishMotionIfPossibleLocked(reason: "configuration") }
             let state = currentPublishingStateLocked()
             DispatchQueue.main.async { completion(.success(state)) }
             } catch {
@@ -313,7 +401,7 @@ final class NativeLocationPublisher {
                 self.sessionAcknowledgementCount = 0
                 self.sessionAcknowledgementLatencyMs = 0
             }
-            self.currentMode = mode
+            self.setCurrentModeLocked(mode)
             self.publishingPhase = self.networkAvailable == false
                 ? "offline"
                 : (self.recoveryActive && !self.samples.isEmpty ? "syncing" : "healthy")
@@ -331,9 +419,25 @@ final class NativeLocationPublisher {
     func setMode(_ mode: String) {
         workQueue.async { [weak self] in
             guard let self else { return }
-            self.currentMode = mode
+            self.setCurrentModeLocked(mode)
             LiveActivityController.shared.setMode(mode, queueDepth: self.samples.count)
         }
+    }
+
+    func applicationDidBecomeActive() {
+        workQueue.async { [weak self] in
+            guard let self, self.signInExpired else { return }
+            self.signInExpired = false
+            self.publishIfPossibleLocked(reason: "foreground", force: true)
+            self.publishMotionIfPossibleLocked(reason: "foreground")
+            self.publishMysteryCompletionIfPossibleLocked(reason: "foreground")
+        }
+    }
+
+    private func setCurrentModeLocked(_ mode: String) {
+        accrueModeSecondsLocked(until: Date())
+        currentMode = mode
+        persistUsageLocked()
     }
 
     func stopLive(
@@ -361,7 +465,7 @@ final class NativeLocationPublisher {
             scheduledMysteryRetryWorkItem = nil
             clearPendingMotionLocked()
             lastAcknowledgedMotionClassification = nil
-            currentMode = "off"
+            setCurrentModeLocked("off")
             lastEmissionLocation = nil
             lastEmissionAt = nil
             lastBearing = nil
@@ -381,7 +485,8 @@ final class NativeLocationPublisher {
                         sampledAt: sample.sampledAt,
                         recordTrail: sample.recordTrail,
                         publishCurrentLocation: false,
-                        reason: sample.reason
+                        reason: sample.reason,
+                        parked: sample.parked
                     )
                 }
                 recoveryActive = !samples.isEmpty
@@ -401,6 +506,8 @@ final class NativeLocationPublisher {
                 samples.removeAll()
                 acknowledgedTrail.removeAll()
                 queueRevision += 1
+                scheduledPersistWorkItem?.cancel()
+                scheduledPersistWorkItem = nil
                 try? fileManager.removeItem(at: samplesURL)
                 publishingPhase = "idle"
                 storageHealthy = true
@@ -413,6 +520,12 @@ final class NativeLocationPublisher {
             if clearCredentials {
                 configuration = nil
                 try? fileManager.removeItem(at: configurationURL)
+                try? fileManager.removeItem(at: setAsideSamplesURL)
+                signInExpired = false
+                pausedSince = nil
+                failureAttempts.removeAll()
+                consecutiveFailures = 0
+                retryDueAt = nil
                 deleteToken()
                 acknowledgedTrail.removeAll()
                 queueRevision += 1
@@ -437,7 +550,7 @@ final class NativeLocationPublisher {
         }
     }
 
-    func accept(_ location: CLLocation, forcedReason: String? = nil) {
+    func accept(_ location: CLLocation, forcedReason: String? = nil, parked: Bool = false) {
         workQueue.async { [weak self] in
             guard let self, self.configuration != nil, self.currentMode != "off" else { return }
             if self.shouldSuppress(location) {
@@ -478,9 +591,10 @@ final class NativeLocationPublisher {
                 lon: location.coordinate.longitude,
                 accuracy: location.horizontalAccuracy >= 0 ? location.horizontalAccuracy : nil,
                 sampledAt: location.timestamp.timeIntervalSince1970 * 1_000,
-                recordTrail: self.configuration?.liveTrailEnabled == true,
+                recordTrail: !parked && self.configuration?.liveTrailEnabled == true,
                 publishCurrentLocation: true,
-                reason: acceptedReason
+                reason: acceptedReason,
+                parked: parked ? true : nil
             )
             if self.samples.isEmpty || (self.isPublishing && self.batchStartedAt == nil) {
                 self.batchStartedAt = Date()
@@ -489,17 +603,12 @@ final class NativeLocationPublisher {
             self.queueRevision += 1
             self.sessionCapturedCount += 1
             if self.samples.count > self.maxQueueDepth {
-                self.samples.removeFirst(self.samples.count - self.maxQueueDepth)
-                self.capacityReached = true
-                self.recoveryActive = true
-                self.emit("gps:native-publish:queue-capacity", level: "warn", details: [
-                    "queueDepth": self.samples.count
-                ])
+                self.thinOldestSamplesLocked()
             }
             self.lastEmissionLocation = location
             self.lastEmissionAt = now
             self.lastBearing = bearing
-            self.persistSamples()
+            self.persistSamplesThrottledLocked()
             if self.storageHealthy { self.sessionDurableCount += 1 }
             if !self.storageHealthy {
                 self.publishingPhase = "storage-error"
@@ -513,11 +622,29 @@ final class NativeLocationPublisher {
             if self.recoveryActive, self.scheduledPublishWorkItem != nil {
                 return
             }
+            let queueLimitReached = self.samples.count >= self.maxBatchSize
             self.publishIfPossibleLocked(
-                reason: self.samples.count >= 20 ? "queue-limit" : "sample-accepted",
-                force: self.samples.count >= 20
+                reason: parked ? "parked" : (queueLimitReached ? "queue-limit" : "sample-accepted"),
+                force: parked || queueLimitReached
             )
         }
+    }
+
+    private func thinOldestSamplesLocked() {
+        let before = samples.count
+        let window = min(thinningWindow, samples.count)
+        let kept = samples.prefix(window).enumerated().compactMap { index, sample in
+            index % 2 == 0 || index == window - 1 ? sample : nil
+        }
+        samples.replaceSubrange(0..<window, with: kept)
+        capacityReached = true
+        recoveryActive = true
+        let thinned = before - samples.count
+        recordUsageLocked { $0.samplesThinned += thinned }
+        emit("gps:native-publish:queue-thinned", level: "warn", details: [
+            "before": before,
+            "after": samples.count
+        ])
     }
 
     func enqueueMysteryCompletion(missionID: String, triggerID: String, debugArrival: Bool) {
@@ -587,6 +714,7 @@ final class NativeLocationPublisher {
 
     private func publishMotionIfPossibleLocked(reason: String) {
         guard !motionPublishInFlight,
+              !signInExpired,
               currentMode != "off",
               configuration?.movementDetectionEnabled == true,
               networkAvailable != false,
@@ -719,6 +847,17 @@ final class NativeLocationPublisher {
               let config = configuration,
               let token = readToken(),
               let baseURL = URL(string: config.endpoint) else { return }
+        guard !signInExpired else { return }
+        if pausedSince != nil, reason != "retry" {
+            if scheduledPublishWorkItem == nil {
+                schedulePublishLocked(
+                    after: max(0, retryDueAt?.timeIntervalSinceNow ?? 0),
+                    reason: "retry",
+                    force: true
+                )
+            }
+            return
+        }
         guard networkAvailable != false else {
             publishingPhase = "offline"
             recoveryActive = true
@@ -730,7 +869,7 @@ final class NativeLocationPublisher {
         }
         let shouldFlushNow = force ||
             config.emissionIntervalSeconds == 0 ||
-            samples.count >= 20 ||
+            samples.count >= maxBatchSize ||
             recoveryActive
         guard shouldFlushNow else {
             scheduleBatchFlushLocked(intervalSeconds: config.emissionIntervalSeconds)
@@ -740,7 +879,7 @@ final class NativeLocationPublisher {
         isPublishing = true
         publishingPhase = recoveryActive ? "syncing" : "healthy"
         let requestGeneration = generation
-        let batch = Array(samples.prefix(20))
+        let batch = Array(samples.prefix(maxBatchSize))
         let hadQueuedRemainderAtStart = samples.count > batch.count
         batchStartedAt = nil
         let endpoint = baseURL.appendingPathComponent("api/mutation")
@@ -758,6 +897,7 @@ final class NativeLocationPublisher {
                 "reason": sample.reason
             ]
             if let accuracy = sample.accuracy { value["accuracy"] = accuracy }
+            if sample.parked == true { value["parked"] = true }
             return value
         }
         var mutationArgs: [String: Any] = [
@@ -770,16 +910,24 @@ final class NativeLocationPublisher {
         ) {
             mutationArgs["knownMysteryMissionSyncRevision"] = knownRevision
         }
-        request.httpBody = try? JSONSerialization.data(withJSONObject: [
+        let requestBody = try? JSONSerialization.data(withJSONObject: [
             "path": "nativeLocationIngest:travelerIngestNativeLocationBatch",
             "args": mutationArgs,
             "format": "json"
         ])
+        request.httpBody = requestBody
 
         let backgroundTask = beginBackgroundTask()
         let requestStartedAt = Date()
         sessionRequestCount += 1
         sessionBatchSampleCount += batch.count
+        let isRetry = consecutiveFailures > 0
+        recordUsageLocked { bucket in
+            bucket.requests += 1
+            bucket.samplesSent += batch.count
+            bucket.bytesSent += requestBody?.count ?? 0
+            if isRetry { bucket.retries += 1 }
+        }
         emit("gps:native-publish:flush", details: [
             "reason": reason,
             "batchSize": batch.count,
@@ -795,35 +943,39 @@ final class NativeLocationPublisher {
                 }
                 self.activePublishTask = nil
                 let httpStatus = (response as? HTTPURLResponse)?.statusCode
+                let root = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                self.recordUsageLocked { $0.bytesReceived += data?.count ?? 0 }
                 guard error == nil,
-                      let http = response as? HTTPURLResponse,
-                      (200..<300).contains(http.statusCode),
-                      let data,
-                      let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let httpStatus,
+                      (200..<300).contains(httpStatus),
+                      let root,
                       root["status"] as? String == "success",
                       let value = root["value"] as? [String: Any] else {
-                    var details: JSObject = [
-                        "queueDepth": self.samples.count,
-                        "failureClass": error == nil ? "server" : "network"
-                    ]
-                    if let httpStatus { details["httpStatus"] = httpStatus }
-                    if let urlError = error as? URLError {
-                        details["networkCode"] = urlError.code.rawValue
-                        details["networkReason"] = Self.safeNetworkReason(urlError.code)
-                    }
-                    self.publishingPhase = error == nil ? "retrying" : "offline"
-                    self.recoveryActive = true
-                    self.emit("gps:native-publish:failure", level: "warn", details: details)
-                    LiveActivityController.shared.setRecovering(queueDepth: self.samples.count)
+                    let errorData = root?["status"] as? String == "error"
+                        ? root?["errorData"] as? [String: Any]
+                        : nil
                     self.isPublishing = false
                     self.endBackgroundTask(backgroundTask)
-                    self.scheduleRetry()
+                    self.handlePublishFailureLocked(
+                        error: error,
+                        httpStatus: httpStatus,
+                        errorData: errorData,
+                        batch: batch
+                    )
                     return
                 }
 
                 let accepted = value["acceptedClientSampleIds"] as? [String] ?? []
                 let duplicates = value["duplicateClientSampleIds"] as? [String] ?? []
                 let delivered = Set(accepted + duplicates)
+                let resumedFromPause = self.pausedSince
+                self.pausedSince = nil
+                self.failureAttempts.removeAll()
+                self.consecutiveFailures = 0
+                self.retryDueAt = nil
+                let deliveredBatchCount = batch.filter { delivered.contains($0.clientSampleId) }.count
+                self.recordUsageLocked { $0.samplesAcked += deliveredBatchCount }
+                self.persistUsageLocked()
                 if let mysterySync = value["mysteryMissionSync"] as? [String: Any] {
                     MysteryProximityService.shared.apply(syncObject: mysterySync)
                 }
@@ -863,6 +1015,20 @@ final class NativeLocationPublisher {
                     "acknowledgementLatencyMs": Int(acknowledgementLatencyMs.rounded()),
                     "remainingQueueDepth": self.samples.count
                 ])
+                if let resumedFromPause {
+                    self.emit("gps:native-publish:resumed", details: [
+                        "pausedForSeconds": Int(Date().timeIntervalSince(resumedFromPause).rounded()),
+                        "queueDepth": self.samples.count
+                    ])
+                }
+                if let latest = batch.last(where: {
+                    delivered.contains($0.clientSampleId) && $0.publishCurrentLocation != false
+                }), (latest.parked == true) != self.parkedMarkerDelivered {
+                    self.parkedMarkerDelivered = latest.parked == true
+                    self.emit("gps:native-publish:parked", details: [
+                        "state": self.parkedMarkerDelivered ? "sent" : "cleared"
+                    ])
+                }
                 self.isPublishing = false
                 self.endBackgroundTask(backgroundTask)
                 if !self.storageHealthy {
@@ -906,6 +1072,7 @@ final class NativeLocationPublisher {
 
     private func publishMysteryCompletionIfPossibleLocked(reason: String) {
         guard !mysteryCompletionInFlight,
+              !signInExpired,
               let completion = mysteryCompletions.first,
               let config = configuration,
               let token = readToken(),
@@ -1043,8 +1210,131 @@ final class NativeLocationPublisher {
         scheduledPublishAt = nil
     }
 
-    private func scheduleRetry() {
-        schedulePublishLocked(after: 30, reason: "retry", force: true)
+    private func handlePublishFailureLocked(
+        error: Error?,
+        httpStatus: Int?,
+        errorData: [String: Any]?,
+        batch: [PendingSample]
+    ) {
+        var failureClass = Self.failureClass(error: error, errorCode: errorData?["code"] as? String)
+        let rejectedIds = Set(errorData?["clientSampleIds"] as? [String] ?? [])
+        let setAside = failureClass == .rejected
+            ? samples.filter { rejectedIds.contains($0.clientSampleId) }
+            : []
+        if failureClass == .rejected, setAside.isEmpty { failureClass = .server }
+        let attempt = (failureAttempts[failureClass] ?? 0) + 1
+        failureAttempts[failureClass] = attempt
+        consecutiveFailures += 1
+        recordUsageLocked { bucket in
+            switch failureClass {
+            case .network: bucket.failures.network += 1
+            case .server: bucket.failures.server += 1
+            case .rateLimited: bucket.failures.rateLimited += 1
+            case .rejected: bucket.failures.rejected += 1
+            case .auth: bucket.failures.auth += 1
+            case .paused: bucket.failures.paused += 1
+            }
+        }
+
+        var details: JSObject = [
+            "queueDepth": samples.count,
+            "failureClass": failureClass.rawValue
+        ]
+        if let httpStatus { details["httpStatus"] = httpStatus }
+        if let urlError = error as? URLError {
+            details["networkCode"] = urlError.code.rawValue
+            details["networkReason"] = Self.safeNetworkReason(urlError.code)
+        }
+        publishingPhase = failureClass == .network ? "offline" : "retrying"
+        recoveryActive = true
+        emit("gps:native-publish:failure", level: "warn", details: details)
+
+        switch failureClass {
+        case .network:
+            let base = networkBackoffSeconds[min(attempt, networkBackoffSeconds.count) - 1]
+            scheduleRetryLocked(after: base * Double.random(in: 0.8...1.2), failureClass: failureClass, attempt: attempt)
+        case .server:
+            let parkedIds = Set(batch.filter { $0.parked == true }.map(\.clientSampleId))
+            if !parkedIds.isEmpty {
+                samples.removeAll { parkedIds.contains($0.clientSampleId) }
+                queueRevision += 1
+                persistSamples()
+                emit("gps:native-publish:parked", details: ["state": "dropped"])
+            }
+            if samples.isEmpty {
+                settleEmptyQueueLocked()
+            } else {
+                scheduleRetryLocked(after: min(30 * pow(2, Double(attempt - 1)), 15 * 60), failureClass: failureClass, attempt: attempt)
+            }
+        case .rateLimited:
+            scheduleRetryLocked(after: 60, failureClass: failureClass, attempt: attempt)
+        case .rejected:
+            samples.removeAll { rejectedIds.contains($0.clientSampleId) }
+            queueRevision += 1
+            persistSamples()
+            let setAsideCount = appendSetAsideSamplesLocked(setAside)
+            recordUsageLocked { $0.samplesSetAside += setAsideCount }
+            if samples.isEmpty {
+                settleEmptyQueueLocked()
+            } else {
+                publishingPhase = "syncing"
+            }
+            emit("gps:native-publish:rejected-samples", level: "warn", details: [
+                "rejectedCount": setAside.count,
+                "setAsideCount": setAsideCount
+            ])
+            publishIfPossibleLocked(reason: "rejected-retry", force: true)
+        case .auth:
+            signInExpired = true
+            emit("gps:native-publish:auth-expired", level: "warn", details: [
+                "queueDepth": samples.count
+            ])
+        case .paused:
+            if pausedSince == nil { pausedSince = Date() }
+            let delay = pausedBackoffSeconds[min(attempt, pausedBackoffSeconds.count) - 1]
+            retryDueAt = Date().addingTimeInterval(delay)
+            schedulePublishLocked(after: delay, reason: "retry", force: true)
+            emit("gps:native-publish:paused", level: "warn", details: [
+                "queueDepth": samples.count,
+                "nextAttemptSeconds": Int(delay)
+            ])
+        }
+        persistUsageLocked()
+        if samples.isEmpty {
+            LiveActivityController.shared.setPublishingHealthy(queueDepth: 0)
+        } else if let publishingHold {
+            LiveActivityController.shared.setPublishingHold(publishingHold, queueDepth: samples.count)
+        } else {
+            LiveActivityController.shared.setRecovering(queueDepth: samples.count)
+        }
+    }
+
+    private func settleEmptyQueueLocked() {
+        publishingPhase = currentMode == "off" ? "idle" : "healthy"
+        recoveryActive = false
+        silentStopDrainActive = false
+    }
+
+    private func scheduleRetryLocked(after delay: TimeInterval, failureClass: FailureClass, attempt: Int) {
+        retryDueAt = Date().addingTimeInterval(delay)
+        schedulePublishLocked(after: delay, reason: "retry", force: true)
+        emit("gps:native-publish:backoff", details: [
+            "failureClass": failureClass.rawValue,
+            "attempt": attempt,
+            "delaySeconds": Int(delay.rounded()),
+            "queueDepth": samples.count
+        ])
+    }
+
+    private static func failureClass(error: Error?, errorCode: String?) -> FailureClass {
+        if error != nil { return .network }
+        switch errorCode {
+        case "not_authenticated": return .auth
+        case "invalid_samples": return .rejected
+        case "rate_limited": return .rateLimited
+        case "tracking_paused": return .paused
+        default: return .server
+        }
     }
 
     private func emitSessionSummaryLocked(reason: String, suppressedBridgeEvents: Int) {
@@ -1073,6 +1363,17 @@ final class NativeLocationPublisher {
         samples.filter { $0.recordTrail }.count
     }
 
+    private var publishingHold: String? {
+        if signInExpired { return "sign-in-expired" }
+        if pausedSince != nil { return "paused" }
+        return nil
+    }
+
+    private var reportedPublishingPhase: String {
+        guard !samples.isEmpty, publishingPhase != "storage-error" else { return publishingPhase }
+        return publishingHold ?? publishingPhase
+    }
+
     private func handleNetworkPath(_ path: NWPath) {
         let wasAvailable = networkAvailable
         networkAvailable = path.status == .satisfied
@@ -1094,6 +1395,7 @@ final class NativeLocationPublisher {
         }
 
         publishingPhase = samples.isEmpty ? (currentMode == "off" ? "idle" : "healthy") : "syncing"
+        if wasAvailable != true { failureAttempts[.network] = nil }
         emit("gps:native-publish:network-online", details: [
             "queueDepth": samples.count,
             "breadcrumbQueueDepth": breadcrumbQueueDepth
@@ -1123,7 +1425,7 @@ final class NativeLocationPublisher {
             "action": action,
             "level": level,
             "details": details,
-            "publishingPhase": publishingPhase,
+            "publishingPhase": reportedPublishingPhase,
             "queueDepth": samples.count,
             "breadcrumbQueueDepth": breadcrumbQueueDepth,
             "capacityReached": capacityReached,
@@ -1202,8 +1504,33 @@ final class NativeLocationPublisher {
     private var samplesURL: URL { applicationSupportURL.appendingPathComponent("queue.json") }
     private var pendingMotionURL: URL { applicationSupportURL.appendingPathComponent("pending-motion.json") }
     private var mysteryCompletionsURL: URL { applicationSupportURL.appendingPathComponent("mystery-completions.json") }
+    private var setAsideSamplesURL: URL { applicationSupportURL.appendingPathComponent("rejected.json") }
+    private var usageHistoryURL: URL { applicationSupportURL.appendingPathComponent("usage-ledger.json") }
+    private var usageCurrentURL: URL { applicationSupportURL.appendingPathComponent("usage-ledger-current.json") }
+
+    private func persistSamplesThrottledLocked() {
+        if samples.count > persistThrottleQueueDepth,
+           let lastSamplesPersistAt,
+           Date().timeIntervalSince(lastSamplesPersistAt) < persistThrottleInterval {
+            guard scheduledPersistWorkItem == nil else { return }
+            let item = DispatchWorkItem { [weak self] in
+                self?.scheduledPersistWorkItem = nil
+                self?.persistSamples()
+            }
+            scheduledPersistWorkItem = item
+            workQueue.asyncAfter(
+                deadline: .now() + persistThrottleInterval - Date().timeIntervalSince(lastSamplesPersistAt),
+                execute: item
+            )
+            return
+        }
+        persistSamples()
+    }
 
     private func persistSamples() {
+        scheduledPersistWorkItem?.cancel()
+        scheduledPersistWorkItem = nil
+        lastSamplesPersistAt = Date()
         do {
             try persist(samples, to: samplesURL)
             storageHealthy = true
@@ -1243,6 +1570,114 @@ final class NativeLocationPublisher {
     private func loadSamples() -> [PendingSample] {
         guard let data = try? Data(contentsOf: samplesURL) else { return [] }
         return (try? JSONDecoder().decode([PendingSample].self, from: data)) ?? []
+    }
+
+    private func loadDecoded<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(type, from: data)
+    }
+
+    private func appendSetAsideSamplesLocked(_ rejected: [PendingSample]) -> Int {
+        var stored = loadDecoded([PendingSample].self, from: setAsideSamplesURL) ?? []
+        stored.append(contentsOf: rejected)
+        if stored.count > maxSetAsideSamples {
+            stored.removeFirst(stored.count - maxSetAsideSamples)
+        }
+        do {
+            try persist(stored, to: setAsideSamplesURL)
+            return min(rejected.count, maxSetAsideSamples)
+        } catch {
+            emit("gps:native-publish:persist-failure", level: "warn", details: [
+                "failureClass": "storage",
+                "target": "set-aside"
+            ])
+            return 0
+        }
+    }
+
+    func usageLedger(completion: @escaping (JSObject) -> Void) {
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            self.accrueModeSecondsLocked(until: Date())
+            self.persistUsageLocked()
+            let ledger = self.usageLedgerLocked()
+            DispatchQueue.main.async { completion(ledger) }
+        }
+    }
+
+    func resetUsageLedger(completion: @escaping (JSObject) -> Void) {
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            let now = Date()
+            self.usageHistory.removeAll()
+            self.usageHistoryDirty = false
+            self.usageCurrent = UsageBucket(hourStart: Self.hourStart(of: now))
+            self.usageModeSince = now
+            try? self.fileManager.removeItem(at: self.usageHistoryURL)
+            try? self.fileManager.removeItem(at: self.usageCurrentURL)
+            let ledger = self.usageLedgerLocked()
+            DispatchQueue.main.async { completion(ledger) }
+        }
+    }
+
+    private func usageLedgerLocked() -> JSObject {
+        [
+            "buckets": (usageHistory + [usageCurrent]).map { $0.jsObject as JSValue },
+            "policy": [
+                "emissionIntervalSeconds": configuration?.emissionIntervalSeconds ?? NSNull(),
+                "maxBatchSize": maxBatchSize,
+                "maxQueueDepth": maxQueueDepth,
+                "minEmissionIntervalSeconds": minEmissionInterval,
+                "heartbeatIntervalSeconds": heartbeatInterval,
+                "minDistanceMeters": minDistanceMeters,
+                "minBearingDistanceMeters": minBearingDistanceMeters,
+                "turnThresholdDegrees": turnThresholdDegrees
+            ] as JSObject
+        ]
+    }
+
+    private func recordUsageLocked(_ update: (inout UsageBucket) -> Void) {
+        accrueModeSecondsLocked(until: Date())
+        update(&usageCurrent)
+    }
+
+    private func accrueModeSecondsLocked(until now: Date) {
+        if currentMode != "off", let since = usageModeSince {
+            var cursor = max(since, now.addingTimeInterval(-Double(maxUsageBuckets) * 3_600))
+            while cursor < now {
+                rollUsageIfNeededLocked(at: cursor)
+                let hourEnd = Date(timeIntervalSince1970: (Self.hourStart(of: cursor) + 3_600_000) / 1_000)
+                let end = min(hourEnd, now)
+                usageCurrent.secondsByMode[currentMode, default: 0] += end.timeIntervalSince(cursor)
+                cursor = end
+            }
+        }
+        usageModeSince = now
+        rollUsageIfNeededLocked(at: now)
+    }
+
+    private func rollUsageIfNeededLocked(at date: Date) {
+        let hour = Self.hourStart(of: date)
+        guard hour > usageCurrent.hourStart else { return }
+        if usageCurrent.hasActivity { usageHistory.append(usageCurrent) }
+        let oldest = hour - Double(maxUsageBuckets - 1) * 3_600_000
+        usageHistory.removeAll { $0.hourStart < oldest }
+        if usageHistory.count >= maxUsageBuckets {
+            usageHistory.removeFirst(usageHistory.count - maxUsageBuckets + 1)
+        }
+        usageHistoryDirty = true
+        usageCurrent = UsageBucket(hourStart: hour)
+    }
+
+    private func persistUsageLocked() {
+        if usageHistoryDirty, (try? persist(usageHistory, to: usageHistoryURL)) != nil {
+            usageHistoryDirty = false
+        }
+        try? persist(usageCurrent, to: usageCurrentURL)
+    }
+
+    private static func hourStart(of date: Date) -> Double {
+        (date.timeIntervalSince1970 / 3_600).rounded(.down) * 3_600_000
     }
 
     private func persistPendingMotionLocked() {
