@@ -92,6 +92,21 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
             else { return nil }
             return .init(lat: lat, lon: lon, radiusMeters: radiusMeters)
         }
+        let usageGuard = call.getObject("usageGuard").flatMap { value -> NativeLocationPublisher.UsageGuard? in
+            guard
+                let bytesPerUpload = value["bytesPerUpload"] as? Double,
+                let monthlyLimitBytes = value["monthlyLimitBytes"] as? Double,
+                let pausePercent = value["pausePercent"] as? Double,
+                bytesPerUpload.isFinite, bytesPerUpload >= 0,
+                monthlyLimitBytes.isFinite, monthlyLimitBytes > 0,
+                pausePercent.isFinite, pausePercent > 0
+            else { return nil }
+            return .init(
+                bytesPerUpload: bytesPerUpload,
+                monthlyLimitBytes: monthlyLimitBytes,
+                pausePercent: pausePercent
+            )
+        }
         DispatchQueue.main.async {
             AdaptiveLocationService.shared.configurePublishing(
                 endpoint: endpoint,
@@ -102,7 +117,8 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
                 alertThresholdSeconds: call.getDouble("alertThresholdSeconds") ?? 120,
                 cloakTimeoutSeconds: call.getDouble("cloakTimeoutSeconds") ?? 300,
                 cloakZones: zones,
-                includeDebugMysteryMissions: call.getBool("includeDebugMysteryMissions") ?? false
+                includeDebugMysteryMissions: call.getBool("includeDebugMysteryMissions") ?? false,
+                usageGuard: usageGuard
             ) { result in
                 switch result {
                 case .success(let state): call.resolve(state)

@@ -73,6 +73,7 @@ type NativeTrailSnapshot = { queueRevision: number; points: LocalTrailPoint[] };
 export type NativeUsageBucket = {
   hourStart: number;
   requests: number;
+  uploads: number;
   samplesSent: number;
   samplesAcked: number;
   bytesSent: number;
@@ -102,9 +103,24 @@ export type NativeUsagePolicy = {
   turnThresholdDegrees: number;
 };
 
+export type NativeUsageEstimate = {
+  monthKey: string;
+  uploads: number;
+  bytes: number;
+  limitBytes: number | null;
+  paused: boolean;
+};
+
 export type NativeUsageLedger = {
   buckets: NativeUsageBucket[];
   policy: NativeUsagePolicy;
+  estimate: NativeUsageEstimate;
+};
+
+export type NativeUsageGuard = {
+  bytesPerUpload: number;
+  monthlyLimitBytes: number;
+  pausePercent: number;
 };
 
 export type NativeMysteryMissionSync = {
@@ -154,6 +170,7 @@ export type NativePublishingConfiguration = {
   cloakTimeoutSeconds: number;
   cloakZones: Array<{ lat: number; lon: number; radiusMeters: number }>;
   includeDebugMysteryMissions: boolean;
+  usageGuard?: NativeUsageGuard;
 };
 
 interface AdaptiveLocationPlugin {

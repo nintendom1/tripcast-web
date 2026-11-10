@@ -442,6 +442,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         cloakTimeoutSeconds: TimeInterval,
         cloakZones: [NativeLocationPublisher.CloakZone],
         includeDebugMysteryMissions: Bool,
+        usageGuard: NativeLocationPublisher.UsageGuard?,
         completion: @escaping (Result<JSObject, Error>) -> Void
     ) {
         LiveActivityController.shared.configure(alertThresholdSeconds: alertThresholdSeconds)
@@ -454,7 +455,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             alertThresholdSeconds: alertThresholdSeconds,
             cloakTimeoutSeconds: cloakTimeoutSeconds,
             cloakZones: cloakZones,
-            includeDebugMysteryMissions: includeDebugMysteryMissions
+            includeDebugMysteryMissions: includeDebugMysteryMissions,
+            usageGuard: usageGuard
         ) { [weak self] result in
             guard let self else { return }
             switch result {
