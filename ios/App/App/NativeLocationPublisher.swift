@@ -474,8 +474,9 @@ final class NativeLocationPublisher {
                 reason: "stop",
                 suppressedBridgeEvents: suppressedBridgeEvents
             )
-            if preserveSamples, !clearCredentials {
-                silentStopDrainActive = !recoveryActive && networkAvailable != false && storageHealthy
+            if preserveSamples {
+                silentStopDrainActive = !clearCredentials &&
+                    !recoveryActive && networkAvailable != false && storageHealthy
                 samples = samples.map { sample in
                     PendingSample(
                         clientSampleId: sample.clientSampleId,
@@ -499,9 +500,12 @@ final class NativeLocationPublisher {
                 }
                 emit("gps:native-publish:preserved", details: [
                     "queueDepth": samples.count,
-                    "breadcrumbQueueDepth": breadcrumbQueueDepth
+                    "breadcrumbQueueDepth": breadcrumbQueueDepth,
+                    "credentialsCleared": clearCredentials
                 ])
-                publishIfPossibleLocked(reason: "healthy-live-stop", force: true)
+                if !clearCredentials {
+                    publishIfPossibleLocked(reason: "healthy-live-stop", force: true)
+                }
             } else {
                 samples.removeAll()
                 acknowledgedTrail.removeAll()
@@ -520,7 +524,7 @@ final class NativeLocationPublisher {
             if clearCredentials {
                 configuration = nil
                 try? fileManager.removeItem(at: configurationURL)
-                try? fileManager.removeItem(at: setAsideSamplesURL)
+                if !preserveSamples { try? fileManager.removeItem(at: setAsideSamplesURL) }
                 signInExpired = false
                 pausedSince = nil
                 failureAttempts.removeAll()
@@ -1364,7 +1368,7 @@ final class NativeLocationPublisher {
     }
 
     private var publishingHold: String? {
-        if signInExpired { return "sign-in-expired" }
+        if signInExpired || configuration == nil { return "sign-in-expired" }
         if pausedSince != nil { return "paused" }
         return nil
     }
