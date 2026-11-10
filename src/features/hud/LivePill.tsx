@@ -68,6 +68,8 @@ export function LivePill({
   const [hoveredMode, setHoveredMode] = useState<MenuValue | null>(null);
   const isSnoozed = snoozedUntil !== null;
   const isOffline = on && publishingPhase === "offline";
+  const isUploadPaused = on && publishingPhase === "paused";
+  const isSignInExpired = on && publishingPhase === "sign-in-expired";
   const isSyncing = on && publishingPhase === "syncing" && pendingBreadcrumbs > 0;
   const isStarting = on && captureReadiness === "starting";
   const isCaptureDegraded = on && captureReadiness === "degraded";
@@ -332,6 +334,10 @@ export function LivePill({
             ? `Live location snoozed until ${new Date(snoozedUntil).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}. Tap to resume.`
             : isOffline
             ? `Live location on. Offline. ${pendingBreadcrumbs} breadcrumbs saved locally and not transmitting.`
+            : isUploadPaused
+            ? `Live location on. Uploads paused near the Convex usage limit. ${pendingBreadcrumbs} breadcrumbs saved locally.`
+            : isSignInExpired
+            ? `Live location on. Sign-in expired. ${pendingBreadcrumbs} breadcrumbs saved locally until you sign in again.`
             : isSyncing
               ? `Live location on. Sending ${pendingBreadcrumbs} saved breadcrumbs.`
           : on && trackingMode === "power-saving"
@@ -351,7 +357,7 @@ export function LivePill({
             : isSnoozed
               ? "bg-[var(--bg-card)] text-[var(--ink-1)]"
             : "bg-[var(--bg-card)] text-[var(--ink-2)]",
-          isOffline && "ring-2 ring-[var(--amber)] ring-offset-1 ring-offset-transparent",
+          (isOffline || isUploadPaused || isSignInExpired) && "ring-2 ring-[var(--amber)] ring-offset-1 ring-offset-transparent",
           (isCaptureDegraded || isActivityUnavailable) && "bg-[var(--amber)] text-[var(--ink-1)] ring-2 ring-[var(--amber)] ring-offset-1 ring-offset-transparent",
           className,
         )}
@@ -372,7 +378,7 @@ export function LivePill({
         {on ? (
           isStarting ? (
             <LoaderCircle className="h-3 w-3 animate-spin" aria-label="Starting live location" />
-          ) : isOffline ? (
+          ) : isOffline || isUploadPaused || isSignInExpired ? (
             <CloudOff className="h-3 w-3 text-[var(--amber)]" aria-hidden="true" />
           ) : isSyncing ? (
             <LoaderCircle className="h-3 w-3 animate-spin" aria-hidden="true" />

@@ -232,6 +232,16 @@ export const LiveOfflineSaving: Story = {
   ],
 };
 
+export const LiveUploadsPaused: Story = {
+  ...LiveOfflineSaving,
+  args: { ...LiveOfflineSaving.args, publishingPhase: "paused", pendingBreadcrumbs: 214 },
+};
+
+export const LiveSignInExpired: Story = {
+  ...LiveOfflineSaving,
+  args: { ...LiveOfflineSaving.args, publishingPhase: "sign-in-expired", pendingBreadcrumbs: 58 },
+};
+
 export const DownwardPrecisionMenuInMapHud: Story = {
   render: () => <MapHudFixture />,
   parameters: {

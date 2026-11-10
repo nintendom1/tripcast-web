@@ -38,6 +38,18 @@ export const StorageFull: Story = {
   args: { phase: "offline", breadcrumbCount: 10_000, capacityReached: true },
 };
 
+export const UploadsPaused: Story = {
+  args: { phase: "paused", breadcrumbCount: 214 },
+};
+
+export const SignInExpired: Story = {
+  args: { phase: "sign-in-expired", breadcrumbCount: 58 },
+};
+
+export const UploadsPausedStorageFull: Story = {
+  args: { phase: "paused", breadcrumbCount: 10_000, capacityReached: true },
+};
+
 export const StorageError: Story = {
   args: { phase: "storage-error", breadcrumbCount: 12 },
 };

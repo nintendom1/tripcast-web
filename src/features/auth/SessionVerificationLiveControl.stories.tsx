@@ -57,6 +57,24 @@ export const Syncing: Story = {
     pendingBreadcrumbs: 21,
   },
 };
+export const UploadsPaused: Story = {
+  args: {
+    live: true,
+    phase: "active",
+    trackingMode: "precise",
+    publishingPhase: "paused",
+    pendingBreadcrumbs: 214,
+  },
+};
+export const SignInExpired: Story = {
+  args: {
+    live: true,
+    phase: "active",
+    trackingMode: "precise",
+    publishingPhase: "sign-in-expired",
+    pendingBreadcrumbs: 58,
+  },
+};
 export const LiveTrailPaused: Story = {
   args: { live: true, phase: "active", trackingMode: "legacy", liveTrailEnabled: false },
 };

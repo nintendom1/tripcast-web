@@ -35,6 +35,7 @@ import {
   Moon,
   Sun,
   SunMoon,
+  TriangleAlert,
   User,
   UserRoundPen,
   UserPlus,
@@ -99,6 +100,16 @@ import { computeAutoState } from "../travelstate/autoStateCalc";
 import { IosSideloadProfileCountdown } from "./SideloadProfileCountdownRow";
 import { LiveGpsSettings } from "./LiveGpsSettings";
 import { isAdaptiveLocationAvailable } from "../../native/locationWatcher";
+import { nativeLocationManager } from "../../native/nativeLocationManager";
+import { useNativePublishingState } from "../../native/nativePublishingState";
+import { ConvexUsageScreen } from "./ConvexUsageScreen";
+import {
+  USAGE_LEVEL_COPY,
+  USAGE_STORAGE_MODEL,
+  type UsageLedger,
+  type UsageLevel,
+  type UsageReading,
+} from "../../lib/usageWarning";
 
 type OptionsSheetProps = {
   open: boolean;
@@ -119,10 +130,14 @@ type OptionsSheetProps = {
   onEndTrip?: () => void;
   /** Either role: open the full-screen trip credits. */
   onViewCredits?: () => void;
+  /** Traveler-only: the phone's last usage reading; `undefined` until read, and for Followers. */
+  usage?: UsageReading;
+  /** Traveler-only: reports a fresh read of the phone's counters from the Convex Usage screen. */
+  onUsageLedger?: (ledger: UsageLedger, options?: { reset?: boolean }) => void;
   preserveDebugContext?: boolean;
 };
 
-export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "live-gps" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker" | "quick-activities";
+export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "live-gps" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker" | "quick-activities" | "convex-usage";
 type LiveTrailDeleteMode = "range" | "every_other" | "individual";
 
 const TICKER_PREVIEW_MESSAGE = {
@@ -1046,23 +1061,130 @@ function MissionSettingsSection({ token }: { token: string }) {
   );
 }
 
-function ConvexUsageRow() {
-  const bytes = useEgressEstimateBytes();
-  const mb = (bytes / (1024 * 1024)).toFixed(1);
+const USAGE_LEVEL_TONE: Record<UsageLevel, string> = {
+  ok: "text-[var(--ink-3)]",
+  warn: "text-[var(--amber-2)]",
+  critical: "text-[var(--danger)]",
+  paused: "text-[var(--danger)]",
+};
+
+/** The Developer row; for a Traveler its detail is the estimate level. */
+export function ConvexUsageOptionsRow({
+  role,
+  usage,
+  countersAvailable,
+  onClick,
+}: {
+  role: "traveler" | "follower";
+  usage: UsageReading | undefined;
+  /** This device can read the phone's counters (iOS app). */
+  countersAvailable: boolean;
+  onClick: () => void;
+}) {
+  const detail = role === "follower"
+    ? "Photo download estimate"
+    : !countersAvailable
+      ? "No estimate on this device"
+      : !usage
+        ? "Loading"
+        : usage.level === null
+          ? "No estimate on this device"
+          : USAGE_LEVEL_COPY[usage.level].label;
+  return <OptionsRow icon={Database} title="Convex Usage" detail={detail} onClick={onClick} />;
+}
+
+/** Traveler-only line at the top of Options while the estimate is at warn, critical or paused. */
+export function ConvexUsageStatusLine({ level, onOpen }: { level: UsageLevel | null; onOpen: () => void }) {
+  if (level === null || level === "ok") return null;
+  const tone = USAGE_LEVEL_TONE[level];
   return (
-    <div className="flex flex-col gap-2 px-4 py-3 sm:px-5">
-      <div className="flex items-center gap-4">
-        <OptionsIcon icon={Database} />
-        <div className="min-w-0 flex-1">
-          <div className="text-base font-medium text-[var(--ink-1)]">Convex data this month</div>
-          <div className="text-sm text-[var(--ink-3)]">≈ {mb} MB image data loaded on this device</div>
-        </div>
-      </div>
-      <div className="rounded-lg bg-[var(--meter-track)]/60 px-3 py-2 text-xs text-[var(--ink-3)]">
-        Per-device estimate (story images only). Map tiles no longer use Convex. Authoritative total
-        is in the Convex dashboard.
-      </div>
-    </div>
+    <button
+      type="button"
+      data-convex-usage-status-line=""
+      onClick={onOpen}
+      className="flex w-full items-center gap-3 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3 text-left shadow-sm transition-colors hover:bg-[var(--meter-track)]/40"
+    >
+      <TriangleAlert className={cn("h-5 w-5 shrink-0", tone)} aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className={cn("block text-sm font-semibold", tone)}>Convex Usage: {USAGE_LEVEL_COPY[level].label}</span>
+        <span className="block text-sm text-[var(--ink-3)]">{USAGE_LEVEL_COPY[level].message}</span>
+      </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ink-3)]" aria-hidden />
+    </button>
+  );
+}
+
+function ConvexUsageView({
+  role,
+  usage,
+  onUsageLedger,
+  log,
+}: {
+  role: "traveler" | "follower";
+  usage: UsageReading | undefined;
+  onUsageLedger?: (ledger: UsageLedger, options?: { reset?: boolean }) => void;
+  log: DebugLogger;
+}) {
+  const photoEgressBytes = useEgressEstimateBytes();
+  const uploadsPaused = useNativePublishingState().phase === "paused";
+  const countersAvailable = role === "traveler" && isAdaptiveLocationAvailable();
+  const [ledger, setLedger] = useState<UsageLedger | null | undefined>(countersAvailable ? usage?.ledger : null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
+
+  function applyLedger(next: UsageLedger, options?: { reset?: boolean }) {
+    setLedger(next);
+    setNowMs(Date.now());
+    onUsageLedger?.(next, options);
+  }
+
+  // Counters and the estimate are read when the screen opens and after a reset; never polled.
+  useEffect(() => {
+    if (!countersAvailable) return;
+    let cancelled = false;
+    nativeLocationManager.getUsageLedger()
+      .then((next) => {
+        if (!cancelled) applyLedger(next);
+      })
+      .catch(() => {
+        // Keep the last good reading.
+        if (!cancelled) setLedger((current) => current ?? null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countersAvailable]);
+
+  return (
+    <>
+      <ConvexUsageScreen
+        role={role}
+        ledger={ledger}
+        storageModel={USAGE_STORAGE_MODEL}
+        photoEgressBytes={photoEgressBytes}
+        nowMs={nowMs}
+        uploadsPaused={uploadsPaused}
+        onResetCounters={() => setIsResetConfirmOpen(true)}
+      />
+      <ConfirmModal
+        open={isResetConfirmOpen}
+        onOpenChange={setIsResetConfirmOpen}
+        title="Reset usage counters?"
+        description="This clears the hourly upload counters and this month's usage estimate on this phone, and lifts an upload pause. Saved GPS points are not affected."
+        confirmLabel="Reset counters"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          log.logUi("action:convex-usage:reset-counters");
+          const previous = ledger;
+          setLedger(undefined);
+          nativeLocationManager.resetUsageLedger()
+            .then((next) => applyLedger(next, { reset: true }))
+            .catch(() => setLedger(previous ?? null));
+        }}
+      />
+    </>
   );
 }
 
@@ -1739,6 +1861,8 @@ export default function OptionsSheet({
   onKillGpsServices,
   onEndTrip,
   onViewCredits,
+  usage,
+  onUsageLedger,
   preserveDebugContext = false,
 }: OptionsSheetProps) {
   const [view, setView] = useState<OptionsView>("options");
@@ -1858,6 +1982,11 @@ export default function OptionsSheet({
               title={TERMS.debugLog}
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
+          ) : view === "convex-usage" ? (
+            <SubViewHeader
+              title="Convex Usage"
+              onBack={() => { music.sfx("page"); navigateTo("options"); }}
+            />
           ) : (
             <div className="relative">
               <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[var(--header-gradient)]" />
@@ -1916,6 +2045,12 @@ export default function OptionsSheet({
                 <QuickActivitySettingsView token={session.token} />
               </OptionsContentFrame>
             </SheetBody>
+          ) : view === "convex-usage" ? (
+            <SheetBody className="p-0">
+              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                <ConvexUsageView role={role} usage={usage} onUsageLedger={onUsageLedger} log={log} />
+              </OptionsContentFrame>
+            </SheetBody>
           ) : view === "options" ? (
             <OptionsHome
               role={role}
@@ -1934,6 +2069,8 @@ export default function OptionsSheet({
               onFollowerCutoff={() => { music.sfx("page"); navigateTo("follower-cutoff"); }}
               onQuickActivities={() => { music.sfx("page"); navigateTo("quick-activities"); }}
               onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
+              usage={usage}
+              onConvexUsage={() => { music.sfx("page"); navigateTo("convex-usage"); }}
               onTriggerTestToast={onTriggerTestToast}
               onKillGpsServices={onKillGpsServices ? () => {
                 log.logUi("action:developer-kill-gps:open-confirmation");
@@ -1944,7 +2081,7 @@ export default function OptionsSheet({
             />
           ) : view === "debug-logs" ? (
             <SheetBody className="min-h-0 overflow-hidden p-0">
-              <DebugPanel token={session?.token} />
+              <DebugPanel token={session?.token} role={role} />
             </SheetBody>
           ) : null}
         </SheetContent>
@@ -2062,6 +2199,8 @@ function OptionsHome({
   onFollowerCutoff,
   onQuickActivities,
   onDebugLogs,
+  usage,
+  onConvexUsage,
   onTriggerTestToast,
   onKillGpsServices,
   onEndTrip,
@@ -2083,6 +2222,8 @@ function OptionsHome({
   onEmergencyReset: () => void;
   onFollowerCutoff: () => void;
   onQuickActivities: () => void;
+  usage?: UsageReading;
+  onConvexUsage: () => void;
   onTriggerTestToast?: () => void;
   onKillGpsServices?: () => void;
   onEndTrip?: () => void;
@@ -2091,7 +2232,15 @@ function OptionsHome({
   const developerSection = (
     <OptionsSection label="Developer">
       <OptionsGroup>
-        <ConvexUsageRow />
+        <ConvexUsageOptionsRow
+          role={role}
+          usage={usage}
+          countersAvailable={isAdaptiveLocationAvailable()}
+          onClick={() => {
+            log.logUi("action:convex-usage");
+            onConvexUsage();
+          }}
+        />
         {role === "traveler" ? <ReplayImagePreparationRow token={session.token} /> : null}
         <IosSideloadProfileCountdown role={role} />
         <OptionsRow icon={Bug} title={TERMS.debugLog} detail="Debug logging and session log export" onClick={onDebugLogs} />
@@ -2153,6 +2302,15 @@ function OptionsHome({
   return (
     <SheetBody className="p-0">
       <OptionsContentFrame className="grid gap-10 py-8 pb-[calc(2.5rem+env(safe-area-inset-bottom))]">
+        {role === "traveler" ? (
+          <ConvexUsageStatusLine
+            level={usage?.level ?? null}
+            onOpen={() => {
+              log.logUi("action:convex-usage", { source: "status-line" });
+              onConvexUsage();
+            }}
+          />
+        ) : null}
         {role === "traveler" ? developerSection : null}
 
         <AppearanceSection />

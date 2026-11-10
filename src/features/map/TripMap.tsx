@@ -94,6 +94,7 @@ import {
 } from "../../lib/liveSharingPreference";
 import { useStaleBreadcrumbAlertSeconds } from "../../lib/staleBreadcrumbAlertPreference";
 import { useLiveGpsUploadIntervalSeconds } from "../../lib/liveGpsUploadIntervalPreference";
+import { USAGE_GUARD } from "../../lib/usageWarning";
 import { useNativeTrackingState } from "../../native/nativeTrackingState";
 import { useNativeReadinessState } from "../../native/nativeReadinessState";
 import { usePendingTrail, type LocalTrailPoint } from "./usePendingTrail";
@@ -227,6 +228,7 @@ const MIN_LOCATION_PUBLISH_INTERVAL_MS = 15_000;
 // "rejected" (red) fixes that the native 50m distanceFilter would otherwise eat
 // before the sampler ever runs. Off by default; no effect when the overlay is off.
 const FIX_OVERLAY_DEBUG_POLL_MS = 4_000;
+const PARKED_DOT_LIFETIME_MS = 12 * 60 * 60 * 1000;
 const LIVE_TRAIL_MIN_DISTANCE_METERS = 50;
 const LIVE_TRAIL_MIN_INTERVAL_MS = 120_000;
 const REPLAY_BASE_BEAT_MS = 200;
@@ -847,10 +849,12 @@ function TravelerLocationMarker({
   map,
   position,
   isPulsing,
+  caption = null,
 }: {
   map: maplibregl.Map | null;
   position: { lat: number; lon: number } | null;
   isPulsing?: boolean;
+  caption?: string | null;
 }) {
   const markerRef = useRef<maplibregl.Marker | null>(null);
 
@@ -883,6 +887,15 @@ function TravelerLocationMarker({
       el.appendChild(ring);
       el.appendChild(dot);
 
+      if (caption) {
+        const label = document.createElement("div");
+        label.dataset.travelerParkedCaption = "";
+        label.textContent = caption;
+        label.style.cssText =
+          "position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:4px;white-space:nowrap;padding:2px 8px;border-radius:999px;background:var(--bg-card);color:var(--ink-1);font-size:11px;font-weight:600;box-shadow:var(--shadow-card);pointer-events:none;";
+        el.appendChild(label);
+      }
+
       markerRef.current = new maplibregl.Marker({ element: el, anchor: "center" })
         .setLngLat([position.lon, position.lat])
         .addTo(map);
@@ -892,7 +905,7 @@ function TravelerLocationMarker({
       markerRef.current?.remove();
       markerRef.current = null;
     };
-  }, [map, position, isPulsing]);
+  }, [map, position, isPulsing, caption]);
 
   return null;
 }
@@ -1591,6 +1604,21 @@ export default function TripMap({
   const storedTravelerLocation = useQuery(tripcastApi.travelerLocations.getTravelerLocation, {
     token,
   });
+  // A parked Traveler stays visible to Followers for 12 hours. The server stops returning the
+  // location after that, but an open subscription does not rerun on its own, so hide it here too.
+  const followerParkedAt = role === "follower" ? storedTravelerLocation?.parkedAt : undefined;
+  const [expiredParkedAt, setExpiredParkedAt] = useState<number | null>(null);
+  const followerParkedExpired =
+    followerParkedAt !== undefined &&
+    (expiredParkedAt === followerParkedAt || followerParkedAt + PARKED_DOT_LIFETIME_MS <= Date.now());
+  useEffect(() => {
+    if (followerParkedAt === undefined) return;
+    const remainingMs = followerParkedAt + PARKED_DOT_LIFETIME_MS - Date.now();
+    if (remainingMs <= 0) return;
+    const timeout = setTimeout(() => setExpiredParkedAt(followerParkedAt), remainingMs);
+    return () => clearTimeout(timeout);
+  }, [followerParkedAt]);
+  const followerTravelerLocation = followerParkedExpired ? null : (storedTravelerLocation ?? null);
   const travelerLiveTrailStatus = useQuery(
     tripcastApi.liveTrail.travelerGetLiveTrailStatus,
     role === "traveler" ? { token } : "skip",
@@ -1811,7 +1839,7 @@ export default function TripMap({
     checkpoints,
     role === "traveler"
       ? (isLocationSharing && pendingTrailPoints.length === 0 ? livePosition : null)
-      : (storedTravelerLocation ? { lat: storedTravelerLocation.lat, lon: storedTravelerLocation.lon } : null),
+      : (followerTravelerLocation ? { lat: followerTravelerLocation.lat, lon: followerTravelerLocation.lon } : null),
     showPath,
     replayRevealUpTo,
     routeLineColor,
@@ -3592,6 +3620,8 @@ export default function TripMap({
         radiusMeters: pin.radiusMeters,
       })),
       includeDebugMysteryMissions: debugShowAllMysteryPins,
+      // Always sent: a configuration without the guard lifts the phone's usage pause.
+      usageGuard: USAGE_GUARD,
     })
       .then(() => {
         if (
@@ -3802,12 +3832,12 @@ export default function TripMap({
     const currentLocation =
       role === "traveler"
         ? (livePosition ?? storedTravelerLocation ?? null)
-        : (storedTravelerLocation ?? null);
+        : followerTravelerLocation;
 
     if (currentLocation) {
       centerMapOnCoordinate(currentLocation);
     }
-  }, [centerMapOnCoordinate, isFollowing, livePosition, storedTravelerLocation, role]);
+  }, [centerMapOnCoordinate, isFollowing, livePosition, storedTravelerLocation, followerTravelerLocation, role]);
 
   // One-shot getCurrentPosition at launch so Travelers see their own location
   // even when Live is off (the watcher only runs while sharing on native, and
@@ -4703,7 +4733,9 @@ export default function TripMap({
         if (
           nativePublishingState.phase === "offline" ||
           nativePublishingState.phase === "retrying" ||
-          nativePublishingState.phase === "storage-error"
+          nativePublishingState.phase === "storage-error" ||
+          nativePublishingState.phase === "paused" ||
+          nativePublishingState.phase === "sign-in-expired"
         ) {
           setIsPauseWithBreadcrumbsOpen(true);
           return;
@@ -5395,7 +5427,7 @@ export default function TripMap({
     const currentLocation =
       role === "traveler"
         ? (livePosition ?? storedTravelerLocation ?? null)
-        : (storedTravelerLocation ?? null);
+        : followerTravelerLocation;
 
     if (currentLocation) {
       startFollowingTraveler(currentLocation);
@@ -5630,9 +5662,9 @@ export default function TripMap({
         position={
           role === "traveler"
             ? livePosition
-            : (storedTravelerLocation ?? null)
+            : followerTravelerLocation
         }
-        isVisible={role === "traveler" || (storedTravelerLocation?.isSharing ?? false)}
+        isVisible={role === "traveler" || (followerTravelerLocation?.isSharing ?? false)}
         color={
           role === "traveler"
             ? (isLocationSharing ? gpsPulseColor : "#102a43")
@@ -5642,12 +5674,17 @@ export default function TripMap({
       <TravelerLocationMarker
         map={mapInstance}
         isPulsing={
-          role === "traveler" ? isLocationSharing : storedTravelerLocation !== null
+          role === "traveler" ? isLocationSharing : followerTravelerLocation !== null
         }
         position={
           role === "traveler"
             ? livePosition
-            : (storedTravelerLocation ?? null)
+            : followerTravelerLocation
+        }
+        caption={
+          role === "follower" && followerTravelerLocation?.parkedAt !== undefined
+            ? `Parked since ${new Date(followerTravelerLocation.parkedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+            : null
         }
       />
       <RouteVoteMapOverlay
@@ -6502,6 +6539,7 @@ export default function TripMap({
         onOpenChange={setIsPauseWithBreadcrumbsOpen}
         onKeep={() => stopLocationSharing("preserve")}
         onDiscard={() => stopLocationSharing("discard")}
+        phase={nativePublishingState.phase}
       />
 
       <SnoozeLiveSheet

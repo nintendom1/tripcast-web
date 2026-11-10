@@ -1,4 +1,5 @@
 import { formatActiveUiContextForSummary } from "./activeUiContext";
+import type { UsageLedger, UsageLedgerBucket } from "../lib/usageWarning";
 
 const LS_ENABLED = "tripcast.debug.enabled";
 const LS_LOG_KEY = "tripcast.debug.logs";
@@ -403,7 +404,38 @@ export function getSessionId(): string {
 // LLM / Debug summary builder
 // ---------------------------------------------------------------------------
 
-export function buildLlmSummary(): string {
+/**
+ * One-paragraph digest of the last 24 hours of the phone's hourly upload counters, plus its
+ * usage estimate for the month (totals only).
+ */
+export function formatUsageCounterDigest(ledger: UsageLedger | null, nowMs: number): string {
+  if (ledger === null) return "Hourly counters: not available.";
+  const { buckets, estimate } = ledger;
+  const estimateText = ` Usage estimate ${estimate.monthKey} (UTC): ${estimate.uploads} uploads, `
+    + (estimate.limitBytes === null
+      ? "no usage guard."
+      : `${Math.round(estimate.bytes / 1e6)} MB of ${Math.round(estimate.limitBytes / 1e6)} MB${estimate.paused ? ", uploads paused" : ""}.`);
+  const hourMs = 60 * 60 * 1000;
+  const startMs = nowMs - 24 * hourMs;
+  const recent = buckets.filter((bucket) => bucket.hourStart + hourMs > startMs && bucket.hourStart <= nowMs);
+  if (recent.length === 0) return `Hourly counters, last 24 h: no hours recorded.${estimateText}`;
+  const sum = (read: (bucket: UsageLedgerBucket) => number) => recent.reduce((total, bucket) => total + read(bucket), 0);
+  const oldest = Math.min(...buckets.map((bucket) => bucket.hourStart));
+  const coverage = oldest > startMs ? ` (counters start ${new Date(oldest).toISOString()})` : "";
+  const modes = (["precise", "power-saving", "legacy"] as const)
+    .map((mode) => `${mode} ${Math.round(sum((bucket) => bucket.secondsByMode[mode] ?? 0) / 60)} min`)
+    .join(", ");
+  return `Hourly counters, last 24 h${coverage}: ${recent.length} hours; ${sum((b) => b.uploads)} uploads, ${sum((b) => b.requests)} requests, `
+    + `${sum((b) => b.samplesSent)} points sent, ${sum((b) => b.samplesAcked)} accepted, `
+    + `${sum((b) => b.samplesSetAside)} set aside, ${sum((b) => b.samplesThinned)} thinned, ${sum((b) => b.retries)} retries; `
+    + `failures network ${sum((b) => b.failures.network)}, server ${sum((b) => b.failures.server)}, `
+    + `rate-limited ${sum((b) => b.failures.rateLimited)}, auth ${sum((b) => b.failures.auth)}, `
+    + `rejected ${sum((b) => b.failures.rejected)}; `
+    + `${Math.round(sum((b) => b.bytesSent) / 1024)} KB sent, ${Math.round(sum((b) => b.bytesReceived) / 1024)} KB received; `
+    + `time ${modes}.${estimateText}`;
+}
+
+export function buildLlmSummary(usageCounterDigest?: string): string {
   loadFromStorage();
   const locationRedact = getLocationRedact();
   const entries = locationRedact
@@ -415,7 +447,7 @@ export function buildLlmSummary(): string {
     : buffer;
 
   if (getPreset() === "gps-trace") {
-    return buildGpsLlmSummary(entries);
+    return buildGpsLlmSummary(entries, usageCounterDigest);
   }
 
   const lines: string[] = [];
@@ -423,6 +455,7 @@ export function buildLlmSummary(): string {
   lines.push("# TripCast Debug Session");
   lines.push(`Session: ${SESSION_ID}  |  Captured: ${entries.length} entries  |  Preset: ${getPreset()}  |  Viewport: ${SESSION_VIEWPORT.w}×${SESSION_VIEWPORT.h}  |  Generated: ${new Date().toISOString()}`);
   lines.push("");
+  if (usageCounterDigest) lines.push("## Hourly Counters (this phone)", usageCounterDigest, "");
 
   // Component map
   if (componentRegistry.size > 0) {
@@ -517,7 +550,7 @@ function capSummaryPreservingEnds(summary: string): string {
   return prefix + marker + suffix;
 }
 
-function buildGpsLlmSummary(entries: DebugEntry[]): string {
+function buildGpsLlmSummary(entries: DebugEntry[], usageCounterDigest?: string): string {
   const relevant = entries.filter(
     (entry) => entry.category === "gps" || entry.level === "warn" || entry.level === "error",
   );
@@ -548,6 +581,7 @@ function buildGpsLlmSummary(entries: DebugEntry[]): string {
     `Session: ${SESSION_ID}  |  Relevant: ${relevant.length} entries  |  Generated: ${new Date().toISOString()}`,
     "Privacy: GPS trace events contain delivery metadata only; coordinates, credentials, request payloads, and backend responses are excluded.",
     "",
+    ...(usageCounterDigest ? ["## Hourly Counters (this phone)", usageCounterDigest, ""] : []),
     "## Counts by GPS Action",
     ...[...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([action, count]) => `- ${action}: ${count}`),
     "",

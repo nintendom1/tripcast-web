@@ -1,5 +1,6 @@
 import { Dialog } from "@base-ui/react/dialog";
 import { CloudUpload, Trash2 } from "lucide-react";
+import type { NativePublishingPhase } from "../../native/nativePublishingState";
 
 export type PendingBreadcrumbPauseDialogProps = {
   open: boolean;
@@ -7,6 +8,7 @@ export type PendingBreadcrumbPauseDialogProps = {
   onOpenChange: (open: boolean) => void;
   onKeep: () => void;
   onDiscard: () => void;
+  phase?: NativePublishingPhase;
 };
 
 export function PendingBreadcrumbPauseDialog({
@@ -15,7 +17,13 @@ export function PendingBreadcrumbPauseDialog({
   onOpenChange,
   onKeep,
   onDiscard,
+  phase,
 }: PendingBreadcrumbPauseDialogProps) {
+  const sendWhen = phase === "paused"
+    ? { reason: " Uploads are paused near the Convex usage limit and resume when the pause lifts.", keep: "Keep & send when uploads resume" }
+    : phase === "sign-in-expired"
+      ? { reason: " Sign-in has expired, so they send after you sign in again.", keep: "Keep & send after signing in" }
+      : { reason: "", keep: "Keep & send when online" };
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
@@ -26,6 +34,7 @@ export function PendingBreadcrumbPauseDialog({
           </Dialog.Title>
           <Dialog.Description className="mt-2 text-sm text-[var(--ink-2)]">
             {breadcrumbCount.toLocaleString()} breadcrumb{breadcrumbCount === 1 ? " is" : "s are"} saved on this iPhone and haven’t been sent yet.
+            {sendWhen.reason}
           </Dialog.Description>
           <div className="mt-5 grid gap-2">
             <button
@@ -34,7 +43,7 @@ export function PendingBreadcrumbPauseDialog({
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--flag)] px-4 py-2 text-sm font-semibold text-white"
             >
               <CloudUpload className="h-4 w-4" aria-hidden="true" />
-              Keep &amp; send when online
+              {sendWhen.keep}
             </button>
             <button
               type="button"

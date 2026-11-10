@@ -1,4 +1,4 @@
-import { CloudOff, LoaderCircle, Save, TriangleAlert } from "lucide-react";
+import { CirclePause, CloudOff, KeyRound, LoaderCircle, Save, TriangleAlert } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NativePublishingPhase } from "../../native/nativePublishingState";
 
@@ -21,7 +21,20 @@ export function OfflineBreadcrumbNotice({
   const isOffline = phase === "offline";
   const isSyncing = phase === "syncing";
   const isStorageError = phase === "storage-error";
-  const Icon = isOffline ? CloudOff : isSyncing ? LoaderCircle : isStorageError ? TriangleAlert : Save;
+  const isPaused = phase === "paused";
+  const isSignInExpired = phase === "sign-in-expired";
+  const saved = `${count} breadcrumb${breadcrumbCount === 1 ? "" : "s"} saved locally`;
+  const Icon = isOffline
+    ? CloudOff
+    : isSyncing
+      ? LoaderCircle
+      : isStorageError
+        ? TriangleAlert
+        : isPaused
+          ? CirclePause
+          : isSignInExpired
+            ? KeyRound
+            : Save;
 
   let message = isOffline
     ? breadcrumbCount === 0
@@ -31,15 +44,21 @@ export function OfflineBreadcrumbNotice({
       ? `Back online — sending ${count} saved breadcrumb${breadcrumbCount === 1 ? "" : "s"}…`
       : isStorageError
         ? "TripCast couldn’t save the latest breadcrumbs to device storage."
-        : `Sync delayed — ${count} breadcrumb${breadcrumbCount === 1 ? "" : "s"} saved locally.`;
+        : isPaused
+          ? `Uploads paused near the Convex usage limit — ${saved}.`
+          : isSignInExpired
+            ? `Sign-in expired — ${saved}. Sign in again to send them.`
+            : `Sync delayed — ${saved}.`;
 
   if (capacityReached) {
-    message = "Offline breadcrumb storage is full. Oldest saved points are being replaced.";
+    message = isPaused || isSignInExpired
+      ? `${message} Storage is full, so older saved points are being thinned.`
+      : "Saved breadcrumb storage is full. Older saved points are being thinned to make room.";
   }
 
   return (
     <div
-      role={isStorageError || capacityReached ? "alert" : "status"}
+      role={isStorageError || isSignInExpired || capacityReached ? "alert" : "status"}
       className={cn(
         "pointer-events-auto flex items-center gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-xs font-semibold text-[var(--ink-1)] shadow-[var(--shadow-card)]",
         className,
