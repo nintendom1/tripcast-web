@@ -1,6 +1,8 @@
-import { Database, ExternalLink, HardDrive, ImageIcon, Smartphone, type LucideIcon } from "lucide-react";
+import { useState } from "react";
+import { Database, ExternalLink, ImageIcon, Smartphone, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import type { NativeTrackingMode } from "../../native/nativeTrackingState";
 import {
   MIN_PACE_ELAPSED_MS,
@@ -13,6 +15,17 @@ import {
   type UsagePolicy,
   type UsageStorageModel,
 } from "../../lib/usageWarning";
+import {
+  FUNCTION_CALLS_PER_UPLOAD,
+  assessResources,
+  parseDashboardFigure,
+  usageResourceCopy,
+  type DashboardUnit,
+  type ResourceAssessment,
+  type UsageAllowance,
+  type UsageBaselineKind,
+  type UsageBaselines,
+} from "../../lib/usageResources";
 
 export type ConvexUsageScreenProps = {
   role: "traveler" | "follower";
@@ -26,6 +39,12 @@ export type ConvexUsageScreenProps = {
   /** The phone's publishing phase is "paused". */
   uploadsPaused: boolean;
   onResetCounters: () => void;
+  /** The dashboard figures the Traveler entered for the two storage resources. */
+  baselines?: UsageBaselines;
+  /** Bytes of photos this phone uploaded this month, for a File Storage row with no dashboard figure. */
+  fileBytesAddedThisMonth?: number;
+  /** Saves a dashboard figure, in bytes. The entry form shows only when this is passed. */
+  onSaveBaseline?: (kind: UsageBaselineKind, bytes: number) => void;
 };
 
 type TrackedMode = Exclude<NativeTrackingMode, "off">;
@@ -58,6 +77,13 @@ const LEVEL_TONE: Record<UsageLevel, string> = {
   warn: "text-[var(--amber-2)]",
   critical: "text-[var(--danger)]",
   paused: "text-[var(--danger)]",
+};
+
+const METER_FILL: Record<UsageLevel, string> = {
+  ok: "bg-[var(--ink-1)]",
+  warn: "bg-[var(--amber-2)]",
+  critical: "bg-[var(--danger)]",
+  paused: "bg-[var(--danger)]",
 };
 
 type CounterRow = {
@@ -141,6 +167,15 @@ function formatPercent(percent: number): string {
   return `${percent >= 10 ? Math.floor(percent) : (Math.floor(percent * 10) / 10).toFixed(1)}%`;
 }
 
+function formatAllowance(allowance: UsageAllowance): string {
+  const amount = allowance.unit === "bytes" ? formatDecimalBytes(allowance.amount) : formatAmount(allowance.amount, "calls");
+  return allowance.period === "month" ? `${amount} a month` : `${amount} total`;
+}
+
+function formatEnteredDate(ms: number): string {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(ms);
+}
+
 function formatUtcHour(ms: number): string {
   const text = new Intl.DateTimeFormat(undefined, {
     month: "short",
@@ -200,6 +235,17 @@ function UsageNote({ children }: { children: React.ReactNode }) {
   return <p className="px-4 py-3 text-sm text-[var(--ink-3)] sm:px-5">{children}</p>;
 }
 
+function UsageMeter({ percent, level }: { percent: number; level: UsageLevel | null }) {
+  return (
+    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--meter-track)]" aria-hidden>
+      <div
+        className={cn("h-full rounded-full", METER_FILL[level ?? "ok"])}
+        style={{ width: `${Math.min(100, percent)}%` }}
+      />
+    </div>
+  );
+}
+
 export function ConvexUsageScreen({
   role,
   ledger,
@@ -208,6 +254,9 @@ export function ConvexUsageScreen({
   nowMs,
   uploadsPaused,
   onResetCounters,
+  baselines,
+  fileBytesAddedThisMonth = 0,
+  onSaveBaseline,
 }: ConvexUsageScreenProps) {
   return (
     <div className="grid gap-6" data-convex-usage-screen={role}>
@@ -215,15 +264,25 @@ export function ConvexUsageScreen({
         <DatabaseIoEstimateSection ledger={ledger} nowMs={nowMs} uploadsPaused={uploadsPaused} />
       ) : null}
       {role === "traveler" ? (
-        <ObservedSection ledger={ledger} nowMs={nowMs} onResetCounters={onResetCounters} />
+        <OtherResourcesSection
+          rows={assessResources({
+            ledger,
+            nowMs,
+            uploadsPaused,
+            baselines,
+            fileBytesAddedThisMonth,
+            photoEgressBytes,
+            storageModel,
+          }).filter((row) => row.resource !== "databaseIo")}
+          storageModel={storageModel}
+          onSaveBaseline={onSaveBaseline}
+        />
       ) : null}
-      <EstimatedSection
-        role={role}
-        photoEgressBytes={photoEgressBytes}
-        ledger={ledger}
-        storageModel={storageModel}
-        nowMs={nowMs}
-      />
+      {role === "traveler" ? (
+        <ObservedSection ledger={ledger} nowMs={nowMs} onResetCounters={onResetCounters} />
+      ) : (
+        <EstimatedSection photoEgressBytes={photoEgressBytes} />
+      )}
     </div>
   );
 }
@@ -306,12 +365,7 @@ function EstimateDetail({
             {formatPercent(assessment.percent)}
           </p>
         </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--meter-track)]" aria-hidden>
-          <div
-            className="h-full rounded-full bg-[var(--ink-1)]"
-            style={{ width: `${Math.min(100, assessment.percent)}%` }}
-          />
-        </div>
+        <UsageMeter percent={assessment.percent} level={level} />
         <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
           <dt className="text-[var(--ink-3)]">{assessment.partial ? "Uploads counted" : "Uploads this month"}</dt>
           <dd className="text-right tabular-nums text-[var(--ink-1)]">{formatAmount(assessment.uploads, null)}</dd>
@@ -475,26 +529,164 @@ function ObservedSection({
   );
 }
 
-function EstimatedSection({
-  role,
-  photoEgressBytes,
-  ledger,
-  storageModel,
-  nowMs,
-}: {
-  role: "traveler" | "follower";
-  photoEgressBytes: number;
-  ledger: UsageLedger | null | undefined;
-  storageModel: UsageStorageModel | null;
-  nowMs: number;
-}) {
-  const monthStart = startOfUtcMonth(nowMs);
-  const start = countersStart(ledger);
-  const pointsThisMonth = ledger == null || start === null
-    ? null
-    : bucketsSince(ledger, monthStart, nowMs).reduce((sum, bucket) => sum + bucket.samplesAcked, 0);
-  const period = start !== null && start > monthStart ? `since ${formatUtcHour(start)}` : "this month";
+const RESOURCE_NOTES: Partial<Record<ResourceAssessment["resource"], string>> = {
+  functionCalls: `This phone's successful uploads × ${FUNCTION_CALLS_PER_UPLOAD} calls each.`,
+  fileStorage: "Photos this phone uploaded.",
+  dataEgress: "Story images loaded on this device. Map tiles no longer use Convex.",
+};
 
+const STORAGE_KIND: Partial<Record<ResourceAssessment["resource"], UsageBaselineKind>> = {
+  databaseStorage: "database",
+  fileStorage: "file",
+};
+
+const UNAVAILABLE_COPY: Record<NonNullable<ResourceAssessment["unavailable"]>, string> = {
+  loading: "Not estimated yet: loading counters.",
+  "no-counters": "Not estimated: no counters from this device.",
+  "unreadable-month": "Not estimated: the phone reported an unreadable month.",
+  "no-model": "Not estimated: bytes per point not measured yet.",
+};
+
+function OtherResourcesSection({
+  rows,
+  storageModel,
+  onSaveBaseline,
+}: {
+  rows: ResourceAssessment[];
+  storageModel: UsageStorageModel | null;
+  onSaveBaseline?: (kind: UsageBaselineKind, bytes: number) => void;
+}) {
+  return (
+    <UsageSection label="Other resources (estimated)">
+      <UsageGroup>
+        {rows.map((row) => (
+          <ResourceRow key={row.resource} row={row} storageModel={storageModel} onSaveBaseline={onSaveBaseline} />
+        ))}
+      </UsageGroup>
+      <p className="text-xs leading-relaxed text-[var(--ink-3)]">Action Compute and Search are not used by TripCast.</p>
+    </UsageSection>
+  );
+}
+
+function ResourceRow({
+  row,
+  storageModel,
+  onSaveBaseline,
+}: {
+  row: ResourceAssessment;
+  storageModel: UsageStorageModel | null;
+  onSaveBaseline?: (kind: UsageBaselineKind, bytes: number) => void;
+}) {
+  const { resource, label, allowance, amount, percent, level, unavailable, baseline, addedBytes } = row;
+  const kind = STORAGE_KIND[resource];
+  const formatAmountOf = (value: number) =>
+    allowance.unit === "bytes" ? formatDecimalBytes(value) : formatAmount(value, "calls");
+  const copy = level === null || level === "ok" ? null : usageResourceCopy(resource, level);
+  const note = resource === "databaseStorage" && storageModel
+    ? `Points accepted × ${formatBytes(storageModel.bytesPerPoint)} per point × ${formatAmount(storageModel.indexCopies, null)} index copies.`
+    : RESOURCE_NOTES[resource];
+
+  return (
+    <div className="px-4 py-3 sm:px-5" data-usage-resource={resource}>
+      <div className="flex items-baseline justify-between gap-4">
+        <p className="min-w-0 text-base font-medium text-[var(--ink-1)]">{label}</p>
+        {level !== null && percent !== null ? (
+          <p className="shrink-0 text-sm font-semibold tabular-nums text-[var(--ink-1)]">{formatPercent(percent)}</p>
+        ) : null}
+      </div>
+      {copy && level ? (
+        <>
+          <p className={cn("text-sm font-semibold", LEVEL_TONE[level])}>{copy.label}</p>
+          <p className="text-sm text-[var(--ink-3)]">{copy.message}</p>
+        </>
+      ) : null}
+      <UsageMeter percent={percent ?? 0} level={level} />
+      {unavailable ? <p className="mt-2 text-sm text-[var(--ink-3)]">{UNAVAILABLE_COPY[unavailable]}</p> : null}
+      <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm">
+        {amount !== null ? (
+          <>
+            <dt className="text-[var(--ink-3)]">{kind && !baseline ? "Added this month" : "Estimated"}</dt>
+            <dd className="text-right tabular-nums text-[var(--ink-1)]">{formatAmountOf(amount)}</dd>
+          </>
+        ) : null}
+        {kind && baseline && addedBytes != null ? (
+          <>
+            <dt className="text-[var(--ink-3)]">Added by this phone since</dt>
+            <dd className="text-right tabular-nums text-[var(--ink-1)]">{formatAmountOf(addedBytes)}</dd>
+          </>
+        ) : null}
+        <dt className="text-[var(--ink-3)]">Free allowance</dt>
+        <dd className="text-right tabular-nums text-[var(--ink-1)]">{formatAllowance(allowance)}</dd>
+      </dl>
+      {note && amount !== null ? <p className="mt-2 text-xs text-[var(--ink-3)]">{note}</p> : null}
+      {kind && baseline ? (
+        <p className="mt-2 text-xs text-[var(--ink-3)]" data-usage-baseline="">
+          Entered {formatEnteredDate(baseline.enteredAtMs)} from dashboard
+        </p>
+      ) : null}
+      {kind && !baseline && onSaveBaseline ? (
+        <p className="mt-2 text-xs text-[var(--ink-3)]">
+          Enter the figure from the Convex dashboard to compare the total with the Free allowance.
+        </p>
+      ) : null}
+      {kind && onSaveBaseline ? (
+        <BaselineForm label={label} onSave={(bytes) => onSaveBaseline(kind, bytes)} />
+      ) : null}
+    </div>
+  );
+}
+
+function BaselineForm({ label, onSave }: { label: string; onSave: (bytes: number) => void }) {
+  const [text, setText] = useState("");
+  const [unit, setUnit] = useState<DashboardUnit>("MB");
+  const [invalid, setInvalid] = useState(false);
+
+  return (
+    <form
+      className="mt-3 grid gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const bytes = parseDashboardFigure(text, unit);
+        setInvalid(bytes === null);
+        if (bytes === null) return;
+        onSave(bytes);
+        setText("");
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <Input
+          inputMode="decimal"
+          autoComplete="off"
+          placeholder="Figure"
+          aria-label={`${label} figure from the Convex dashboard`}
+          aria-invalid={invalid}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          className="min-w-0 flex-1"
+        />
+        <select
+          aria-label={`${label} unit`}
+          value={unit}
+          onChange={(event) => setUnit(event.target.value as DashboardUnit)}
+          className="h-9 rounded-md border border-input bg-card px-2 text-sm text-card-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <option value="MB">MB</option>
+          <option value="GB">GB</option>
+        </select>
+        <Button type="submit" variant="outline" disabled={text.trim() === ""}>
+          Save
+        </Button>
+      </div>
+      {invalid ? (
+        <p className="text-xs text-[var(--ink-danger)]" role="alert">
+          Enter a number such as 120 or 1.5.
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+function EstimatedSection({ photoEgressBytes }: { photoEgressBytes: number }) {
   return (
     <UsageSection label="Estimated">
       <UsageGroup>
@@ -513,31 +705,6 @@ function EstimatedSection({
             the Convex dashboard.
           </div>
         </div>
-        {role === "traveler" ? (
-          <div className="flex flex-col gap-2 px-4 py-3 sm:px-5">
-            <div className="flex items-center gap-4">
-              <UsageIcon icon={HardDrive} />
-              <div className="min-w-0 flex-1">
-                <p className="text-base font-medium text-[var(--ink-1)]">GPS point storage this month</p>
-                <p className="text-sm text-[var(--ink-3)]">
-                  {ledger === undefined
-                    ? "Not estimated yet: loading counters."
-                    : pointsThisMonth === null
-                      ? "Not estimated: no counters from this device."
-                      : storageModel == null
-                        ? "Not estimated: bytes per point not measured yet."
-                        : `≈ ${formatBytes(pointsThisMonth * storageModel.bytesPerPoint * storageModel.indexCopies)} added by ${formatCount(pointsThisMonth)} points from this phone ${period}`}
-                </p>
-              </div>
-            </div>
-            {pointsThisMonth !== null && storageModel != null ? (
-              <div className="rounded-lg bg-[var(--meter-track)]/60 px-3 py-2 text-xs text-[var(--ink-3)]">
-                Points accepted × {formatBytes(storageModel.bytesPerPoint)} per point ×{" "}
-                {formatAmount(storageModel.indexCopies, null)} index copies. Storage adds up across months.
-              </div>
-            ) : null}
-          </div>
-        ) : null}
       </UsageGroup>
     </UsageSection>
   );
