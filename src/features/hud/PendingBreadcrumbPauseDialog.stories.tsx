@@ -18,3 +18,7 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Default: Story = {};
+
+export const UploadsPaused: Story = { args: { phase: "paused", breadcrumbCount: 214 } };
+
+export const SignInExpired: Story = { args: { phase: "sign-in-expired", breadcrumbCount: 58 } };

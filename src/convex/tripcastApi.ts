@@ -143,6 +143,8 @@ export type TravelerLocation = {
   lon: number;
   accuracy?: number;
   isSharing: true;
+  /** Set while the Traveler is parked; the location stays fresh for 12 hours after it. */
+  parkedAt?: number;
 } | null;
 
 export type LiveTrailSample = {
@@ -184,6 +186,8 @@ export type NativeLocationSampleInput = {
   recordTrail: boolean;
   publishCurrentLocation?: boolean;
   reason: NativeLocationSampleReason;
+  /** Sent only on the phone's parked marker. */
+  parked?: boolean;
 };
 
 export type NativeLocationBatchResult = {

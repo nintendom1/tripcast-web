@@ -6,6 +6,7 @@ import {
   getLogs,
   clearLogs,
   buildLlmSummary,
+  formatUsageCounterDigest,
   getSessionId,
   getPreset,
   setPreset,
@@ -34,6 +35,8 @@ import {
   subscribeActiveUiContext,
   type FloatingDebugButtonMode,
 } from "./activeUiContext";
+import { isAdaptiveLocationAvailable } from "../native/locationWatcher";
+import { nativeLocationManager } from "../native/nativeLocationManager";
 
 // ---------------------------------------------------------------------------
 // Clipboard helpers
@@ -302,7 +305,7 @@ function TickerDebug({ token }: { token?: string }) {
 // Panel
 // ---------------------------------------------------------------------------
 
-export default function DebugPanel({ token }: { token?: string }) {
+export default function DebugPanel({ token, role }: { token?: string; role?: "traveler" | "follower" }) {
   const [enabled, setEnabledState] = useState(isEnabled);
   const [consoleMirror, setConsoleMirrorState] = useState(getConsoleMirror);
   const [locationRedact, setLocationRedactState] = useState(getLocationRedact);
@@ -310,7 +313,27 @@ export default function DebugPanel({ token }: { token?: string }) {
   const [floatingSettings, setFloatingSettings] = useState(getFloatingDebugSettings);
   const [logs, setLogs] = useState<DebugEntry[]>(() => getLogs().slice(-50).reverse());
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+  const [usageCounterDigest, setUsageCounterDigest] = useState<string | undefined>(undefined);
   const copyStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Traveler only: read the phone's hourly counters once when the panel opens, so
+  // Copy LLM Summary stays synchronous inside the tap and keeps clipboard permission.
+  useEffect(() => {
+    if (role !== "traveler") return;
+    if (!isAdaptiveLocationAvailable()) {
+      setUsageCounterDigest(formatUsageCounterDigest(null, Date.now()));
+      return;
+    }
+    let cancelled = false;
+    nativeLocationManager.getUsageLedger()
+      .catch(() => null)
+      .then((ledger) => {
+        if (!cancelled) setUsageCounterDigest(formatUsageCounterDigest(ledger, Date.now()));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [role]);
 
   const syncDebugState = useCallback(() => {
     setEnabledState(isEnabled());
@@ -441,7 +464,7 @@ export default function DebugPanel({ token }: { token?: string }) {
 
   async function handleCopyDebugSummary() {
     if (!enabled) return;
-    const summary = buildLlmSummary();
+    const summary = buildLlmSummary(usageCounterDigest);
     try {
       await copyToClipboard(summary);
       showCopyStatus("Copied LLM summary!");

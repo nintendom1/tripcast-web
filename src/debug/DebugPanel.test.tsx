@@ -230,4 +230,25 @@ describe("DebugPanel", () => {
     expect(screen.getByPlaceholderText(/debug message/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /push/i })).toBeInTheDocument();
   });
+
+  it.each([
+    { role: "traveler", included: true },
+    { role: "follower", included: false },
+  ] as const)("includes the hourly counters in the LLM summary for a $role: $included", async ({ role, included }) => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    setEnabled(true);
+    render(<DebugPanel role={role} />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /copy llm summary/i }));
+    });
+
+    const summary = writeText.mock.calls[0]?.[0] as string;
+    expect(summary).toContain("# TripCast Debug Session");
+    expect(summary.includes("## Hourly Counters (this phone)")).toBe(included);
+  });
 });

@@ -14,6 +14,7 @@ import {
   logMapError,
   logNote,
   buildLlmSummary,
+  formatUsageCounterDigest,
   setCategoryOverride,
   setConsoleMirror,
   setEnabled,
@@ -22,6 +23,7 @@ import {
   subscribe,
 } from "./debugLogger";
 import { resetActiveUiContextForTests, setActiveUiContext } from "./activeUiContext";
+import type { UsageLedger, UsageLedgerBucket } from "../lib/usageWarning";
 
 beforeEach(() => {
   localStorage.clear();
@@ -487,6 +489,101 @@ describe("buildLlmSummary()", () => {
     expect(summary).toContain("Active sheet: JournalSheet");
     expect(summary).toContain("Label: Journal");
     expect(summary).toContain("Source: Dock -> Journal");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hourly counters digest
+// ---------------------------------------------------------------------------
+
+describe("formatUsageCounterDigest()", () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const NOW = Date.UTC(2026, 10, 18, 15, 0);
+
+  function bucket(hourStart: number, overrides: Partial<UsageLedgerBucket> = {}): UsageLedgerBucket {
+    return {
+      hourStart,
+      requests: 0,
+      uploads: 0,
+      samplesSent: 0,
+      samplesAcked: 0,
+      bytesSent: 0,
+      bytesReceived: 0,
+      retries: 0,
+      failures: { network: 0, server: 0, rateLimited: 0, auth: 0, paused: 0, rejected: 0 },
+      samplesSetAside: 0,
+      samplesThinned: 0,
+      secondsByMode: {},
+      ...overrides,
+    };
+  }
+
+  function ledger(buckets: UsageLedgerBucket[], estimate: Partial<UsageLedger["estimate"]> = {}): UsageLedger {
+    return {
+      buckets,
+      policy: {
+        emissionIntervalSeconds: 15,
+        maxBatchSize: 20,
+        maxQueueDepth: 10_000,
+        minEmissionIntervalSeconds: 3,
+        heartbeatIntervalSeconds: 60,
+        minDistanceMeters: 10,
+        minBearingDistanceMeters: 3,
+        turnThresholdDegrees: 18,
+      },
+      estimate: { monthKey: "2026-11", uploads: 160_000, bytes: 720_000_000, limitBytes: 1_000_000_000, paused: false, ...estimate },
+    };
+  }
+
+  // Outside the last 24 h, so left out of the sums.
+  const OLD = bucket(NOW - 25 * HOUR_MS, { uploads: 100, requests: 100 });
+  const RECENT = [
+    bucket(NOW - 2 * HOUR_MS, {
+      uploads: 10, requests: 12, samplesSent: 200, samplesAcked: 198, samplesSetAside: 1, samplesThinned: 2, retries: 2,
+      failures: { network: 2, server: 0, rateLimited: 0, auth: 0, paused: 5, rejected: 1 },
+      bytesSent: 100 * 1024, bytesReceived: 20 * 1024, secondsByMode: { precise: 1800 },
+    }),
+    bucket(NOW - HOUR_MS, {
+      uploads: 5, requests: 5, samplesSent: 100, samplesAcked: 100,
+      failures: { network: 0, server: 1, rateLimited: 1, auth: 1, paused: 0, rejected: 0 },
+      bytesSent: 50 * 1024, bytesReceived: 10 * 1024, secondsByMode: { "power-saving": 600 },
+    }),
+  ];
+
+  it("says when there are no counters", () => {
+    expect(formatUsageCounterDigest(null, NOW)).toBe("Hourly counters: not available.");
+  });
+
+  it("sums the last 24 hours, leaves out paused failures, and adds the month estimate", () => {
+    expect(formatUsageCounterDigest(ledger([OLD, ...RECENT]), NOW)).toBe(
+      "Hourly counters, last 24 h: 2 hours; 15 uploads, 17 requests, 300 points sent, 298 accepted, "
+        + "1 set aside, 2 thinned, 2 retries; failures network 2, server 1, rate-limited 1, auth 1, rejected 1; "
+        + "150 KB sent, 30 KB received; time precise 30 min, power-saving 10 min, legacy 0 min. "
+        + "Usage estimate 2026-11 (UTC): 160000 uploads, 720 MB of 1000 MB.",
+    );
+  });
+
+  it("notes when counters start inside the window and when uploads are paused", () => {
+    const digest = formatUsageCounterDigest(ledger(RECENT, { paused: true }), NOW);
+
+    expect(digest).toContain("Hourly counters, last 24 h (counters start 2026-11-18T13:00:00.000Z): 2 hours;");
+    expect(digest).toMatch(/720 MB of 1000 MB, uploads paused\.$/);
+  });
+
+  it("reports no recent hours and a missing usage guard", () => {
+    expect(formatUsageCounterDigest(ledger([OLD], { limitBytes: null }), NOW)).toBe(
+      "Hourly counters, last 24 h: no hours recorded. Usage estimate 2026-11 (UTC): 160000 uploads, no usage guard.",
+    );
+  });
+
+  it.each(["normal", "gps-trace"] as const)("puts the digest under its own heading in the %s summary", (preset) => {
+    setEnabled(true);
+    setPreset(preset);
+
+    expect(buildLlmSummary("Hourly counters: not available.")).toContain(
+      "## Hourly Counters (this phone)\nHourly counters: not available.\n",
+    );
+    expect(buildLlmSummary()).not.toContain("## Hourly Counters");
   });
 });
 

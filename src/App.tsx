@@ -42,11 +42,21 @@ import {
   setLiveSharingEnabled,
   useLiveSharingEnabled,
 } from "./lib/liveSharingPreference";
-import { useNativePublishingState } from "./native/nativePublishingState";
+import { getNativePublishingState, useNativePublishingState } from "./native/nativePublishingState";
+import { nativeLocationManager } from "./native/nativeLocationManager";
 import { useNativeTrackingState } from "./native/nativeTrackingState";
 import { useVerificationLiveBootstrap } from "./native/useVerificationLiveBootstrap";
 
 import OptionsSheet from "./features/options/OptionsSheet";
+import {
+  USAGE_LEVEL_COPY,
+  assessUsage,
+  isUsageEscalation,
+  usageToastKey,
+  type UsageLedger,
+  type UsageLevel,
+  type UsageReading,
+} from "./lib/usageWarning";
 
 const TripMap = React.lazy(() => import("./features/map/TripMap"));
 const InviteRedemptionScreen = React.lazy(() => import("./features/auth/InviteRedemptionScreen"));
@@ -64,8 +74,13 @@ const PANEL_MOTION = {
 };
 
 const GPS_KILL_DURATION_MS = 30_000;
+const USAGE_TOAST_STORAGE_KEY = "tripcast.usageToast.v1";
+const USAGE_TOAST_MS = 8000;
+// The last usage toast key written this session, so a failing localStorage cannot repeat the toast.
+let usageToastKeyInMemory: string | null = null;
 
 function MapErrorFallback(props: React.ComponentProps<typeof FullScreenErrorFallback>) {
+  const publishingPhase = useNativePublishingState().phase;
   useEffect(() => {
     debugLog("info", "App", "map:fallback:shown", "map", {
       message: props.error instanceof Error ? props.error.message : String(props.error),
@@ -82,9 +97,38 @@ function MapErrorFallback(props: React.ComponentProps<typeof FullScreenErrorFall
         props.resetErrorBoundary();
       }}
       title="The map could not load."
-      message="Try again, or reload the app if the map keeps failing."
+      message={publishingPhase === "paused"
+        ? "Try again, or reload the app if the map keeps failing. GPS uploads are paused and points are still being saved on this phone."
+        : "Try again, or reload the app if the map keeps failing."}
     />
   );
+}
+
+function readUsageToastKey(): string | null {
+  if (usageToastKeyInMemory !== null) return usageToastKeyInMemory;
+  try {
+    return localStorage.getItem(USAGE_TOAST_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function clearUsageToastKey() {
+  usageToastKeyInMemory = null;
+  try {
+    localStorage.removeItem(USAGE_TOAST_STORAGE_KEY);
+  } catch {
+    // best-effort; a stale stored key only suppresses a repeat toast this month
+  }
+}
+
+function writeUsageToastKey(key: string) {
+  usageToastKeyInMemory = key;
+  try {
+    localStorage.setItem(USAGE_TOAST_STORAGE_KEY, key);
+  } catch {
+    // best-effort; the in-memory key still prevents repeats until the next launch
+  }
 }
 
 type AppProps = {
@@ -159,6 +203,8 @@ function ConnectedApp() {
   const [testToastMessage, setTestToastMessage] = useState<string | null>(null);
   const [gpsSuppressedUntil, setGpsSuppressedUntil] = useState<number | null>(null);
   const [isVerificationPauseOpen, setIsVerificationPauseOpen] = useState(false);
+  const [usage, setUsage] = useState<UsageReading | undefined>(undefined);
+  const lastUsageLevelRef = useRef<UsageLevel | null>(null);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const testToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -239,6 +285,38 @@ function ConnectedApp() {
   });
   const verifiedSessionToken =
     session !== null && activeSessionCheck ? session.token : undefined;
+  const usageReaderToken =
+    verifiedSessionToken && activeSessionCheck?.role === "traveler" && isAdaptiveLocationAvailable()
+      ? verifiedSessionToken
+      : null;
+  const uploadsPaused = nativePublishingState.phase === "paused";
+
+  // Traveler on iOS: read the phone's usage estimate on launch, each time the app returns to
+  // the foreground, and when uploads pause or resume. No polling and no Convex call.
+  useEffect(() => {
+    if (!usageReaderToken) return;
+    let cancelled = false;
+    const readUsage = () => {
+      nativeLocationManager.getUsageLedger()
+        .then((ledger) => {
+          if (!cancelled) handleUsageLedger(ledger);
+        })
+        .catch(() => {
+          // Keep the last good reading.
+          if (!cancelled) setUsage((current) => current ?? { ledger: null, level: null });
+        });
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") readUsage();
+    };
+    readUsage();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usageReaderToken, uploadsPaused]);
   const { currentMessage, isPriority, onFunFactComplete } = useTicker(verifiedSessionToken);
 
   const finaleStatus = useQuery(
@@ -401,7 +479,7 @@ function ConnectedApp() {
     setIsIntroReplayOpen(false);
   }
 
-  function showResetToast(message: string) {
+  function showResetToast(message: string, durationMs = 3600) {
     if (resetToastTimeoutRef.current !== null) {
       clearTimeout(resetToastTimeoutRef.current);
     }
@@ -409,7 +487,30 @@ function ConnectedApp() {
     resetToastTimeoutRef.current = setTimeout(() => {
       setResetToastMessage(null);
       resetToastTimeoutRef.current = null;
-    }, 3600);
+    }, durationMs);
+  }
+
+  /** Records a read of the phone's counters, logs level changes and toasts each escalation once. */
+  function handleUsageLedger(ledger: UsageLedger, options?: { reset?: boolean }) {
+    // A reset restarts the estimate, so warnings may fire again this month.
+    if (options?.reset) clearUsageToastKey();
+    const assessment = assessUsage(ledger, Date.now(), getNativePublishingState().phase === "paused");
+    const level = assessment?.level ?? null;
+    setUsage({ ledger, level });
+    if (level !== lastUsageLevelRef.current) {
+      debugLog("info", "App", "usage:status:changed", "gps", {
+        from: lastUsageLevelRef.current,
+        to: level,
+        metric: "databaseIoEstimate",
+        percent: assessment ? Math.floor(assessment.percent) : null,
+      });
+      lastUsageLevelRef.current = level;
+    }
+    if (level === null || !isUsageEscalation(readUsageToastKey(), ledger.estimate.monthKey, level)) return;
+    writeUsageToastKey(usageToastKey(ledger.estimate.monthKey, level));
+    const copy = USAGE_LEVEL_COPY[level];
+    showResetToast(`${copy.label}: ${copy.message}`, USAGE_TOAST_MS);
+    debugLog("warn", "App", "usage:warning:shown", "gps", { level, metric: "databaseIoEstimate" });
   }
 
   function handleTriggerTestToast() {
@@ -462,7 +563,9 @@ function ConnectedApp() {
       nativePublishingState.breadcrumbQueueDepth > 0 &&
       (nativePublishingState.phase === "offline" ||
         nativePublishingState.phase === "retrying" ||
-        nativePublishingState.phase === "storage-error")
+        nativePublishingState.phase === "storage-error" ||
+        nativePublishingState.phase === "paused" ||
+        nativePublishingState.phase === "sign-in-expired")
     ) {
       setIsVerificationPauseOpen(true);
       return;
@@ -572,6 +675,7 @@ function ConnectedApp() {
             onOpenChange={setIsVerificationPauseOpen}
             onKeep={() => stopLiveDuringVerification("preserve")}
             onDiscard={() => stopLiveDuringVerification("discard")}
+            phase={nativePublishingState.phase}
           />
         </div>
       </div>
@@ -679,6 +783,8 @@ function ConnectedApp() {
           onKillGpsServices={handleKillGpsServices}
           onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); setIsEndTripOpen(true); } : undefined}
           onViewCredits={() => { setIsOptionsOpen(false); setIsCreditsOpen(true); }}
+          usage={role === "traveler" ? usage : undefined}
+          onUsageLedger={role === "traveler" ? handleUsageLedger : undefined}
         />
 
       {role === "traveler" && (

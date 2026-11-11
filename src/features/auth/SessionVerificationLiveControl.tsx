@@ -53,6 +53,12 @@ function statusMessage({
   if (publishingPhase === "storage-error") {
     return "Live is on, but TripCast could not save the latest breadcrumb to this iPhone.";
   }
+  if (publishingPhase === "paused") {
+    return "Live is on, but GPS uploads are paused. Breadcrumbs are being saved on this iPhone.";
+  }
+  if (publishingPhase === "sign-in-expired") {
+    return "Live is on, but sign-in has expired. Breadcrumbs are being saved on this iPhone until you sign in again.";
+  }
   if (liveTrailEnabled === false) {
     return "Live location is on. Live Trail was last set to paused.";
   }

@@ -15,9 +15,11 @@ TripCast includes a local-only debug logger surfaced through Options -> Develope
 
 ## Expected Coverage
 
-The logger should capture sheet/panel open and close events, Dock and FanMenu actions, panel view changes, filter changes, form submit attempts/results, global errors, unhandled rejections, and React render errors. Incorporate logging when planning if applicable, especially on new features.
+The logger should capture sheet/panel open and close events, Dock and FanMenu actions, panel view changes, filter changes, form submit attempts/results, global errors, unhandled rejections, and React render errors. Plan logging for new features.
 
-For FanMenu and Dock panel-open actions, pair each `log.logInteraction` with a `performance.mark("tripcast:debug:<action>")`. Omitting the mark doesn't break anything at runtime but silently drops the timing measurement from the observability triad.
+Convex usage: `usage:status:changed` (`from`, `to`, `metric`, `percent`) and `usage:warning:shown` (`level`, `metric`). Copy LLM Summary adds a 24 h digest of the phone's hourly counters.
+
+For FanMenu and Dock panel-open actions, pair each `log.logInteraction` with a `performance.mark("tripcast:debug:<action>")`; without it the timing is silently lost.
 
 ## Map Focus Centering (observability + "teach by dragging")
 
@@ -34,4 +36,4 @@ When a focused pin (mission/journal/story/replay/photo roulette) is moved into v
 3. Copy the single `map:camera:focus:user-adjust` log line and paste it to the LLM.
 4. `impliedAnchor` is the exact tuning target — the LLM updates `ANCHOR` (or a per-trigger anchor) in `focusCoordinate.ts` to match.
 
-The vocabulary is shared: "the pin should land at `bandFraction y: 0.4`" is unambiguous, where prose like "a bit higher" is not.
+Say "land at `bandFraction y: 0.4`", not "a bit higher".

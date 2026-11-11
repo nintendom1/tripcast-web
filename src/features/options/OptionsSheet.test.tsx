@@ -810,6 +810,29 @@ describe("OptionsSheet developer scoring toggle", () => {
   });
 });
 
+describe("OptionsSheet Convex Usage status line", () => {
+  it("shows the usage status line to a Traveler at warn", () => {
+    setupMocks();
+    renderOptions({ usage: { ledger: null, level: "warn" } });
+
+    expect(screen.queryByRole("button", { name: /convex usage:/i })).toHaveTextContent("Convex Usage: Warning");
+  });
+
+  it("hides the usage status line from a Traveler at ok", () => {
+    setupMocks();
+    renderOptions({ usage: { ledger: null, level: "ok" } });
+
+    expect(screen.queryByRole("button", { name: /convex usage:/i })).not.toBeInTheDocument();
+  });
+
+  it("never shows the usage status line to a Follower", () => {
+    setupMocks();
+    renderOptions({ session: followerSession, role: "follower", usage: { ledger: null, level: "warn" } });
+
+    expect(screen.queryByRole("button", { name: /convex usage:/i })).not.toBeInTheDocument();
+  });
+});
+
 describe("OptionsSheet appearance", () => {
   it("shows light, dark, and auto choices with accessible selection state", async () => {
     setupMocks();
