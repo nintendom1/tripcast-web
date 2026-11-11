@@ -14,6 +14,7 @@
     "ios:run": "node scripts/ios-run.mjs",
     "ios:assets": "npx --yes @capacitor/assets@latest generate --ios",
     "validate": "npm run lint:terms:report && tsc -b && eslint . && vitest run",
+    "v": "node scripts/agent/quiet.mjs",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "lint:terms:report": "node scripts/lintTerms.mjs --mode=report",

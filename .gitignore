@@ -29,3 +29,6 @@ dev_server.log
 
 # Agent visual-testing scratch (screenshots, ad-hoc Playwright drivers)
 .visual-tmp/
+
+# Agent orchestration scratch (briefs, logs, reports)
+.orchestration/
