@@ -76,6 +76,7 @@ export type AddCheckpointArgs = {
   // Linked IDs are filled server-side: checkpointId from the new checkpoint,
   // and missionId/activityId from the active current activity when available.
   transaction?: TransactionInlineInput;
+  tripId?: string;
 };
 
 export type UpdateCheckpointArgs = {
@@ -95,11 +96,13 @@ export type UpdateCheckpointArgs = {
   /** Editable retroactive "Happened at" time. Patches the checkpoint and
    *  the linked story journal event's occurredAt in lock-step. */
   happenedAt?: number;
+  tripId?: string;
 };
 
 export type DeleteCheckpointArgs = {
   token: string;
   checkpointId: string;
+  tripId?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -188,9 +191,20 @@ export type NativeLocationSampleInput = {
   reason: NativeLocationSampleReason;
   /** Sent only on the phone's parked marker. */
   parked?: boolean;
+  /** Capture trip, stamped at capture from getCurrentTrip. Absent from iOS builds before multi-trip. */
+  tripId?: string;
+  /** Publishing epoch at capture, sent with tripId. */
+  epoch?: number;
+};
+
+export type NativeLocationPublishing = {
+  state: "current" | "revoked";
+  currentTripId: string;
+  epoch: number;
 };
 
 export type NativeLocationBatchResult = {
+  /** Every classified sample is listed here, including historical, quarantined and discarded ones. */
   acceptedClientSampleIds: string[];
   duplicateClientSampleIds: string[];
   currentLocationUpdated: boolean;
@@ -199,6 +213,13 @@ export type NativeLocationBatchResult = {
   serverAcknowledgedAt: number;
   trailInsertedCount: number;
   mysteryMissionSync?: NativeMysteryMissionSync;
+  publishing?: NativeLocationPublishing;
+  /** Stale-epoch samples captured before the switch: trail only, into the capture trip. */
+  historicalClientSampleIds?: string[];
+  /** Untagged samples after the first switch, held in quarantine. */
+  quarantinedClientSampleIds?: string[];
+  /** Samples written nowhere (sharing revoked, unknown trip or future epoch). */
+  discardedClientSampleIds?: string[];
 };
 
 export type NativeMysteryMission = {
@@ -996,6 +1017,7 @@ export type UpdateTravelerStateArgs = {
   biometricActiveMinutes?: number;
   biometricNote?: string;
   biometricSource?: "manual";
+  tripId?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -1158,6 +1180,7 @@ export type AddTransactionArgs = {
   linkedMissionId?: string;
   linkedCheckpointId?: string;
   occurredAt?: number;
+  tripId?: string;
 };
 
 export type UpdateTransactionArgs = {
@@ -1178,6 +1201,7 @@ export type UpdateTransactionArgs = {
    *  field names here to explicitly clear specific link fields. */
   clearLinks?: Array<"activity" | "mission" | "checkpoint">;
   occurredAt?: number;
+  tripId?: string;
 };
 
 export type UpdateTravelFundsConfigArgs = {
@@ -1188,6 +1212,7 @@ export type UpdateTravelFundsConfigArgs = {
   carryoverMode?: TravelFundsCarryoverMode;
   fundsStartAt?: number;
   budgetLabel?: string;
+  tripId?: string;
 };
 
 // Inline transaction payload attached to addCheckpoint / travelerCompleteMission.
@@ -1575,6 +1600,14 @@ export type FollowerSession = {
   membershipStatus: MembershipStatus;
 };
 
+/** The trip Followers currently see (the shared current trip). Key Follower caches by tripId. */
+export type EffectiveTrip = {
+  tripId: string;
+  title: string;
+  lifecycle: TripLifecycle;
+  isLegacy: boolean;
+};
+
 export type IntroSeenPreference = {
   role: Role;
   introSeen: boolean;
@@ -1592,6 +1625,119 @@ export type FollowerInfo = {
 };
 
 // ---------------------------------------------------------------------------
+// Trips (multi-trip catalog, current pointer, lifecycle)
+// ---------------------------------------------------------------------------
+
+export type TripLifecycle = "planned" | "in_progress" | "completed" | "archived";
+
+export type TripPreviewStatus = "none" | "building" | "ready" | "failed";
+
+export type TripCounts = {
+  storyCount: number;
+  missionCount: number;
+  routeVoteCount: number;
+};
+
+/** One catalog card. Small fields only; the route sketch comes from getTripPreview. */
+export type TripCard = TripCounts & {
+  tripId: string;
+  title: string;
+  destinationSummary?: string;
+  plannedStartAt?: number;
+  plannedEndAt?: number;
+  startedAt?: number;
+  endedAt?: number;
+  lifecycle: TripLifecycle;
+  /** Lifecycle before archiving; Restore returns to it. */
+  archivedFrom?: Exclude<TripLifecycle, "archived">;
+  isLegacy: boolean;
+  /** The shared current trip (what Followers see). */
+  isCurrent: boolean;
+  /** Set while a per-trip delete is running ("Deleting…"). */
+  deletingAt?: number;
+  revision: number;
+  updatedAt: number;
+  lastStoryAt?: number;
+  latestActivityAt?: number;
+  previewStatus: TripPreviewStatus;
+  /** Memoise previews by `tripId:previewVersion`. */
+  previewVersion: number;
+};
+
+export type TripCardPage = {
+  page: TripCard[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
+export type TripPreviewRoute = {
+  version: number;
+  bounds: { minLat: number; minLon: number; maxLat: number; maxLon: number };
+  /** At most 128 points. */
+  points: { lat: number; lon: number }[];
+  builtAt: number;
+  sourceSampleCount: number;
+};
+
+export type TripPreview = TripCounts & {
+  tripId: string;
+  previewStatus: TripPreviewStatus;
+  previewVersion: number;
+  /** null until a preview has been built (show placeholder metadata). */
+  route: TripPreviewRoute | null;
+  coverImageUrl: string | null;
+};
+
+/** The shared current trip and publishing state. Drives the native publishing config. */
+export type CurrentTrip = {
+  tripId: string;
+  title: string;
+  lifecycle: TripLifecycle;
+  isLegacy: boolean;
+  /** travelerTripState revision; send as expectedRevision to setCurrentTrip. */
+  revision: number;
+  publishingEpoch: number;
+  epochStartedAt: number;
+  firstSwitchAt?: number;
+  multiTripEnabled: boolean;
+};
+
+/** "defaults" copies nothing (code defaults apply); otherwise a trip id to copy settings from. */
+export type TripSettingsSource = "defaults" | (string & {});
+
+export type CreateTripArgs = {
+  token: string;
+  title: string;
+  destinationSummary?: string;
+  plannedStartAt?: number;
+  plannedEndAt?: number;
+  copySettingsFrom: TripSettingsSource;
+};
+
+/** Fields to change; null clears an optional field. */
+export type TripDetailsPatch = {
+  title?: string;
+  destinationSummary?: string | null;
+  plannedStartAt?: number | null;
+  plannedEndAt?: number | null;
+};
+
+/** What changes for Followers if `tripId` becomes the shared current trip. */
+export type TripSwitchImpact = {
+  fromTrip: { tripId: string; title: string; lifecycle: TripLifecycle };
+  toTrip: { tripId: string; title: string; lifecycle: TripLifecycle };
+  /** travelerTripState revision to send with setCurrentTrip. */
+  expectedRevision: number;
+  /** Live location sharing is on (it stops on every device). */
+  isLive: boolean;
+  /** Open votes and an active activity stay on the old trip. */
+  openRouteVoteCount: number;
+  hasActiveActivity: boolean;
+  /** Last upload from an iOS build without trip tags; the client applies the 7-day window. */
+  lastUntaggedIngestAt?: number;
+};
+
+// ---------------------------------------------------------------------------
 // API namespace
 // ---------------------------------------------------------------------------
 
@@ -1602,36 +1748,36 @@ export type ReplayRouteManifest = { originalOnly: boolean; sourceRevision: strin
 export type ReplayRouteMetrics = { days: number; truncated: boolean; rawPoints: number; retainedPoints: number; chunks: number; payloadBytes: number; mysteryReady: boolean; checkpointPinsReady: boolean };
 export const tripcastApi = {
   replayRoutes: {
-    preview: (anyApi as any).replayRoutes.preview as FunctionReference<"query", "public", { token: string; sourceRevision: string; compressionVersion: number; day: number | null; cursor: string | null }, ReplayRoutePreview>,
-    manifest: (anyApi as any).replayRoutes.manifest as FunctionReference<"query", "public", { token: string }, ReplayRouteManifest>,
-    prepare: (anyApi as any).replayRoutes.prepare as FunctionReference<"mutation", "public", { token: string; sourceRevision?: string; compressionVersion?: number }, null>,
-    enable: (anyApi as any).replayRoutes.enable as FunctionReference<"mutation", "public", { token: string; enabled: boolean }, null>,
-    metrics: (anyApi as any).replayRoutes.metrics as FunctionReference<"query", "public", { token: string }, ReplayRouteMetrics>,
-    page: (anyApi as any).replayRoutes.page as FunctionReference<"query", "public", { token: string; revision: number; startAt?: number; endAt?: number; direction: "asc" | "desc"; cursor: string | null }, LiveTrailReplayPage>,
+    preview: (anyApi as any).replayRoutes.preview as FunctionReference<"query", "public", { token: string; sourceRevision: string; compressionVersion: number; day: number | null; cursor: string | null; tripId?: string }, ReplayRoutePreview>,
+    manifest: (anyApi as any).replayRoutes.manifest as FunctionReference<"query", "public", { token: string; tripId?: string }, ReplayRouteManifest>,
+    prepare: (anyApi as any).replayRoutes.prepare as FunctionReference<"mutation", "public", { token: string; sourceRevision?: string; compressionVersion?: number; tripId?: string }, null>,
+    enable: (anyApi as any).replayRoutes.enable as FunctionReference<"mutation", "public", { token: string; enabled: boolean; tripId?: string }, null>,
+    metrics: (anyApi as any).replayRoutes.metrics as FunctionReference<"query", "public", { token: string; tripId?: string }, ReplayRouteMetrics>,
+    page: (anyApi as any).replayRoutes.page as FunctionReference<"query", "public", { token: string; revision: number; startAt?: number; endAt?: number; direction: "asc" | "desc"; cursor: string | null; tripId?: string }, LiveTrailReplayPage>,
   },
   replayImages: {
     preference: (anyApi as any).replayImages.preference as FunctionReference<"query", "public", { token: string }, { original: boolean }>,
     setPreference: (anyApi as any).replayImages.setPreference as FunctionReference<"mutation", "public", { token: string; original: boolean }, null>,
-    resolveUrl: (anyApi as any).replayImages.resolveUrl as FunctionReference<"query", "public", { token: string; imageId: string; context: "story" | "replay"; original?: boolean }, { url: string; original: boolean } | null>,
-    inventory: (anyApi as any).replayImages.inventory as FunctionReference<"query", "public", { token: string; paginationOpts: { numItems: number; cursor: string | null } }, { page: ReplayImageInventoryItem[]; isDone: boolean; continueCursor: string }>,
+    resolveUrl: (anyApi as any).replayImages.resolveUrl as FunctionReference<"query", "public", { token: string; imageId: string; context: "story" | "replay"; original?: boolean; tripId?: string }, { url: string; original: boolean } | null>,
+    inventory: (anyApi as any).replayImages.inventory as FunctionReference<"query", "public", { token: string; paginationOpts: { numItems: number; cursor: string | null }; tripId?: string }, { page: ReplayImageInventoryItem[]; isDone: boolean; continueCursor: string }>,
     acquire: (anyApi as any).replayImages.acquire as FunctionReference<"mutation", "public", { token: string; owner: string }, boolean>,
-    claim: (anyApi as any).replayImages.claim as FunctionReference<"mutation", "public", { token: string; owner: string; source: string }, { originalUrl: string | null } | null>,
-    finish: (anyApi as any).replayImages.finish as FunctionReference<"action", "public", { token: string; owner: string; source: string; bytes: ArrayBuffer; width: number; height: number }, boolean>,
-    fail: (anyApi as any).replayImages.fail as FunctionReference<"mutation", "public", { token: string; owner: string; source: string }, null>,
+    claim: (anyApi as any).replayImages.claim as FunctionReference<"mutation", "public", { token: string; owner: string; source: string; tripId?: string }, { originalUrl: string | null } | null>,
+    finish: (anyApi as any).replayImages.finish as FunctionReference<"action", "public", { token: string; owner: string; source: string; bytes: ArrayBuffer; width: number; height: number; tripId?: string }, boolean>,
+    fail: (anyApi as any).replayImages.fail as FunctionReference<"mutation", "public", { token: string; owner: string; source: string; tripId?: string }, null>,
     release: (anyApi as any).replayImages.release as FunctionReference<"mutation", "public", { token: string; owner: string }, null>,
-    getUrl: (anyApi as any).replayImages.getUrl as FunctionReference<"query", "public", { token: string; imageId: string }, string | null>,
+    getUrl: (anyApi as any).replayImages.getUrl as FunctionReference<"query", "public", { token: string; imageId: string; tripId?: string }, string | null>,
   },
   photoCompanion: {
     travelerListPhotoCompanionPage: (anyApi as any).photoCompanion.travelerListPhotoCompanionPage as FunctionReference<
       "query",
       "public",
-      { token: string; paginationOpts: PaginationOpts; startMs?: number; endMs?: number },
+      { token: string; paginationOpts: PaginationOpts; startMs?: number; endMs?: number; tripId?: string },
       PhotoCompanionPage
     >,
     travelerResolvePhotoCompanionRefs: (anyApi as any).photoCompanion.travelerResolvePhotoCompanionRefs as FunctionReference<
       "query",
       "public",
-      { token: string; refs: string[] },
+      { token: string; refs: string[]; tripId?: string },
       ResolvePhotoCompanionRefsResult
     >,
     travelerGeneratePhotoImportUploadUrls: (anyApi as any).photoCompanion.travelerGeneratePhotoImportUploadUrls as FunctionReference<
@@ -1643,19 +1789,19 @@ export const tripcastApi = {
     travelerAttachPhotoCompanionBatch: (anyApi as any).photoCompanion.travelerAttachPhotoCompanionBatch as FunctionReference<
       "mutation",
       "public",
-      { token: string; attachments: PhotoAttachmentInput[] },
+      { token: string; attachments: PhotoAttachmentInput[]; tripId?: string },
       AttachPhotoCompanionBatchResult
     >,
     travelerAuditOrphanPhotoPage: (anyApi as any).photoCompanion.travelerAuditOrphanPhotoPage as FunctionReference<
       "query",
       "public",
-      { token: string; paginationOpts: PaginationOpts },
+      { token: string; paginationOpts: PaginationOpts; tripId?: string },
       AuditOrphanPhotoPageResult
     >,
     travelerPruneOrphanPhotos: (anyApi as any).photoCompanion.travelerPruneOrphanPhotos as FunctionReference<
       "mutation",
       "public",
-      { token: string; imageIds: string[] },
+      { token: string; imageIds: string[]; tripId?: string },
       PruneOrphanResult[]
     >,
   },
@@ -1669,31 +1815,31 @@ export const tripcastApi = {
     travelerBulkImport: (anyApi as any).bulkImport.travelerBulkImport as FunctionReference<
       "mutation",
       "public",
-      { token: string; entries: BulkImportPayload },
+      { token: string; entries: BulkImportPayload; tripId?: string },
       BulkImportResult
     >,
     travelerExportTripData: (anyApi as any).bulkImport.travelerExportTripData as FunctionReference<
       "query",
       "public",
-      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean; includeLiveTrail?: boolean; liveTrailLimit?: number },
+      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean; includeLiveTrail?: boolean; liveTrailLimit?: number; tripId?: string },
       BulkImportPayload
     >,
     travelerCountExportEntries: (anyApi as any).bulkImport.travelerCountExportEntries as FunctionReference<
       "query",
       "public",
-      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean },
+      { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean; tripId?: string },
       { otherCount: number; breadcrumbCount: number }
     >,
     travelerExportTickerFacts: (anyApi as any).bulkImport.travelerExportTickerFacts as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TickerFactExport
     >,
     travelerExportTickerMessages: (anyApi as any).bulkImport.travelerExportTickerMessages as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TickerExport
     >,
   },
@@ -1727,19 +1873,19 @@ export const tripcastApi = {
     listCheckpoints: (anyApi as any).checkpoints.listCheckpoints as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       Checkpoint[]
     >,
     listCheckpointMapPins: (anyApi as any).checkpoints.listCheckpointMapPins as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       CheckpointMapPin[]
     >,
     getStoryImageUrl: (anyApi as any).checkpoints.getStoryImageUrl as FunctionReference<
       "query",
       "public",
-      { token: string; imageId: string },
+      { token: string; imageId: string; tripId?: string },
       string | null
     >,
     getStoryImageSizes: (anyApi as any).checkpoints.getStoryImageSizes as FunctionReference<
@@ -1771,7 +1917,7 @@ export const tripcastApi = {
     deleteAllCheckpoints: (anyApi as any).privacy.deleteAllCheckpoints as FunctionReference<
       "mutation",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       null
     >,
     clearTravelerLocation: (anyApi as any).privacy.clearTravelerLocation as FunctionReference<
@@ -1801,13 +1947,13 @@ export const tripcastApi = {
     deleteTravelerState: (anyApi as any).privacy.deleteTravelerState as FunctionReference<
       "mutation",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       null
     >,
     deleteCurrentActivity: (anyApi as any).privacy.deleteCurrentActivity as FunctionReference<
       "mutation",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       null
     >,
   },
@@ -1815,7 +1961,7 @@ export const tripcastApi = {
     updateTravelerLocation: (anyApi as any).routeVotes.updateTravelerLocation as FunctionReference<
       "mutation",
       "public",
-      { token: string; lat: number; lon: number; accuracy?: number },
+      { token: string; lat: number; lon: number; accuracy?: number; tripId?: string; publishingEpoch?: number },
       null
     >,
     stopTravelerLocationSharing: (anyApi as any).routeVotes.stopTravelerLocationSharing as FunctionReference<
@@ -1843,61 +1989,61 @@ export const tripcastApi = {
     travelerSetLiveTrailEnabled: (anyApi as any).liveTrail.travelerSetLiveTrailEnabled as FunctionReference<
       "mutation",
       "public",
-      { token: string; enabled: boolean },
+      { token: string; enabled: boolean; tripId?: string },
       null
     >,
     travelerSetLiveTrailVisibility: (anyApi as any).liveTrail.travelerSetLiveTrailVisibility as FunctionReference<
       "mutation",
       "public",
-      { token: string; visibleToFollowers: boolean },
+      { token: string; visibleToFollowers: boolean; tripId?: string },
       null
     >,
     travelerRecordLiveTrailSample: (anyApi as any).liveTrail.travelerRecordLiveTrailSample as FunctionReference<
       "mutation",
       "public",
-      { token: string; lat: number; lon: number; accuracy?: number; sampledAt?: number },
+      { token: string; lat: number; lon: number; accuracy?: number; sampledAt?: number; tripId?: string; publishingEpoch?: number },
       null
     >,
     travelerDeleteRecentLiveTrail: (anyApi as any).liveTrail.travelerDeleteRecentLiveTrail as FunctionReference<
       "mutation",
       "public",
-      { token: string; recentMs?: number },
+      { token: string; recentMs?: number; tripId?: string },
       { deleted: number }
     >,
     travelerPreviewLiveTrailDeleteRange: (anyApi as any).liveTrail.travelerPreviewLiveTrailDeleteRange as FunctionReference<
       "query",
       "public",
-      { token: string; startDate: string; endDate: string; timeZone: string },
+      { token: string; startDate: string; endDate: string; timeZone: string; tripId?: string },
       LiveTrailDeletePreview
     >,
     travelerDeleteLiveTrailRange: (anyApi as any).liveTrail.travelerDeleteLiveTrailRange as FunctionReference<
       "mutation",
       "public",
-      { token: string; startDate: string; endDate: string; timeZone: string },
+      { token: string; startDate: string; endDate: string; timeZone: string; tripId?: string },
       { deleted: number }
     >,
     travelerDeleteLiveTrailSamples: (anyApi as any).liveTrail.travelerDeleteLiveTrailSamples as FunctionReference<
       "mutation",
       "public",
-      { token: string; sampleIds: string[] },
+      { token: string; sampleIds: string[]; tripId?: string },
       { deleted: number }
     >,
     travelerGetLiveTrailStatus: (anyApi as any).liveTrail.travelerGetLiveTrailStatus as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       LiveTrailStatus
     >,
     getLatestLiveTrailSample: (anyApi as any).liveTrail.getLatestLiveTrailSample as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       LatestLiveTrailSample
     >,
     travelerFindNearestLiveTrailSamples: (anyApi as any).liveTrail.travelerFindNearestLiveTrailSamples as FunctionReference<
       "query",
       "public",
-      { token: string; capturedAtMs: number[] },
+      { token: string; capturedAtMs: number[]; tripId?: string },
       NearestLiveTrailSampleResult[]
     >,
     listReplayLiveTrailSamples: (anyApi as any).liveTrail.listReplayLiveTrailSamples as FunctionReference<
@@ -1909,6 +2055,7 @@ export const tripcastApi = {
         startAt?: number;
         endAt?: number;
         direction: "asc" | "desc";
+        tripId?: string;
       },
       LiveTrailReplayPage
     >,
@@ -1924,49 +2071,50 @@ export const tripcastApi = {
         expiresAt?: number;
         resultsVisibility?: ResultsVisibility;
         options: RouteVoteOptionInput[];
+        tripId?: string;
       },
       string
     >,
     travelerCloseRouteVote: (anyApi as any).routeVotes.travelerCloseRouteVote as FunctionReference<
       "mutation",
       "public",
-      { token: string; routeVoteId: string },
+      { token: string; routeVoteId: string; tripId?: string },
       null
     >,
     travelerCancelRouteVote: (anyApi as any).routeVotes.travelerCancelRouteVote as FunctionReference<
       "mutation",
       "public",
-      { token: string; routeVoteId: string },
+      { token: string; routeVoteId: string; tripId?: string },
       null
     >,
     travelerArchiveRouteVote: (anyApi as any).routeVotes.travelerArchiveRouteVote as FunctionReference<
       "mutation",
       "public",
-      { token: string; routeVoteId: string },
+      { token: string; routeVoteId: string; tripId?: string },
       null
     >,
     travelerConfirmRouteVoteWinner: (anyApi as any).routeVotes.travelerConfirmRouteVoteWinner as FunctionReference<
       "mutation",
       "public",
-      { token: string; routeVoteId: string; winningOptionId: string; linkedMissionAction?: LinkedMissionAction },
+      { token: string; routeVoteId: string; winningOptionId: string; linkedMissionAction?: LinkedMissionAction; tripId?: string },
       string
     >,
     travelerHideRouteVoteComment: (anyApi as any).routeVotes.travelerHideRouteVoteComment as FunctionReference<
       "mutation",
       "public",
-      { token: string; submissionId: string },
+      { token: string; submissionId: string; tripId?: string },
       null
     >,
     travelerUpdateMissionStatus: (anyApi as any).routeVotes.travelerUpdateMissionStatus as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string; newStatus: MissionStatus },
+      { token: string; missionId: string; newStatus: MissionStatus; tripId?: string },
       null
     >,
     markRouteVoteSeen: (anyApi as any).routeVotes.markRouteVoteSeen as FunctionReference<
       "mutation",
       "public",
-      { token: string; routeVoteId: string },
+      { token: string; routeVoteId: string; tripId?: string },
       null
     >,
     submitRouteVote: (anyApi as any).routeVotes.submitRouteVote as FunctionReference<
@@ -1979,55 +2127,56 @@ export const tripcastApi = {
         comment?: string;
         commentVisibility?: CommentVisibility;
         anonymous?: boolean;
+        tripId?: string;
       },
       null
     >,
     travelerListRouteVotes: (anyApi as any).routeVotes.travelerListRouteVotes as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       RouteVoteListItem[]
     >,
     travelerGetRouteVoteDetail: (anyApi as any).routeVotes.travelerGetRouteVoteDetail as FunctionReference<
       "query",
       "public",
-      { token: string; routeVoteId: string },
+      { token: string; routeVoteId: string; tripId?: string },
       RouteVoteDetail | null
     >,
     getActiveRouteVoteAlert: (anyApi as any).routeVotes.getActiveRouteVoteAlert as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       { hasUnseen: boolean }
     >,
     listVisibleRouteVotes: (anyApi as any).routeVotes.listVisibleRouteVotes as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       VisibleRouteVote[]
     >,
     getVisibleRouteVote: (anyApi as any).routeVotes.getVisibleRouteVote as FunctionReference<
       "query",
       "public",
-      { token: string; routeVoteId: string },
+      { token: string; routeVoteId: string; tripId?: string },
       VisibleRouteVote | null
     >,
     getRouteVoteSummary: (anyApi as any).routeVotes.getRouteVoteSummary as FunctionReference<
       "query",
       "public",
-      { token: string; routeVoteId: string },
+      { token: string; routeVoteId: string; tripId?: string },
       RouteVoteSummary | null
     >,
     getRouteVoteMapOverlay: (anyApi as any).routeVotes.getRouteVoteMapOverlay as FunctionReference<
       "query",
       "public",
-      { token: string; routeVoteId: string },
+      { token: string; routeVoteId: string; tripId?: string },
       RouteVoteMapOverlay
     >,
     travelerListPlannedMissions: (anyApi as any).routeVotes.travelerListPlannedMissions as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       Mission[]
     >,
   },
@@ -2035,55 +2184,55 @@ export const tripcastApi = {
     followerProposeMission: (anyApi as any).missions.followerProposeMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; clientLocalDate?: string } & MissionContentArgs,
+      { token: string; clientLocalDate?: string; tripId?: string } & MissionContentArgs,
       { missionId: string; autoPublished: boolean }
     >,
     followerWithdrawMission: (anyApi as any).missions.followerWithdrawMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string },
+      { token: string; missionId: string; tripId?: string },
       null
     >,
     travelerCreateMission: (anyApi as any).missions.travelerCreateMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; clientLocalDate?: string } & MissionContentArgs,
+      { token: string; clientLocalDate?: string; tripId?: string } & MissionContentArgs,
       string
     >,
     travelerEditMission: (anyApi as any).missions.travelerEditMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string } & MissionContentArgs,
+      { token: string; missionId: string; tripId?: string } & MissionContentArgs,
       null
     >,
     travelerAcceptMission: (anyApi as any).missions.travelerAcceptMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string; responseNote?: string; responsePreset?: string },
+      { token: string; missionId: string; responseNote?: string; responsePreset?: string; tripId?: string },
       null
     >,
     travelerDropMission: (anyApi as any).missions.travelerDropMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string; responseNote?: string; responsePreset?: string; silent?: boolean },
+      { token: string; missionId: string; responseNote?: string; responsePreset?: string; silent?: boolean; tripId?: string },
       null
     >,
     travelerDeleteMission: (anyApi as any).missions.travelerDeleteMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string },
+      { token: string; missionId: string; tripId?: string },
       null
     >,
     travelerStartMission: (anyApi as any).missions.travelerStartMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string },
+      { token: string; missionId: string; tripId?: string },
       null
     >,
     travelerCompleteMission: (anyApi as any).missions.travelerCompleteMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string; transaction?: TransactionInlineInput },
+      { token: string; missionId: string; transaction?: TransactionInlineInput; tripId?: string },
       null
     >,
     travelerCompleteMissionAsStory: (anyApi as any).missions.travelerCompleteMissionAsStory as FunctionReference<
@@ -2104,49 +2253,50 @@ export const tripcastApi = {
         imageSize?: StoryImageSize;
         transaction?: TransactionInlineInput;
         awardBadgeType?: BadgeType;
+        tripId?: string;
       },
       string
     >,
     travelerToggleMissionMapPin: (anyApi as any).missions.travelerToggleMissionMapPin as FunctionReference<
       "mutation",
       "public",
-      { token: string; missionId: string; hidden: boolean },
+      { token: string; missionId: string; hidden: boolean; tripId?: string },
       null
     >,
     travelerListMissions: (anyApi as any).missions.travelerListMissions as FunctionReference<
       "query",
       "public",
-      { token: string; status?: MissionStatus },
+      { token: string; status?: MissionStatus; tripId?: string },
       Mission[]
     >,
     travelerGetMissionBadgeState: (anyApi as any).missions.travelerGetMissionBadgeState as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       { proposedCount: number }
     >,
     followerListMissions: (anyApi as any).missions.followerListMissions as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       Mission[]
     >,
     followerListMyMissions: (anyApi as any).missions.followerListMyMissions as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       { mine: Mission[]; public: Mission[] }
     >,
     getMission: (anyApi as any).missions.getMission as FunctionReference<
       "query",
       "public",
-      { token: string; missionId: string },
+      { token: string; missionId: string; tripId?: string },
       Mission | null
     >,
     listMissionMapPins: (anyApi as any).missions.listMissionMapPins as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       Mission[]
     >,
   },
@@ -2154,19 +2304,19 @@ export const tripcastApi = {
     travelerGetMissionSettings: (anyApi as any).missionSettings.travelerGetMissionSettings as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       MissionSettings
     >,
     followerGetMissionSettings: (anyApi as any).missionSettings.followerGetMissionSettings as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       { moderationMode: MissionModerationMode }
     >,
     travelerUpdateMissionSettings: (anyApi as any).missionSettings.travelerUpdateMissionSettings as FunctionReference<
       "mutation",
       "public",
-      { token: string; moderationMode?: MissionModerationMode; rateLimitPreset?: MissionRateLimitPreset },
+      { token: string; moderationMode?: MissionModerationMode; rateLimitPreset?: MissionRateLimitPreset; tripId?: string },
       null
     >,
   },
@@ -2174,43 +2324,43 @@ export const tripcastApi = {
     travelerGetMysteryMissionSettings: (anyApi as any).mysteryMissions.travelerGetMysteryMissionSettings as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       { enabled: boolean; revealIntervalHours: number; updatedAt: number | null }
     >,
     travelerSetMysteryMissionsEnabled: (anyApi as any).mysteryMissions.travelerSetMysteryMissionsEnabled as FunctionReference<
       "mutation",
       "public",
-      { token: string; enabled: boolean; revealIntervalHours?: number },
+      { token: string; enabled: boolean; revealIntervalHours?: number; tripId?: string },
       null
     >,
     travelerCreateDeveloperTestMysteryMission: (anyApi as any).mysteryMissions.travelerCreateDeveloperTestMysteryMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; lat: number; lon: number; mysteryText: string; trueIntent: string },
+      { token: string; lat: number; lon: number; mysteryText: string; trueIntent: string; tripId?: string },
       DeveloperTestMysteryMissionResult
     >,
     previewMysteryMissionImport: (anyApi as any).mysteryMissions.previewMysteryMissionImport as FunctionReference<
       "query",
       "public",
-      { token: string; payload: any },
+      { token: string; payload: any; tripId?: string },
       MysteryMissionImportPreview
     >,
     travelerImportMysteryMissions: (anyApi as any).mysteryMissions.travelerImportMysteryMissions as FunctionReference<
       "mutation",
       "public",
-      { token: string; payload: any },
+      { token: string; payload: any; tripId?: string },
       MysteryMissionImportResult
     >,
     travelerListMysteryMissions: (anyApi as any).mysteryMissions.travelerListMysteryMissions as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       MysteryMissionManagementList
     >,
     travelerGetNativeMysteryMissionSync: (anyApi as any).mysteryMissions.travelerGetNativeMysteryMissionSync as FunctionReference<
       "query",
       "public",
-      { token: string; includeDebugAll?: boolean },
+      { token: string; includeDebugAll?: boolean; tripId?: string },
       NativeMysteryMissionSync
     >,
     travelerGetNativeMysteryMissionRevision: (anyApi as any).mysteryMissions.travelerGetNativeMysteryMissionRevision as FunctionReference<
@@ -2222,49 +2372,49 @@ export const tripcastApi = {
     travelerGetMysteryMissionForEdit: (anyApi as any).mysteryMissions.travelerGetMysteryMissionForEdit as FunctionReference<
       "query",
       "public",
-      { token: string; mysteryMissionId: string },
+      { token: string; mysteryMissionId: string; tripId?: string },
       MysteryMissionExportRow | null
     >,
     travelerExportMysteryMissions: (anyApi as any).mysteryMissions.travelerExportMysteryMissions as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       MysteryMissionExport
     >,
     listMysteryMissionFeed: (anyApi as any).mysteryMissions.listMysteryMissionFeed as FunctionReference<
       "query",
       "public",
-      { token: string; includeDismissed?: boolean },
+      { token: string; includeDismissed?: boolean; tripId?: string },
       MysteryMissionFeed
     >,
     listMysteryMissionMapPins: (anyApi as any).mysteryMissions.listMysteryMissionMapPins as FunctionReference<
       "query",
       "public",
-      { token: string; includeDebugAll?: boolean },
+      { token: string; includeDebugAll?: boolean; tripId?: string },
       MysteryMissionMapPins
     >,
     getMysteryMission: (anyApi as any).mysteryMissions.getMysteryMission as FunctionReference<
       "query",
       "public",
-      { token: string; mysteryMissionId: string },
+      { token: string; mysteryMissionId: string; tripId?: string },
       MysteryMissionFeedItem | null
     >,
     travelerDismissMysteryMission: (anyApi as any).mysteryMissions.travelerDismissMysteryMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; mysteryMissionId: string },
+      { token: string; mysteryMissionId: string; tripId?: string },
       null
     >,
     travelerCompleteMysteryMission: (anyApi as any).mysteryMissions.travelerCompleteMysteryMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; mysteryMissionId: string; checkpointId?: string },
+      { token: string; mysteryMissionId: string; checkpointId?: string; tripId?: string },
       null
     >,
     travelerCompleteMysteryMissionNative: (anyApi as any).mysteryMissions.travelerCompleteMysteryMissionNative as FunctionReference<
       "mutation",
       "public",
-      { token: string; mysteryMissionId: string; clientTriggerId: string; debugArrival?: boolean },
+      { token: string; mysteryMissionId: string; clientTriggerId: string; debugArrival?: boolean; tripId?: string },
       { outcome: NativeMysteryCompletionOutcome }
     >,
     travelerPatchMysteryMission: (anyApi as any).mysteryMissions.travelerPatchMysteryMission as FunctionReference<
@@ -2294,46 +2444,47 @@ export const tripcastApi = {
         transitFriendly?: boolean | null;
         requiresTicket?: boolean | null;
         timeSensitive?: boolean | null;
+        tripId?: string;
       },
       null
     >,
     travelerDeleteMysteryMission: (anyApi as any).mysteryMissions.travelerDeleteMysteryMission as FunctionReference<
       "mutation",
       "public",
-      { token: string; mysteryMissionId: string },
+      { token: string; mysteryMissionId: string; tripId?: string },
       null
     >,
   },
   currentActivity: {
-    travelerSetCurrentActivity: (anyApi as any).currentActivity.travelerSetCurrentActivity as FunctionReference<"mutation", "public", { token: string; title: string; emoji?: string; note?: string; locationLabel?: string; lat?: number; lon?: number; linkedMissionId?: string }, string>,
-    travelerDropCurrentActivity: (anyApi as any).currentActivity.travelerDropCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string }, null>,
-    travelerCompleteCurrentActivity: (anyApi as any).currentActivity.travelerCompleteCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string; checkpointId: string }, null>,
-    travelerGetCurrentActivity: (anyApi as any).currentActivity.travelerGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
-    followerGetCurrentActivity: (anyApi as any).currentActivity.followerGetCurrentActivity as FunctionReference<"query", "public", { token: string }, CurrentActivity | null>,
-    travelerListRecentActivities: (anyApi as any).currentActivity.travelerListRecentActivities as FunctionReference<"query", "public", { token: string }, CurrentActivity[]>,
-    travelerGetStalenessSettings: (anyApi as any).currentActivity.travelerGetStalenessSettings as FunctionReference<"query", "public", { token: string }, CurrentActivityStalenessSettings>,
-    travelerUpdateStalenessSettings: (anyApi as any).currentActivity.travelerUpdateStalenessSettings as FunctionReference<"mutation", "public", { token: string; enabled: boolean; fallbackTitle: string; fallbackEmoji?: string; resetAfterMs: number }, null>,
-    travelerApplyMovementDetection: (anyApi as any).currentActivity.travelerApplyMovementDetection as FunctionReference<"mutation", "public", { token: string; classification: "walking" | "running" | "cycling" | "automotive" | "moving" | "stopped"; speedMps?: number; sampledAt: number }, null>,
-    travelerGetQuickActivitySettings: (anyApi as any).currentActivity.travelerGetQuickActivitySettings as FunctionReference<"query", "public", { token: string }, QuickActivitySettings>,
-    travelerUpdateQuickActivitySettings: (anyApi as any).currentActivity.travelerUpdateQuickActivitySettings as FunctionReference<"mutation", "public", { token: string; activities: QuickActivity[]; displayCount: number }, null>,
+    travelerSetCurrentActivity: (anyApi as any).currentActivity.travelerSetCurrentActivity as FunctionReference<"mutation", "public", { token: string; title: string; emoji?: string; note?: string; locationLabel?: string; lat?: number; lon?: number; linkedMissionId?: string; tripId?: string }, string>,
+    travelerDropCurrentActivity: (anyApi as any).currentActivity.travelerDropCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string; tripId?: string }, null>,
+    travelerCompleteCurrentActivity: (anyApi as any).currentActivity.travelerCompleteCurrentActivity as FunctionReference<"mutation", "public", { token: string; activityId: string; checkpointId: string; tripId?: string }, null>,
+    travelerGetCurrentActivity: (anyApi as any).currentActivity.travelerGetCurrentActivity as FunctionReference<"query", "public", { token: string; tripId?: string }, CurrentActivity | null>,
+    followerGetCurrentActivity: (anyApi as any).currentActivity.followerGetCurrentActivity as FunctionReference<"query", "public", { token: string; tripId?: string }, CurrentActivity | null>,
+    travelerListRecentActivities: (anyApi as any).currentActivity.travelerListRecentActivities as FunctionReference<"query", "public", { token: string; tripId?: string }, CurrentActivity[]>,
+    travelerGetStalenessSettings: (anyApi as any).currentActivity.travelerGetStalenessSettings as FunctionReference<"query", "public", { token: string; tripId?: string }, CurrentActivityStalenessSettings>,
+    travelerUpdateStalenessSettings: (anyApi as any).currentActivity.travelerUpdateStalenessSettings as FunctionReference<"mutation", "public", { token: string; enabled: boolean; fallbackTitle: string; fallbackEmoji?: string; resetAfterMs: number; tripId?: string }, null>,
+    travelerApplyMovementDetection: (anyApi as any).currentActivity.travelerApplyMovementDetection as FunctionReference<"mutation", "public", { token: string; classification: "walking" | "running" | "cycling" | "automotive" | "moving" | "stopped"; speedMps?: number; sampledAt: number; tripId?: string; publishingEpoch?: number }, null>,
+    travelerGetQuickActivitySettings: (anyApi as any).currentActivity.travelerGetQuickActivitySettings as FunctionReference<"query", "public", { token: string; tripId?: string }, QuickActivitySettings>,
+    travelerUpdateQuickActivitySettings: (anyApi as any).currentActivity.travelerUpdateQuickActivitySettings as FunctionReference<"mutation", "public", { token: string; activities: QuickActivity[]; displayCount: number; tripId?: string }, null>,
   },
   travelerState: {
     travelerGetState: (anyApi as any).travelerState.travelerGetState as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       { state: TravelerState | null; visibility: TravelerStateVisibility }
     >,
     followerGetTravelerState: (anyApi as any).travelerState.followerGetTravelerState as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TravelerStateForFollower
     >,
     travelerListStateHistory: (anyApi as any).travelerState.travelerListStateHistory as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TravelerStateHistoryEntry[]
     >,
     travelerUpdateState: (anyApi as any).travelerState.travelerUpdateState as FunctionReference<
@@ -2356,6 +2507,7 @@ export const tripcastApi = {
         showSchedulePressure?: boolean;
         showStatusNote?: boolean;
         showBiometrics?: boolean;
+        tripId?: string;
       },
       null
     >,
@@ -2364,25 +2516,25 @@ export const tripcastApi = {
     travelerGetAutoState: (anyApi as any).travelerAutoState.travelerGetAutoState as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       AutoState
     >,
     followerGetAutoState: (anyApi as any).travelerAutoState.followerGetAutoState as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       AutoStateForFollower
     >,
     travelerSetAutoStateEnabled: (anyApi as any).travelerAutoState.travelerSetAutoStateEnabled as FunctionReference<
       "mutation",
       "public",
-      { token: string; enabled: boolean; timeZone: string },
+      { token: string; enabled: boolean; timeZone: string; tripId?: string },
       null
     >,
     travelerUpdateAutoStateSettings: (anyApi as any).travelerAutoState.travelerUpdateAutoStateSettings as FunctionReference<
       "mutation",
       "public",
-      { token: string } & AutoStateSettings,
+      { token: string; tripId?: string } & AutoStateSettings,
       null
     >,
     travelerRebaseAutoStateTimeZone: (anyApi as any).travelerAutoState.travelerRebaseAutoStateTimeZone as FunctionReference<
@@ -2393,6 +2545,7 @@ export const tripcastApi = {
         newTimeZone: string;
         rebasedEstimatedEnergy: number;
         rebasedEstimatedStomach: number;
+        tripId?: string;
       },
       null
     >,
@@ -2401,25 +2554,25 @@ export const tripcastApi = {
     travelerGetPreferences: (anyApi as any).travelerPreferences.travelerGetPreferences as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TravelerPreferences
     >,
     followerGetPreferences: (anyApi as any).travelerPreferences.followerGetPreferences as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TravelerPreferencesForFollower
     >,
     travelerSetTimeZone: (anyApi as any).travelerPreferences.travelerSetTimeZone as FunctionReference<
       "mutation",
       "public",
-      { token: string; timeZone: string; source?: "device" | "manual" },
+      { token: string; timeZone: string; source?: "device" | "manual"; tripId?: string },
       null
     >,
     travelerEnsureTimeZone: (anyApi as any).travelerPreferences.travelerEnsureTimeZone as FunctionReference<
       "mutation",
       "public",
-      { token: string; timeZone: string; source?: "device" | "manual" },
+      { token: string; timeZone: string; source?: "device" | "manual"; tripId?: string },
       { updated: boolean }
     >,
     travelerUpdatePreferences: (anyApi as any).travelerPreferences.travelerUpdatePreferences as FunctionReference<
@@ -2432,6 +2585,7 @@ export const tripcastApi = {
         followerContentCutoffEnabled?: boolean;
         themeDayStartMinutes?: number | null;
         themeNightStartMinutes?: number | null;
+        tripId?: string;
       },
       null
     >,
@@ -2444,6 +2598,7 @@ export const tripcastApi = {
         sleepStartMinutes?: number;
         sleepEndMinutes?: number;
         sleepStaleThresholdMs?: number;
+        tripId?: string;
       },
       null
     >,
@@ -2472,13 +2627,13 @@ export const tripcastApi = {
     travelerGetOldestContent: (anyApi as any).travelerPreferences.travelerGetOldestContent as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       OldestContentRef
     >,
     travelerCountContentBeforeCutoff: (anyApi as any).travelerPreferences.travelerCountContentBeforeCutoff as FunctionReference<
       "query",
       "public",
-      { token: string; cutoffAt: number },
+      { token: string; cutoffAt: number; tripId?: string },
       ContentBeforeCutoffCounts
     >,
   },
@@ -2500,19 +2655,19 @@ export const tripcastApi = {
     listJournalEvents: (anyApi as any).journalEvents.listJournalEvents as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       JournalEvent[]
     >,
     getJournalUnreadCount: (anyApi as any).journalEvents.getJournalUnreadCount as FunctionReference<
       "query",
       "public",
-      { token: string; after: number },
+      { token: string; after: number; tripId?: string },
       number
     >,
     getStoryEventByCheckpoint: (anyApi as any).journalEvents.getStoryEventByCheckpoint as FunctionReference<
       "query",
       "public",
-      { token: string; checkpointId: string },
+      { token: string; checkpointId: string; tripId?: string },
       JournalEvent | null
     >,
     listReplayStoryEvents: (anyApi as any).journalEvents.listReplayStoryEvents as FunctionReference<
@@ -2524,13 +2679,14 @@ export const tripcastApi = {
         startAt?: number;
         endAt?: number;
         direction: "asc" | "desc";
+        tripId?: string;
       },
       ReplayStoryPage
     >,
     resolveReplayResumeTarget: (anyApi as any).journalEvents.resolveReplayResumeTarget as FunctionReference<
       "query",
       "public",
-      { token: string; eventId: string },
+      { token: string; eventId: string; tripId?: string },
       ReplayResumeTarget
     >,
   },
@@ -2538,25 +2694,25 @@ export const tripcastApi = {
     travelerEndTrip: (anyApi as any).endTrip.travelerEndTrip as FunctionReference<
       "mutation",
       "public",
-      { token: string; thankYouNote?: string },
+      { token: string; thankYouNote?: string; tripId?: string },
       null
     >,
     travelerReopenTrip: (anyApi as any).endTrip.travelerReopenTrip as FunctionReference<
       "mutation",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       null
     >,
     getTripFinaleStatus: (anyApi as any).endTrip.getTripFinaleStatus as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       { ended: boolean; endedAt?: number }
     >,
     getTripCredits: (anyApi as any).endTrip.getTripCredits as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TripCredits
     >,
   },
@@ -2564,43 +2720,43 @@ export const tripcastApi = {
     getScoreSummary: (anyApi as any).scoring.getScoreSummary as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       ScoreSummary | null
     >,
     listAchievementHistory: (anyApi as any).scoring.listAchievementHistory as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       AchievementEvent[]
     >,
     listUnseenAchievements: (anyApi as any).scoring.listUnseenAchievements as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       AchievementEvent[]
     >,
     listUntoastedAchievements: (anyApi as any).scoring.listUntoastedAchievements as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       AchievementEvent[]
     >,
     recordDailyVisit: (anyApi as any).scoring.recordDailyVisit as FunctionReference<
       "mutation",
       "public",
-      { token: string; localDateKey: string },
+      { token: string; localDateKey: string; tripId?: string },
       null
     >,
     markAchievementsToasted: (anyApi as any).scoring.markAchievementsToasted as FunctionReference<
       "mutation",
       "public",
-      { token: string; ids: string[] },
+      { token: string; ids: string[]; tripId?: string },
       null
     >,
     markAchievementsSeen: (anyApi as any).scoring.markAchievementsSeen as FunctionReference<
       "mutation",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       null
     >,
     travelerGetScoringSettings: (anyApi as any).scoring.travelerGetScoringSettings as FunctionReference<
@@ -2620,7 +2776,7 @@ export const tripcastApi = {
     listAttributionsForSource: (anyApi as any).attributions.listAttributionsForSource as FunctionReference<
       "query",
       "public",
-      { token: string; sourceType: AttributionSourceType; sourceId: string },
+      { token: string; sourceType: AttributionSourceType; sourceId: string; tripId?: string },
       AttributionList
     >,
     getMyAttributionSettings: (anyApi as any).attributions.getMyAttributionSettings as FunctionReference<
@@ -2643,6 +2799,7 @@ export const tripcastApi = {
         sourceType: AttributionSourceType;
         sourceId: string;
         attributions: Array<{ userId: string; role?: AttributionRole }>;
+        tripId?: string;
       },
       null
     >,
@@ -2657,13 +2814,13 @@ export const tripcastApi = {
     getMyBadges: (anyApi as any).badges.getMyBadges as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       BadgeBoard | null
     >,
     travelerGetBadgeAwardContext: (anyApi as any).badges.travelerGetBadgeAwardContext as FunctionReference<
       "query",
       "public",
-      { token: string; sourceType: BadgeSourceType; sourceId: string },
+      { token: string; sourceType: BadgeSourceType; sourceId: string; tripId?: string },
       BadgeAwardContext
     >,
     travelerAwardBadges: (anyApi as any).badges.travelerAwardBadges as FunctionReference<
@@ -2676,6 +2833,7 @@ export const tripcastApi = {
         badgeType: BadgeType;
         recipients: Array<{ userId?: string; devSessionId?: string }>;
         note?: string;
+        tripId?: string;
       },
       BadgeAwardResult
     >,
@@ -2716,6 +2874,12 @@ export const tripcastApi = {
       "public",
       { inviteToken: string },
       InviteStatus
+    >,
+    getEffectiveTrip: (anyApi as any).followers.getEffectiveTrip as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      EffectiveTrip | null
     >,
   },
   followerAdmin: {
@@ -2806,7 +2970,7 @@ export const tripcastApi = {
     travelerGetConfig: (anyApi as any).travelFunds.travelerGetConfig as FunctionReference<
       "query",
       "public",
-      { token: string; currentLocalDayStart?: number },
+      { token: string; currentLocalDayStart?: number; tripId?: string },
       TravelFundsConfigForTraveler
     >,
     travelerUpdateConfig: (anyApi as any).travelFunds.travelerUpdateConfig as FunctionReference<
@@ -2818,7 +2982,7 @@ export const tripcastApi = {
     travelerListTransactions: (anyApi as any).travelFunds.travelerListTransactions as FunctionReference<
       "query",
       "public",
-      { token: string; limit?: number },
+      { token: string; limit?: number; tripId?: string },
       Transaction[]
     >,
     travelerAddTransaction: (anyApi as any).travelFunds.travelerAddTransaction as FunctionReference<
@@ -2836,37 +3000,37 @@ export const tripcastApi = {
     travelerDeleteTransaction: (anyApi as any).travelFunds.travelerDeleteTransaction as FunctionReference<
       "mutation",
       "public",
-      { token: string; transactionId: string },
+      { token: string; transactionId: string; tripId?: string },
       null
     >,
     followerGetFundsSummary: (anyApi as any).travelFunds.followerGetFundsSummary as FunctionReference<
       "query",
       "public",
-      { token: string; currentLocalDayStart?: number },
+      { token: string; currentLocalDayStart?: number; tripId?: string },
       TravelFundsSummaryForFollower
     >,
     followerListVisibleTransactions: (anyApi as any).travelFunds.followerListVisibleTransactions as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TransactionForFollower[]
     >,
     getLinkedCostMap: (anyApi as any).travelFunds.getLinkedCostMap as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       LinkedCostMap
     >,
     travelerListTransactionsForTarget: (anyApi as any).travelFunds.travelerListTransactionsForTarget as FunctionReference<
       "query",
       "public",
-      { token: string; targetType: "mission" | "checkpoint"; targetId: string },
+      { token: string; targetType: "mission" | "checkpoint"; targetId: string; tripId?: string },
       Transaction[]
     >,
     travelerListUnlinkedTransactions: (anyApi as any).travelFunds.travelerListUnlinkedTransactions as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       Transaction[]
     >,
   },
@@ -2874,19 +3038,19 @@ export const tripcastApi = {
     listMessages: (anyApi as any).messages.listMessages as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       Message[]
     >,
     sendMessage: (anyApi as any).messages.sendMessage as FunctionReference<
       "mutation",
       "public",
-      { token: string; text: string },
+      { token: string; text: string; tripId?: string },
       null
     >,
     deleteMessage: (anyApi as any).messages.deleteMessage as FunctionReference<
       "mutation",
       "public",
-      { token: string; messageId: string },
+      { token: string; messageId: string; tripId?: string },
       null
     >,
   },
@@ -2894,7 +3058,7 @@ export const tripcastApi = {
     getTickerSettings: (anyApi as any).ticker.getTickerSettings as FunctionReference<
       "query",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       TickerSettings
     >,
     updateTickerSettings: (anyApi as any).ticker.updateTickerSettings as FunctionReference<
@@ -2911,25 +3075,26 @@ export const tripcastApi = {
         showPriorityToFollowers?: boolean;
         showFunFactsToFollowers?: boolean;
         showTipsToFollowers?: boolean;
+        tripId?: string;
       },
       null
     >,
     addTickerMessage: (anyApi as any).ticker.addTickerMessage as FunctionReference<
       "mutation",
       "public",
-      { token: string; type: "priority" | "fact" | "tip"; text: string },
+      { token: string; type: "priority" | "fact" | "tip"; text: string; tripId?: string },
       string
     >,
     removeTickerMessage: (anyApi as any).ticker.removeTickerMessage as FunctionReference<
       "mutation",
       "public",
-      { token: string; messageId: string },
+      { token: string; messageId: string; tripId?: string },
       null
     >,
     clearAllTickerMessages: (anyApi as any).ticker.clearAllTickerMessages as FunctionReference<
       "mutation",
       "public",
-      { token: string },
+      { token: string; tripId?: string },
       null
     >,
   },
@@ -2943,7 +3108,76 @@ export const tripcastApi = {
         targetId: string;
         targetType: ReactionTargetType;
         emoji: string;
+        tripId?: string;
       },
+      null
+    >,
+  },
+  trips: {
+    listTravelerTripCards: (anyApi as any).trips.listTravelerTripCards as FunctionReference<
+      "query",
+      "public",
+      { token: string; paginationOpts: PaginationOpts; search?: string; lifecycle?: TripLifecycle },
+      TripCardPage
+    >,
+    getTripPreview: (anyApi as any).trips.getTripPreview as FunctionReference<
+      "query",
+      "public",
+      { token: string; tripId: string },
+      TripPreview
+    >,
+    requestTripPreviewRefresh: (anyApi as any).trips.requestTripPreviewRefresh as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; tripId: string },
+      null
+    >,
+    createTrip: (anyApi as any).trips.createTrip as FunctionReference<
+      "mutation",
+      "public",
+      CreateTripArgs,
+      { tripId: string }
+    >,
+    updateTrip: (anyApi as any).trips.updateTrip as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; tripId: string; expectedRevision: number; patch: TripDetailsPatch },
+      { revision: number }
+    >,
+    getCurrentTrip: (anyApi as any).trips.getCurrentTrip as FunctionReference<
+      "query",
+      "public",
+      { token: string },
+      CurrentTrip | null
+    >,
+    setCurrentTrip: (anyApi as any).trips.setCurrentTrip as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; tripId: string; expectedRevision: number },
+      CurrentTrip
+    >,
+    setLifecycle: (anyApi as any).trips.setLifecycle as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; tripId: string; lifecycle: TripLifecycle },
+      { lifecycle: TripLifecycle; revision: number }
+    >,
+    getSwitchImpact: (anyApi as any).trips.getSwitchImpact as FunctionReference<
+      "query",
+      "public",
+      { token: string; tripId: string },
+      TripSwitchImpact
+    >,
+    resolveTripAt: (anyApi as any).trips.resolveTripAt as FunctionReference<
+      "query",
+      "public",
+      { token: string; at: number },
+      { tripId: string } | null
+    >,
+    deleteTrip: (anyApi as any).trips.deleteTrip as FunctionReference<
+      "mutation",
+      "public",
+      { token: string; tripId: string },
       null
     >,
   },
