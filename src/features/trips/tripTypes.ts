@@ -79,4 +79,11 @@ export type TripContextValue = {
    * `false`: do not gate Follower UI on it; a Follower detects a switch by `followerTrip.tripId` changing.
    */
   multiTripEnabled: boolean;
+  /**
+   * Feature boundaries call this when a trip-scoped query for `tripId` fails with `trip_not_found` (the trip was
+   * deleted, archived-and-deleted or is no longer owned). If a private view is on that trip the device returns to
+   * `follow_current`; otherwise it does nothing. Always provided by `TripContextProvider`; optional so seeded test
+   * values may omit it.
+   */
+  reportTripUnavailable?: (tripId: string) => void;
 };

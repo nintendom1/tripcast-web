@@ -1,3 +1,4 @@
+import { useTripContext } from "../../providers/TripContextProvider";
 import type { TripTarget } from "./tripTypes";
 
 /** Props of `TripTargetLabel`; final. */
@@ -9,12 +10,18 @@ export type TripTargetLabelProps = {
 
 /**
  * Names the trip an editing sheet writes to ("Summer 2026"), so a sheet opened before a switch still shows its
- * captured target.
- *
- * Final behaviour (W1): renders the target's title while `multiTripEnabled` (from `useTripContext()`), nothing
- * otherwise. WC stub: multi-trip is disabled, so it renders nothing.
+ * captured target. Renders the target's title only while `multiTripEnabled` and this device views privately;
+ * nothing otherwise.
  */
-export function TripTargetLabel(props: TripTargetLabelProps) {
-  void props;
-  return null;
+export function TripTargetLabel({ target, className }: TripTargetLabelProps) {
+  const { multiTripEnabled, viewingMode } = useTripContext();
+  if (!multiTripEnabled || viewingMode !== "private" || !target) return null;
+  return (
+    <p
+      data-testid="trip-target-label"
+      className={["text-xs text-[var(--meadow-ink-soft)]", className].filter(Boolean).join(" ")}
+    >
+      {target.title}
+    </p>
+  );
 }

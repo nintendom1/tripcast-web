@@ -1,7 +1,10 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "convex/react";
+import { ErrorBoundary } from "react-error-boundary";
 
-import type { Role } from "../convex/tripcastApi";
-import type { TripContextValue } from "../features/trips/tripTypes";
+import { tripcastApi, type CurrentTrip, type EffectiveTrip, type Role } from "../convex/tripcastApi";
+import type { TripContextValue, TripTarget } from "../features/trips/tripTypes";
+import { useTravelerViewingTrip } from "../features/trips/useTravelerViewingTrip";
 
 const TripContext = createContext<TripContextValue | null>(null);
 
@@ -29,22 +32,111 @@ function inertTripContext(token: string, role: Role): TripContextValue {
     openPrivately: noop,
     returnToCurrent: noop,
     multiTripEnabled: false,
+    reportTripUnavailable: noop,
   };
 }
 
+type ServerTrips = { current: CurrentTrip | null | undefined; effective: EffectiveTrip | null | undefined };
+const NO_SERVER_TRIPS: ServerTrips = { current: undefined, effective: undefined };
+
+/** Delay before retrying a failed subscription when no visibility or online event comes first. */
+const SUBSCRIPTION_RETRY_MS = 20_000;
+
+type SubscriptionProps = {
+  token: string;
+  role: Role;
+  onResult: (result: ServerTrips) => void;
+  onHealthy: () => void;
+};
+
 /**
- * Provides the multi-trip context to the signed-in tree (mounted in `App.tsx`).
+ * Renders nothing; owns the two server subscriptions and reports their results to the provider. It lives in its own
+ * error boundary, so a failing query (older backend, transient or session error) never unmounts the app tree.
+ */
+function TripSubscription({ token, role, onResult, onHealthy }: SubscriptionProps) {
+  const current = useQuery(tripcastApi.trips.getCurrentTrip, role === "traveler" ? { token } : "skip");
+  const effective = useQuery(tripcastApi.followers.getEffectiveTrip, role === "follower" ? { token } : "skip");
+  useEffect(() => onHealthy(), [onHealthy]);
+  useEffect(() => onResult({ current, effective }), [current, effective, onResult]);
+  return null;
+}
+
+/**
+ * Provides the multi-trip context to the signed-in tree (mounted in `App.tsx`): subscribes to
+ * `trips.getCurrentTrip` (Traveler) or `followers.getEffectiveTrip` (Follower), keeps the in-memory viewing state
+ * and exposes `openPrivately` and `returnToCurrent`.
  *
- * Final behaviour (W1): subscribes to `trips.getCurrentTrip` (Traveler) or `followers.getEffectiveTrip` (Follower),
- * keeps the in-memory viewing state (`viewingMode`, `viewingTripId`, `viewingTrip`) and exposes `openPrivately`
- * and `returnToCurrent`.
- *
- * WC stub: inert. Reports multi-trip as disabled, `follow_current`, no trip ids, no-op actions, and makes no
- * Convex calls, so the app behaves exactly as before.
+ * While multi-trip is disabled, before the query resolves, or while the subscription is failing, the value equals
+ * the inert defaults. `children` keep one element type at one tree position in every case (no remount of the map or
+ * the publishing bridge); a failed subscription is retried on a timer, on `visibilitychange` and on `online`.
  */
 export function TripContextProvider({ token, role, children }: TripContextProviderProps) {
-  const value = useMemo(() => inertTripContext(token, role), [token, role]);
-  return <TripContext.Provider value={value}>{children}</TripContext.Provider>;
+  const [server, setServer] = useState<ServerTrips>(NO_SERVER_TRIPS);
+  const [failed, setFailed] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+
+  const onResult = useCallback((next: ServerTrips) => {
+    // Compare by value: a query result may be a fresh object on every render (as test mocks return), and
+    // storing it by identity would loop render -> effect -> setState.
+    setServer((prev) =>
+      JSON.stringify([prev.current, prev.effective]) === JSON.stringify([next.current, next.effective]) ? prev : next,
+    );
+  }, []);
+  const onHealthy = useCallback(() => setFailed(false), []);
+  const onError = useCallback((error: unknown) => {
+    console.error("Trip context subscription failed", error);
+    setServer(NO_SERVER_TRIPS);
+    setFailed(true);
+  }, []);
+
+  useEffect(() => {
+    if (!failed) return;
+    const retry = () => setRetryNonce((n) => n + 1);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") retry();
+    };
+    const timer = window.setInterval(retry, SUBSCRIPTION_RETRY_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", retry);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", retry);
+    };
+  }, [failed]);
+
+  // Multi-trip is on only when the server says so (Traveler). A Follower has no flag: it follows the effective trip.
+  const currentTrip = role === "traveler" && server.current?.multiTripEnabled === true ? server.current : null;
+  const followerTrip = role === "follower" && server.effective ? server.effective : null;
+  const multiTripEnabled = currentTrip !== null;
+
+  const serverTarget = useMemo<TripTarget | null>(() => {
+    const source = currentTrip ?? followerTrip;
+    return source ? { tripId: source.tripId, title: source.title } : null;
+  }, [currentTrip, followerTrip]);
+  const viewing = useTravelerViewingTrip({ role, token, currentTarget: serverTarget });
+
+  const value = useMemo<TripContextValue>(
+    () => ({
+      token,
+      role,
+      currentTrip,
+      // For the Traveler the Followers' trip mirrors the current trip (banner copy).
+      followerTrip: role === "traveler" ? currentTrip : followerTrip,
+      multiTripEnabled,
+      ...viewing,
+    }),
+    [token, role, currentTrip, followerTrip, multiTripEnabled, viewing],
+  );
+
+  return (
+    <TripContext.Provider value={value}>
+      <ErrorBoundary fallbackRender={() => null} resetKeys={[token, role, retryNonce]} onError={onError}>
+        <TripSubscription token={token} role={role} onResult={onResult} onHealthy={onHealthy} />
+      </ErrorBoundary>
+      {children}
+    </TripContext.Provider>
+  );
 }
 
 /** Props of `TripContextTestProvider`. */
