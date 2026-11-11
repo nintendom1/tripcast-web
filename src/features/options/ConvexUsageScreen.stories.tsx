@@ -1,6 +1,8 @@
+import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
-import { ConvexUsageScreen } from "./ConvexUsageScreen";
+import { expect, fn, userEvent, within } from "storybook/test";
+import { ConvexUsageScreen, type ConvexUsageScreenProps } from "./ConvexUsageScreen";
+import { newDatabaseBaseline, newFileBaseline, type UsageBaselines } from "../../lib/usageResources";
 import {
   USAGE_GUARD,
   USAGE_STORAGE_MODEL,
@@ -113,6 +115,18 @@ const FIRST_MONTH_LEDGER: UsageLedger = {
   },
 };
 
+const MB = 1_000_000;
+// The Traveler read the two storage figures off the Convex dashboard on Nov 10, at noon.
+const ENTERED_AT = Date.UTC(2026, 10, 10, 12);
+const BASELINES: UsageBaselines = {
+  database: newDatabaseBaseline(180 * MB, ENTERED_AT),
+  file: { ...newFileBaseline(420 * MB, ENTERED_AT), addedBytes: 38 * MB },
+};
+const NEAR_LIMIT_BASELINES: UsageBaselines = {
+  database: newDatabaseBaseline(390 * MB, ENTERED_AT),
+  file: { ...newFileBaseline(700 * MB, ENTERED_AT), addedBytes: 250 * MB },
+};
+
 const meta = {
   title: "Options/ConvexUsageScreen",
   component: ConvexUsageScreen,
@@ -141,6 +155,8 @@ const meta = {
     nowMs: NOW,
     uploadsPaused: false,
     onResetCounters: fn(),
+    fileBytesAddedThisMonth: 6.2 * MB,
+    onSaveBaseline: fn(),
   },
 } satisfies Meta<typeof ConvexUsageScreen>;
 
@@ -200,4 +216,78 @@ export const EarlyInMonth: Story = {
 
 export const Follower: Story = {
   args: { role: "follower" },
+};
+
+// All five resources, with both dashboard figures entered; File Storage is past 70%.
+export const FiveResources: Story = {
+  args: {
+    ledger: makeLedger({ uploadsPerHour: 240 }),
+    baselines: { ...BASELINES, file: { ...BASELINES.file!, addedBytes: 320 * MB } },
+    photoEgressBytes: 310 * MB,
+  },
+};
+
+// Both figures entered: each storage row shows the total, what the phone added since, and when it was entered.
+export const WithBaselines: Story = {
+  args: { baselines: BASELINES },
+};
+
+// No dashboard figure: each storage row shows only what this phone added this month, and has no level.
+export const NoBaselines: Story = {
+  args: { baselines: undefined, fileBytesAddedThisMonth: 950 * MB },
+};
+
+// Other resources past 90%, with Database I/O at warn: they get their own level and copy, never the upload pause.
+export const CriticalResources: Story = {
+  args: {
+    ledger: makeLedger({ uploadsPerHour: 800, emissionIntervalSeconds: 0 }),
+    baselines: NEAR_LIMIT_BASELINES,
+    photoEgressBytes: 930 * MB,
+  },
+};
+
+// Not iOS, or the counters could not be read: File Storage and Data Egress still show; the rest say why not.
+export const NoCountersWithFigures: Story = {
+  args: { ledger: null, baselines: { file: BASELINES.file }, photoEgressBytes: 120 * MB },
+};
+
+export const InvalidFigure: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(canvas.getByLabelText("Database Storage figure from the Convex dashboard"), "12 MB");
+    const row = canvasElement.querySelector<HTMLElement>('[data-usage-resource="databaseStorage"]')!;
+    await userEvent.click(within(row).getByRole("button", { name: "Save" }));
+    await expect(canvas.getByRole("alert")).toHaveTextContent("Enter a number");
+  },
+};
+
+function EnterFigureDemo(args: ConvexUsageScreenProps) {
+  const [baselines, setBaselines] = useState<UsageBaselines>({});
+  return (
+    <ConvexUsageScreen
+      {...args}
+      baselines={baselines}
+      onSaveBaseline={(kind, bytes) =>
+        setBaselines((current) =>
+          kind === "database"
+            ? { ...current, database: newDatabaseBaseline(bytes, NOW) }
+            : { ...current, file: newFileBaseline(bytes, NOW) },
+        )
+      }
+    />
+  );
+}
+
+// Entering a figure gives the row a total, a level and the entered date.
+export const EnterFigure: Story = {
+  render: (args) => <EnterFigureDemo {...args} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.type(canvas.getByLabelText("File Storage figure from the Convex dashboard"), "0.95");
+    await userEvent.selectOptions(canvas.getByLabelText("File Storage unit"), "GB");
+    const row = canvasElement.querySelector<HTMLElement>('[data-usage-resource="fileStorage"]')!;
+    await userEvent.click(within(row).getByRole("button", { name: "Save" }));
+    await expect(within(row).getByText("Critical")).toBeInTheDocument();
+    await expect(row.querySelector("[data-usage-baseline]")).toHaveTextContent("from dashboard");
+  },
 };
