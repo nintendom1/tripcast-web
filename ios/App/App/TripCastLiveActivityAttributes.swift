@@ -12,6 +12,7 @@ struct TripCastLiveActivityAttributes: ActivityAttributes {
         var motionState: String?
         var motionStartedAt: Date?
         var snoozeUntil: Date?
+        var tripTitle: String?
     }
 
     let startedAt: Date
