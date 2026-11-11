@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AUTO_TICK_MS,
   computeAutoState,
@@ -223,5 +223,27 @@ describe("computeAutoState", () => {
     );
     // Elapsed: 3 hours * 4 ticks = 12 ticks (UTC-driven, no double-count).
     expect(r.elapsedTicks).toBe(12);
+  });
+
+  it("builds one formatter per time zone, however many ticks have elapsed", () => {
+    // Regression: building a formatter per tick froze the app once Auto State had
+    // been on for weeks. A zone no other test uses, so the formatter is not cached yet.
+    const RealDateTimeFormat = Intl.DateTimeFormat;
+    const construct = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function (locales, options) {
+      return new RealDateTimeFormat(locales, options);
+    });
+    try {
+      const start = Date.UTC(2024, 5, 15, 12, 0, 0);
+      const inputs = makeInputs({
+        autoTimeZone: "Asia/Tokyo",
+        autoEnabledAt: start,
+        targetTime: start + 30 * 96 * AUTO_TICK_MS,
+      });
+      expect(computeAutoState(inputs).elapsedTicks).toBe(30 * 96);
+      computeAutoState(inputs);
+      expect(construct).toHaveBeenCalledTimes(1);
+    } finally {
+      construct.mockRestore();
+    }
   });
 });

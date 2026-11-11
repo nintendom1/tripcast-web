@@ -277,7 +277,10 @@ export function StatusCardConnected({
           typeof followerPreferences.travelerTimeZone === "string"
         ? followerPreferences.travelerTimeZone
         : null;
-  const clockLabel = clockTimeZone ? formatTravelerClock(now, clockTimeZone) : null;
+  const clockLabel = React.useMemo(
+    () => (clockTimeZone ? formatTravelerClock(now, clockTimeZone) : null),
+    [clockTimeZone, now],
+  );
 
   const stateFacts: StateFacts | null = React.useMemo(() => {
     if (role === "traveler") {
@@ -318,17 +321,12 @@ export function StatusCardConnected({
     ? (travelerActivity ?? null)
     : (followerActivity ?? null);
 
-  if (
-    (role === "traveler" && travelerState === undefined && travelerActivity === undefined) ||
-    (role === "follower" && followerState === undefined && followerActivity === undefined)
-  ) {
-    return null;
-  }
-
   const isAutoEnergyOn = Boolean(auto && typeof auto.autoBaseEnergyScore === "number");
   const isAutoStomachOn = Boolean(auto && typeof auto.autoBaseStomachScore === "number");
 
-  const autoEnergyResult = isAutoEnergyOn && auto
+  // The estimate walks every tick since Auto State was enabled, and TripMap
+  // re-renders this card on each GPS fix, so only recompute when its inputs change.
+  const autoEnergyResult = React.useMemo(() => isAutoEnergyOn && auto
     ? computeAutoState({
         autoTimeZone: auto.autoTimeZone,
         autoBedtimeMinutes: auto.autoBedtimeMinutes,
@@ -347,7 +345,14 @@ export function StatusCardConnected({
         autoEnabledAt: auto.autoEnabledAt,
         targetTime: now,
       })
-    : null;
+    : null, [auto, isAutoEnergyOn, now]);
+
+  if (
+    (role === "traveler" && travelerState === undefined && travelerActivity === undefined) ||
+    (role === "follower" && followerState === undefined && followerActivity === undefined)
+  ) {
+    return null;
+  }
 
   const meters: StatusCardMeter[] = stateFacts
     ? (() => {

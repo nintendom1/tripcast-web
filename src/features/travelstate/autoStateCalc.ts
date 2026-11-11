@@ -64,6 +64,10 @@ function inWindow(minute: number, start: number, end: number): boolean {
   return minute >= start || minute < end;
 }
 
+// Constructing an Intl.DateTimeFormat is expensive, and computeAutoState asks for
+// the minute once per tick since Auto State was enabled, so reuse one per zone.
+const minuteOfDayFormatters = new Map<string, Intl.DateTimeFormat>();
+
 /**
  * Returns the wall-clock minute-of-day (0..1439) for the given UTC ms,
  * projected into the supplied IANA timezone.
@@ -71,12 +75,17 @@ function inWindow(minute: number, start: number, end: number): boolean {
  * Uses Intl.DateTimeFormat which handles DST transitions automatically.
  */
 export function getMinuteOfDayInTimeZone(timestamp: number, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(timestamp));
+  let formatter = minuteOfDayFormatters.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    minuteOfDayFormatters.set(timeZone, formatter);
+  }
+  const parts = formatter.formatToParts(new Date(timestamp));
   const h = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
   const m = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
   return h * 60 + m;
