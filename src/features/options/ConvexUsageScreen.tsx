@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import type { NativeTrackingMode } from "../../native/nativeTrackingState";
+import { useNativePublishingTagsSent } from "../../native/nativePublishingSignal";
 import {
   MIN_PACE_ELAPSED_MS,
   USAGE_LEVEL_COPY,
@@ -333,7 +334,9 @@ function EstimateDetail({
   nowMs: number;
   uploadsPaused: boolean;
 }) {
-  const assessment = assessUsage(ledger, nowMs, uploadsPaused);
+  // Same bytes per upload as the guard the phone was given: tagged while trip tags are sent.
+  const tripTagsSent = useNativePublishingTagsSent();
+  const assessment = assessUsage(ledger, nowMs, uploadsPaused, tripTagsSent);
   if (!assessment) return <UsageNote>No estimate: the phone reported an unreadable month.</UsageNote>;
   const bounds = monthBoundsUtc(assessment.monthKey);
   const monthLabel = bounds

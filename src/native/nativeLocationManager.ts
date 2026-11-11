@@ -11,6 +11,7 @@ import {
   type NativePublishingPhase,
 } from "./nativePublishingState";
 import { setNativeTrackingMode, type NativeTrackingMode } from "./nativeTrackingState";
+import { reportNativePublishingRevoked } from "./nativePublishingSignal";
 import type { LiveGpsUploadIntervalSeconds } from "../lib/liveGpsUploadIntervalPreference";
 import {
   markNativeCaptureStarting,
@@ -171,6 +172,16 @@ export type NativePublishingConfiguration = {
   cloakZones: Array<{ lat: number; lon: number; radiusMeters: number }>;
   includeDebugMysteryMissions: boolean;
   usageGuard?: NativeUsageGuard;
+  /**
+   * The shared current trip (never the viewed trip), sent only while the server reports multi-trip enabled. The
+   * phone stamps samples with it at capture; a live session keeps the epoch it started with and stops itself
+   * (`gps:native-publish:revoked`) when configured with another one.
+   */
+  captureTripId?: string;
+  /** Publishing epoch of `captureTripId`; sent with it. */
+  publishingEpoch?: number;
+  /** Title of `captureTripId` for the Live Activity ("Live · <title>"); sent with it. */
+  tripTitle?: string;
 };
 
 interface AdaptiveLocationPlugin {
@@ -728,6 +739,13 @@ class NativeLocationManager {
         window.dispatchEvent(new CustomEvent("tripcast:mystery-native-arrival", {
           detail: event.details,
         }));
+      }
+      if (event.action === "gps:native-publish:revoked") {
+        const details = event.details ?? {};
+        reportNativePublishingRevoked({
+          reason: details.reason === "tags-introduced" ? "tags-introduced" : "trip-changed",
+          ...(typeof details.epoch === "number" ? { epoch: details.epoch } : {}),
+        });
       }
       if (event.action === "mystery:native:playback-state") {
         window.dispatchEvent(new CustomEvent("tripcast:mystery-native-playback-state", {

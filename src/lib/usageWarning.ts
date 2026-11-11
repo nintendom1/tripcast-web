@@ -24,7 +24,21 @@ export type UsageGuard = {
  * (tripcast-backend docs/convex-usage.md, "On-device Usage Estimate"); update when that
  * figure changes. Warn at 70 percent, critical at 90.
  */
-export const USAGE_GUARD: UsageGuard = { bytesPerUpload: 4500, monthlyLimitBytes: 1_000_000_000, pausePercent: 99 };
+export const USAGE_GUARD: UsageGuard & { bytesPerUploadTagged: number } = {
+  bytesPerUpload: 4500,
+  // provisional for multi-trip, owner to confirm (#237); must equal PER_UPLOAD_BUDGET_BYTES in tripcast-backend/convex/uploadCostBudget.test.ts
+  bytesPerUploadTagged: 5_100,
+  monthlyLimitBytes: 1_000_000_000,
+  pausePercent: 99,
+};
+
+/**
+ * Bytes per upload for the guard sent to the phone and for the estimate: the tagged figure while trip tags are sent
+ * (multi-trip enabled, current trip known), otherwise today's.
+ */
+export function usageBytesPerUpload(tripTagsSent: boolean): number {
+  return tripTagsSent ? USAGE_GUARD.bytesPerUploadTagged : USAGE_GUARD.bytesPerUpload;
+}
 const WARN_PERCENT = 70;
 const CRITICAL_PERCENT = 90;
 
@@ -167,12 +181,18 @@ export type UsageAssessment = {
  * Assesses the phone's ledger at `asOfMs` with the app's own guard, so it does not depend on the
  * phone having been given its limit. Pace is the counted rate (estimated bytes over the time since
  * counting began) projected over the full month. Paused comes from the phone: its estimate or its
- * publishing phase (`uploadsPaused`). Warn from 70 percent or pace over 100, critical from 90.
+ * publishing phase (`uploadsPaused`). Warn from 70 percent or pace over 100, critical from 90. `tripTagsSent` selects
+ * the bytes per upload (`usageBytesPerUpload`), matching the guard the phone was given.
  */
-export function assessUsage(ledger: UsageLedger, asOfMs: number, uploadsPaused: boolean): UsageAssessment | null {
+export function assessUsage(
+  ledger: UsageLedger,
+  asOfMs: number,
+  uploadsPaused: boolean,
+  tripTagsSent = false,
+): UsageAssessment | null {
   const bounds = monthBoundsUtc(ledger.estimate.monthKey);
   if (!bounds) return null;
-  const bytes = ledger.estimate.uploads * USAGE_GUARD.bytesPerUpload;
+  const bytes = ledger.estimate.uploads * usageBytesPerUpload(tripTagsSent);
   const limitBytes = USAGE_GUARD.monthlyLimitBytes;
   const percent = (bytes / limitBytes) * 100;
   const countingStart = uploadCountingStart(ledger.buckets);

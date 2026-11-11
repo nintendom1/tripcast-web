@@ -23,6 +23,13 @@ export type { CurrentTrip, EffectiveTrip, TripCard, TripLifecycle, TripPreview, 
 export type ViewingMode = "follow_current" | "private";
 
 /**
+ * Whether the server's trip state is known: `loading` before the subscription (`getCurrentTrip` for a Traveler,
+ * `getEffectiveTrip` for a Follower) first resolves, `known` once it has (multi-trip enabled or disabled), and
+ * `unavailable` while it is failing (the context then shows the inert defaults).
+ */
+export type ServerTripStatus = "loading" | "known" | "unavailable";
+
+/**
  * A trip an editor captured when it opened, so it keeps its target after a switch (shown by `TripTargetLabel`,
  * named in save toasts and destructive confirmations).
  */
@@ -86,4 +93,10 @@ export type TripContextValue = {
    * values may omit it.
    */
   reportTripUnavailable?: (tripId: string) => void;
+  /**
+   * Tells "still loading" or "failing" apart from "multi-trip disabled", which look the same in the other fields
+   * (`currentTrip` null, `multiTripEnabled` false). Always provided by `TripContextProvider`; optional so seeded test
+   * values may omit it (`TripContextTestProvider` defaults to `known`). Read an absent value as `known`.
+   */
+  serverTripStatus?: ServerTripStatus;
 };

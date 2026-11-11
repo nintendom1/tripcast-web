@@ -4,6 +4,7 @@ import {
   USAGE_GUARD,
   assessUsage,
   isUsageEscalation,
+  usageBytesPerUpload,
   usageToastKey,
   type UsageLedger,
   type UsageLedgerBucket,
@@ -82,6 +83,23 @@ describe("assessUsage levels", () => {
     expect(assessment?.bytes).toBe(200_000 * USAGE_GUARD.bytesPerUpload);
     expect(assessment?.limitBytes).toBe(USAGE_GUARD.monthlyLimitBytes);
     expect(assessment?.percent).toBe(90);
+  });
+
+  it("uses today's bytes per upload untagged and the provisional multi-trip figure while trip tags are sent", () => {
+    expect(usageBytesPerUpload(false)).toBe(4500);
+    expect(USAGE_GUARD.bytesPerUpload).toBe(4500);
+    // Must equal PER_UPLOAD_BUDGET_BYTES in tripcast-backend/convex/uploadCostBudget.test.ts.
+    expect(usageBytesPerUpload(true)).toBe(5100);
+  });
+
+  it("estimates with the tagged bytes per upload only while trip tags are sent", () => {
+    const untagged = assessUsage(ledger({ uploads: 200_000 }), AS_OF, false, false);
+    const tagged = assessUsage(ledger({ uploads: 200_000 }), AS_OF, false, true);
+
+    expect(untagged?.bytes).toBe(200_000 * 4500);
+    expect(tagged?.bytes).toBe(200_000 * 5100);
+    expect(tagged?.percent).toBeCloseTo(102);
+    expect(tagged?.level).toBe("critical");
   });
 
   it.each([

@@ -1,5 +1,5 @@
 import React from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as convexReact from "convex/react";
@@ -7,7 +7,13 @@ import * as convexReact from "convex/react";
 import { tripcastApi, type JournalEvent, type MysteryMissionFeedItem } from "../../convex/tripcastApi";
 import { clearLogs, getLogs, setEnabled, setPreset } from "../../debug/debugLogger";
 import { ThemeProvider, useTheme } from "../../providers/ThemeProvider";
+import { TripContextTestProvider } from "../../providers/TripContextProvider";
+import type { TripContextValue } from "../trips/tripTypes";
+import type { CurrentTrip } from "../../convex/tripcastApi";
+import { reportLiveSharingStopped, setNativePublishingTags } from "../../native/nativePublishingSignal";
+import { writePublishingIdentity } from "../../native/useNativePublishingConfig";
 import TripMap from "./TripMap";
+import { LivePublishingBridge } from "../../native/LivePublishingBridge";
 import { useTripPath } from "./useTripPath";
 import { setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 import { dropLiveTrailCacheRuntimeForTests, getLiveTrailCache, resetLiveTrailCachesForTests } from "./liveTrailCache";
@@ -25,6 +31,7 @@ const setLiveTrailVisibility = vi.fn();
 const recordLiveTrailSample = vi.fn();
 const deleteRecentLiveTrail = vi.fn();
 const deleteBreadcrumb = vi.fn();
+const setTripLifecycle = vi.fn();
 const fetchMock = vi.fn();
 const convexMocks = vi.hoisted(() => ({
   query: vi.fn(),
@@ -482,7 +489,17 @@ function ThemeToggleTripMap() {
   );
 }
 
+// TripMap reads the trip context; tests seed it here (inert multi-trip-disabled defaults unless a test sets fields).
+let tripContextValue: Partial<TripContextValue> = {};
+function TripContextWrapper({ children }: { children: React.ReactNode }) {
+  return <TripContextTestProvider value={tripContextValue}>{children}</TripContextTestProvider>;
+}
+function render(ui: React.ReactElement) {
+  return rtlRender(ui, { wrapper: TripContextWrapper });
+}
+
 beforeEach(async () => {
+  tripContextValue = {};
   await resetLiveTrailCachesForTests();
   vi.clearAllMocks();
   localStorage.clear();
@@ -502,6 +519,7 @@ beforeEach(async () => {
   recordLiveTrailSample.mockResolvedValue(null);
   deleteRecentLiveTrail.mockResolvedValue({ deleted: 0 });
   deleteBreadcrumb.mockResolvedValue({ deleted: 1 });
+  setTripLifecycle.mockResolvedValue({ lifecycle: "in_progress", revision: 2 });
   mockReplayQueries({});
   nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(false);
   nativeLocationMocks.isAdaptiveLocationAvailable.mockReturnValue(false);
@@ -541,6 +559,9 @@ beforeEach(async () => {
     }
     if (mutation === tripcastApi.liveTrail.travelerDeleteLiveTrailSamples) {
       return deleteBreadcrumb;
+    }
+    if (mutation === tripcastApi.trips.setLifecycle) {
+      return setTripLifecycle;
     }
     return vi.fn().mockResolvedValue(null);
   });
@@ -2479,7 +2500,7 @@ describe("TripMap location marker", () => {
       expect(updateTravelerLocation).not.toHaveBeenCalled();
     });
 
-    it("passes the movement preference to native publishing", async () => {
+    it("passes the movement preference to native publishing (configured by LivePublishingBridge)", async () => {
       vi.stubEnv("VITE_CONVEX_URL", "https://example.invalid");
       nativeLocationMocks.isAdaptiveLocationAvailable.mockReturnValue(true);
       setupQueries({
@@ -2488,7 +2509,12 @@ describe("TripMap location marker", () => {
         },
       });
 
-      render(<TripMap token="test-token" role="traveler" />);
+      render(
+        <>
+          <LivePublishingBridge token="test-token" role="traveler" gpsSuppressedUntil={null} />
+          <TripMap token="test-token" role="traveler" />
+        </>,
+      );
 
       await waitFor(() => {
         expect(nativeLocationMocks.configureNativeLocationPublishing).toHaveBeenCalledWith(
@@ -2747,5 +2773,277 @@ describe("TripMap live location sharing persistence", () => {
     // Since it was stored as true, it should start in active sharing mode
     // (i.e. the button shown should be "Stop sharing live location")
     expect(screen.getByRole("button", { name: /Stop sharing live location/i })).toBeInTheDocument();
+  });
+});
+
+describe("TripMap multi-trip live publishing", () => {
+  const AUTUMN: CurrentTrip = {
+    tripId: "trip-autumn",
+    title: "Autumn 2026",
+    lifecycle: "in_progress",
+    isLegacy: false,
+    revision: 4,
+    publishingEpoch: 3,
+    epochStartedAt: 1,
+    multiTripEnabled: true,
+  };
+  const SUMMER: CurrentTrip = { ...AUTUMN, tripId: "trip-summer", title: "Summer 2026", publishingEpoch: 4 };
+
+  function enabledContext(current: CurrentTrip, overrides: Partial<TripContextValue> = {}): Partial<TripContextValue> {
+    return {
+      currentTrip: current,
+      followerTrip: current,
+      multiTripEnabled: true,
+      viewingMode: "follow_current",
+      viewingTripId: current.tripId,
+      viewingTrip: { tripId: current.tripId, title: current.title },
+      ...overrides,
+    };
+  }
+  const viewingSummerPrivately: Partial<TripContextValue> = {
+    viewingMode: "private",
+    viewingTripId: SUMMER.tripId,
+    viewingTrip: { tripId: SUMMER.tripId, title: SUMMER.title },
+  };
+
+  const AUTUMN_TAGS = { tripId: AUTUMN.tripId, publishingEpoch: AUTUMN.publishingEpoch, tripTitle: AUTUMN.title };
+
+  let emitFix: (latitude: number, longitude: number) => void = () => {};
+  beforeEach(() => {
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      emitFix = (latitude, longitude) => onSuccess({ coords: { latitude, longitude, accuracy: 9 } });
+      emitFix(47.62, -122.34);
+      return 42;
+    });
+  });
+  afterEach(() => {
+    setNativePublishingTags(null);
+  });
+
+  function renderWithBridge() {
+    return render(
+      <>
+        <LivePublishingBridge token="test-token" role="traveler" gpsSuppressedUntil={null} />
+        <TripMap token="test-token" role="traveler" />
+      </>,
+    );
+  }
+
+  it("publishes with the current trip's tags while another trip is viewed privately", async () => {
+    tripContextValue = enabledContext(AUTUMN, viewingSummerPrivately);
+    localStorage.setItem("tripcast.live-sharing.enabled", "true");
+    setupQueries({ liveTrailStatus: { enabled: true, visibleToFollowers: false } });
+
+    renderWithBridge();
+
+    await waitFor(() => {
+      expect(updateTravelerLocation).toHaveBeenCalledWith({
+        token: "test-token",
+        lat: 47.62,
+        lon: -122.34,
+        accuracy: 9,
+        tripId: AUTUMN.tripId,
+        publishingEpoch: AUTUMN.publishingEpoch,
+      });
+    });
+    expect(recordLiveTrailSample).toHaveBeenCalledWith(
+      expect.objectContaining({ tripId: AUTUMN.tripId, publishingEpoch: AUTUMN.publishingEpoch }),
+    );
+  });
+
+  it("keeps sending the remembered tags while the trip state loads after a cold launch (never untagged)", async () => {
+    writePublishingIdentity("test-token", AUTUMN_TAGS);
+    tripContextValue = { serverTripStatus: "loading" };
+    localStorage.setItem("tripcast.live-sharing.enabled", "true");
+    setupQueries();
+
+    renderWithBridge();
+
+    await waitFor(() => {
+      expect(updateTravelerLocation).toHaveBeenCalledWith(
+        expect.objectContaining({ tripId: AUTUMN.tripId, publishingEpoch: AUTUMN.publishingEpoch }),
+      );
+    });
+    for (const [args] of updateTravelerLocation.mock.calls) expect(args).toHaveProperty("tripId", AUTUMN.tripId);
+  });
+
+  it("treats a null publish result as not published: no retry and no error", async () => {
+    setEnabled(true);
+    setPreset("gps-trace");
+    tripContextValue = enabledContext(AUTUMN);
+    localStorage.setItem("tripcast.live-sharing.enabled", "true");
+    updateTravelerLocation.mockResolvedValue(null);
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+
+    await waitFor(() => {
+      expect(getLogs().some((entry) => entry.action === "gps:current-location:publish:ack")).toBe(true);
+    });
+    expect(updateTravelerLocation).toHaveBeenCalledTimes(1);
+    expect(getLogs().some((entry) => entry.action === "gps:current-location:publish:failure")).toBe(false);
+  });
+
+  it("stops the JS publisher when the current trip's epoch changes, before any fix goes out under it", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    tripContextValue = enabledContext(AUTUMN);
+    setNativePublishingTags(AUTUMN_TAGS);
+    localStorage.setItem("tripcast.live-sharing.enabled", "true");
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    await waitFor(() => {
+      expect(updateTravelerLocation).toHaveBeenCalledWith(expect.objectContaining({ publishingEpoch: 3 }));
+    });
+
+    tripContextValue = enabledContext(SUMMER);
+    act(() =>
+      setNativePublishingTags({ tripId: SUMMER.tripId, publishingEpoch: SUMMER.publishingEpoch, tripTitle: SUMMER.title }),
+    );
+    vi.setSystemTime(Date.now() + 5 * 60_000);
+    act(() => emitFix(47.7, -122.4));
+
+    expect(updateTravelerLocation).toHaveBeenCalledTimes(1);
+    expect(updateTravelerLocation).not.toHaveBeenCalledWith(expect.objectContaining({ publishingEpoch: 4 }));
+  });
+
+  it("shows the bridge's stop notice once and drops a snooze so it cannot resume", async () => {
+    localStorage.setItem("tripcast.live-sharing.snoozed-until", String(Date.now() + 60 * 60_000));
+    tripContextValue = enabledContext(SUMMER);
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    expect(screen.getByRole("button", { name: /snoozed until/i })).toBeInTheDocument();
+
+    act(() => reportLiveSharingStopped("Live sharing stopped: Followers now see Summer 2026."));
+
+    expect(await screen.findByText("Live sharing stopped: Followers now see Summer 2026.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /snoozed until/i })).not.toBeInTheDocument();
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+  });
+
+  it("multi-trip off: a snooze resumes at expiry even if the stored snooze was cleared (as before)", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    localStorage.setItem("tripcast.live-sharing.snoozed-until", String(Date.now() + 60_000));
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    expect(screen.getByRole("button", { name: /snoozed until/i })).toBeInTheDocument();
+    localStorage.removeItem("tripcast.live-sharing.snoozed-until");
+    act(() => void vi.advanceTimersByTime(61_000));
+
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("true");
+  });
+
+  it("multi-trip on: a snooze whose stored value a trip change cleared does not resume at expiry", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    tripContextValue = enabledContext(AUTUMN);
+    setNativePublishingTags(AUTUMN_TAGS);
+    localStorage.setItem("tripcast.live-sharing.snoozed-until", String(Date.now() + 60_000));
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    expect(screen.getByRole("button", { name: /snoozed until/i })).toBeInTheDocument();
+    localStorage.removeItem("tripcast.live-sharing.snoozed-until");
+    act(() => void vi.advanceTimersByTime(61_000));
+
+    expect(screen.queryByRole("button", { name: /snoozed until/i })).not.toBeInTheDocument();
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+  });
+
+  it("does not start Live in private view; it offers Return to the current trip", async () => {
+    const returnToCurrent = vi.fn();
+    tripContextValue = enabledContext(AUTUMN, { ...viewingSummerPrivately, returnToCurrent });
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    expect(screen.getByText("Return to Autumn 2026 to go live")).toBeInTheDocument();
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+    expect(updateTravelerLocation).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Return" }));
+    expect(returnToCurrent).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Return to Autumn 2026 to go live")).not.toBeInTheDocument();
+  });
+
+  it("stops Live from private view", () => {
+    tripContextValue = enabledContext(AUTUMN, viewingSummerPrivately);
+    localStorage.setItem("tripcast.live-sharing.enabled", "true");
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Stop sharing live location/i }));
+
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+    expect(screen.queryByText(/to go live/)).not.toBeInTheDocument();
+  });
+
+  it("asks once to start a planned trip, starts it, then goes live", async () => {
+    tripContextValue = enabledContext({ ...AUTUMN, lifecycle: "planned" });
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    expect(await screen.findByText("Start Autumn 2026 and go live?")).toBeInTheDocument();
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Start trip and go live" }));
+
+    await waitFor(() => {
+      expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("true");
+    });
+    expect(setTripLifecycle).toHaveBeenCalledTimes(1);
+    expect(setTripLifecycle).toHaveBeenCalledWith({
+      token: "test-token",
+      tripId: AUTUMN.tripId,
+      lifecycle: "in_progress",
+    });
+  });
+
+  it("stays off when starting the planned trip fails", async () => {
+    tripContextValue = enabledContext({ ...AUTUMN, lifecycle: "planned" });
+    setTripLifecycle.mockRejectedValue(new Error("offline"));
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Start trip and go live" }));
+
+    expect(await screen.findByText("Couldn't start Autumn 2026. Try again.")).toBeInTheDocument();
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+  });
+
+  it("keeps Live off on a completed trip and explains it must be reopened", () => {
+    tripContextValue = enabledContext({ ...AUTUMN, lifecycle: "completed" });
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    expect(screen.getByText("Reopen Autumn 2026 to go live")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reopen" })).toBeDisabled();
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
+    expect(setTripLifecycle).not.toHaveBeenCalled();
+  });
+
+  it("starts Live directly and sends no trip tags while multi-trip is disabled", async () => {
+    setupQueries();
+
+    render(<TripMap token="test-token" role="traveler" />);
+    fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
+
+    expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("true");
+    expect(screen.queryByText(/to go live/)).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(updateTravelerLocation).toHaveBeenCalledWith({
+        token: "test-token",
+        lat: 47.62,
+        lon: -122.34,
+        accuracy: 9,
+      });
+    });
   });
 });

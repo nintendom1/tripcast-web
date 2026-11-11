@@ -1,3 +1,4 @@
+import { isNativePublishingTagsSent } from "../native/nativePublishingSignal";
 import {
   assessUsage,
   isUsageEscalation,
@@ -160,6 +161,11 @@ export type ResourceInputs = {
   fileBytesAddedThisMonth?: number;
   photoEgressBytes: number;
   storageModel: UsageStorageModel | null;
+  /**
+   * Whether the phone is configured with trip tags (and the tagged bytes per upload). Defaults to what
+   * LivePublishingBridge last configured (`isNativePublishingTagsSent`), so callers match the phone's guard.
+   */
+  tripTagsSent?: boolean;
 };
 
 function levelForPercent(percent: number): UsageLevel {
@@ -226,7 +232,8 @@ export function assessResources(inputs: ResourceInputs): ResourceAssessment[] {
   const counted = ledger ?? null;
   const noCounters = ledgerUnavailable(ledger);
 
-  const usage = counted ? assessUsage(counted, nowMs, uploadsPaused) : null;
+  const tripTagsSent = inputs.tripTagsSent ?? isNativePublishingTagsSent();
+  const usage = counted ? assessUsage(counted, nowMs, uploadsPaused, tripTagsSent) : null;
   // Uploads are counted for the month in the phone's estimate; without a readable month there is no estimate.
   const functionCalls = counted && usage
     ? meteredRow("functionCalls", counted.estimate.uploads * FUNCTION_CALLS_PER_UPLOAD)

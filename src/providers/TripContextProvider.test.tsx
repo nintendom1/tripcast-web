@@ -174,6 +174,27 @@ describe("TripContextProvider", () => {
     expect(seen.viewingTripId).toBe("trip-winter");
   });
 
+  it("tells loading apart from multi-trip disabled and enabled (serverTripStatus)", () => {
+    const view = mount("traveler");
+    expect(seen).toMatchObject({ ...inert, role: "traveler", serverTripStatus: "loading" });
+
+    server.current = trip("trip-legacy", "My First Trip", false);
+    view.refresh();
+    expect(seen).toMatchObject({ ...inert, role: "traveler", serverTripStatus: "known" });
+
+    server.current = trip("trip-autumn", "Autumn 2026");
+    view.refresh();
+    expect(seen).toMatchObject({ multiTripEnabled: true, serverTripStatus: "known" });
+  });
+
+  it("reports a Follower's status from getEffectiveTrip", () => {
+    const view = mount("follower");
+    expect(seen.serverTripStatus).toBe("loading");
+    server.effective = effective("trip-autumn", "Autumn 2026");
+    view.refresh();
+    expect(seen.serverTripStatus).toBe("known");
+  });
+
   describe("when the subscription throws", () => {
     let mounts: number;
     let spy: ReturnType<typeof vi.spyOn>;
@@ -227,6 +248,25 @@ describe("TripContextProvider", () => {
         expect(seen.multiTripEnabled).toBe(true);
       }
       expect(mounts).toBe(1);
+    });
+
+    it("reports unavailable while failing, loading on a retry, then known", () => {
+      server.current = trip("trip-autumn", "Autumn 2026");
+      const view = mount("traveler", <Child />);
+      expect(seen.serverTripStatus).toBe("known");
+
+      server.throwCurrent = true;
+      view.refresh(<Child />);
+      expect(seen).toMatchObject({ ...inert, role: "traveler", serverTripStatus: "unavailable" });
+
+      server.throwCurrent = false;
+      server.current = undefined;
+      act(() => void vi.advanceTimersByTime(20_000));
+      expect(seen).toMatchObject({ ...inert, role: "traveler", serverTripStatus: "loading" });
+
+      server.current = trip("trip-autumn", "Autumn 2026");
+      view.refresh(<Child />);
+      expect(seen).toMatchObject({ multiTripEnabled: true, serverTripStatus: "known" });
     });
 
     it("keeps the children mounted when the subscription fails on the very first render", () => {
@@ -322,6 +362,7 @@ describe("TripContextProvider", () => {
       viewingTripId: "trip-2",
       viewingTrip: summer,
       multiTripEnabled: true,
+      serverTripStatus: "known",
     });
   });
 

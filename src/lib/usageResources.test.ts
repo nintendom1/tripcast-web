@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { setNativePublishingTagsSent } from "../native/nativePublishingSignal";
 import { USAGE_GUARD, USAGE_LEVEL_COPY, USAGE_STORAGE_MODEL, assessUsage, usageToastKey, type UsageLedger, type UsageLedgerBucket } from "./usageWarning";
 import {
   FUNCTION_CALLS_PER_UPLOAD,
@@ -246,6 +247,21 @@ describe("assessResources", () => {
 
     const paused = rowOf(assessResources(inputs({ ledger, uploadsPaused: true })), "databaseIo");
     expect(paused.level).toBe("paused");
+  });
+
+  it("uses the tagged bytes per upload while trip tags are sent (as the phone's guard), today's otherwise", () => {
+    const ledger = ledgerOf([bucket(NOW - 5 * DAY_MS, 10)], 160_000);
+
+    expect(rowOf(assessResources(inputs({ ledger })), "databaseIo").amount).toBe(160_000 * 4500);
+    expect(rowOf(assessResources(inputs({ ledger, tripTagsSent: true })), "databaseIo").amount).toBe(160_000 * 5100);
+
+    setNativePublishingTagsSent(true);
+    try {
+      expect(rowOf(assessResources(inputs({ ledger })), "databaseIo").amount).toBe(160_000 * 5100);
+      expect(rowOf(assessResources(inputs({ ledger, tripTagsSent: false })), "databaseIo").amount).toBe(160_000 * 4500);
+    } finally {
+      setNativePublishingTagsSent(false);
+    }
   });
 
   it("never gives another resource month-end pace or the paused level", () => {
