@@ -1,4 +1,5 @@
 import { rememberReplaySource } from "./replayImagePreparation";
+import { recordUploadedFileBytes } from "../../lib/usageBaselines";
 import ExifReader from "exifreader";
 import { debugLoggerFor } from "../../debug/useDebugLogger";
 
@@ -194,6 +195,7 @@ export async function uploadStoryImage(
   if (!result.storageId) {
     throw new Error("Image upload did not return a storage id.");
   }
+  recordUploadedFileBytes(uploadBlob.size);
   rememberReplaySource(result.storageId, uploadBlob);
   return {
     storageId: result.storageId,

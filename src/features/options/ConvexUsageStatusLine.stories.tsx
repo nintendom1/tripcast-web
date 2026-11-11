@@ -26,6 +26,11 @@ export const Critical: Story = { args: { level: "critical" } };
 
 export const Paused: Story = { args: { level: "paused" } };
 
+// Another resource is the worst: the line names it, and says nothing about the upload pause.
+export const FunctionCallsWarn: Story = { args: { level: "warn", resource: "functionCalls" } };
+
+export const FileStorageCritical: Story = { args: { level: "critical", resource: "fileStorage" } };
+
 // No line while the estimate is OK, or when there is no estimate (off iOS, no counters, no guard);
 // the Developer row still shows the state.
 export const HiddenWithoutWarning: Story = {

@@ -48,10 +48,17 @@ import { useNativeTrackingState } from "./native/nativeTrackingState";
 import { useVerificationLiveBootstrap } from "./native/useVerificationLiveBootstrap";
 
 import OptionsSheet from "./features/options/OptionsSheet";
+import { getEgressEstimateBytes } from "./lib/egressMeter";
+import { clearUsageBaselines, foldUsageBaselines } from "./lib/usageBaselines";
 import {
-  USAGE_LEVEL_COPY,
-  assessUsage,
-  isUsageEscalation,
+  assessResources,
+  pendingResourceEscalation,
+  usageResourceCopy,
+  worstResourceLevel,
+  type UsageResource,
+} from "./lib/usageResources";
+import {
+  USAGE_STORAGE_MODEL,
   usageToastKey,
   type UsageLedger,
   type UsageLevel,
@@ -75,9 +82,12 @@ const PANEL_MOTION = {
 
 const GPS_KILL_DURATION_MS = 30_000;
 const USAGE_TOAST_STORAGE_KEY = "tripcast.usageToast.v1";
+// Database I/O keeps the key above; every other resource has its entry in this JSON map.
+const USAGE_RESOURCE_TOAST_STORAGE_KEY = "tripcast.usageToast.resources.v1";
 const USAGE_TOAST_MS = 8000;
 // The last usage toast key written this session, so a failing localStorage cannot repeat the toast.
 let usageToastKeyInMemory: string | null = null;
+let usageResourceToastKeysInMemory: Partial<Record<UsageResource, string>> | null = null;
 
 function MapErrorFallback(props: React.ComponentProps<typeof FullScreenErrorFallback>) {
   const publishingPhase = useNativePublishingState().phase;
@@ -129,6 +139,46 @@ function writeUsageToastKey(key: string) {
   } catch {
     // best-effort; the in-memory key still prevents repeats until the next launch
   }
+}
+
+function readUsageResourceToastKeys(): Partial<Record<UsageResource, string>> {
+  if (usageResourceToastKeysInMemory !== null) return usageResourceToastKeysInMemory;
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(USAGE_RESOURCE_TOAST_STORAGE_KEY) ?? "{}");
+    return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeUsageResourceToastKey(resource: UsageResource, key: string) {
+  usageResourceToastKeysInMemory = { ...readUsageResourceToastKeys(), [resource]: key };
+  try {
+    localStorage.setItem(USAGE_RESOURCE_TOAST_STORAGE_KEY, JSON.stringify(usageResourceToastKeysInMemory));
+  } catch {
+    // best-effort; the in-memory keys still prevent repeats until the next launch
+  }
+}
+
+function clearUsageResourceToastKey(resource: UsageResource) {
+  const keys = { ...readUsageResourceToastKeys() };
+  delete keys[resource];
+  usageResourceToastKeysInMemory = keys;
+  try {
+    localStorage.setItem(USAGE_RESOURCE_TOAST_STORAGE_KEY, JSON.stringify(keys));
+  } catch {
+    // best-effort; a stale stored key only suppresses a repeat toast this month
+  }
+}
+
+function readUsageToastKeyFor(resource: UsageResource): string | null {
+  if (resource === "databaseIo") return readUsageToastKey();
+  const key = readUsageResourceToastKeys()[resource];
+  return typeof key === "string" ? key : null;
+}
+
+function usageMetric(resource: UsageResource | undefined): string {
+  return `${resource ?? "databaseIo"}Estimate`;
 }
 
 type AppProps = {
@@ -490,27 +540,51 @@ function ConnectedApp() {
     }, durationMs);
   }
 
-  /** Records a read of the phone's counters, logs level changes and toasts each escalation once. */
+  /**
+   * Records a read of the phone's counters across the five resources, logs level changes and toasts
+   * the most severe pending escalation. Other pending escalations wait for a later read.
+   */
   function handleUsageLedger(ledger: UsageLedger, options?: { reset?: boolean }) {
-    // A reset restarts the estimate, so warnings may fire again this month.
-    if (options?.reset) clearUsageToastKey();
-    const assessment = assessUsage(ledger, Date.now(), getNativePublishingState().phase === "paused");
-    const level = assessment?.level ?? null;
-    setUsage({ ledger, level });
+    // A reset restarts the estimate of what the phone's counters give: Database I/O and Function Calls.
+    // The other resources do not start over, so they keep their keys.
+    if (options?.reset) {
+      clearUsageToastKey();
+      clearUsageResourceToastKey("functionCalls");
+    }
+    const nowMs = Date.now();
+    const { baselines, fileBytesAddedThisMonth } = foldUsageBaselines(ledger, nowMs);
+    const rows = assessResources({
+      ledger,
+      nowMs,
+      uploadsPaused: getNativePublishingState().phase === "paused",
+      baselines,
+      fileBytesAddedThisMonth,
+      photoEgressBytes: getEgressEstimateBytes(),
+      storageModel: USAGE_STORAGE_MODEL,
+    });
+    // Without a readable month the phone has no estimate, and a toast has no month to be keyed on.
+    const readable = rows.every((row) => row.unavailable !== "unreadable-month");
+    const worst = readable ? worstResourceLevel(rows) : null;
+    const level = worst?.level ?? null;
+    setUsage({ ledger, level, resource: worst?.resource });
     if (level !== lastUsageLevelRef.current) {
+      const percent = rows.find((row) => row.resource === worst?.resource)?.percent;
       debugLog("info", "App", "usage:status:changed", "gps", {
         from: lastUsageLevelRef.current,
         to: level,
-        metric: "databaseIoEstimate",
-        percent: assessment ? Math.floor(assessment.percent) : null,
+        metric: usageMetric(worst?.resource),
+        percent: percent == null ? null : Math.floor(percent),
       });
       lastUsageLevelRef.current = level;
     }
-    if (level === null || !isUsageEscalation(readUsageToastKey(), ledger.estimate.monthKey, level)) return;
-    writeUsageToastKey(usageToastKey(ledger.estimate.monthKey, level));
-    const copy = USAGE_LEVEL_COPY[level];
+    const pending = readable ? pendingResourceEscalation(rows, ledger.estimate.monthKey, readUsageToastKeyFor) : null;
+    if (!pending) return;
+    const key = usageToastKey(ledger.estimate.monthKey, pending.level);
+    if (pending.resource === "databaseIo") writeUsageToastKey(key);
+    else writeUsageResourceToastKey(pending.resource, key);
+    const copy = usageResourceCopy(pending.resource, pending.level);
     showResetToast(`${copy.label}: ${copy.message}`, USAGE_TOAST_MS);
-    debugLog("warn", "App", "usage:warning:shown", "gps", { level, metric: "databaseIoEstimate" });
+    debugLog("warn", "App", "usage:warning:shown", "gps", { level: pending.level, metric: usageMetric(pending.resource) });
   }
 
   function handleTriggerTestToast() {
@@ -775,6 +849,7 @@ function ConnectedApp() {
             setLocationResetNonce((value) => value + 1);
           }}
           onTripDataDeleted={() => {
+            clearUsageBaselines();
             void clearLiveTrailCachesForToken(session.token);
             setTripDataResetNonce((value) => value + 1);
           }}

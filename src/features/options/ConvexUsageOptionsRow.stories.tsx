@@ -50,4 +50,9 @@ export const NoEstimateOnThisDevice: Story = { args: { countersAvailable: false 
 
 export const Level: Story = { args: { usage: { ledger: LEDGER, level: "critical" } } };
 
+// The worst level belongs to another resource; the row shows the level and the status line names it.
+export const LevelFromAnotherResource: Story = {
+  args: { usage: { ledger: LEDGER, level: "warn", resource: "dataEgress" } },
+};
+
 export const Follower: Story = { args: { role: "follower" } };
