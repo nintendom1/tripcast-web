@@ -264,7 +264,8 @@ function ConnectedApp() {
     if (session !== null && activeSessionCheck === null) {
       clearLiveSnooze();
       setLiveSharingEnabled(false);
-      stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
+      // An expired or revoked session keeps queued points for the next Traveler sign-in.
+      stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "preserve" });
       void clearLiveTrailCachesForToken(session.token);
       clearStoredSession();
       setSession(null);
