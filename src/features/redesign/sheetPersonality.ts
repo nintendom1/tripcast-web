@@ -39,3 +39,20 @@ export function useSheetPersonalities(): Record<SheetKey, SheetPersonality> {
     ? CONSTELLATION_SHEET_PERSONALITIES
     : MEADOW_SHEET_PERSONALITIES;
 }
+
+/**
+ * Trip pane personality. A separate export rather than a `SheetKey`: the six-sheet maps above are locked by their
+ * own tests, and the trip pane is a left slide-out, not one of the bottom sheets.
+ */
+export const MEADOW_TRIPS_PERSONALITY: SheetPersonality = { color: "#3aa6a0", motif: "map", bg: "#dcf1ef" };
+export const CONSTELLATION_TRIPS_PERSONALITY: SheetPersonality = {
+  color: "#5cc8c2",
+  motif: "map",
+  bg: "rgba(92,200,194,0.14)",
+};
+
+/** Returns the trip pane personality for the currently resolved theme. */
+export function useTripsPersonality(): SheetPersonality {
+  const { resolvedTheme } = useTheme();
+  return resolvedTheme === "constellation" ? CONSTELLATION_TRIPS_PERSONALITY : MEADOW_TRIPS_PERSONALITY;
+}
