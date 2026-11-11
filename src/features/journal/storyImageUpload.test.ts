@@ -4,6 +4,7 @@ import {
   uploadStoryImage,
   validateStoryImageFile,
 } from "./storyImageUpload";
+import { getUsageBaselines } from "../../lib/usageBaselines";
 
 // jsdom has no canvas implementation — these tests stub Canvas + Image so the
 // compression pipeline can run synchronously and we can assert on flow control
@@ -182,5 +183,32 @@ describe("uploadStoryImage", () => {
     await expect(
       uploadStoryImage(makeImageFile(1024), getUploadUrl),
     ).rejects.toThrow(/unable to upload/i);
+  });
+
+  it("records the bytes it uploaded for the Convex Usage estimate", async () => {
+    installImageStub({ width: 4000, height: 3000, succeed: true });
+    installCanvasStub(new Blob([new Uint8Array(800_000)], { type: "image/jpeg" }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ storageId: "store-4" }),
+    }));
+    const before = getUsageBaselines().fileBytesAddedThisMonth;
+
+    await uploadStoryImage(makeImageFile(10 * 1024 * 1024), getUploadUrl);
+
+    expect(getUsageBaselines().fileBytesAddedThisMonth - before).toBe(800_000);
+  });
+
+  it("records nothing when the upload fails or returns no storage id", async () => {
+    installImageStub({ width: 1000, height: 1000, succeed: true });
+    installCanvasStub(new Blob([new Uint8Array(500)], { type: "image/jpeg" }));
+    const before = getUsageBaselines().fileBytesAddedThisMonth;
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+    await expect(uploadStoryImage(makeImageFile(1024), getUploadUrl)).rejects.toThrow();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }));
+    await expect(uploadStoryImage(makeImageFile(1024), getUploadUrl)).rejects.toThrow(/storage id/i);
+
+    expect(getUsageBaselines().fileBytesAddedThisMonth).toBe(before);
   });
 });

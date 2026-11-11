@@ -1,5 +1,6 @@
 import type { ConvexReactClient } from "convex/react";
 import { tripcastApi, type ReplayImageInventoryItem } from "../../convex/tripcastApi";
+import { recordUploadedFileBytes } from "../../lib/usageBaselines";
 
 export async function encodeReplayImage(input: Blob) {
   // ImageBitmap applies EXIF orientation and uses a static frame for animation.
@@ -74,6 +75,7 @@ export async function prepareReplayImages(client: ConvexReactClient, token: stri
           if (epoch !== signOutEpoch) break;
           const accepted = await client.action(tripcastApi.replayImages.finish, { token, owner, source, bytes: await preview.blob.arrayBuffer(), width: preview.width, height: preview.height });
           if (!accepted) throw new Error("Photo changed during preparation. Refresh and retry.");
+          recordUploadedFileBytes(preview.blob.size);
         } catch (error) {
           if (epoch !== signOutEpoch) break;
           await client.mutation(tripcastApi.replayImages.fail, { token, owner, source });

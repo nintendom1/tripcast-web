@@ -23,6 +23,7 @@ import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
+import { recordUploadedFileBytes } from "../../lib/usageBaselines";
 
 type ImportState =
   | { type: "idle" }
@@ -340,6 +341,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
             if (!response.ok) throw new Error(`HTTP error ${response.status}`);
             const result = await response.json() as { storageId?: string };
             if (!result.storageId) throw new Error("No storageId returned from upload.");
+            recordUploadedFileBytes(blob.size);
             uploadedFileMap.set(photo.pinRef, result.storageId);
           } catch (err) {
             log.error("upload-photo:error", "error", { err });

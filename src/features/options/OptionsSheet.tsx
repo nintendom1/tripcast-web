@@ -57,6 +57,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { useSamplerMode, setSamplerMode, SAMPLER_MODE_INFO, type SamplerMode } from "../../lib/samplerMode";
 import { useFixOverlayEnabled, setFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 import { useEgressEstimateBytes } from "../../lib/egressMeter";
+import { foldUsageBaselines, saveUsageBaseline, useUsageBaselines } from "../../lib/usageBaselines";
 import { BreadcrumbDeleteRow } from "./BreadcrumbDeleteRow";
 import { getLiveTrailCache } from "../map/liveTrailCache";
 import type {
@@ -103,6 +104,7 @@ import { isAdaptiveLocationAvailable } from "../../native/locationWatcher";
 import { nativeLocationManager } from "../../native/nativeLocationManager";
 import { useNativePublishingState } from "../../native/nativePublishingState";
 import { ConvexUsageScreen } from "./ConvexUsageScreen";
+import { usageResourceCopy, type UsageResource } from "../../lib/usageResources";
 import {
   USAGE_LEVEL_COPY,
   USAGE_STORAGE_MODEL,
@@ -1093,10 +1095,22 @@ export function ConvexUsageOptionsRow({
   return <OptionsRow icon={Database} title="Convex Usage" detail={detail} onClick={onClick} />;
 }
 
-/** Traveler-only line at the top of Options while the estimate is at warn, critical or paused. */
-export function ConvexUsageStatusLine({ level, onOpen }: { level: UsageLevel | null; onOpen: () => void }) {
+/**
+ * Traveler-only line at the top of Options while the worst estimate is at warn, critical or
+ * paused; its message names `resource` (unset means Database I/O).
+ */
+export function ConvexUsageStatusLine({
+  level,
+  resource,
+  onOpen,
+}: {
+  level: UsageLevel | null;
+  resource?: UsageResource;
+  onOpen: () => void;
+}) {
   if (level === null || level === "ok") return null;
   const tone = USAGE_LEVEL_TONE[level];
+  const copy = usageResourceCopy(resource, level);
   return (
     <button
       type="button"
@@ -1106,8 +1120,8 @@ export function ConvexUsageStatusLine({ level, onOpen }: { level: UsageLevel | n
     >
       <TriangleAlert className={cn("h-5 w-5 shrink-0", tone)} aria-hidden />
       <span className="min-w-0 flex-1">
-        <span className={cn("block text-sm font-semibold", tone)}>Convex Usage: {USAGE_LEVEL_COPY[level].label}</span>
-        <span className="block text-sm text-[var(--ink-3)]">{USAGE_LEVEL_COPY[level].message}</span>
+        <span className={cn("block text-sm font-semibold", tone)}>Convex Usage: {copy.label}</span>
+        <span className="block text-sm text-[var(--ink-3)]">{copy.message}</span>
       </span>
       <ChevronRight className="h-4 w-4 shrink-0 text-[var(--ink-3)]" aria-hidden />
     </button>
@@ -1126,6 +1140,7 @@ function ConvexUsageView({
   log: DebugLogger;
 }) {
   const photoEgressBytes = useEgressEstimateBytes();
+  const { baselines, fileBytesAddedThisMonth } = useUsageBaselines();
   const uploadsPaused = useNativePublishingState().phase === "paused";
   const countersAvailable = role === "traveler" && isAdaptiveLocationAvailable();
   const [ledger, setLedger] = useState<UsageLedger | null | undefined>(countersAvailable ? usage?.ledger : null);
@@ -1166,6 +1181,9 @@ function ConvexUsageView({
         nowMs={nowMs}
         uploadsPaused={uploadsPaused}
         onResetCounters={() => setIsResetConfirmOpen(true)}
+        baselines={role === "traveler" ? baselines : undefined}
+        fileBytesAddedThisMonth={role === "traveler" ? fileBytesAddedThisMonth : undefined}
+        onSaveBaseline={role === "traveler" ? (kind, bytes) => saveUsageBaseline(kind, bytes) : undefined}
       />
       <ConfirmModal
         open={isResetConfirmOpen}
@@ -1179,7 +1197,14 @@ function ConvexUsageView({
           log.logUi("action:convex-usage:reset-counters");
           const previous = ledger;
           setLedger(undefined);
-          nativeLocationManager.resetUsageLedger()
+          // The reset wipes the hourly counters, so first keep the hours counted since the last read in
+          // the baseline: from a fresh read, or from the last ledger if that read fails.
+          nativeLocationManager.getUsageLedger()
+            .then(
+              (fresh) => { foldUsageBaselines(fresh, Date.now(), { closeOpenHour: true }); },
+              () => { if (previous) foldUsageBaselines(previous, nowMs, { closeOpenHour: true }); },
+            )
+            .then(() => nativeLocationManager.resetUsageLedger())
             .then((next) => applyLedger(next, { reset: true }))
             .catch(() => setLedger(previous ?? null));
         }}
@@ -2305,6 +2330,7 @@ function OptionsHome({
         {role === "traveler" ? (
           <ConvexUsageStatusLine
             level={usage?.level ?? null}
+            resource={usage?.resource}
             onOpen={() => {
               log.logUi("action:convex-usage", { source: "status-line" });
               onConvexUsage();

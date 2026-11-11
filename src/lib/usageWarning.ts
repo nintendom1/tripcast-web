@@ -1,4 +1,5 @@
 import type { NativeTrackingMode } from "../native/nativeTrackingState";
+import type { UsageResource } from "./usageResources";
 
 /**
  * Convex usage warnings: the shapes the Convex Usage screen receives, the usage
@@ -81,8 +82,12 @@ export type UsageLedger = {
   estimate: UsageEstimate;
 };
 
-/** The last read of the phone's counters and the level derived from it; `ledger` is `null` when unavailable. */
-export type UsageReading = { ledger: UsageLedger | null; level: UsageLevel | null };
+/**
+ * The last read of the phone's counters and the level derived from it; `ledger` is `null` when
+ * unavailable. `level` is the worst across the resources and `resource` the one it belongs to;
+ * unset means Database I/O.
+ */
+export type UsageReading = { ledger: UsageLedger | null; level: UsageLevel | null; resource?: UsageResource };
 
 /** Inputs for estimating GPS point storage from acknowledged points. */
 export type UsageStorageModel = {

@@ -5,6 +5,7 @@ import * as convexReact from "convex/react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
+import { clearUsageBaselines, recordUploadedFileBytes } from "../../lib/usageBaselines";
 import { ThemeProvider } from "../../providers/ThemeProvider";
 import * as mapService from "../map/mapService";
 import { getLiveTrailCache, resetLiveTrailCachesForTests } from "../map/liveTrailCache";
@@ -818,6 +819,25 @@ describe("OptionsSheet Convex Usage status line", () => {
     expect(screen.queryByRole("button", { name: /convex usage:/i })).toHaveTextContent("Convex Usage: Warning");
   });
 
+  it("names the resource when it is not Database I/O, without the upload pause", () => {
+    setupMocks();
+    renderOptions({ usage: { ledger: null, level: "critical", resource: "functionCalls" } });
+
+    const line = screen.getByRole("button", { name: /convex usage:/i });
+    expect(line).toHaveTextContent("Convex Usage: Critical");
+    expect(line).toHaveTextContent("Estimated Function Calls is past 90% of the Free plan.");
+    expect(line).not.toHaveTextContent(/pause/i);
+  });
+
+  it("keeps naming Database I/O and the upload pause when it is the worst", () => {
+    setupMocks();
+    renderOptions({ usage: { ledger: null, level: "critical", resource: "databaseIo" } });
+
+    expect(screen.getByRole("button", { name: /convex usage:/i })).toHaveTextContent(
+      "Estimated Database I/O is past 90% of the Free plan. GPS uploads pause at 99%.",
+    );
+  });
+
   it("hides the usage status line from a Traveler at ok", () => {
     setupMocks();
     renderOptions({ usage: { ledger: null, level: "ok" } });
@@ -830,6 +850,31 @@ describe("OptionsSheet Convex Usage status line", () => {
     renderOptions({ session: followerSession, role: "follower", usage: { ledger: null, level: "warn" } });
 
     expect(screen.queryByRole("button", { name: /convex usage:/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("OptionsSheet Convex Usage screen", () => {
+  it("shows a Traveler this month's uploaded photo bytes and saves a dashboard figure", async () => {
+    setupMocks();
+    clearUsageBaselines();
+    recordUploadedFileBytes(950_000_000);
+    renderOptions();
+
+    await userEvent.click(screen.getByRole("button", { name: /convex usage/i }));
+
+    const file = await waitFor(() => {
+      const row = document.querySelector<HTMLElement>('[data-usage-resource="fileStorage"]');
+      expect(row).not.toBeNull();
+      return row!;
+    });
+    expect(within(file).getByText("Added this month").nextElementSibling).toHaveTextContent("950 MB");
+    expect(file.querySelector("[data-usage-baseline]")).toBeNull();
+
+    await userEvent.type(within(file).getByRole("textbox"), "120");
+    await userEvent.click(within(file).getByRole("button", { name: "Save" }));
+
+    expect(file.querySelector("[data-usage-baseline]")).toHaveTextContent(/^Entered .+ from dashboard$/);
+    expect(within(file).getByText("Estimated").nextElementSibling).toHaveTextContent("120 MB");
   });
 });
 

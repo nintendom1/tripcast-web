@@ -5,6 +5,14 @@ import * as convexReact from "convex/react";
 
 import PhotoCompanionImportPanel from "./PhotoCompanionImportPanel";
 import { tripcastApi } from "../../convex/tripcastApi";
+import { getUsageBaselines } from "../../lib/usageBaselines";
+import { inspectArchiveZip, validateArchiveZip, type PhotoCompanionArchivePhoto } from "./photoCompanionArchive";
+
+vi.mock("./photoCompanionArchive", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./photoCompanionArchive")>()),
+  inspectArchiveZip: vi.fn(),
+  validateArchiveZip: vi.fn(),
+}));
 
 vi.mock("convex/react", () => ({
   useQuery: vi.fn(),
@@ -113,6 +121,59 @@ describe("PhotoCompanionImportPanel", () => {
         token: "test-token",
         imageIds: ["img-orphan-1"],
       });
+    });
+  });
+  describe("Convex Usage estimate", () => {
+    const photo: PhotoCompanionArchivePhoto = {
+      pinRef: "checkin:abc",
+      path: "photos/abc.jpg",
+      contentType: "image/jpeg",
+      bytes: 300_000,
+      sha256: "x".repeat(43) + "=",
+    };
+
+    async function importOnePhoto(uploadResponse: { ok: boolean; json: () => Promise<{ storageId?: string }> }) {
+      const manifest = { format: "tripcast-photo-companion" as const, version: 1 as const, exportedAt: "2026-11-18T00:00:00Z", selection: { startMs: null, endMs: null }, photos: [photo], missing: [] };
+      vi.mocked(inspectArchiveZip).mockResolvedValue({ manifest, totalPhotoBytes: photo.bytes });
+      vi.mocked(validateArchiveZip).mockResolvedValue({
+        manifest,
+        totalPhotoBytes: photo.bytes,
+        photoBlobs: new Map([[photo.pinRef, { blob: new Blob([new Uint8Array(photo.bytes)], { type: "image/jpeg" }), entry: photo }]]),
+        photoErrors: new Map(),
+      });
+      mockConvex.query.mockResolvedValue([{ pinRef: photo.pinRef, status: "ready" }]);
+      mockGenerateUrls.mockResolvedValue(["https://upload.example/1"]);
+      mockAttachBatch.mockResolvedValue([{ pinRef: photo.pinRef, imageId: "store-1", status: "attached" }]);
+      mockPruneOrphans.mockResolvedValue([]);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(uploadResponse));
+
+      const user = userEvent.setup();
+      render(<PhotoCompanionImportPanel token="test-token" />);
+      await user.upload(
+        screen.getByLabelText("Upload Photo Companion ZIP"),
+        new File(["zip"], "photos.zip", { type: "application/zip" }),
+      );
+      await user.click(await screen.findByRole("button", { name: /start import/i }));
+      await waitFor(() => expect(vi.mocked(fetch)).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByText(/importing photos/i)).not.toBeInTheDocument());
+    }
+
+    it("records the bytes of each photo it uploaded", async () => {
+      const before = getUsageBaselines().fileBytesAddedThisMonth;
+
+      await importOnePhoto({ ok: true, json: () => Promise.resolve({ storageId: "store-1" }) });
+
+      expect(getUsageBaselines().fileBytesAddedThisMonth - before).toBe(photo.bytes);
+      vi.unstubAllGlobals();
+    });
+
+    it("records nothing for a photo whose upload returned no storage id", async () => {
+      const before = getUsageBaselines().fileBytesAddedThisMonth;
+
+      await importOnePhoto({ ok: true, json: () => Promise.resolve({}) });
+
+      expect(getUsageBaselines().fileBytesAddedThisMonth).toBe(before);
+      vi.unstubAllGlobals();
     });
   });
 });
