@@ -44,6 +44,7 @@ final class LiveActivityController {
     private var motionStartedAt: Date?
     private var snoozeUntil: Date?
     private var activeFailureSources: Set<FailureSource> = []
+    private var publishingHold: String?
     private var alertIncident: AlertIncident?
     private var lastDeduplicatedIncidentID: String?
     private var availableImplementation: AnyObject?
@@ -127,6 +128,7 @@ final class LiveActivityController {
             self.motionStartedAt = nil
             self.snoozeUntil = nil
             self.activeFailureSources.removeAll()
+            self.publishingHold = nil
             self.healthyRefreshWorkItem?.cancel()
             self.healthyRefreshWorkItem = nil
             self.lastActivityStateData = nil
@@ -291,6 +293,7 @@ final class LiveActivityController {
     func setRecovering(queueDepth: Int) {
         stateQueue.async {
             self.queueDepth = queueDepth
+            self.publishingHold = nil
             self.reportFailure(.publishing, reason: "publish-failure")
             self.updateActivity()
         }
@@ -299,7 +302,20 @@ final class LiveActivityController {
     func setPublishingHealthy(queueDepth: Int) {
         stateQueue.async {
             self.queueDepth = queueDepth
+            self.publishingHold = nil
             self.resolveFailure(.publishing, reason: "publish-recovered", watchEligibleSince: Date())
+            self.updateActivity()
+        }
+    }
+
+    func setPublishingHold(_ hold: String, queueDepth: Int) {
+        stateQueue.async {
+            self.queueDepth = queueDepth
+            if self.publishingHold != hold {
+                self.publishingHold = hold
+                self.activeFailureSources.remove(.publishing)
+                self.clearAlertIncident(reason: hold, removeDelivered: true)
+            }
             self.updateActivity()
         }
     }
@@ -335,7 +351,9 @@ final class LiveActivityController {
     }
 
     private var canAlert: Bool {
-        guard alertThresholdSeconds > 0, mode != "off", mode != "privacy" else { return false }
+        guard alertThresholdSeconds > 0, mode != "off", mode != "privacy", publishingHold == nil else {
+            return false
+        }
         if !activeFailureSources.isEmpty || alertIncident?.kind == "failure" {
             return true
         }
@@ -662,7 +680,8 @@ final class LiveActivityController {
     private func state() -> TripCastLiveActivityAttributes.ContentState {
         let health: String
         let message: String
-        let displayedMode = mode == "snoozed" ? mode : (activeFailureSources.isEmpty ? mode : "recovering")
+        let held = publishingHold != nil && mode != "snoozed" && mode != "privacy" && mode != "off"
+        let displayedMode = mode == "snoozed" ? mode : (activeFailureSources.isEmpty && !held ? mode : "recovering")
         switch displayedMode {
         case "snoozed":
             health = "neutral"
@@ -673,6 +692,12 @@ final class LiveActivityController {
         case "privacy":
             health = "neutral"
             message = "Location hidden"
+        case "recovering" where held && publishingHold == "sign-in-expired":
+            health = "stale"
+            message = "Sign in to resume uploads"
+        case "recovering" where held:
+            health = "neutral"
+            message = "Uploads paused"
         case "recovering":
             health = "warning"
             message = queueDepth > 0 ? "\(queueDepth) breadcrumbs queued" : "Reconnecting…"

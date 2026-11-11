@@ -20,6 +20,8 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setHighFrequencyActive", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLocalTrailSnapshot", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getUsageLedger", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "resetUsageLedger", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "syncMysteryMissions", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getMysteryProximityState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setMysteryAudioMuted", returnType: CAPPluginReturnPromise),
@@ -179,6 +181,14 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         AdaptiveLocationService.shared.localTrailSnapshot { snapshot in call.resolve(snapshot) }
+    }
+
+    @objc func getUsageLedger(_ call: CAPPluginCall) {
+        NativeLocationPublisher.shared.usageLedger { ledger in call.resolve(ledger) }
+    }
+
+    @objc func resetUsageLedger(_ call: CAPPluginCall) {
+        NativeLocationPublisher.shared.resetUsageLedger { ledger in call.resolve(ledger) }
     }
 
     @objc func syncMysteryMissions(_ call: CAPPluginCall) {
