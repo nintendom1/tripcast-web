@@ -1,7 +1,6 @@
 import * as React from "react";
-import { useQuery } from "convex/react";
-
 import { tripcastApi, type Role } from "@/convex/tripcastApi";
+import { useTripQuery } from "@/convex/useTrip";
 
 import { FundsCompact } from "./FundsCompact";
 
@@ -30,7 +29,7 @@ export function FundsCompactConnected({
 }: FundsCompactConnectedProps) {
   const traveler = role === "traveler";
   const currentLocalDayStart = getLocalDayStart();
-  const config = useQuery(
+  const config = useTripQuery(
     traveler
       ? tripcastApi.travelFunds.travelerGetConfig
       : tripcastApi.travelFunds.followerGetFundsSummary,

@@ -1,9 +1,9 @@
-import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, Plus } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Transaction } from "../../convex/tripcastApi";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { Button } from "../../components/ui/button";
 import {
   Sheet,
@@ -66,12 +66,20 @@ export default function TransactionPickerSheet({
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const unlinked = useQuery(
+  const unlinked = useTripQuery(
     tripcastApi.travelFunds.travelerListUnlinkedTransactions,
     open ? { token } : "skip",
   );
-  const addTransaction = useMutation(tripcastApi.travelFunds.travelerAddTransaction);
-  const updateTransaction = useMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
+  const addTransaction = useTripMutation(tripcastApi.travelFunds.travelerAddTransaction);
+  const updateTransaction = useTripMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
+  // The picker is always mounted (its `open` prop toggles): pin its writes to the trip the Traveler views when it opens.
+  const retargetAdd = addTransaction.recapture;
+  const retargetUpdate = updateTransaction.recapture;
+  useEffect(() => {
+    if (!open) return;
+    retargetAdd();
+    retargetUpdate();
+  }, [open, retargetAdd, retargetUpdate]);
 
   function resetAndClose() {
     setView("list");
@@ -258,6 +266,7 @@ export default function TransactionPickerSheet({
               <TransactionForm
                 token={token}
                 mode="add"
+                target={addTransaction.target}
                 onSubmit={handleAddSubmit}
                 onCancel={() => setView("list")}
                 prefillMissionId={target?.type === "mission" ? target.id : undefined}

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
 import { ChevronLeft, DollarSign, Plus, Settings as SettingsIcon } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -12,6 +11,9 @@ import { formatUsd } from "./currency";
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
 import TransactionRows from "./TransactionRows";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { TripTargetLabel } from "../trips/TripTargetLabel";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
@@ -69,15 +71,21 @@ function friendlyTravelFundsError(err: unknown): string {
 
 export default function TravelFundsSheet({ token, onClose, debugSource }: TravelFundsSheetProps) {
   const currentLocalDayStart = getLocalDayStart();
-  const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, {
+  const config = useTripQuery(tripcastApi.travelFunds.travelerGetConfig, {
     token,
     currentLocalDayStart,
   });
-  const transactions = useQuery(tripcastApi.travelFunds.travelerListTransactions, { token });
-  const updateConfig = useMutation(tripcastApi.travelFunds.travelerUpdateConfig);
-  const addTransaction = useMutation(tripcastApi.travelFunds.travelerAddTransaction);
-  const updateTransaction = useMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
-  const deleteTransaction = useMutation(tripcastApi.travelFunds.travelerDeleteTransaction);
+  const transactions = useTripQuery(tripcastApi.travelFunds.travelerListTransactions, { token });
+  // Writes are captured when this sheet opens (it mounts per open), so they stay on the trip the Traveler opened it on.
+  const updateConfig = useTripMutation(tripcastApi.travelFunds.travelerUpdateConfig);
+  const addTransaction = useTripMutation(tripcastApi.travelFunds.travelerAddTransaction);
+  const updateTransaction = useTripMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
+  const deleteTransaction = useTripMutation(tripcastApi.travelFunds.travelerDeleteTransaction);
+  const { viewingMode } = useOptionalTripContext();
+  const swipeDeleteTitle =
+    deleteTransaction.target && viewingMode === "private"
+      ? `Delete from ${deleteTransaction.target.title}?`
+      : "Delete this transaction?";
 
   const [view, setView] = useState<View>("summary");
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
@@ -257,6 +265,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
         <TransactionForm
           token={token}
           mode="add"
+          target={addTransaction.target}
           onSubmit={handleAddSubmit}
           onCancel={goBackToSummary}
         />
@@ -266,6 +275,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
         <TransactionForm
           token={token}
           mode="edit"
+          target={updateTransaction.target}
           initial={editingTx}
           onSubmit={handleEditSubmit}
           onCancel={goBackToSummary}
@@ -274,6 +284,8 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       )}
 
       {view === "settings" && (
+          <>
+          {updateConfig.target ? <TripTargetLabel target={updateConfig.target} /> : null}
           <SettingsBody
             enabled={config?.enabled ?? false}
             budgetInput={budgetInput}
@@ -293,6 +305,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
           error={settingsError}
           hasTransactions={!!(transactions && transactions.length > 0)}
         />
+          </>
       )}
 
       {view === "summary" &&
@@ -330,7 +343,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
         onOpenChange={(open) => {
           if (!open) setPendingDeleteTx(null);
         }}
-        title="Delete this transaction?"
+        title={swipeDeleteTitle}
         itemLabel={pendingDeleteTx?.title ?? undefined}
         description="The spend disappears from the Travel Funds list and the meter recalculates. This can't be undone."
         onConfirm={handleSwipeDelete}

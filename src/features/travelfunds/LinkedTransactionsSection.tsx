@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Transaction } from "../../convex/tripcastApi";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { Button } from "../../components/ui/button";
 import { formatUsd } from "./currency";
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
@@ -59,19 +59,28 @@ function LinkedMode({
   );
   const music = useMusicSafe();
 
-  const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
-  const transactions = useQuery(
+  const config = useTripQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
+  const transactions = useTripQuery(
     tripcastApi.travelFunds.travelerListTransactionsForTarget,
     config?.enabled
       ? { token, targetType: target.type, targetId: target.id }
       : "skip",
   );
 
-  const updateTransaction = useMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
-  const deleteTransaction = useMutation(tripcastApi.travelFunds.travelerDeleteTransaction);
+  const updateTransaction = useTripMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
+  const deleteTransaction = useTripMutation(tripcastApi.travelFunds.travelerDeleteTransaction);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editing, setEditing] = useState<EditState>(null);
+  // This section sits inside long-lived sheets: pin the edit and delete writes to the trip when a row's editor opens.
+  const retargetUpdate = updateTransaction.recapture;
+  const retargetDelete = deleteTransaction.recapture;
+  const editingId = editing?.tx._id ?? null;
+  useEffect(() => {
+    if (editingId === null) return;
+    retargetUpdate();
+    retargetDelete();
+  }, [editingId, retargetUpdate, retargetDelete]);
 
   const total = useTransactionTotal(transactions ?? undefined);
 
@@ -161,6 +170,7 @@ function LinkedMode({
           <TransactionForm
             token={token}
             mode="edit"
+            target={updateTransaction.target}
             initial={editing.tx}
             onSubmit={handleEditSubmit}
             onCancel={() => setEditing(null)}
@@ -206,7 +216,7 @@ function StagingMode({
     "LinkedTransactionsSection",
     "src/features/travelfunds/LinkedTransactionsSection.tsx",
   );
-  const config = useQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
+  const config = useTripQuery(tripcastApi.travelFunds.travelerGetConfig, { token });
   const [pickerOpen, setPickerOpen] = useState(false);
 
   const total = useTransactionTotal(staged);

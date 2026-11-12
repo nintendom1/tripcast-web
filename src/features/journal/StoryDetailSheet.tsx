@@ -9,6 +9,9 @@ import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { StatBar } from "../../components/rpg/StatBar";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
+import { useTripConvex, useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { TripTargetLabel } from "../trips/TripTargetLabel";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -171,10 +174,17 @@ export default function StoryDetailSheet({
   const log = useDebugLogger("StoryDetailSheet", "src/features/journal/StoryDetailSheet.tsx");
   const calibration = useCenteringCalibration();
   const music = useMusicSafe();
-  const updateCheckpoint = useMutation(tripcastApi.checkpoints.updateCheckpoint);
-  const deleteCheckpoint = useMutation(tripcastApi.checkpoints.deleteCheckpoint);
+  // The sheet stays mounted while closed: its edit and delete writes are pinned when the editor or the delete opens.
+  const updateCheckpoint = useTripMutation(tripcastApi.checkpoints.updateCheckpoint);
+  const deleteCheckpoint = useTripMutation(tripcastApi.checkpoints.deleteCheckpoint);
   const replayImageClient = useConvex();
+  const replayTrip = useTripConvex();
+  // Upload URLs are per user, not per trip: a plain mutation.
   const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
+  const { viewingMode } = useOptionalTripContext();
+  const retargetUpdate = updateCheckpoint.recapture;
+  const retargetDelete = deleteCheckpoint.recapture;
+  const retargetReplay = replayTrip.recapture;
 
   const [isEditing, setIsEditing] = useState(false);
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
@@ -202,6 +212,12 @@ export default function StoryDetailSheet({
   const [pendingDelete, setPendingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [optimisticEvent, setOptimisticEvent] = useState<JournalEvent | null>(null);
+  useEffect(() => {
+    if (!isEditing && !pendingDelete) return;
+    retargetUpdate();
+    retargetDelete();
+    retargetReplay();
+  }, [isEditing, pendingDelete, retargetUpdate, retargetDelete, retargetReplay]);
 
   // Performance instrumentation only — no UI badges, no re-renders. Tracks when
   // we first saw an imageId vs. when its presigned URL resolved, so onImageLoad
@@ -212,7 +228,7 @@ export default function StoryDetailSheet({
     urlReadyAt?: number;
   } | null>(null);
 
-  const preferences = useQuery(
+  const preferences = useTripQuery(
     tripcastApi.travelerPreferences.followerGetPreferences,
     role === "follower" && token ? { token } : "skip",
   );
@@ -235,7 +251,7 @@ export default function StoryDetailSheet({
   const photoKey = `${token}:${displayEvent?._id}:${displayEvent?.imageId}`;
   const [originalPhotoKey, setOriginalPhotoKey] = useState<string | null>(null);
   const [failedPhotoKey, setFailedPhotoKey] = useState<string | null>(null);
-  const photo = useQuery(
+  const photo = useTripQuery(
     tripcastApi.replayImages.resolveUrl,
     displayEvent?.imageId && token ? { token, imageId: displayEvent.imageId, context: "story", original: originalPhotoKey === photoKey } : "skip",
   );
@@ -489,7 +505,7 @@ export default function StoryDetailSheet({
         showInStory: editShowInStory,
         ...(happenedAtChanged ? { happenedAt: happenedAtMs } : {}),
       });
-      if (imageId) prepareUploadedReplayImage(replayImageClient, token, imageId);
+      if (imageId) prepareUploadedReplayImage(replayImageClient, token, imageId, replayTrip);
       music.sfx("success");
       log.logInteraction("form:submit:success", {});
       setOptimisticEvent({
@@ -668,6 +684,7 @@ export default function StoryDetailSheet({
             <SheetBody className="px-5" style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
               {isEditing ? (
                 <div className="flex flex-col gap-3 pt-1">
+                  {updateCheckpoint.target ? <TripTargetLabel target={updateCheckpoint.target} /> : null}
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-[var(--ink-1)]">Edit {isNarrative ? "Story" : "Check In"}</span>
                     <button type="button" className="text-xs text-[var(--ink-3)] underline hover:text-[var(--ink-1)]" onClick={cancelEditMode}>
@@ -962,7 +979,11 @@ export default function StoryDetailSheet({
               onOpenChange={(open) => {
                 if (!open) setPendingDelete(false);
               }}
-              title={`Delete this ${isNarrative ? "Story" : "Check In"}?`}
+              title={
+                deleteCheckpoint.target && viewingMode === "private"
+                  ? `Delete this ${isNarrative ? "Story" : "Check In"} from ${deleteCheckpoint.target.title}?`
+                  : `Delete this ${isNarrative ? "Story" : "Check In"}?`
+              }
               itemLabel={displayEvent.title ?? undefined}
               description="The pin disappears from the map and the journal. Linked transactions are kept but unlinked. This can't be undone."
               onConfirm={handleConfirmDelete}

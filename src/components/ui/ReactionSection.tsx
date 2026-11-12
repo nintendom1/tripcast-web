@@ -1,8 +1,8 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { useMutation } from "convex/react";
 import { AnimatePresence } from "framer-motion";
 import { tripcastApi, type ReactionSummary } from "@/convex/tripcastApi";
+import { useTripMutation } from "@/convex/useTrip";
 import { ReactionTray, ReactionBadge, ReactionButton } from "./ReactionTray";
 import { useMusicSafe } from "@/providers/MusicProvider";
 
@@ -61,7 +61,12 @@ export function ReactionSection({
   const containerRef = React.useRef<HTMLDivElement>(null);
   const trayRef = React.useRef<HTMLDivElement>(null);
   const music = useMusicSafe();
-  const toggleReaction = useMutation(tripcastApi.reactions.toggleReaction);
+  const toggleReaction = useTripMutation(tripcastApi.reactions.toggleReaction);
+  // The reaction belongs to the item shown now: re-capture the viewed trip when the item changes, not on every render.
+  const retarget = toggleReaction.recapture;
+  React.useEffect(() => {
+    retarget();
+  }, [retarget, targetId, targetType]);
 
   // Clear optimistic state once the server pushes a new snapshot.
   React.useEffect(() => {

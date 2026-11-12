@@ -1,5 +1,4 @@
 import * as React from "react";
-import { useMutation, useQuery } from "convex/react";
 
 import {
   tripcastApi,
@@ -14,6 +13,8 @@ import {
   type TravelerStomachLevel,
   type TravelerStressLevel,
 } from "@/convex/tripcastApi";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import {
   ENERGY_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
@@ -203,41 +204,43 @@ export function StatusCardConnected({
   onOpenState,
   className,
 }: StatusCardConnectedProps) {
-  const travelerState = useQuery(
+  const travelerState = useTripQuery(
     tripcastApi.travelerState.travelerGetState,
     role === "traveler" ? { token } : "skip",
   );
-  const followerState = useQuery(
+  const followerState = useTripQuery(
     tripcastApi.travelerState.followerGetTravelerState,
     role === "follower" ? { token } : "skip",
   );
 
-  const travelerActivity = useQuery(
+  const travelerActivity = useTripQuery(
     tripcastApi.currentActivity.travelerGetCurrentActivity,
     role === "traveler" ? { token } : "skip",
   );
-  const followerActivity = useQuery(
+  const followerActivity = useTripQuery(
     tripcastApi.currentActivity.followerGetCurrentActivity,
     role === "follower" ? { token } : "skip",
   );
 
-  const travelerAutoState = useQuery(
+  const travelerAutoState = useTripQuery(
     tripcastApi.travelerAutoState.travelerGetAutoState,
     role === "traveler" ? { token } : "skip",
   );
-  const followerAutoState = useQuery(
+  const followerAutoState = useTripQuery(
     tripcastApi.travelerAutoState.followerGetAutoState,
     role === "follower" ? { token } : "skip",
   );
-  const travelerPreferences = useQuery(
+  const travelerPreferences = useTripQuery(
     tripcastApi.travelerPreferences.travelerGetPreferences,
     role === "traveler" ? { token } : "skip",
   );
-  const followerPreferences = useQuery(
+  const followerPreferences = useTripQuery(
     tripcastApi.travelerPreferences.followerGetPreferences,
     role === "follower" ? { token } : "skip",
   );
-  const ensureTimeZone = useMutation(tripcastApi.travelerPreferences.travelerEnsureTimeZone);
+  const ensureTimeZone = useTripMutation(tripcastApi.travelerPreferences.travelerEnsureTimeZone);
+  // The device time zone belongs to the shared current trip (what Followers read), not the viewed one: name it explicitly.
+  const sharedTripId = useOptionalTripContext().currentTrip?.tripId;
   const ensureAttemptedRef = React.useRef<string | null>(null);
 
   const [now, setNow] = React.useState(() => Date.now());
@@ -256,10 +259,10 @@ export function StatusCardConnected({
     const attemptKey = `${token}:${detectedTimeZone}`;
     if (ensureAttemptedRef.current === attemptKey) return;
     ensureAttemptedRef.current = attemptKey;
-    ensureTimeZone({ token, timeZone: detectedTimeZone, source: "device" }).catch(() => {
+    ensureTimeZone({ token, timeZone: detectedTimeZone, source: "device", tripId: sharedTripId }).catch(() => {
       ensureAttemptedRef.current = null;
     });
-  }, [detectedTimeZone, ensureTimeZone, role, token, travelerPreferences]);
+  }, [detectedTimeZone, ensureTimeZone, role, sharedTripId, token, travelerPreferences]);
 
   const auto = React.useMemo<NormalizedAuto | null>(() => {
     if (role === "traveler") return normalizeTraveler(travelerAutoState);

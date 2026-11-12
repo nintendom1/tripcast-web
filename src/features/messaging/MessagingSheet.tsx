@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { MessageSquare, Send, Trash2, Info } from "lucide-react";
-import { useMutation } from "convex/react";
 import { tripcastApi, type Doc, type Role } from "../../convex/tripcastApi";
+import { useTripMutation } from "../../convex/useTrip";
 import { Sheet, SheetContent, SheetTitle, SheetCloseButton } from "../../components/ui/sheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -63,8 +63,16 @@ export function MessagingSheet({
   const music = useMusicSafe();
   const { resolvedTheme } = useTheme();
   const palette = CHAT_PALETTES[resolvedTheme];
-  const sendMessage = useMutation(tripcastApi.messages.sendMessage);
-  const deleteMessage = useMutation(tripcastApi.messages.deleteMessage);
+  // The sheet is always mounted (`open` toggles): pin the chat's writes to the trip the Traveler views when it opens.
+  const sendMessage = useTripMutation(tripcastApi.messages.sendMessage);
+  const deleteMessage = useTripMutation(tripcastApi.messages.deleteMessage);
+  const retargetSend = sendMessage.recapture;
+  const retargetDelete = deleteMessage.recapture;
+  useEffect(() => {
+    if (!open) return;
+    retargetSend();
+    retargetDelete();
+  }, [open, retargetSend, retargetDelete]);
   
   const [inputText, setInputText] = useState("");
   const [dividerBeforeMessageId, setDividerBeforeMessageId] = useState<string | null>(null);

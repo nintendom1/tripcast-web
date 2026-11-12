@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "convex/react";
+import { useTripQuery } from "../../convex/useTrip";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { TripTargetLabel } from "../trips/TripTargetLabel";
+import type { TripTarget } from "../trips/tripTypes";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type {
@@ -50,6 +53,8 @@ type TransactionFormProps = {
   onSubmit: (values: TransactionFormValues) => Promise<void>;
   onCancel: () => void;
   onDelete?: () => Promise<void>;
+  /** The trip this form writes to (captured by the sheet when it opened); named in private view. */
+  target?: TripTarget | null;
   /** Pre-creation linking target. When `mode === "add"`, the submitted values
    *  carry this through to the backend so the new transaction is linked
    *  atomically. Ignored in edit mode (edit uses the row's existing link). */
@@ -87,13 +92,15 @@ export default function TransactionForm({
   onSubmit,
   onCancel,
   onDelete,
+  target,
   prefillMissionId,
   prefillCheckpointId,
   onUnlink,
   submitLabel,
 }: TransactionFormProps) {
   const log = useDebugLogger("TransactionForm", "src/features/travelfunds/TransactionForm.tsx");
-  const activity = useQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
+  const activity = useTripQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
+  const { viewingMode } = useOptionalTripContext();
 
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
@@ -326,7 +333,8 @@ export default function TransactionForm({
 
   async function handleDelete() {
     if (!onDelete) return;
-    if (!confirm("Delete this transaction? This cannot be undone.")) return;
+    const named = target && viewingMode === "private" ? `Delete from ${target.title}?` : "Delete this transaction?";
+    if (!confirm(`${named} This cannot be undone.`)) return;
     setIsDeleting(true);
     try {
       await onDelete();
@@ -352,6 +360,7 @@ export default function TransactionForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      {target ? <TripTargetLabel target={target} /> : null}
       <div className="flex flex-col gap-1">
         <label className={labelClass} htmlFor="tx-title">Title</label>
         <Input

@@ -1,12 +1,22 @@
 import { useEffect, useRef } from "react";
-import { useConvex } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
+import { useTripConvex } from "../../convex/useTrip";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { logMapEvent } from "../../debug/debugLogger";
 
 const MAX_CONCURRENT_PREFETCHES = 3;
 
 export function useImagePrefetch(token: string, imageIds: string[], mode: "original" | "replay" | "replay-original" = "original") {
-  const convex = useConvex();
+  // Prefetch reads follow the viewed trip: re-capture it when the view changes so the next pass uses that trip.
+  const convex = useTripConvex();
+  const { viewingTripId } = useOptionalTripContext();
+  const retarget = convex.recapture;
+  const lastTripId = useRef(viewingTripId);
+  useEffect(() => {
+    if (lastTripId.current === viewingTripId) return;
+    lastTripId.current = viewingTripId;
+    retarget();
+  }, [retarget, viewingTripId]);
   // Track image IDs we've already resolved (or warmed) so a re-render with the
   // same array doesn't fan out duplicate Convex queries. Keyed by token so a
   // sign-out / role switch invalidates. Errors clear the entry so a later

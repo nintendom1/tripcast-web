@@ -1,6 +1,6 @@
 import { prepareUploadedReplayImage } from "./replayImagePreparation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useConvex, useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation } from "convex/react";
 import {
   CalendarClock,
   Camera,
@@ -44,6 +44,8 @@ import { extractImageMetadata, uploadStoryImage, validateStoryImageFile, type Im
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import { LoadingImage } from "../../components/ui/LoadingImage";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
+import { useTripConvex, useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { TripTargetLabel } from "../trips/TripTargetLabel";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 
 type FilterTab = "story" | "all" | "entries";
@@ -214,10 +216,20 @@ export default function JournalSheet({
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const costMap = useQuery(tripcastApi.travelFunds.getLinkedCostMap, open ? { token } : "skip");
-  const addCheckpoint = useMutation(tripcastApi.checkpoints.addCheckpoint);
+  const costMap = useTripQuery(tripcastApi.travelFunds.getLinkedCostMap, open ? { token } : "skip");
+  // The sheet stays mounted while closed, so its writes are pinned when the create form opens (see the effect below).
+  const addCheckpoint = useTripMutation(tripcastApi.checkpoints.addCheckpoint);
   const replayImageClient = useConvex();
+  const replayTrip = useTripConvex();
+  // Upload URLs are per user, not per trip: a plain mutation.
   const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
+  const retargetAdd = addCheckpoint.recapture;
+  const retargetReplay = replayTrip.recapture;
+  useEffect(() => {
+    if (viewMode !== "create") return;
+    retargetAdd();
+    retargetReplay();
+  }, [viewMode, retargetAdd, retargetReplay]);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
   const calibration = useCenteringCalibration();
   const sheetPersonalities = useSheetPersonalities();
@@ -402,7 +414,7 @@ export default function JournalSheet({
         source: "inline_form",
         ...(happenedAtMs !== null ? { happenedAt: happenedAtMs } : {}),
       });
-      if (imageId) prepareUploadedReplayImage(replayImageClient, token, imageId);
+      if (imageId) prepareUploadedReplayImage(replayImageClient, token, imageId, replayTrip);
       setStoryTitle("");
       setStoryBody("");
       setStoryLocation("");
@@ -496,6 +508,7 @@ export default function JournalSheet({
         {viewMode === "create" ? (
           <SheetBody style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
             <div className="flex flex-col gap-3 p-1">
+              {addCheckpoint.target ? <TripTargetLabel target={addCheckpoint.target} /> : null}
               <Input
                 placeholder="Story title (optional)"
                 value={storyTitle}
