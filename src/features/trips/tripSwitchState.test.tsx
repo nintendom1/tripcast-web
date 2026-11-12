@@ -2,7 +2,17 @@ import { act, render, screen } from "@testing-library/react";
 import { ConvexError } from "convex/values";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { beginSwitch, endSwitch, getSwitchPending, setSwitchPending, tripErrorInfo, useSwitchPending } from "./tripSwitchState";
+import {
+  beginSwitch,
+  consumeOwnSwitch,
+  endSwitch,
+  getSwitchPending,
+  markOwnSwitch,
+  resetSwitchState,
+  setSwitchPending,
+  tripErrorInfo,
+  useSwitchPending,
+} from "./tripSwitchState";
 
 function Probe() {
   return <p>{useSwitchPending() ? "pending" : "idle"}</p>;
@@ -62,5 +72,18 @@ describe("tripErrorInfo", () => {
       code: "trip_not_found",
       message: "fallback",
     });
+  });
+});
+
+describe("leaving a session", () => {
+  it("resetSwitchState forgets the pending switch and the own-switch mark, so the next account inherits neither", () => {
+    const token = beginSwitch("summer");
+    markOwnSwitch("summer");
+    resetSwitchState();
+    expect(getSwitchPending()).toBe(false);
+    expect(consumeOwnSwitch("summer")).toBe(false);
+    // A late answer for the old request changes nothing.
+    endSwitch(token);
+    expect(getSwitchPending()).toBe(false);
   });
 });

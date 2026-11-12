@@ -104,3 +104,21 @@ describe("TripListRow while a trip is deleting", () => {
     expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 });
+
+describe("TripListRow while an operator upgrades a trip (upgradingAt)", () => {
+  it("shows Upgrading… and is inert exactly like a deleting trip: no open, switch, edit or delete", async () => {
+    const onHighlight = row(card({ upgradingAt: 1 }));
+    expect(screen.getByText("Upgrading…")).toBeInTheDocument();
+    expect(screen.queryByText("In progress")).toBeNull();
+    // No card button (open, switch) and no menu (edit, lifecycle, delete).
+    expect(screen.queryByRole("button")).toBeNull();
+    await userEvent.click(screen.getByText("Summer 2026"));
+    expect(onHighlight).not.toHaveBeenCalled();
+  });
+
+  it("a trip being deleted while it upgrades still says Deleting…", () => {
+    row(card({ upgradingAt: 1, deletingAt: 2 }));
+    expect(screen.getByText("Deleting…")).toBeInTheDocument();
+    expect(screen.queryByText("Upgrading…")).toBeNull();
+  });
+});

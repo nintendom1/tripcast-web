@@ -11,7 +11,7 @@ import { useTripContext } from "../../providers/TripContextProvider";
 import { useTripsPersonality } from "../redesign/sheetPersonality";
 import { STILL_WAITING_MESSAGE, useSwitchStalled } from "./tripSwitchState";
 import { TripList } from "./TripList";
-import { LIFECYCLE_LABELS } from "./TripListRow";
+import { inertCardLabel, LIFECYCLE_LABELS } from "./TripListRow";
 import { TripPreview } from "./TripPreview";
 import { useTravelerTrips } from "./useTravelerTrips";
 import { useTripPreview } from "./useTripPreview";
@@ -239,7 +239,7 @@ function TripCatalog({
   const [lastFound, setLastFound] = useState<TripCard | null>(null);
   if (found && found !== lastFound) setLastFound(found);
   const candidate = found ?? (status === "loading-first" && lastFound?.tripId === previewTripId ? lastFound : null);
-  const previewable = candidate !== null && candidate.deletingAt === undefined;
+  const previewable = candidate !== null && inertCardLabel(candidate) === null;
   const preview = useTripPreview(
     candidate && previewable ? { tripId: candidate.tripId, previewVersion: candidate.previewVersion } : null,
   );
@@ -250,8 +250,8 @@ function TripCatalog({
       className="grid gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-paper)] p-3"
     >
       <h3 className="truncate text-sm font-semibold text-[var(--ink-1)]">{card.title}</h3>
-      {card.deletingAt !== undefined ? (
-        <p className="text-sm text-[var(--ink-3)]">Deleting…</p>
+      {inertCardLabel(card) !== null ? (
+        <p className="text-sm text-[var(--ink-3)]">{inertCardLabel(card)}</p>
       ) : (
         <>
           <TripPreview state={preview} />
@@ -309,7 +309,7 @@ function CandidateActions({ card, isViewed, onClose, onRequestSwitch }: Candidat
         <Button
           type="button"
           onClick={() => {
-            openPrivately({ tripId: card.tripId, title: card.title });
+            openPrivately({ tripId: card.tripId, title: card.title, isLegacy: card.isLegacy });
             onClose();
           }}
         >

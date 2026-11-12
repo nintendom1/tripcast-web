@@ -70,9 +70,11 @@ export function useFollowerCutoffPreview(
 
   // `pinnedTripId` (optional): a section pinned to one trip reads and keys the override for that trip, not the view.
   const viewKey = useTripClientKey();
-  const { currentTrip } = useOptionalTripContext();
-  const clientKey =
-    pinnedTripId === undefined ? viewKey : currentTrip?.isLegacy && currentTrip.tripId === pinnedTripId ? "" : pinnedTripId;
+  const { currentTrip, viewingTrip } = useOptionalTripContext();
+  // A pinned Legacy Trip keeps today's key (rule 11), whether it is shared or viewed privately: the viewed trip knows
+  // `isLegacy` in a private view too (the context learned the Legacy Trip's id).
+  const pinnedIsLegacy = [viewingTrip, currentTrip].some((trip) => trip?.isLegacy === true && trip.tripId === pinnedTripId);
+  const clientKey = pinnedTripId === undefined ? viewKey : pinnedIsLegacy ? "" : pinnedTripId;
   const storageKey = storageKeyFor(clientKey);
   // The override lives in sessionStorage under the viewed trip's key. `override` remembers what this hook last saw or
   // set for one key; for any other key (the view changed) it is ignored and storage is read, so switching the view

@@ -55,6 +55,7 @@ function jobCalls(client: ConvexReactClient, trip?: TripConvexClient): TripConve
     get mutation() { return client.mutation.bind(client); },
     get action() { return client.action.bind(client); },
   };
+  // trip-audit-ok: untagged shim for callers without a trip, sends today's args
   return plain as TripConvexClient;
 }
 

@@ -32,6 +32,13 @@ export const useConvex = () => {
     },
   }), [context.queries, context.mutations]);
 };
+export const usePaginatedQuery = (query: any, args: any, _options?: { initialNumItems: number }) => {
+  const context = useContext(ConvexMockContext);
+  const mocked = args === "skip" || !context.queries.has(query) ? undefined : context.queries.get(query);
+  const value = typeof mocked === "function" ? mocked(args) : mocked;
+  const results = Array.isArray(value) ? value : (value?.page ?? []);
+  return { results, status: value === undefined ? "LoadingFirstPage" : "Exhausted", isLoading: value === undefined, loadMore: () => {} };
+};
 export const useQueries = (queries: Record<string, any>) => {
     const context = useContext(ConvexMockContext);
     const results: Record<string, any> = {};

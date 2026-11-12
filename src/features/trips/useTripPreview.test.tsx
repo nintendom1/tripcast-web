@@ -136,3 +136,18 @@ describe("useTripPreview", () => {
     expect(result.current).toEqual({ status: "ready", preview: preview("a") });
   });
 });
+
+describe("useTripPreview names the card's trip", () => {
+  it("in a private view of another trip, the one-shot read still names the card's trip", async () => {
+    const privateView = ({ children }: { children: ReactNode }) => (
+      <TripContextTestProvider
+        value={{ multiTripEnabled: true, viewingMode: "private", viewingTripId: "other", viewingTrip: { tripId: "other", title: "Other" } }}
+      >
+        {children}
+      </TripContextTestProvider>
+    );
+    renderHook(() => useTripPreview(candidate("a")), { wrapper: privateView });
+    expect(server.oneShot.map((call) => call.args.tripId)).toEqual(["a"]);
+    expect(server.subscriptions).toBe(0);
+  });
+});

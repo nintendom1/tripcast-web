@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { useConvex } from "convex/react";
 
 import { tripcastApi, type TripPreview } from "../../convex/tripcastApi";
-import { useTripConvex } from "../../convex/useTrip";
+import { tripClientFor } from "../../convex/useTrip";
 import { useTripContext } from "../../providers/TripContextProvider";
 
 /** The few card fields a preview needs: the memo key is `tripId:previewVersion`. */
@@ -25,7 +26,7 @@ const keyOf = (c: PreviewCandidate) => `${c.tripId}:${c.previewVersion}`;
  */
 export function useTripPreview(candidate: PreviewCandidate | null): TripPreviewState {
   const { token } = useTripContext();
-  const client = useTripConvex();
+  const client = useConvex();
   // Latest client without making it an effect dependency: a preview is fetched per key, not per render.
   const clientRef = useRef(client);
   useEffect(() => {
@@ -39,8 +40,9 @@ export function useTripPreview(candidate: PreviewCandidate | null): TripPreviewS
   useEffect(() => {
     if (!key || !tripId || cache.current.has(key)) return;
     let current = true;
-    clientRef.current
-      .query(tripcastApi.trips.getTripPreview, { token, tripId })
+    // The preview is about the card's trip, not the view: the client names that trip.
+    tripClientFor(clientRef.current, tripId)
+      .query(tripcastApi.trips.getTripPreview, { token })
       .then((preview) => {
         cache.current.set(key, preview);
         while (cache.current.size > PREVIEW_CACHE_SIZE) {

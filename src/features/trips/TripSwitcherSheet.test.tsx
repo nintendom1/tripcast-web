@@ -266,14 +266,34 @@ describe("TripSwitcherSheet: subscriptions", () => {
 });
 
 describe("TripSwitcherSheet: candidate actions", () => {
-  it("Open privately calls the context with id and title and closes the pane", async () => {
+  it("Open privately calls the context with id, title and the card's Legacy flag and closes the pane", async () => {
     server.cards = [makeCard("summer", { title: "Summer 2026" })];
     const ctx = setup();
     const { user } = await openPane();
     await user.click(screen.getByRole("button", { name: /^Summer 2026/ }));
     await user.click(screen.getByRole("button", { name: "Open privately" }));
-    expect(ctx.openPrivately).toHaveBeenCalledWith({ tripId: "summer", title: "Summer 2026" });
+    expect(ctx.openPrivately).toHaveBeenCalledWith({ tripId: "summer", title: "Summer 2026", isLegacy: false });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("Open privately on the Legacy Trip's card says it is the Legacy Trip, so its keys stay today's", async () => {
+    server.cards = [makeCard("legacy", { title: "My Trip", isLegacy: true })];
+    const ctx = setup();
+    const { user } = await openPane();
+    await user.click(screen.getByRole("button", { name: /^My Trip/ }));
+    await user.click(screen.getByRole("button", { name: "Open privately" }));
+    expect(ctx.openPrivately).toHaveBeenCalledWith({ tripId: "legacy", title: "My Trip", isLegacy: true });
+  });
+
+  it("an upgrading trip shows Upgrading…: no highlight, no preview call, no actions or menu", async () => {
+    server.cards = [makeCard("busy", { title: "Busy trip", upgradingAt: 123 })];
+    setup({}, { onRequestSwitch: vi.fn(), renderCardMenu: () => <button type="button">Card menu</button> });
+    await openPane();
+    const list = screen.getByRole("list", { name: "Trips" });
+    expect(within(list).getByText("Upgrading…")).toBeInTheDocument();
+    expect(within(list).queryByRole("button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open privately" })).not.toBeInTheDocument();
+    expect(server.oneShot).toHaveLength(0);
   });
 
   it("hides Open privately for the trip already being viewed", async () => {
