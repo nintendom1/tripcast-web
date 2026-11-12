@@ -41,23 +41,37 @@ type ServerTrips = { current: CurrentTrip | null | undefined; effective: Effecti
 const NO_SERVER_TRIPS: ServerTrips = { current: undefined, effective: undefined };
 
 /**
+ * Non-reversible short hash (FNV-1a, 32 bit) of a session token, for keys of state stored per session; the same scheme
+ * as the publishing identity's `tokenScope` (src/native/useNativePublishingConfig.ts), which cannot be imported here
+ * without a provider <-> native import cycle. Another account (another token) never reads or overwrites such a key.
+ */
+export function sessionScope(token: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < token.length; index += 1) {
+    hash ^= token.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/**
  * Remembers the Legacy Trip's id once the trip query (or a catalog card opened privately) has named it, so the Legacy
  * Trip keeps today's client-side keys (rule 11) when viewed privately after another trip became shared, even after a
- * restart. Trip ids are unique, so a value left by another account never matches a trip of this one.
+ * restart. Kept per session (`sessionScope`), so a second account on the device neither reads nor overwrites it.
  */
-const LEGACY_TRIP_ID_KEY = "tripcast.legacyTripId";
+const LEGACY_TRIP_ID_KEY_PREFIX = "tripcast.legacyTripId.";
 
-function readLegacyTripId(): string | null {
+function readLegacyTripId(scope: string): string | null {
   try {
-    return localStorage.getItem(LEGACY_TRIP_ID_KEY);
+    return localStorage.getItem(LEGACY_TRIP_ID_KEY_PREFIX + scope);
   } catch {
     return null;
   }
 }
 
-function storeLegacyTripId(tripId: string) {
+function storeLegacyTripId(scope: string, tripId: string) {
   try {
-    if (localStorage.getItem(LEGACY_TRIP_ID_KEY) !== tripId) localStorage.setItem(LEGACY_TRIP_ID_KEY, tripId);
+    if (readLegacyTripId(scope) !== tripId) localStorage.setItem(LEGACY_TRIP_ID_KEY_PREFIX + scope, tripId);
   } catch {
     // Storage unavailable: the id is still known for this session.
   }
@@ -146,11 +160,18 @@ export function TripContextProvider({ token, role, children }: TripContextProvid
   // Legacy Trip's id, once learned from it (or from a catalog card passed to `openPrivately`), is remembered, so a
   // private view of the Legacy Trip after another trip became shared still knows it. Learned and stored only for a
   // Traveler with multi-trip on (Followers read `followerTrip.isLegacy`; they never view privately).
-  const [legacyTripId, setLegacyTripId] = useState<string | null>(readLegacyTripId);
-  const learnLegacyTrip = useCallback((tripId: string) => {
-    storeLegacyTripId(tripId);
-    setLegacyTripId(tripId);
-  }, []);
+  const scope = useMemo(() => sessionScope(token), [token]);
+  const [learned, setLearned] = useState(() => ({ scope, tripId: readLegacyTripId(scope) }));
+  // Another session (sign-out, another account): read that session's own value, never the previous one's.
+  if (learned.scope !== scope) setLearned({ scope, tripId: readLegacyTripId(scope) });
+  const legacyTripId = learned.scope === scope ? learned.tripId : null;
+  const learnLegacyTrip = useCallback(
+    (tripId: string) => {
+      storeLegacyTripId(scope, tripId);
+      setLearned({ scope, tripId });
+    },
+    [scope],
+  );
   const sharedLegacyTripId = currentTrip?.isLegacy ? currentTrip.tripId : null;
   useEffect(() => {
     if (sharedLegacyTripId) learnLegacyTrip(sharedLegacyTripId);

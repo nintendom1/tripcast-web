@@ -1254,6 +1254,7 @@ function ConvexCheckpointSheet({
         selectedCoordinate={selectedCoordinate}
         onClose={onClose}
         onSave={handleSave}
+        tripTarget={openedOn.trip}
         stateSection={stateSection}
         prefill={prefill}
         prefillImage={prefillImage}

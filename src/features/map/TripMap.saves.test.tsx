@@ -214,7 +214,8 @@ function renderMap(trip: Partial<TripContextValue>, role: "traveler" | "follower
   };
 }
 
-const lastSheet = () => sheet.props.at(-1) as { selectedCoordinate: unknown; onSave: (args: object) => void; prefill?: unknown };
+const lastSheet = () =>
+  sheet.props.at(-1) as { selectedCoordinate: unknown; onSave: (args: object) => void; prefill?: unknown; tripTarget?: unknown };
 /** The Traveler right-clicks the map and taps "Add Pin": the Story form opens. */
 async function openStoryForm() {
   await waitFor(() => expect(mapHandlers[0]?.contextmenu).toBeDefined());
@@ -260,6 +261,8 @@ describe("a queued Story names the trip its form was opened on", () => {
     const map = renderMap(viewingSummer());
     await openStoryForm();
     map.view(following(AUTUMN));
+    // The open form keeps naming Summer (its label) while Autumn is on screen.
+    expect(lastSheet().tripTarget).toEqual(SUMMER);
     saveStory();
     expect(savedTrip()).toEqual(SUMMER);
   });

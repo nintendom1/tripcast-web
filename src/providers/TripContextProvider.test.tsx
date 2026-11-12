@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tripcastApi, type CurrentTrip, type EffectiveTrip } from "../convex/tripcastApi";
 import type { TripContextValue } from "../features/trips/tripTypes";
 import { useTripQuery } from "../convex/useTrip";
-import { TripContextProvider, TripContextTestProvider, useOptionalTripContext, useTripContext } from "./TripContextProvider";
+import {
+  sessionScope,
+  TripContextProvider,
+  TripContextTestProvider,
+  useOptionalTripContext,
+  useTripContext,
+} from "./TripContextProvider";
 import { useJournalUnread } from "../features/journal/useJournalUnread";
 import { useMessagingUnread } from "../features/messaging/useMessagingUnread";
 import VoteTimeSplash from "../features/routevote/VoteTimeSplash";
@@ -403,7 +409,9 @@ describe("the Legacy flag of the viewed trip (rule 11)", () => {
   const legacy = { ...trip("trip-legacy", "First trip"), isLegacy: true };
   const autumn = trip("trip-autumn", "Autumn 2026");
   const LEGACY_TARGET = { tripId: "trip-legacy", title: "First trip" };
-  const LEGACY_ID_KEY = "tripcast.legacyTripId";
+  const LEGACY_ID_KEY = `tripcast.legacyTripId.${sessionScope("session-token")}`;
+  const storedLegacyKeys = () =>
+    Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? "").filter((key) => key.startsWith("tripcast.legacyTripId"));
 
   beforeEach(() => {
     localStorage.clear();
@@ -463,7 +471,38 @@ describe("the Legacy flag of the viewed trip (rule 11)", () => {
     server.effective = { ...effective("trip-legacy", "First trip"), isLegacy: true };
     mount("follower");
     expect(seen.viewingTrip).toEqual({ ...LEGACY_TARGET, isLegacy: true });
-    expect(localStorage.getItem(LEGACY_ID_KEY)).toBeNull();
+    expect(storedLegacyKeys()).toEqual([]);
+  });
+
+  it("keeps each account's Legacy Trip apart: another account neither reads nor overwrites it", () => {
+    const signIn = (token: string) =>
+      render(
+        <TripContextProvider token={token} role="traveler">
+          <Probe />
+        </TripContextProvider>,
+      );
+    // Account A sees its Legacy Trip as the shared trip, then signs out.
+    server.current = legacy;
+    signIn("token-a").unmount();
+    // Account B: its own Legacy Trip is learned under its own key, and A's id means nothing to it.
+    server.current = { ...trip("trip-legacy-b", "B first trip"), isLegacy: true };
+    const b = signIn("token-b");
+    server.current = trip("trip-b-autumn", "B Autumn");
+    b.rerender(
+      <TripContextProvider token="token-b" role="traveler">
+        <Probe />
+      </TripContextProvider>,
+    );
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    expect(seen.viewingTrip).toEqual(LEGACY_TARGET);
+    b.unmount();
+    expect(localStorage.getItem(`tripcast.legacyTripId.${sessionScope("token-a")}`)).toBe("trip-legacy");
+    expect(localStorage.getItem(`tripcast.legacyTripId.${sessionScope("token-b")}`)).toBe("trip-legacy-b");
+    // Account A again, after its shared trip changed: its Legacy Trip is still known.
+    server.current = autumn;
+    signIn("token-a");
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    expect(seen.viewingTrip?.isLegacy).toBe(true);
   });
 
   // One consumer per feature, through the real provider: each must read today's key for the Legacy Trip viewed privately.

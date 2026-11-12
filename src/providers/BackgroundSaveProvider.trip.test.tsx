@@ -417,3 +417,53 @@ describe("Retry keeps the queued save (W11A)", () => {
     expect(isUnplacedSave({ ...base, status: "link-failed", checkpointId: "cp" })).toBe(false);
   });
 });
+
+describe("deleted-trip notices survive a reload (W11A review)", () => {
+  beforeEach(() => localStorage.clear());
+
+  const noticeCount = () => (screen.getByTestId("state").textContent?.match(/notice:/g) ?? []).length;
+
+  it("a save dropped because its trip was deleted is still announced once after a reload, until dismissed", async () => {
+    addCheckpoint.mockRejectedValueOnce({ data: { code: "trip_not_found", message: "gone" } });
+    const first = await mount(onOther);
+    await act(async () => {
+      await api.startSave(DATA, undefined, undefined, OTHER);
+    });
+    await waitFor(() => expect(noticeCount()).toBe(1));
+    expect(store.size).toBe(0);
+    expect(Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).some((key) => key?.startsWith("tripcast.bg-save-notices."))).toBe(true);
+    first.unmount();
+
+    // Reload: the save is gone from IndexedDB; the notice is restored, once.
+    const second = await mount(onOther);
+    expect(noticeCount()).toBe(1);
+    expect(screen.getByTestId("state").textContent).toContain("A save for Other Trip was removed");
+    act(() => api.dismissNotice(api.notices[0].id));
+    expect(noticeCount()).toBe(0);
+    second.unmount();
+
+    await mount(onOther);
+    expect(noticeCount()).toBe(0);
+    const keys = Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? "");
+    expect(keys.filter((key) => key.startsWith("tripcast.bg-save-notices"))).toEqual([]);
+  });
+
+  it("another account on the device does not see them", async () => {
+    addCheckpoint.mockRejectedValueOnce({ data: { code: "trip_not_found", message: "gone" } });
+    const first = await mount(onOther);
+    await act(async () => {
+      await api.startSave(DATA, undefined, undefined, OTHER);
+    });
+    await waitFor(() => expect(noticeCount()).toBe(1));
+    first.unmount();
+    render(
+      <TripContextTestProvider value={onOther}>
+        <BackgroundSaveProvider token="another-account">
+          <Probe />
+        </BackgroundSaveProvider>
+      </TripContextTestProvider>,
+    );
+    await act(async () => {});
+    expect(noticeCount()).toBe(0);
+  });
+});

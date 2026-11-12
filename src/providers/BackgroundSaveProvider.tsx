@@ -1,5 +1,5 @@
 import { prepareUploadedReplayImage } from "../features/journal/replayImagePreparation";
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   PendingSave,
   savePendingSave,
@@ -9,7 +9,7 @@ import {
 import { useConvex, useMutation } from "convex/react";
 import { tripcastApi } from "../convex/tripcastApi";
 import { tripClientFor, useTripMutation } from "../convex/useTrip";
-import { useOptionalTripContext } from "./TripContextProvider";
+import { sessionScope, useOptionalTripContext } from "./TripContextProvider";
 import type { TripTarget } from "../features/trips/tripTypes";
 import { tripErrorInfo } from "../features/trips/tripSwitchState";
 import { getNativePublishingTags } from "../native/nativePublishingSignal";
@@ -73,6 +73,35 @@ class UnplacedSaveError extends Error {
   }
 }
 
+/**
+ * Undismissed notices, per session (`sessionScope`): the dropped save is already gone from IndexedDB, so the notice is
+ * its only trace and must survive a reload until the Traveler dismisses it. No key is written while there are none.
+ */
+const NOTICES_KEY_PREFIX = "tripcast.bg-save-notices.";
+
+function readNotices(scope: string): BackgroundSaveNotice[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(NOTICES_KEY_PREFIX + scope) ?? "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((n): n is BackgroundSaveNotice => typeof n?.id === "string" && typeof n?.message === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeNotices(scope: string, notices: BackgroundSaveNotice[]) {
+  try {
+    const key = NOTICES_KEY_PREFIX + scope;
+    const value = notices.length > 0 ? JSON.stringify(notices) : null;
+    if (localStorage.getItem(key) === value) return;
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // Storage unavailable: the notice still shows until this app closes.
+  }
+}
+
 /** Message of an older untagged save whose trip could not be told (its trip is gone or being deleted). */
 const UNPLACED_SAVE_MESSAGE = "Couldn't tell which trip this save belongs to. Choose where to save it, or dismiss it.";
 
@@ -100,7 +129,14 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
   const retryingIds = useRef<Set<string>>(new Set());
   const savesRef = useRef<PendingSave[]>([]);
 
-  const [notices, setNotices] = useState<BackgroundSaveNotice[]>([]);
+  // Restored on mount and written back on every change, for this session only (another account never sees them).
+  const noticeScope = useMemo(() => sessionScope(token), [token]);
+  const [noticeState, setNoticeState] = useState(() => ({ scope: noticeScope, notices: readNotices(noticeScope) }));
+  if (noticeState.scope !== noticeScope) setNoticeState({ scope: noticeScope, notices: readNotices(noticeScope) });
+  const notices = noticeState.scope === noticeScope ? noticeState.notices : [];
+  useEffect(() => {
+    writeNotices(noticeState.scope, noticeState.notices);
+  }, [noticeState]);
 
   const replayImageClient = useConvex();
   const generateUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
@@ -376,7 +412,7 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
         await deletePendingSave(save.id);
         delete completionCallbacks.current[save.id];
         const message = `A save for ${where} was removed because that trip no longer exists.`;
-        setNotices(prev => [...prev, { id: save.id, message }]);
+        setNoticeState(prev => ({ ...prev, notices: [...prev.notices.filter(n => n.id !== save.id), { id: save.id, message }] }));
         window.dispatchEvent(new CustomEvent("tripcast:bg-save-dropped", {
           detail: { id: save.id, tripId: save.tripId, tripTitle: save.tripTitle, message },
         }));
@@ -472,7 +508,7 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
   }, []);
 
   const dismissNotice = useCallback((id: string) => {
-    setNotices(prev => prev.filter(n => n.id !== id));
+    setNoticeState(prev => ({ ...prev, notices: prev.notices.filter(n => n.id !== id) }));
   }, []);
 
   const value = {

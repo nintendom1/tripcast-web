@@ -857,6 +857,8 @@ describe("TripMap trip-keyed client state", () => {
   it("the Legacy Trip viewed privately after another trip became shared keeps today's trail cache (real provider)", async () => {
     cache(null).replaceReplay([sample("legacy-trail", 47.6, -122.3, 500)]);
     cache(LEGACY.tripId).replaceReplay([sample("keyed-trail", 47.6, -122.3, 600)]);
+    cache(AUTUMN.tripId).replaceReplay([sample("autumn-trail", 47.6, -122.3, 700)]);
+    cache(SUMMER.tripId).replaceReplay([sample("summer-trail", 40.7, -74.0, 800)]);
     let shared: CurrentTrip = LEGACY;
     const answer = useQueryMock.getMockImplementation()!;
     useQueryMock.mockImplementation((query, args) =>
@@ -878,10 +880,14 @@ describe("TripMap trip-keyed client state", () => {
     shared = AUTUMN;
     view.rerender(ui());
     await waitFor(() => expect(context?.viewingTripId).toBe(AUTUMN.tripId));
+    // Only the Legacy Trip keeps today's key: the new shared trip and another private trip use their own.
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["autumn-trail"]));
     act(() => context!.openPrivately({ tripId: LEGACY.tripId, title: LEGACY.title }));
     await waitFor(() => expect(lastPath()[1]).toEqual([]));
     await waitFor(() => expect(ids(lastPath()[6])).toEqual(["legacy-trail"]));
     expect(ids(lastPath()[6])).not.toContain("keyed-trail");
+    act(() => context!.openPrivately(SUMMER));
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["summer-trail"]));
   });
 
   it("keeps two trips' trail caches and replay resume points apart", async () => {
