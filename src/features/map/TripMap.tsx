@@ -3,7 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useIsDesktop } from "../../lib/useIsDesktop";
 import { DesktopMapFrame } from "../layout/DesktopMapFrame";
-import { useConvex, useMutation, useQuery } from "convex/react";
+import { useConvex, useMutation, usePaginatedQuery, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Crosshair, DollarSign, EyeOff, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
@@ -212,6 +212,22 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 // to treat the drop as an accidental swipe-away graze and restore follow on
 // resume. A swipe-up-to-background fires both well within this window.
 const FOLLOW_RESTORE_GRACE_MS = 2000;
+
+/** Map pins requested per page of `listTripMapPins` (the backend's page ceiling). */
+const PIN_PAGE_SIZE = 200;
+
+/**
+ * Pins once each, in the order `listCheckpointMapPins` returns them (`happenedAt`, else `createdAt`; ties by
+ * `createdAt`). Pages arrive newest-created first, and the map draws the trip path in this order.
+ */
+function sortPinsByStoryTime(rows: readonly CheckpointMapPin[]): CheckpointMapPin[] {
+  const byId = new Map(rows.map((row) => [row._id, row]));
+  return [...byId.values()].sort((a, b) => {
+    const aTime = a.happenedAt ?? a.createdAt;
+    const bTime = b.happenedAt ?? b.createdAt;
+    return aTime !== bTime ? aTime - bTime : a.createdAt - b.createdAt;
+  });
+}
 
 function pickLatestCheckpointCenter(
   checkpoints: CheckpointMapPin[] | undefined,
@@ -1629,7 +1645,38 @@ export default function TripMap({
   const nativeMysteryRevision = nativeMysteryMissionRevision?.revision;
   const nativeMysteryDebugIncluded = nativeMysteryMissionRevision?.debugIncluded;
   const nativeMysteryTripId = currentTrip?.tripId;
-  const rawCheckpoints = useTripQuery(tripcastApi.checkpoints.listCheckpointMapPins, { token });
+  // Map pins. A request that carries a trip id (a multi-trip Traveler, either view) pages through `listTripMapPins`,
+  // newest first, PIN_PAGE_SIZE per page: the backend caps an unpaginated tagged read at 2,000 rows. The first page
+  // paints at once and the rest load in the background until done. Every loaded page stays a live subscription (a new
+  // Story lands on the first page) and Convex pins each page's end cursor, so a shifting boundary neither duplicates
+  // nor drops a pin. A view change resets the pages: the old trip's are dropped and nothing shows until the new first
+  // page. Followers, multi-trip off and loading keep today's unpaginated call with today's arguments. `useTrip.ts` has
+  // no paginated hook, so the trip id is passed explicitly: the id `useTripQuery` would add.
+  // While the trip status is not known (loading or failing) on a Traveler's device whose bridge holds remembered trip
+  // tags (multi-trip was on), the viewed trip is unknown and today's (Legacy) key may hold the wrong trip: the trail
+  // cache is neither read nor written, and the untagged pin read (up to 8,000 rows) is skipped, until it is known. Followers and untagged Travelers (multi-trip disabled, an
+  // older backend, offline) stay on today's path. The latest-sample query is unchanged (the publisher's sampler reads it).
+  const rememberedTripTags = useSyncExternalStore(subscribeNativePublishingTags, getNativePublishingTags, getNativePublishingTags);
+  const tripStatusUnknown = serverTripStatus !== "known" && role === "traveler" && rememberedTripTags !== null;
+  const pinPageTripId = role === "traveler" ? viewingTripId : null;
+  const unpagedCheckpoints = useTripQuery(
+    tripcastApi.checkpoints.listCheckpointMapPins,
+    pinPageTripId || tripStatusUnknown ? "skip" : { token },
+  );
+  const pagedPins = usePaginatedQuery(
+    tripcastApi.checkpoints.listTripMapPins,
+    pinPageTripId ? { token, tripId: pinPageTripId } : "skip",
+    { initialNumItems: PIN_PAGE_SIZE },
+  );
+  const { results: pagedPinRows, status: pinPageStatus, loadMore: loadMorePins } = pagedPins;
+  useEffect(() => {
+    if (pinPageTripId && pinPageStatus === "CanLoadMore") loadMorePins(PIN_PAGE_SIZE);
+  }, [loadMorePins, pinPageStatus, pinPageTripId]);
+  const pagedCheckpoints = useMemo(
+    () => (pinPageStatus === "LoadingFirstPage" ? undefined : sortPinsByStoryTime(pagedPinRows)),
+    [pagedPinRows, pinPageStatus],
+  );
+  const rawCheckpoints = pinPageTripId ? pagedCheckpoints : unpagedCheckpoints;
   const cutoffPreview = useFollowerCutoffPreview(role, token);
   const photoRouletteCutoffAt = useMemo<number | null | undefined>(() => {
     if (role !== "traveler") return null;
@@ -1703,12 +1750,6 @@ export default function TripMap({
     && travelerAllowsFollowerPath
     && followerPreferences.liveTrailVisibleToFollowers;
   const cacheAuthorized = role === "traveler" || followerCacheAuthorized;
-  // While the trip status is not known (loading or failing) on a Traveler's device whose bridge holds remembered trip
-  // tags (multi-trip was on), the viewed trip is unknown and today's (Legacy) key may hold the wrong trip: the trail
-  // cache is neither read nor written until it is known. Followers and untagged Travelers (multi-trip disabled, an
-  // older backend, offline) stay on today's path. The latest-sample query is unchanged (the publisher's sampler reads it).
-  const rememberedTripTags = useSyncExternalStore(subscribeNativePublishingTags, getNativePublishingTags, getNativePublishingTags);
-  const tripStatusUnknown = serverTripStatus !== "known" && role === "traveler" && rememberedTripTags !== null;
   const cacheUsable = cacheAuthorized && !tripStatusUnknown;
   const latestLiveTrailSample = useTripQuery(
     tripcastApi.liveTrail.getLatestLiveTrailSample,

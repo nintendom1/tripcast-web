@@ -46,6 +46,7 @@ const checkpointSheetCoordinates: unknown[] = [];
 const voteReferenceLocations: unknown[] = [];
 
 vi.mock("convex/react", () => ({
+  usePaginatedQuery: (ref: unknown, args: unknown, options: { initialNumItems: number }) => useFakePaginatedQuery(ref, args, options),
   useConvex: vi.fn(() => Object.assign(mocks.client, { query: mocks.query })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
@@ -229,6 +230,62 @@ const useQueryMock = convexReact.useQuery as unknown as Mock<(query: unknown, ar
 const useMutationMock = convexReact.useMutation as unknown as Mock<(mutation: unknown) => unknown>;
 const tripOf = (args: unknown) => (args as { tripId?: string } | undefined)?.tripId ?? NO_TRIP;
 
+// Paged pins, like Convex's usePaginatedQuery: state is keyed by the request's arguments (a view change starts over and
+// drops the old pages), pages are newest-created first, and `results` holds every page that has answered.
+const paginatedRequests: Array<{ ref: unknown; args: unknown; options: unknown }> = [];
+const loadMoreCalls: number[] = [];
+/** Pages of a trip that have answered so far (default: every page answers at once). */
+let pinPagesAnswered: Record<string, number> = {};
+/** Rows a page boundary shift repeats at the start of the next page (Convex re-reads a shifted boundary). */
+let repeatAtPageBoundary = false;
+function useFakePaginatedQuery(ref: unknown, args: unknown, options: { initialNumItems: number }) {
+  const key = args === "skip" ? "skip" : JSON.stringify(args);
+  const fresh = { key, sizes: [options.initialNumItems], answered: 0 };
+  const [state, setState] = React.useState<{ key: string; sizes: number[]; answered: number }>(fresh);
+  const current = state.key === key ? state : fresh;
+  React.useEffect(() => {
+    paginatedRequests.push({ ref, args, options });
+  // One request per argument set, like a new subscription.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  // Requested pages answer after the render that asked for them, as a subscription does.
+  React.useEffect(() => {
+    if (current.answered < current.sizes.length) {
+      setState({ key, sizes: current.sizes, answered: current.sizes.length });
+    }
+  }, [current.answered, current.sizes, key]);
+  const loadMore = React.useCallback((numItems: number) => {
+    loadMoreCalls.push(numItems);
+    setState((prev) => {
+      const base = prev.key === key ? prev : { key, sizes: [options.initialNumItems], answered: 0 };
+      return { ...base, sizes: [...base.sizes, numItems] };
+    });
+  }, [key, options.initialNumItems]);
+  const rows = args === "skip" ? undefined : pinsByTrip[tripOf(args)];
+  const answered = Math.min(current.answered, pinPagesAnswered[tripOf(args)] ?? Number.POSITIVE_INFINITY);
+  const sizes = current.sizes;
+  // Like Convex, `results` keeps its identity until a page changes.
+  const paged = React.useMemo(() => {
+    if (rows === undefined) return { results: [] as CheckpointMapPin[], offset: 0, total: 0 };
+    const ordered = [...rows].sort((a, b) => b.createdAt - a.createdAt);
+    const results: CheckpointMapPin[] = [];
+    let offset = 0;
+    for (let index = 0; index < answered; index += 1) {
+      const start = repeatAtPageBoundary && index > 0 ? offset - 1 : offset;
+      results.push(...ordered.slice(start, offset + sizes[index]));
+      offset += sizes[index];
+    }
+    return { results, offset, total: ordered.length };
+  }, [rows, answered, sizes]);
+  if (rows === undefined || answered === 0) {
+    return { results: paged.results, status: "LoadingFirstPage" as const, isLoading: true, loadMore };
+  }
+  const status = answered < sizes.length
+    ? ("LoadingMore" as const)
+    : paged.offset >= paged.total ? ("Exhausted" as const) : ("CanLoadMore" as const);
+  return { results: paged.results, status, isLoading: status === "LoadingMore", loadMore };
+}
+
 function setupQueries() {
   useQueryMock.mockImplementation((query, args) => {
     if (args === "skip") return undefined;
@@ -355,6 +412,10 @@ beforeEach(async () => {
   voteReferenceLocations.length = 0;
   pinsByTrip = { [AUTUMN.tripId]: [AUTUMN_PIN], [SUMMER.tripId]: [SUMMER_PIN], [NO_TRIP]: [], [LEGACY.tripId]: [] };
   latestByTrip = {};
+  paginatedRequests.length = 0;
+  loadMoreCalls.length = 0;
+  pinPagesAnswered = {};
+  repeatAtPageBoundary = false;
   journalByTrip = { [AUTUMN.tripId]: [AUTUMN_STORY], [SUMMER.tripId]: [SUMMER_STORY] };
   breadcrumbsByTrip = {
     [AUTUMN.tripId]: [sample("autumn-crumb-1", 47.61, -122.31, 1_000), sample("autumn-crumb-2", 47.62, -122.32, 9_000)],
@@ -413,7 +474,8 @@ describe("TripMap follows the viewed trip", () => {
     await waitFor(() => {
       expect(tripIdsOf(mocks.query, tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionSync)).toEqual([AUTUMN.tripId]);
     });
-    expect(argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins)).toContainEqual({ token: TOKEN, tripId: SUMMER.tripId });
+    expect(paginatedRequests.map((request) => request.args)).toContainEqual({ token: TOKEN, tripId: SUMMER.tripId });
+    expect(new Set(argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins))).toEqual(new Set(["skip"]));
     expect(argsOf(useQueryMock, tripcastApi.messages.listMessages)).toContainEqual({ token: TOKEN, tripId: SUMMER.tripId });
     expect(new Set(tripIdsOf(useQueryMock, tripcastApi.liveTrail.travelerGetLiveTrailStatus))).toEqual(new Set([AUTUMN.tripId]));
     expect(new Set(tripIdsOf(useQueryMock, tripcastApi.liveTrail.getLatestLiveTrailSample))).toEqual(new Set([AUTUMN.tripId]));
@@ -965,7 +1027,7 @@ describe("TripMap late answers and edge cases across a view change", () => {
 
     map.view(viewingSummer());
 
-    await waitFor(() => expect(argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins)).toContainEqual(
+    await waitFor(() => expect(paginatedRequests.map((request) => request.args)).toContainEqual(
       { token: TOKEN, tripId: SUMMER.tripId },
     ));
     expect(pathCalls().length).toBeGreaterThan(callsBefore);
@@ -1093,3 +1155,144 @@ describe("TripMap for a Follower at a shared-trip switch", () => {
     }
   });
 });
+
+describe("TripMap pages a trip's map pins", () => {
+  // 450 pins, one per minute: three pages of 200, 200 and 50, newest created first.
+  const manyPins = (prefix: string, lat: number) =>
+    Array.from({ length: 450 }, (_, i) => ({ _id: `${prefix}-${i}`, lat: lat + i / 10_000, lon: -122.3, createdAt: 60_000 * (i + 1) }));
+  const pinIds = (rows: unknown) => (rows as CheckpointMapPin[]).map((row) => row._id);
+
+  it("asks for 200 pins of the viewed trip, paints the first page, then loads the rest until every pin shows once", async () => {
+    pinsByTrip[AUTUMN.tripId] = manyPins("autumn", 47.6);
+    pinPagesAnswered[AUTUMN.tripId] = 1;
+    const map = renderMap(following());
+
+    await waitFor(() => expect(lastPath()[1]).toHaveLength(200));
+    expect(paginatedRequests[0]).toEqual({
+      ref: tripcastApi.checkpoints.listTripMapPins,
+      args: { token: TOKEN, tripId: AUTUMN.tripId },
+      options: { initialNumItems: 200 },
+    });
+    // The newest 200, drawn in story order.
+    expect(pinIds(lastPath()[1])).toEqual(Array.from({ length: 200 }, (_, i) => `autumn-${250 + i}`));
+    // The camera's one-shot fit and launch centering run on the first page; later pages never move it again.
+    const jumps = mocks.jumpTo.mock.calls.length;
+
+    delete pinPagesAnswered[AUTUMN.tripId];
+    map.view(following());
+    await waitFor(() => expect(lastPath()[1]).toHaveLength(450));
+    expect(loadMoreCalls).toEqual([200, 200]);
+    expect(pinIds(lastPath()[1])).toEqual(Array.from({ length: 450 }, (_, i) => `autumn-${i}`));
+    expect(mocks.jumpTo.mock.calls.length).toBe(jumps);
+    expect(mocks.fitBounds).not.toHaveBeenCalled();
+  });
+
+  it("shows each pin once when a shifted page boundary repeats a row", async () => {
+    pinsByTrip[AUTUMN.tripId] = manyPins("autumn", 47.6);
+    repeatAtPageBoundary = true;
+    renderMap(following());
+
+    await waitFor(() => expect(loadMoreCalls).toHaveLength(2));
+    await waitFor(() => expect(new Set(pinIds(lastPath()[1])).size).toBe(450));
+    expect(lastPath()[1]).toHaveLength(450);
+  });
+
+  it("drops the old trip's pages after a view change mid-load and pages the new trip from its first page", async () => {
+    pinsByTrip[AUTUMN.tripId] = manyPins("autumn", 47.6);
+    pinsByTrip[SUMMER.tripId] = manyPins("summer", 40.7);
+    pinPagesAnswered[AUTUMN.tripId] = 1;
+    const map = renderMap(following());
+    await waitFor(() => expect(lastPath()[1]).toHaveLength(200));
+    await waitFor(() => expect(loadMoreCalls).toEqual([200]));
+
+    map.view(viewingSummer());
+    // The old trip's later pages answer now: too late.
+    delete pinPagesAnswered[AUTUMN.tripId];
+    map.view(viewingSummer());
+
+    await waitFor(() => expect(lastPath()[1]).toHaveLength(450));
+    for (const call of pathCalls()) {
+      const ids = pinIds(call[1]);
+      expect(ids.some((id) => id.startsWith("summer")) && ids.some((id) => id.startsWith("autumn"))).toBe(false);
+    }
+    expect(pinIds(lastPath()[1]).every((id) => id.startsWith("summer"))).toBe(true);
+    expect(paginatedRequests.map((request) => request.args)).toEqual([
+      { token: TOKEN, tripId: AUTUMN.tripId },
+      { token: TOKEN, tripId: SUMMER.tripId },
+    ]);
+    // One-shot fit on the new trip's first page.
+    expect(mocks.fitBounds).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an open story detail while later pages arrive, and shows a new Story's pin without a reload", async () => {
+    // The story's pin is the newest created, so it is on the first page.
+    pinsByTrip[AUTUMN.tripId] = [...manyPins("autumn", 47.6), { ...AUTUMN_PIN, createdAt: 30_000_000 }];
+    pinPagesAnswered[AUTUMN.tripId] = 1;
+    const map = renderMap(following());
+    await waitFor(() => expect(lastPath()[1]).toHaveLength(200));
+    const pinMarker = markerElements.filter((el) => el.style.cursor === "pointer").at(-1)!;
+    fireEvent.click(pinMarker);
+    expect(await screen.findByText("Autumn story")).toBeInTheDocument();
+
+    delete pinPagesAnswered[AUTUMN.tripId];
+    const newStoryPin = pin("pin-new-story", 47.7, -122.2);
+    // A new Story is the newest created: it lands on the (live) first page.
+    pinsByTrip[AUTUMN.tripId] = [...pinsByTrip[AUTUMN.tripId]!, { ...newStoryPin, createdAt: 40_000_000 }];
+    map.view(following());
+
+    await waitFor(() => expect(lastPath()[1]).toHaveLength(452));
+    expect(pinIds(lastPath()[1])).toContain("pin-new-story");
+    expect(screen.getByText("Autumn story")).toBeInTheDocument();
+  });
+
+  it("orders pins with the same story time by creation, as listCheckpointMapPins does", async () => {
+    // Pages arrive newest created first; two Stories backdated to the same moment keep creation order.
+    pinsByTrip[AUTUMN.tripId] = [
+      { _id: "made-first", lat: 47.6, lon: -122.3, happenedAt: 5_000, createdAt: 10_000 },
+      { _id: "made-second", lat: 47.61, lon: -122.31, happenedAt: 5_000, createdAt: 20_000 },
+    ];
+    renderMap(following());
+
+    await waitFor(() => expect(lastPath()[1]).toHaveLength(2));
+    expect(pinIds(lastPath()[1])).toEqual(["made-first", "made-second"]);
+  });
+
+  it("at launch, a device that remembers trip tags reads no pins until the trip status is known", async () => {
+    setNativePublishingTags({ tripId: AUTUMN.tripId, publishingEpoch: AUTUMN.publishingEpoch, tripTitle: AUTUMN.title });
+    const map = renderMap({ serverTripStatus: "loading" });
+    await act(async () => {});
+    expect(new Set(argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins))).toEqual(new Set(["skip"]));
+    expect(new Set(paginatedRequests.map((request) => request.args))).toEqual(new Set(["skip"]));
+
+    map.view(following());
+    await waitFor(() => expect(lastPath()[1]).toEqual([AUTUMN_PIN]));
+    expect(new Set(argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins))).toEqual(new Set(["skip"]));
+  });
+
+  it("at launch, untagged Travelers and Followers read pins as today while the trip status loads", async () => {
+    const traveler = renderMap({ serverTripStatus: "loading" });
+    await act(async () => {});
+    expect(argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins)).toContainEqual({ token: TOKEN });
+    traveler.unmount();
+    useQueryMock.mockClear();
+
+    followerPreferencesValue = { visible: true, allowFollowersTripPath: true, liveTrailVisibleToFollowers: true };
+    renderMap({ role: "follower", serverTripStatus: "loading" }, { role: "follower" });
+    await act(async () => {});
+    const followerArgs = argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins);
+    expect(followerArgs.length).toBeGreaterThan(0);
+    for (const args of followerArgs) expect(args).toStrictEqual({ token: TOKEN });
+  });
+
+  it("Followers and multi-trip off keep today's unpaginated pin request exactly", () => {
+    renderMap({});
+    followerPreferencesValue = { visible: true, allowFollowersTripPath: true, liveTrailVisibleToFollowers: true };
+    renderMap({ role: "follower", followerTrip: { tripId: AUTUMN.tripId, title: AUTUMN.title, lifecycle: "in_progress", isLegacy: false }, viewingTripId: AUTUMN.tripId, viewingTrip: { tripId: AUTUMN.tripId, title: AUTUMN.title } }, { role: "follower" });
+
+    const pinArgs = argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins);
+    expect(pinArgs.length).toBeGreaterThan(0);
+    for (const args of pinArgs) expect(args).toStrictEqual({ token: TOKEN });
+    expect(paginatedRequests.map((request) => request.args)).toEqual(["skip", "skip"]);
+  });
+});
+

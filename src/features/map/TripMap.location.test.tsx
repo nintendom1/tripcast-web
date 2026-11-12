@@ -78,6 +78,8 @@ vi.mock("convex/react", () => ({
   useConvex: vi.fn(() => ({ query: convexMocks.query })),
   useMutation: vi.fn(),
   useQuery: vi.fn(),
+  // Paged pins are only read with a trip id (multi-trip Traveler); these tests check pins through listCheckpointMapPins.
+  usePaginatedQuery: vi.fn(() => ({ results: [], status: "Exhausted", isLoading: false, loadMore: vi.fn() })),
 }));
 
 vi.mock("../../providers/BackgroundSaveProvider", () => ({
