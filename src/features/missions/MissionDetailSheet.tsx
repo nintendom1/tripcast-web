@@ -10,7 +10,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { LocationPickerField } from "../map/MapPicker";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
-import { PrivateTripTargetLabel, useLiveActionGate, usePrivateTripTitle } from "./privateTripView";
+import { PrivateTripTargetLabel, useLiveActionGate, usePrivateTripTitle } from "../trips/privateTripView";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
@@ -168,8 +168,10 @@ export default function MissionDetailSheet({
   const withdraw = useTripMutation(tripcastApi.missions.followerWithdrawMission);
   const updateStatus = useTripMutation(tripcastApi.routeVotes.travelerUpdateMissionStatus);
   const setCurrentActivity = useTripMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
-  // Starting a mission is live-only: the viewed trip must be the shared current trip, in progress.
-  const startGate = useLiveActionGate("start a mission");
+  // Starting a mission (also by manual status override) and setting the current activity are live-only: decided from
+  // the trip these writes go to (captured at mount), which must be the shared current trip, in progress.
+  const startGate = useLiveActionGate("start a mission", start.target);
+  const activityGate = useLiveActionGate("set the current activity", setCurrentActivity.target);
   const privateTripTitle = usePrivateTripTitle(deleteSilently.target);
 
   // Live Mission subscription — keeps the detail view in sync after edits.
@@ -419,6 +421,7 @@ export default function MissionDetailSheet({
       setShowStatusOverride(false);
       return;
     }
+    if (overrideStatus === "in_progress" && !startGate.allowed) return;
     setIsWorking(true);
     log.logUi("action:status-override", { missionId: c!._id, to: overrideStatus });
     setActionError(null);
@@ -437,6 +440,7 @@ export default function MissionDetailSheet({
   }
 
   async function handleSetCurrentActivity() {
+    if (!activityGate.allowed) return;
     setIsWorking(true);
     log.logUi("action:set-activity", { missionId: c!._id });
     setActionError(null);
@@ -776,12 +780,15 @@ export default function MissionDetailSheet({
               size="sm"
               variant="outline"
               type="button"
-              disabled={!canAct}
+              disabled={!canAct || !activityGate.allowed}
               onClick={handleSetCurrentActivity}
             >
               Set Current Activity to This Mission
             </Button>
           )}
+          {currentActivity?.linkedMissionId !== c._id && activityGate.reason ? (
+            <p className={missionHintClass}>{activityGate.reason}</p>
+          ) : null}
           <p className={missionHintClass}>
             Completing this Mission will mark the linked Current Activity as done and open the Story form.
           </p>
@@ -1106,10 +1113,18 @@ export default function MissionDetailSheet({
                   >
                     Cancel
                   </Button>
-                  <Button size="sm" type="button" disabled={!canAct} onClick={handleApplyStatusOverride}>
+                  <Button
+                    size="sm"
+                    type="button"
+                    disabled={!canAct || (overrideStatus === "in_progress" && !startGate.allowed)}
+                    onClick={handleApplyStatusOverride}
+                  >
                     {isWorking ? "Saving…" : "Apply status"}
                   </Button>
                 </div>
+                {overrideStatus === "in_progress" && startGate.reason ? (
+                  <p className={missionHintClass}>{startGate.reason}</p>
+                ) : null}
               </div>
             ) : (
               <button

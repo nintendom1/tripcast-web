@@ -6,7 +6,7 @@ import { Vote } from "lucide-react";
 import { tripcastApi, type VisibleRouteVote } from "../../convex/tripcastApi";
 import { formatTimeRemaining } from "../../lib/routeVoteUtils";
 import { useMusicSafe } from "../../providers/MusicProvider";
-import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { useTripClientKey } from "../trips/privateTripView";
 
 const VOTE_TIME_WINDOW_MS = 24 * 60 * 60 * 1000;
 const SPLASH_DURATION_MS = 5000;
@@ -48,8 +48,8 @@ export default function VoteTimeSplash({
     tripcastApi.routeVotes.listVisibleRouteVotes,
     enabled ? { token } : "skip",
   );
-  // Dismissed splashes are kept per viewed trip ("" when none: multi-trip disabled).
-  const tripKey = useOptionalTripContext().viewingTripId ?? "";
+  // Dismissed splashes are kept per viewed trip ("" when none or for the Legacy Trip: today's key).
+  const tripKey = useTripClientKey();
   const [dismissedByTrip, setDismissedByTrip] = useState<Record<string, Set<string>>>({});
   const dismissedVoteIds = dismissedByTrip[tripKey] ?? NO_DISMISSED_VOTES;
   const dismissVote = useCallback(

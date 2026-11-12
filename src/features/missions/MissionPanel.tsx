@@ -5,7 +5,7 @@ import { FilterButton } from "../../components/ui/FilterButton";
 import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
-import { PrivateTripTargetLabel } from "./privateTripView";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
 import type { Mission, JournalEvent, Role } from "../../convex/tripcastApi";
 import { getLocalDateKey } from "../achievements/dateUtils";
 import MissionCard from "./MissionCard";

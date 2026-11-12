@@ -12,7 +12,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { tripcastApi } from "../../convex/tripcastApi";
-import { PrivateTripTargetLabel } from "./privateTripView";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
 import type { MysteryMissionExportRow } from "../../convex/tripcastApi";
 import { useMusicSafe } from "../../providers/MusicProvider";
 

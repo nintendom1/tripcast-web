@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { useTripQuery } from "../../convex/useTrip";
-import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { useTripClientKey } from "../trips/privateTripView";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { MysteryMissionFeedItem } from "../../convex/tripcastApi";
@@ -101,7 +101,7 @@ export default function MysteryMissionMarkers({
   const signalIdsRef = useRef<Set<string>>(new Set());
   const revealedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const tripKey = useOptionalTripContext().viewingTripId ?? "";
+  const tripKey = useTripClientKey();
   const result = useTripQuery(
     tripcastApi.mysteryMissions.listMysteryMissionMapPins,
     debugShowAll ? { token, includeDebugAll: true } : { token },

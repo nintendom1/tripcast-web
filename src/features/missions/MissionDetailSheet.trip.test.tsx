@@ -113,4 +113,54 @@ describe("MissionDetailSheet with a viewed trip", () => {
     render(sheet);
     expect(screen.getByRole("button", { name: /Mark.*In Progress/i })).toBeEnabled();
   });
+
+  it("the start gate follows the trip the write goes to, not the current view", () => {
+    const { rerender } = render(<TripContextTestProvider value={privateView}>{sheet}</TripContextTestProvider>);
+    expect(screen.getByRole("button", { name: /Mark.*In Progress/i })).toBeDisabled();
+    // Back on the shared trip without closing: the open sheet still writes to trip-other, so it stays disabled.
+    rerender(<TripContextTestProvider value={followingCurrent}>{sheet}</TripContextTestProvider>);
+    expect(screen.getByRole("button", { name: /Mark.*In Progress/i })).toBeDisabled();
+    expect(screen.getByText("Return to Current Trip to start a mission")).toBeInTheDocument();
+  });
+
+  it("a privately viewed trip that becomes the shared current trip can start missions", () => {
+    const becameShared = { ...privateView, currentTrip: { ...currentTrip(), tripId: "trip-other", title: "Other Trip" } };
+    renderWithTrip(sheet, { trip: becameShared });
+    expect(screen.getByRole("button", { name: /Mark.*In Progress/i })).toBeEnabled();
+  });
+
+  it("the manual status override to in progress is gated like Start", async () => {
+    const user = userEvent.setup();
+    renderWithTrip(sheet, { trip: privateView });
+    await user.click(screen.getByRole("button", { name: "Change status manually" }));
+    await user.selectOptions(screen.getByRole("combobox"), "in_progress");
+    expect(screen.getByRole("button", { name: "Apply status" })).toBeDisabled();
+    await user.selectOptions(screen.getByRole("combobox"), "completed");
+    expect(screen.getByRole("button", { name: "Apply status" })).toBeEnabled();
+  });
+
+  it("Set Current Activity is disabled with a reason off the shared trip", () => {
+    const active: Mission = { ...mission, status: "in_progress" };
+    renderWithTrip(<MissionDetailSheet Mission={active} token="t" role="traveler" onClose={vi.fn()} />, { trip: privateView });
+    expect(screen.getByRole("button", { name: "Set Current Activity to This Mission" })).toBeDisabled();
+    expect(screen.getByText("Return to Current Trip to set the current activity")).toBeInTheDocument();
+  });
+
+  it("Set Current Activity is enabled on the shared trip", () => {
+    const active: Mission = { ...mission, status: "in_progress" };
+    renderWithTrip(<MissionDetailSheet Mission={active} token="t" role="traveler" onClose={vi.fn()} />, { trip: followingCurrent });
+    expect(screen.getByRole("button", { name: "Set Current Activity to This Mission" })).toBeEnabled();
+  });
+
+  it("a Follower's request carries no trip and the Follower can still withdraw", async () => {
+    const user = userEvent.setup();
+    const proposed: Mission = { ...mission, status: "proposed", source: "follower" };
+    renderWithTrip(
+      <MissionDetailSheet Mission={proposed} token="t" role="follower" isOwn onClose={vi.fn()} />,
+      { trip: { role: "follower", viewingTripId: "trip-current", viewingTrip: { tripId: "trip-current", title: "Current Trip" } } },
+    );
+    expect(missionReadArgs()).toEqual({ token: "t", missionId: "mission-1" });
+    await user.click(screen.getByRole("button", { name: /Withdraw/i }));
+    expect(mutate).toHaveBeenCalledWith({ token: "t", missionId: "mission-1" });
+  });
 });

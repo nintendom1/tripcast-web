@@ -42,7 +42,7 @@ import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
-import { PrivateTripTargetLabel, useLiveActionGate } from "../missions/privateTripView";
+import { PrivateTripTargetLabel, useIsSharedCurrentTrip, useLiveActionGate } from "../trips/privateTripView";
 import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { ReactionSection } from "../../components/ui/ReactionSection";
 import { cn } from "@/lib/utils";
@@ -516,8 +516,8 @@ function TravelerVoteDetail({
     routeVoteId: vote._id,
   });
 
-  // The overlay is drawn from the Traveler's live position, which belongs to the shared trip: not on a private view.
-  const isPrivateView = useOptionalTripContext().viewingMode === "private";
+  // The overlay is drawn from the Traveler's live position, which belongs to the shared current trip: only for it.
+  const showsLivePosition = useIsSharedCurrentTrip(useOptionalTripContext().viewingTripId);
   const confirmWinner = useTripMutation(tripcastApi.routeVotes.travelerConfirmRouteVoteWinner);
   const hideComment = useTripMutation(tripcastApi.routeVotes.travelerHideRouteVoteComment);
   const closeVote = useTripMutation(tripcastApi.routeVotes.travelerCloseRouteVote);
@@ -535,7 +535,7 @@ function TravelerVoteDetail({
     );
     onVoteOverlayChange(overlay, optionNumberById);
 
-    if (!overlay || overlay.coordinateOptions.length === 0 || isPrivateView) {
+    if (!overlay || overlay.coordinateOptions.length === 0 || !showsLivePosition) {
       onRequestFitMap(null);
       return;
     }
@@ -548,7 +548,7 @@ function TravelerVoteDetail({
       onVoteOverlayChange(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlay, fallbackOrigin, vote.options, isPrivateView]);
+  }, [overlay, fallbackOrigin, vote.options, showsLivePosition]);
 
   useEffect(() => {
     if (detail === null) {
@@ -854,7 +854,9 @@ export default function RouteVotePanel({
     open && !isTraveler ? { token } : "skip",
   );
   // Opening a new vote asks Followers to take part: only on the shared current trip while it is in progress.
-  const openVoteGate = useLiveActionGate("open a vote");
+  // The write is made by CreateRouteVoteForm, which captures the viewed trip when the button mounts it, so the gate
+  // looks at the trip viewed now.
+  const openVoteGate = useLiveActionGate("open a vote", useOptionalTripContext().viewingTrip);
   const travelerVotesRaw = useTripQuery(
     tripcastApi.routeVotes.travelerListRouteVotes,
     open && isTraveler ? { token } : "skip",

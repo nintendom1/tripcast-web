@@ -20,6 +20,17 @@ function makeMap() {
   };
 }
 
+const currentTrip = {
+  tripId: "trip-current",
+  title: "Current Trip",
+  lifecycle: "in_progress" as const,
+  isLegacy: false,
+  revision: 1,
+  publishingEpoch: 1,
+  epochStartedAt: 1,
+  multiTripEnabled: true,
+};
+
 const overlay: RouteVoteMapOverlayType = {
   travelerLocation: { lat: 47.6, lon: -122.3 },
   coordinateOptions: [{ optionId: "option-2", title: "Cafe", lat: 47.62, lon: -122.34 }],
@@ -34,10 +45,32 @@ describe("RouteVoteMapOverlay on a viewed trip", () => {
 
   it("still draws while following the shared current trip and with no provider", () => {
     const map = makeMap();
-    renderWithTrip(<RouteVoteMapOverlay map={map as never} overlay={overlay} />, { trip: travelerFollowingCurrent });
+    renderWithTrip(<RouteVoteMapOverlay map={map as never} overlay={overlay} />, { trip: { ...travelerFollowingCurrent, currentTrip } });
     expect(map.addSource).toHaveBeenCalledTimes(1);
     const plain = makeMap();
     render(<RouteVoteMapOverlay map={plain as never} overlay={overlay} />);
     expect(plain.addSource).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("RouteVoteMapOverlay compares trip ids", () => {
+  it("draws when the privately viewed trip has become the shared current trip", () => {
+    const map = makeMap();
+    renderWithTrip(<RouteVoteMapOverlay map={map as never} overlay={overlay} />, {
+      trip: {
+        ...travelerViewingPrivately,
+        currentTrip: {
+          tripId: "trip-other",
+          title: "Other Trip",
+          lifecycle: "in_progress",
+          isLegacy: false,
+          revision: 1,
+          publishingEpoch: 1,
+          epochStartedAt: 1,
+          multiTripEnabled: true,
+        },
+      },
+    });
+    expect(map.addSource).toHaveBeenCalledTimes(1);
   });
 });

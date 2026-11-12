@@ -9,7 +9,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { haversineDistanceMiles } from "../../lib/routeVoteUtils";
 import { TERMS } from "../../copy/terminology";
-import { PrivateTripTargetLabel } from "../missions/privateTripView";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
 import { cn } from "@/lib/utils";
 
 type OptionFormValue = {
