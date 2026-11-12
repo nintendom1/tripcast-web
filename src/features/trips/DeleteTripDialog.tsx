@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Dialog } from "@base-ui/react/dialog";
 import { AlertTriangle } from "lucide-react";
 
@@ -6,15 +6,27 @@ import { Input } from "@/components/ui/input";
 import { useOnlineStatus } from "../../components/resilience/useOnlineStatus";
 import { tripcastApi, type TripCard } from "../../convex/tripcastApi";
 import { useTripMutation } from "../../convex/useTrip";
-import { useTripContext } from "../../providers/TripContextProvider";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { tripErrorInfo } from "./tripSwitchState";
 
 /** Why `card` cannot be deleted, or `null` when it can. The server has the last word. */
 export function deleteBlockedReason(card: TripCard, onlyTrip: boolean): string | null {
+  if (card.deletingAt !== undefined) return "This trip is already being deleted.";
   if (card.isCurrent) return "Followers are viewing this trip. Show another trip to Followers first.";
   if (card.isLegacy) return "Your first trip cannot be deleted yet.";
   if (onlyTrip) return "You cannot delete your only trip.";
   return null;
+}
+
+/**
+ * The one call that starts deleting a card's trip: `deleteTrip({token, tripId})` with the CARD's id (an explicit
+ * `tripId` always beats the captured view). The dialog's confirm and the Retry on a failed delete both use it, so they
+ * send the same arguments.
+ */
+export function useDeleteTripCall(): (card: Pick<TripCard, "tripId">) => Promise<null> {
+  const { token } = useOptionalTripContext();
+  const deleteTrip = useTripMutation(tripcastApi.trips.deleteTrip);
+  return useCallback((card) => deleteTrip({ token, tripId: card.tripId }), [deleteTrip, token]);
 }
 
 export type DeleteTripDialogProps = {
@@ -31,8 +43,7 @@ export type DeleteTripDialogProps = {
  * card's own `tripId`, never the viewed trip. Mount it only while open.
  */
 export function DeleteTripDialog({ card, onlyTrip = false, onClose, returnFocusRef }: DeleteTripDialogProps) {
-  const { token } = useTripContext();
-  const deleteTrip = useTripMutation(tripcastApi.trips.deleteTrip);
+  const deleteTripCall = useDeleteTripCall();
   const online = useOnlineStatus();
   const inputRef = useRef<HTMLInputElement>(null);
   const mounted = useRef(true);
@@ -54,7 +65,7 @@ export function DeleteTripDialog({ card, onlyTrip = false, onClose, returnFocusR
     setDeleting(true);
     setServerError(null);
     try {
-      await deleteTrip({ token, tripId: card.tripId });
+      await deleteTripCall(card);
       onClose();
     } catch (error) {
       if (!mounted.current) return;

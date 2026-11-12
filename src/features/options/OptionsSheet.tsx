@@ -2,6 +2,10 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery, type CapturedTripMutation } from "../../convex/useTrip";
+import { PrivateTripTargetLabel, useIsSharedCurrentTrip, usePrivateTripTitle } from "../trips/privateTripView";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { pinnedTripArgs, useReportTripGone } from "./pinnedTrip";
 import dayjs from "dayjs";
 import utc from "dayjs/plugin/utc";
 import timezone from "dayjs/plugin/timezone";
@@ -241,9 +245,19 @@ function combineDateTime(date: string, time: string) {
 type LiveTrailPreviewSample = LiveTrailDeletePreview["samples"][number];
 
 export function FollowerCutoffSection({ token, log }: { token: string; log: DebugLogger }) {
-  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
-  const oldestContent = useQuery(tripcastApi.travelerPreferences.travelerGetOldestContent, { token });
-  const updatePreferences = useMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
+  // Per-trip: the cutoff belongs to a trip. This section mounts per open, so the write is pinned to the trip shown when
+  // it opened and every read here is pinned to that same trip.
+  const updatePreferences = useTripMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
+  const pin = pinnedTripArgs(updatePreferences.target);
+  const preferences = useTripQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token, ...pin });
+  const oldestContent = useTripQuery(tripcastApi.travelerPreferences.travelerGetOldestContent, { token, ...pin });
+  // "Use now as cutoff" only makes sense for the trip Followers see right now: decided from the trip the write goes to,
+  // compared by id with the shared current trip (any lifecycle), never from the current view.
+  const onSharedTrip = useIsSharedCurrentTrip(updatePreferences.target?.tripId ?? null);
+  const sharedTripTitle = useOptionalTripContext().currentTrip?.title ?? "the current trip";
+  const nowGate = onSharedTrip
+    ? { allowed: true, reason: null }
+    : { allowed: false, reason: `Return to ${sharedTripTitle} to use now as the cutoff` };
   const preview = useFollowerCutoffPreview("traveler", token);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -275,9 +289,9 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
   }, [date, time, timeZone]);
 
   const countsSkip = !enabled || previewCutoffMs === null;
-  const counts = useQuery(
+  const counts = useTripQuery(
     tripcastApi.travelerPreferences.travelerCountContentBeforeCutoff,
-    countsSkip ? "skip" : { token, cutoffAt: previewCutoffMs as number },
+    countsSkip ? "skip" : { token, cutoffAt: previewCutoffMs as number, ...pin },
   );
 
   useEffect(() => {
@@ -290,7 +304,7 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
     setSaving(true);
     log.logInteraction("follower-cutoff:toggle", { enabled: nextEnabled });
     try {
-      await updatePreferences({ token, followerContentCutoffEnabled: nextEnabled });
+      await updatePreferences({ token, followerContentCutoffEnabled: nextEnabled, ...pin });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -308,7 +322,7 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
         const dt = dayjs.tz(`${date}T${time}`, timeZone);
         nextCutoffAt = dt.valueOf();
       }
-      await updatePreferences({ token, followerContentCutoffAt: nextCutoffAt });
+      await updatePreferences({ token, followerContentCutoffAt: nextCutoffAt, ...pin });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -327,6 +341,7 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
   }
 
   function handleUseNow() {
+    if (!nowGate.allowed) return;
     const now = Date.now();
     setDate(formatDateInputValue(now, timeZone));
     setTime(formatTimeInputValue(now, timeZone));
@@ -342,6 +357,7 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
 
   return (
     <div className="grid gap-6">
+      <PrivateTripTargetLabel target={updatePreferences.target} />
       <OptionsSection label="About">
         <OptionsGroup>
           <div className="grid gap-3 p-4 sm:p-5">
@@ -475,13 +491,14 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
               <Button
                 type="button"
                 variant="ghost"
-                disabled={!enabled || saving}
+                disabled={!enabled || saving || !nowGate.allowed}
                 onClick={handleUseNow}
                 className="text-xs"
               >
                 Use now as cutoff
               </Button>
             </div>
+            {nowGate.reason ? <p className="text-xs text-[var(--ink-3)]">{nowGate.reason}</p> : null}
           </div>
         </OptionsGroup>
       </OptionsSection>
@@ -567,15 +584,19 @@ function timeInputToMinutes(value: string): number | null {
 }
 
 function TravelerTimezoneSection({ token }: { token: string }) {
-  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
-  const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
-  const setTimeZone = useMutation(tripcastApi.travelerPreferences.travelerSetTimeZone);
-  const rebaseTimeZone = useMutation(
+  // Per-trip (time zone and its auto-state rebase): writes go to the trip captured when this section mounted (per
+  // open) and the reads are pinned to it. The theme day/night window is global; `travelerUpdatePreferences` accepts a
+  // `tripId` only because it also holds per-trip fields, and the backend writes theme fields to the global row.
+  const setTimeZone = useTripMutation(tripcastApi.travelerPreferences.travelerSetTimeZone);
+  const rebaseTimeZone = useTripMutation(
     tripcastApi.travelerAutoState.travelerRebaseAutoStateTimeZone,
   );
-  const updatePreferences = useMutation(
+  const updatePreferences = useTripMutation(
     tripcastApi.travelerPreferences.travelerUpdatePreferences,
   );
+  const pin = pinnedTripArgs(setTimeZone.target);
+  const preferences = useTripQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token, ...pin });
+  const autoState = useTripQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token, ...pin });
 
   const [selection, setSelection] = useState<string>("");
   const [customTz, setCustomTz] = useState("");
@@ -620,7 +641,7 @@ function TravelerTimezoneSection({ token }: { token: string }) {
     setSuccess(null);
     setSaving(true);
     try {
-      await setTimeZone({ token, timeZone: newTimeZone, source });
+      await setTimeZone({ token, timeZone: newTimeZone, source, ...pin });
 
       // When autoState is on, the stored autoTimeZone also drives bedtime/wake
       // estimation. Rebase it so the picker is a single control for both.
@@ -656,6 +677,7 @@ function TravelerTimezoneSection({ token }: { token: string }) {
           newTimeZone,
           rebasedEstimatedEnergy: estimate.estimatedEnergy,
           rebasedEstimatedStomach: estimate.estimatedStomach,
+          ...pin,
         });
       }
 
@@ -767,6 +789,7 @@ function TravelerTimezoneSection({ token }: { token: string }) {
             <OptionsIcon icon={Clock} />
             <div className="min-w-0 flex-1">
               <p className="text-base font-semibold text-[var(--ink-1)]">Traveler timezone</p>
+              <PrivateTripTargetLabel target={setTimeZone.target} />
               <p className="text-sm text-[var(--ink-3)]">
                 Drives bedtime/wake estimates, the status clock, and (in auto mode)
                 Follower day/night theme + audio.
@@ -994,8 +1017,12 @@ function AppearanceSection() {
 }
 
 function MissionSettingsSection({ token }: { token: string }) {
-  const settings = useQuery(tripcastApi.missionSettings.travelerGetMissionSettings, { token });
-  const updateSettings = useMutation(tripcastApi.missionSettings.travelerUpdateMissionSettings);
+  // Per-trip: written to the trip captured when this section mounted (per open); the read is pinned to it.
+  const updateSettings = useTripMutation(tripcastApi.missionSettings.travelerUpdateMissionSettings);
+  const settings = useTripQuery(tripcastApi.missionSettings.travelerGetMissionSettings, {
+    token,
+    ...pinnedTripArgs(updateSettings.target),
+  });
   const [error, setError] = useState<string | null>(null);
 
   async function handleModerationChange(mode: MissionModerationMode) {
@@ -1023,6 +1050,7 @@ function MissionSettingsSection({ token }: { token: string }) {
     <OptionsSection label={TERMS.missions}>
       <OptionsGroup>
         <div className="grid gap-3 p-4 sm:p-5">
+          <PrivateTripTargetLabel target={updateSettings.target} />
           <p className="text-base font-semibold text-[var(--ink-1)]">Proposal moderation</p>
           {MODERATION_OPTIONS.map((opt) => (
             <label key={opt.value} className="flex cursor-pointer items-start gap-3 text-sm text-[var(--ink-2)]">
@@ -1284,12 +1312,19 @@ function LiveTrailSettingsSheet({
   const samplerMode = useSamplerMode();
   const fixOverlayEnabled = useFixOverlayEnabled();
   const fallbackTimeZone = detectBrowserTimeZone() ?? "UTC";
-  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
-  const status = useQuery(tripcastApi.liveTrail.travelerGetLiveTrailStatus, { token });
-  const setEnabled = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailEnabled);
-  const setVisibility = useMutation(tripcastApi.liveTrail.travelerSetLiveTrailVisibility);
-  const deleteRange = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailRange);
-  const deleteSamples = useMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailSamples);
+  // Per-trip: the Live Trail settings and samples belong to a trip. Writes go to the trip captured when this sheet
+  // mounted (per open) and the reads are pinned to it. The on-device cache holds the shared current trip's trail only,
+  // so it is touched only when a delete went to that trip.
+  const setEnabled = useTripMutation(tripcastApi.liveTrail.travelerSetLiveTrailEnabled);
+  const setVisibility = useTripMutation(tripcastApi.liveTrail.travelerSetLiveTrailVisibility);
+  const deleteRange = useTripMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailRange);
+  const deleteSamples = useTripMutation(tripcastApi.liveTrail.travelerDeleteLiveTrailSamples);
+  const pin = pinnedTripArgs(setEnabled.target);
+  const deleteIsOnSharedTrip = useIsSharedCurrentTrip(deleteRange.target?.tripId ?? null);
+  const privateTripTitle = usePrivateTripTitle(deleteRange.target);
+  const reportTripGone = useReportTripGone(deleteRange.target);
+  const preferences = useTripQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token, ...pin });
+  const status = useTripQuery(tripcastApi.liveTrail.travelerGetLiveTrailStatus, { token, ...pin });
 
   const timeZone = preferences?.travelerTimeZone ?? fallbackTimeZone;
   const [startDate, setStartDate] = useState(() => formatDateInputValue(Date.now(), fallbackTimeZone));
@@ -1305,9 +1340,9 @@ function LiveTrailSettingsSheet({
   const combinedEnd = combineDateTime(endDate, endTime);
   const rangeIsValid = Boolean(startDate && endDate && combinedStart <= combinedEnd);
 
-  const preview = useQuery(
+  const preview = useTripQuery(
     tripcastApi.liveTrail.travelerPreviewLiveTrailDeleteRange,
-    rangeIsValid ? { token, startDate: combinedStart, endDate: combinedEnd, timeZone } : "skip",
+    rangeIsValid ? { token, startDate: combinedStart, endDate: combinedEnd, timeZone, ...pin } : "skip",
   );
 
   const enabled = status?.enabled ?? false;
@@ -1366,7 +1401,7 @@ function LiveTrailSettingsSheet({
     setError(null);
     log.logInteraction("live-trail:enabled:change", { enabled: nextEnabled });
     try {
-      await setEnabled({ token, enabled: nextEnabled });
+      await setEnabled({ token, enabled: nextEnabled, ...pin });
       log.logInteraction("live-trail:enabled:result", { enabled: nextEnabled, ok: true });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -1383,7 +1418,7 @@ function LiveTrailSettingsSheet({
     setError(null);
     log.logInteraction("live-trail:visibility:change", { visible: nextVisible });
     try {
-      await setVisibility({ token, visibleToFollowers: nextVisible });
+      await setVisibility({ token, visibleToFollowers: nextVisible, ...pin });
       log.logInteraction("live-trail:visibility:result", { visible: nextVisible, ok: true });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -1413,14 +1448,17 @@ function LiveTrailSettingsSheet({
           startDate: combinedStart,
           endDate: combinedEnd,
           timeZone,
+          ...pin,
         })
-        : await deleteSamples({ token, sampleIds: selectedSampleIds });
+        : await deleteSamples({ token, sampleIds: selectedSampleIds, ...pin });
       log.logInteraction("live-trail:delete-range:result", {
         deleted: result.deleted,
         ok: true,
         deleteMode,
       });
-      if (deleteMode === "range" && preview) {
+      if (!deleteIsOnSharedTrip) {
+        // Deleted from another trip than the one Followers see: the cached live trail is untouched.
+      } else if (deleteMode === "range" && preview) {
         liveTrailCache.removeRange(preview.startMs, preview.endExclusiveMs);
       } else {
         liveTrailCache.removeIds(selectedSampleIds);
@@ -1428,6 +1466,7 @@ function LiveTrailSettingsSheet({
       setIndividualSelection({});
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      reportTripGone(e);
       setError(message);
       log.error("live-trail:delete-range:error", "mutation", { message });
     } finally {
@@ -1437,6 +1476,7 @@ function LiveTrailSettingsSheet({
 
   return (
     <div className="grid gap-8">
+      <PrivateTripTargetLabel target={setEnabled.target} />
       <OptionsSection label="Recording">
         <OptionsGroup>
           {isAdaptiveLocationAvailable() ? (
@@ -1612,7 +1652,7 @@ function LiveTrailSettingsSheet({
               className="w-full sm:w-fit"
             >
               <Trash2 className="mr-2 h-4 w-4" aria-hidden />
-              {savingField === "delete" ? "Deleting..." : `Delete ${selectedCount} breadcrumb${selectedCount === 1 ? "" : "s"}`}
+              {savingField === "delete" ? "Deleting..." : `Delete ${selectedCount} breadcrumb${selectedCount === 1 ? "" : "s"}${privateTripTitle ? ` from ${privateTripTitle}` : ""}`}
             </Button>
 
             {error ? <p className="text-xs text-[var(--ink-danger)]" role="alert">{error}</p> : null}
@@ -2127,9 +2167,9 @@ export default function OptionsSheet({
         }}
       />
 
-      {role === "traveler" ? (
+      {role === "traveler" && open && view === "bulk-import" ? (
         <BulkImportSheet
-          open={open && view === "bulk-import"}
+          open={true}
           token={session.token}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) {
@@ -2159,9 +2199,14 @@ export default function OptionsSheet({
 }
 
 function MapSettingsSection({ token, role }: { token: string; role: "traveler" | "follower" }) {
-  const preferences = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, role === "traveler" ? { token } : "skip");
-  const followerPreferences = useQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
-  const updatePreferences = useMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
+  // Per-trip (Follower path visibility): written to the trip captured when this section mounted (per open); the Traveler
+  // read is pinned to it. A Follower's read is untouched: the server resolves it to the shared trip.
+  const updatePreferences = useTripMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
+  const preferences = useTripQuery(
+    tripcastApi.travelerPreferences.travelerGetPreferences,
+    role === "traveler" ? { token, ...pinnedTripArgs(updatePreferences.target) } : "skip",
+  );
+  const followerPreferences = useTripQuery(tripcastApi.travelerPreferences.followerGetPreferences, role === "follower" ? { token } : "skip");
 
   const [showTripPath, setShowTripPath] = useState(() => {
     const val = localStorage.getItem("tripcast.showTripPath");
@@ -2179,7 +2224,7 @@ function MapSettingsSection({ token, role }: { token: string; role: "traveler" |
     : (followerPreferences?.visible ? followerPreferences.allowFollowersTripPath : false);
 
   const toggleAllowFollowers = async (checked: boolean) => {
-    await updatePreferences({ token, allowFollowersTripPath: checked });
+    await updatePreferences({ token, allowFollowersTripPath: checked, ...pinnedTripArgs(updatePreferences.target) });
   };
 
   return (
@@ -2195,6 +2240,7 @@ function MapSettingsSection({ token, role }: { token: string; role: "traveler" |
         onChange={toggleShowPath}
       />
 
+      {role === "traveler" ? <PrivateTripTargetLabel target={updatePreferences.target} className="px-4" /> : null}
       {role === "traveler" ? (
         <OptionsSwitchRow
           title="Followers can see Trip Path"
@@ -2254,6 +2300,7 @@ function OptionsHome({
   onEndTrip?: () => void;
   onViewCredits?: () => void;
 }) {
+  const { multiTripEnabled } = useOptionalTripContext();
   const developerSection = (
     <OptionsSection label="Developer">
       <OptionsGroup>
@@ -2562,7 +2609,11 @@ function OptionsHome({
 
           <OptionsSection label={TERMS.dangerZone}>
             <OptionsGroup>
-              <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
+              {multiTripEnabled ? (
+                <OptionsRow icon={ShieldAlert} title="Erase ALL trips" detail={`${TERMS.emergencyReset}: removes every trip and starts over with one new empty trip`} danger onClick={onEmergencyReset} />
+              ) : (
+                <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
+              )}
             </OptionsGroup>
           </OptionsSection>
         </>
@@ -2947,11 +2998,14 @@ function MysteryMissionsOptionsRow({ token }: { token: string }) {
           setOpen(true);
         }}
       />
-      <MysteryMissionsSheet
-        open={open}
-        token={token}
-        onOpenChange={setOpen}
-      />
+      {/* Mounted per open (rule 3): the sheet's writes are captured when it opens, so they name the trip then shown. */}
+      {open ? (
+        <MysteryMissionsSheet
+          open
+          token={token}
+          onOpenChange={setOpen}
+        />
+      ) : null}
     </>
   );
 }
@@ -3075,16 +3129,18 @@ function TickerBulkImportSheet({
   onOpenChange,
   token,
   kind,
+  commitBulkImport,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   token: string;
   kind: "fact" | "tip";
+  /** Owned by `TripTickerSettings` (mounted per open), so this always-mounted sheet imports into the ticker's trip. */
+  commitBulkImport: CapturedTripMutation<typeof tripcastApi.bulkImport.travelerBulkImport>;
 }) {
   const [text, setText] = useState("");
   const [isImporting, setIsImporting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const commitBulkImport = useMutation(tripcastApi.bulkImport.travelerBulkImport);
   const music = useMusicSafe();
   const labels = kind === "tip"
     ? { title: "Bulk Import Tips", noun: "tips", singular: "Tip", entryKind: "ticker_tip" as const, placeholder: "Tip 1\nTip 2\nTip 3..." }
@@ -3101,7 +3157,7 @@ function TickerBulkImportSheet({
         kind: labels.entryKind,
         text: line
       }));
-      await commitBulkImport({ token, entries });
+      await commitBulkImport({ token, entries, ...pinnedTripArgs(commitBulkImport.target) });
       music.sfx("success");
       onOpenChange(false);
       setText("");
@@ -3126,6 +3182,7 @@ function TickerBulkImportSheet({
         <SheetTitle>{labels.title}</SheetTitle>
         <SheetCloseButton />
         <SheetBody className="flex flex-col gap-4 p-4">
+          <PrivateTripTargetLabel target={commitBulkImport.target} />
           <p className="text-sm text-[var(--ink-2)]">
             Paste a list of {labels.noun}, one per line. They will be added to your trip ticker.
           </p>
@@ -3215,6 +3272,10 @@ export function TripTickerSettings({ token }: { token: string }) {
     removeTip,
     clearAll,
   } = useTicker(token);
+  // Per-trip: `useTicker` captured its writes when this view mounted (per open); this mutation is captured in the same
+  // render, so the label and the ticker import name the trip the ticker edits go to.
+  const commitBulkImport = useTripMutation(tripcastApi.bulkImport.travelerBulkImport);
+  const clearFromTrip = usePrivateTripTitle(commitBulkImport.target);
   const [priorityInput, setPriorityInput] = useState("");
   const [funFactInput, setFunFactInput] = useState("");
   const [tipInput, setTipInput] = useState("");
@@ -3232,6 +3293,7 @@ export function TripTickerSettings({ token }: { token: string }) {
 
   return (
     <div className="grid gap-8">
+      <PrivateTripTargetLabel target={commitBulkImport.target} />
       <OptionsSection label="Preview">
         <OptionsGroup>
           <div className="p-4 bg-[var(--bg-paper-2)]/30 rounded-lg overflow-hidden">
@@ -3472,6 +3534,7 @@ export function TripTickerSettings({ token }: { token: string }) {
         }}
         token={token}
         kind={bulkImportKind ?? "fact"}
+        commitBulkImport={commitBulkImport}
       />
 
       <OptionsSection label="Danger Zone">
@@ -3504,7 +3567,7 @@ export function TripTickerSettings({ token }: { token: string }) {
             </Button>
             {confirmingClear ? (
               <p className="text-xs text-[var(--ink-3)] text-center">
-                This removes every alert, fun fact, and tip.
+                This removes every alert, fun fact, and tip{clearFromTrip ? ` from ${clearFromTrip}` : ""}.
               </p>
             ) : null}
           </div>

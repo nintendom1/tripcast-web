@@ -1,5 +1,7 @@
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useConvex } from "convex/react";
+import { useTripConvex } from "../../convex/useTrip";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
 import { tripcastApi, type ReplayImageInventoryItem } from "../../convex/tripcastApi";
 import { Sheet, SheetBody, SheetContent, SheetTitle, SheetCloseButton } from "../../components/ui/sheet";
 import PhotoQualityControl from "./PhotoQualityControl";
@@ -41,6 +43,9 @@ export function ReplayImagePreparationView({ open, onOpenChange, items, progress
 }
 function PreparationBody({ open, token, onOpenChange }: { open: boolean; token: string; onOpenChange: (open: boolean) => void }) {
   const client = useConvex();
+  // Per-trip: pinned when this body mounts (the sheet mounts it per open). A run that is already going keeps this trip
+  // client even if the view changes; the helpers send its trip on every inventory, upload and URL call.
+  const trip = useTripConvex();
   const progress = useSyncExternalStore(preparationStore.subscribe, preparationStore.getSnapshot);
   const [items, setItems] = useState<ReplayImageInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,14 +54,14 @@ function PreparationBody({ open, token, onOpenChange }: { open: boolean; token: 
   useEffect(() => {
     if (!open || progress.running) return;
     let cancelled = false;
-    void readPreparationInventory(client, token).then(value => { if (!cancelled) { setItems(value); setLoading(false); } }).catch(reason => { if (!cancelled) { setError(String(reason)); setLoading(false); } });
+    void readPreparationInventory(client, token, trip).then(value => { if (!cancelled) { setItems(value); setLoading(false); } }).catch(reason => { if (!cancelled) { setError(String(reason)); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [client, token, open, progress.running]);
+  }, [client, trip, token, open, progress.running]);
   const remaining = items.filter(item => item.status !== "ready").map(item => item.source);
   return <ReplayImagePreparationView open={open} onOpenChange={onOpenChange} items={items} loading={loading} progress={{ ...progress, error: error ?? progress.error }} previewUrl={previewUrl}
     onStop={preparationStore.stop}
-    onPrepare={() => { void prepareReplayImages(client, token, remaining); }}
-    onPreview={() => { const source = remaining[0]; if (source) void prepareReplayImages(client, token, [source]).then(async () => setPreviewUrl(await client.query(tripcastApi.replayImages.getUrl, { token, imageId: source }))).catch(reason => setError(String(reason))); }}><PhotoQualityControl token={token} /></ReplayImagePreparationView>;
+    onPrepare={() => { void prepareReplayImages(client, token, remaining, undefined, trip); }}
+    onPreview={() => { const source = remaining[0]; if (source) void prepareReplayImages(client, token, [source], undefined, trip).then(async () => setPreviewUrl(await trip.query(tripcastApi.replayImages.getUrl, { token, imageId: source }))).catch(reason => setError(String(reason))); }}><PrivateTripTargetLabel target={trip.target} /><PhotoQualityControl token={token} /></ReplayImagePreparationView>;
 }
 export default function ReplayImagePreparationSheet(props: { open: boolean; token: string; onOpenChange: (open: boolean) => void }) {
   return <FeatureBoundary title="Replay preparation unavailable" resetKeys={[props.token, props.open]}>{props.open ? <PreparationBody {...props} /> : null}</FeatureBoundary>;

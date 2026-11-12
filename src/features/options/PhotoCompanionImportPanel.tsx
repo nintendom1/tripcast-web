@@ -1,5 +1,9 @@
 import React, { useState, useRef, useMemo } from "react";
-import { useConvex, useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import { useTripConvex, useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { pinnedTripArgs } from "./pinnedTrip";
+import { usePrivateTripTitle } from "../trips/privateTripView";
+import type { TripTarget } from "../trips/tripTypes";
 import {
   UploadCloud,
   FileArchive,
@@ -65,7 +69,12 @@ async function runWithLimit<T, R>(
   return results;
 }
 
-export default function PhotoCompanionImportPanel({ token }: { token: string }) {
+/**
+ * `tripTarget`: the trip the hosting Bulk Import sheet captured when it opened. Every call (the orphan audit, each
+ * resolve page, each attach batch and prune batch) carries it explicitly, so a long import keeps its trip when the
+ * view changes. Without it the panel uses the trip captured when it mounted.
+ */
+export default function PhotoCompanionImportPanel({ token, tripTarget }: { token: string; tripTarget?: TripTarget | null }) {
   const log = useDebugLogger("PhotoCompanionImportPanel", "src/features/options/PhotoCompanionImportPanel.tsx");
   const music = useMusicSafe();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,10 +86,12 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
     return saves.some(s => s.status === "uploading" || s.status === "saving");
   }, [saves]);
 
-  const convex = useConvex();
+  const convex = useTripConvex();
+  const pin = pinnedTripArgs(tripTarget ?? null);
   const generateUploadUrls = useMutation(tripcastApi.photoCompanion.travelerGeneratePhotoImportUploadUrls);
-  const attachPhotoBatch = useMutation(tripcastApi.photoCompanion.travelerAttachPhotoCompanionBatch);
-  const pruneOrphans = useMutation(tripcastApi.photoCompanion.travelerPruneOrphanPhotos);
+  const attachPhotoBatch = useTripMutation(tripcastApi.photoCompanion.travelerAttachPhotoCompanionBatch);
+  const pruneOrphans = useTripMutation(tripcastApi.photoCompanion.travelerPruneOrphanPhotos);
+  const pruneFromTrip = usePrivateTripTitle(tripTarget ?? pruneOrphans.target);
 
   // Orphan state
   const [orphanCursor, setOrphanCursor] = useState<string | null>(null);
@@ -92,9 +103,9 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
   const [maintenanceError, setMaintenanceError] = useState<string | null>(null);
 
   // Queries for Orphans
-  const orphanResult = useQuery(
+  const orphanResult = useTripQuery(
     tripcastApi.photoCompanion.travelerAuditOrphanPhotoPage,
-    orphanScanStatus === "scanning" ? { token, paginationOpts: { numItems: 50, cursor: orphanCursor } } : "skip"
+    orphanScanStatus === "scanning" ? { token, paginationOpts: { numItems: 50, cursor: orphanCursor }, ...pin } : "skip"
   );
 
   // Concurrently paginating orphans
@@ -139,7 +150,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
 
       let deletedCount = 0;
       for (const batch of batches) {
-        const results = await pruneOrphans({ token, imageIds: batch });
+        const results = await pruneOrphans({ token, imageIds: batch, ...pin });
         deletedCount += results.filter(r => r.status === "deleted").length;
       }
 
@@ -215,7 +226,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
       for (let index = 0; index < pinRefs.length; index += 100) {
         const batchResults = await convex.query(
           tripcastApi.photoCompanion.travelerResolvePhotoCompanionRefs,
-          { token, refs: pinRefs.slice(index, index + 100) },
+          { token, refs: pinRefs.slice(index, index + 100), ...pin },
         );
         for (const result of batchResults) resolutionsMap.set(result.pinRef, result.status);
       }
@@ -362,6 +373,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
             ? []
             : await attachPhotoBatch({
                 token,
+                ...pin,
                 attachments: uploadedPhotos.map((photo) => ({
                   ref: photo.pinRef,
                   imageId: uploadedFileMap.get(photo.pinRef)!,
@@ -404,7 +416,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
         for (let cleanupStart = 0; cleanupStart < cleanUpStorageIds.length; cleanupStart += 50) {
           const cleanupBatch = cleanUpStorageIds.slice(cleanupStart, cleanupStart + 50);
           try {
-            const cleanupResults = await pruneOrphans({ token, imageIds: cleanupBatch });
+            const cleanupResults = await pruneOrphans({ token, imageIds: cleanupBatch, ...pin });
             for (const result of cleanupResults) {
               if (result.status === "deleted" || result.status === "missing") continue;
               failedItems.push({
@@ -768,7 +780,7 @@ export default function PhotoCompanionImportPanel({ token }: { token: string }) 
         description={
           <div className="space-y-2">
             <p>
-              Are you sure you want to permanently delete <strong>{scannedOrphans.length} unreferenced photos</strong>?
+              Are you sure you want to permanently delete <strong>{scannedOrphans.length} unreferenced photos</strong>{pruneFromTrip ? ` from ${pruneFromTrip}` : ""}?
             </p>
             <p className="text-rose-500 font-semibold flex items-center gap-1 text-xs">
               <Info className="h-3.5 w-3.5 shrink-0" />

@@ -1,23 +1,28 @@
 import { useEffect, useState, useCallback } from "react";
-import { useQuery } from "convex/react";
-
+import { useTripQuery } from "../../convex/useTrip";
 import { tripcastApi, type Role } from "../../convex/tripcastApi";
+import { useTripClientKey } from "../trips/privateTripView";
 
 const STORAGE_KEY = "tripcast.followerCutoffShowAll";
 const EVENT_NAME = "tripcast.followerCutoffShowAllChanged";
 
-function readStoredShowAll(): boolean {
+/** Today's key, or one per trip (the viewed trip's cutoff is a different cutoff) when a non-Legacy trip is viewed. */
+function storageKeyFor(clientKey: string): string {
+  return clientKey ? `${STORAGE_KEY}.${clientKey}` : STORAGE_KEY;
+}
+
+function readStoredShowAll(key: string): boolean {
   try {
-    return sessionStorage.getItem(STORAGE_KEY) === "true";
+    return sessionStorage.getItem(key) === "true";
   } catch {
     return false;
   }
 }
 
-function writeStoredShowAll(showAll: boolean) {
+function writeStoredShowAll(key: string, showAll: boolean) {
   try {
-    if (showAll) sessionStorage.setItem(STORAGE_KEY, "true");
-    else sessionStorage.removeItem(STORAGE_KEY);
+    if (showAll) sessionStorage.setItem(key, "true");
+    else sessionStorage.removeItem(key);
   } catch {
     // sessionStorage may be unavailable in some embeddings; the override just won't persist.
   }
@@ -53,26 +58,33 @@ export type FollowerCutoffPreview = {
  * data they receive.
  */
 export function useFollowerCutoffPreview(role: Role | undefined, token: string | undefined): FollowerCutoffPreview {
-  const preferences = useQuery(
+  const preferences = useTripQuery(
     tripcastApi.travelerPreferences.travelerGetPreferences,
     role === "traveler" && token ? { token } : "skip",
   );
 
-  const [showAll, setShowAllState] = useState<boolean>(() =>
-    role === "traveler" ? readStoredShowAll() : false,
-  );
+  const storageKey = storageKeyFor(useTripClientKey());
+  // The override lives in sessionStorage under the viewed trip's key. `override` remembers what this hook last saw or
+  // set for one key; for any other key (the view changed) it is ignored and storage is read, so switching the view
+  // never carries one trip's "Show all" over to another.
+  const [override, setOverride] = useState<{ key: string; value: boolean } | null>(null);
+  const showAll =
+    role !== "traveler" ? false : override?.key === storageKey ? override.value : readStoredShowAll(storageKey);
 
   useEffect(() => {
     if (role !== "traveler") return;
-    const handler = () => setShowAllState(readStoredShowAll());
+    const handler = () => setOverride({ key: storageKey, value: readStoredShowAll(storageKey) });
     window.addEventListener(EVENT_NAME, handler);
     return () => window.removeEventListener(EVENT_NAME, handler);
-  }, [role]);
+  }, [role, storageKey]);
 
-  const setShowAll = useCallback((next: boolean) => {
-    setShowAllState(next);
-    writeStoredShowAll(next);
-  }, []);
+  const setShowAll = useCallback(
+    (next: boolean) => {
+      setOverride({ key: storageKey, value: next });
+      writeStoredShowAll(storageKey, next);
+    },
+    [storageKey],
+  );
 
   if (role !== "traveler") {
     return { available: false, showAll: false, cutoffAt: null, setShowAll };
