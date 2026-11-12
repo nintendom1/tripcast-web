@@ -1672,6 +1672,8 @@ export type TripCard = TripCounts & {
   isCurrent: boolean;
   /** Set while a per-trip delete is running ("Deleting…"). */
   deletingAt?: number;
+  /** Present only while "Deleting…" stopped on an error; it does not resume on its own: call deleteTrip again with this tripId to retry. */
+  deleteFailed?: true;
   revision: number;
   updatedAt: number;
   lastStoryAt?: number;
@@ -2395,7 +2397,7 @@ export const tripcastApi = {
     travelerGetNativeMysteryMissionRevision: (anyApi as any).mysteryMissions.travelerGetNativeMysteryMissionRevision as FunctionReference<
       "query",
       "public",
-      { token: string; includeDebugAll?: boolean },
+      { token: string; includeDebugAll?: boolean; tripId?: string },
       { revision: number; debugIncluded: boolean }
     >,
     travelerGetMysteryMissionForEdit: (anyApi as any).mysteryMissions.travelerGetMysteryMissionForEdit as FunctionReference<
@@ -3203,6 +3205,7 @@ export const tripcastApi = {
       { token: string; at: number },
       { tripId: string } | null
     >,
+    /** Starts deleting a trip; on a trip whose "Deleting…" stopped on an error (deleteFailed) it retries instead. */
     deleteTrip: (anyApi as any).trips.deleteTrip as FunctionReference<
       "mutation",
       "public",
