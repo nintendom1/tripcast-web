@@ -43,6 +43,7 @@ type MockMapInstance = {
 const mapInstances: MockMapInstance[] = [];
 const voteOverlayOrigins: unknown[] = [];
 const checkpointSheetCoordinates: unknown[] = [];
+const voteReferenceLocations: unknown[] = [];
 
 vi.mock("convex/react", () => ({
   useConvex: vi.fn(() => Object.assign(mocks.client, { query: mocks.query })),
@@ -148,7 +149,12 @@ vi.mock("./RouteVoteMapOverlay", () => ({
   },
 }));
 vi.mock("./MissionMarkers", () => ({ default: () => null }));
-vi.mock("../routevote/RouteVotePanel", () => ({ default: () => null }));
+vi.mock("../routevote/RouteVotePanel", () => ({
+  default: (props: { referenceLocation: unknown }) => {
+    voteReferenceLocations.push(props.referenceLocation);
+    return null;
+  },
+}));
 vi.mock("../journal/JournalSheet", () => ({ default: () => <div data-testid="journal-sheet" /> }));
 vi.mock("../travelfunds/TravelFundsSheet", () => ({ default: () => <div data-testid="funds-sheet" /> }));
 
@@ -218,6 +224,7 @@ const LIVE_TRAIL_STATUS = { enabled: true, visibleToFollowers: false };
 const TRAVELER_PREFERENCES = { travelerTimeZone: "UTC" };
 let journalByTrip: Record<string, JournalEvent[] | undefined> = {};
 let nativeMysteryRevision: { revision: number } | null = null;
+let followerPreferencesValue: unknown = null;
 const useQueryMock = convexReact.useQuery as unknown as Mock<(query: unknown, args: unknown) => unknown>;
 const useMutationMock = convexReact.useMutation as unknown as Mock<(mutation: unknown) => unknown>;
 const tripOf = (args: unknown) => (args as { tripId?: string } | undefined)?.tripId ?? NO_TRIP;
@@ -233,6 +240,7 @@ function setupQueries() {
     if (query === tripcastApi.liveTrail.travelerGetLiveTrailStatus) return LIVE_TRAIL_STATUS;
     if (query === tripcastApi.liveTrail.getLatestLiveTrailSample) return latestByTrip[tripOf(args)] ?? null;
     if (query === tripcastApi.travelerPreferences.travelerGetPreferences) return TRAVELER_PREFERENCES;
+    if (query === tripcastApi.travelerPreferences.followerGetPreferences) return followerPreferencesValue;
     if (query === tripcastApi.travelerState.travelerGetState) return { state: null, visibility: null };
     if (query === tripcastApi.mysteryMissions.listMysteryMissionMapPins) return { rows: [] };
     if (query === tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionRevision) return nativeMysteryRevision;
@@ -248,6 +256,8 @@ const MANIFEST = { revision: 0, ready: false, enabled: false, visible: true, cut
 let breadcrumbsByTrip: Record<string, LiveTrailSample[]> = {};
 let manifestFor: (tripId: string) => Promise<unknown> = async () => MANIFEST;
 let resumeTargetFor: (tripId: string) => Promise<unknown> = async () => null;
+/** Overrides the replay breadcrumb pages (args include `paginationOpts.cursor`). */
+let breadcrumbPageFor: ((tripId: string, args: PageArgs & { paginationOpts?: { cursor?: string | null } }) => Promise<unknown>) | null = null;
 let storyByCheckpoint: (checkpointId: string) => Promise<JournalEvent | null> = async (checkpointId) =>
   [AUTUMN_STORY, SUMMER_STORY].find((event) => event.checkpointId === checkpointId) ?? null;
 
@@ -272,7 +282,9 @@ function page(rows: LiveTrailSample[], args: PageArgs) {
 function setupImperativeQueries() {
   mocks.query.mockImplementation(async (query: unknown, args: PageArgs) => {
     if (query === tripcastApi.replayRoutes.manifest) return manifestFor(tripOf(args));
-    if (query === tripcastApi.liveTrail.listReplayLiveTrailSamples) return page(breadcrumbsByTrip[tripOf(args)] ?? [], args);
+    if (query === tripcastApi.liveTrail.listReplayLiveTrailSamples) {
+      return breadcrumbPageFor ? breadcrumbPageFor(tripOf(args), args) : page(breadcrumbsByTrip[tripOf(args)] ?? [], args);
+    }
     if (query === tripcastApi.journalEvents.listReplayStoryEvents) return page([], args);
     if (query === tripcastApi.journalEvents.getStoryEventByCheckpoint) return storyByCheckpoint(args.checkpointId ?? "");
     if (query === tripcastApi.journalEvents.resolveReplayResumeTarget) return resumeTargetFor(tripOf(args));
@@ -291,12 +303,19 @@ let tripContext: Partial<TripContextValue> = {};
 function Wrapper({ children }: { children: React.ReactNode }) {
   return <TripContextTestProvider value={tripContext}>{children}</TripContextTestProvider>;
 }
-function renderMap(trip: Partial<TripContextValue>, { withBridge = false }: { withBridge?: boolean } = {}) {
+function renderMap(
+  trip: Partial<TripContextValue>,
+  {
+    withBridge = false,
+    role = "traveler",
+    finale = false,
+  }: { withBridge?: boolean; role?: "traveler" | "follower"; finale?: boolean } = {},
+) {
   tripContext = trip;
   const ui = (
     <>
       {withBridge ? <LivePublishingBridge token={TOKEN} role="traveler" gpsSuppressedUntil={null} /> : null}
-      <TripMap token={TOKEN} role="traveler" />
+      <TripMap token={TOKEN} role={role} finaleReplayActive={finale} />
     </>
   );
   const result = rtlRender(ui, { wrapper: Wrapper });
@@ -333,6 +352,7 @@ beforeEach(async () => {
   mapInstances.length = 0;
   voteOverlayOrigins.length = 0;
   checkpointSheetCoordinates.length = 0;
+  voteReferenceLocations.length = 0;
   pinsByTrip = { [AUTUMN.tripId]: [AUTUMN_PIN], [SUMMER.tripId]: [SUMMER_PIN], [NO_TRIP]: [], [LEGACY.tripId]: [] };
   latestByTrip = {};
   journalByTrip = { [AUTUMN.tripId]: [AUTUMN_STORY], [SUMMER.tripId]: [SUMMER_STORY] };
@@ -345,6 +365,8 @@ beforeEach(async () => {
   storyByCheckpoint = async (checkpointId) =>
     [AUTUMN_STORY, SUMMER_STORY].find((event) => event.checkpointId === checkpointId) ?? null;
   nativeMysteryRevision = null;
+  followerPreferencesValue = null;
+  breadcrumbPageFor = null;
   mocks.isNativeLocationAvailable.mockReturnValue(false);
   mocks.isAdaptiveLocationAvailable.mockReturnValue(false);
   mocks.configure.mockResolvedValue(undefined);
@@ -811,5 +833,263 @@ describe("TripMap trip-keyed client state", () => {
     rtlRender(<ReplayDateRangeSheet {...props} tripKey={null} />);
     expect(await screen.findByDisplayValue("2026-07-01T00:00")).toBeInTheDocument();
     expect(lastCustomRangeKey(null)).toBe("tripcast.replay.lastCustomRange");
+  });
+});
+
+describe("TripMap late answers and edge cases across a view change", () => {
+  const AUTUMN_TAGS = { tripId: AUTUMN.tripId, publishingEpoch: AUTUMN.publishingEpoch, tripTitle: AUTUMN.title };
+  const summerIdsIn = (rows: unknown) => ids(rows).filter((id) => id.startsWith("summer"));
+
+  it("drops a replay page that arrives after Return to current: the current trip's trail and cache stay clean", async () => {
+    // 60 samples 10 s apart fill the initial buffer, so the next page is requested by the low-buffer prefetch.
+    const firstPage = Array.from({ length: 60 }, (_, i) => sample(`summer-early-${i}`, 40.7 + i / 1_000, -74.0, 1_000 + i * 10_000));
+    let resolveLatePage: (page: unknown) => void = () => {};
+    breadcrumbPageFor = (tripId, args) => {
+      if (tripId !== SUMMER.tripId) return Promise.resolve(page([], args));
+      if ((args.paginationOpts?.cursor ?? null) === null) {
+        return Promise.resolve({ ...page(firstPage, args), hasMore: true, reachedTrueEnd: false, continueCursor: "page-2" });
+      }
+      return new Promise((resolve) => { resolveLatePage = resolve; });
+    };
+    const map = renderMap(viewingSummer());
+    await startReplay();
+    await waitFor(() => {
+      const cursors = argsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)
+        .map((args) => (args as { paginationOpts?: { cursor?: string | null } }).paginationOpts?.cursor);
+      expect(cursors).toContain("page-2");
+    });
+
+    map.view(following());
+    await waitFor(() => expect(lastPath()[1]).toEqual([AUTUMN_PIN]));
+    const callsBefore = pathCalls().length;
+    await act(async () => resolveLatePage({ ...page([sample("summer-late", 40.8, -74.1, 700_000)], {}), hasMore: false }));
+    await act(async () => {});
+
+    expect(summerIdsIn(cache(AUTUMN.tripId).snapshot().samples)).toEqual([]);
+    for (const call of pathCalls().slice(callsBefore)) expect(summerIdsIn(call[6])).toEqual([]);
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Trip Replay" })).not.toBeInTheDocument());
+  });
+
+  // The trip is part of the replay page-cache identity, so a view change ends the old session's resume search.
+  it("stops searching for a resume point once the view changed", async () => {
+    localStorage.setItem(
+      `tripcast.replay.lastPin.${TOKEN}.${SUMMER.tripId}`,
+      JSON.stringify({ version: 2, eventId: "summer-far", index: 500, occurredAt: 9_000_000, source: { mode: "beginning", endAt: 10_000_000 } }),
+    );
+    const firstPage = Array.from({ length: 60 }, (_, i) => sample(`summer-early-${i}`, 40.7 + i / 1_000, -74.0, 1_000 + i * 10_000));
+    let resolveSecondPage: (page: unknown) => void = () => {};
+    const cursors: Array<string | null> = [];
+    breadcrumbPageFor = (tripId, args) => {
+      const cursor = args.paginationOpts?.cursor ?? null;
+      cursors.push(cursor);
+      if (tripId !== SUMMER.tripId || cursor === "page-3") return Promise.resolve(page([], args));
+      if (cursor === null) return Promise.resolve({ ...page(firstPage, args), hasMore: true, reachedTrueEnd: false, continueCursor: "page-2" });
+      return new Promise((resolve) => { resolveSecondPage = resolve; });
+    };
+    const map = renderMap(viewingSummer());
+    await userEvent.click(screen.getByRole("button", { name: "Replay" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Continue where you left off/i }));
+    await waitFor(() => expect(cursors).toContain("page-2"));
+
+    map.view(following());
+    await waitFor(() => expect(lastPath()[1]).toEqual([AUTUMN_PIN]));
+    const secondPage = Array.from({ length: 10 }, (_, i) => sample(`summer-mid-${i}`, 40.8, -74.1, 700_000 + i * 10_000));
+    await act(async () => resolveSecondPage({ ...page(secondPage, {}), hasMore: true, reachedTrueEnd: false, continueCursor: "page-3" }));
+    // Let every promise chain the late page started settle (a macrotask turn, not a wait on the clock).
+    await act(() => new Promise<void>((resolve) => { setTimeout(resolve, 0); }));
+
+    expect(cursors).not.toContain("page-3");
+    expect(screen.queryByRole("group", { name: "Trip Replay" })).not.toBeInTheDocument();
+  });
+
+  it("a breadcrumb delete that fails after Return to current does not restore the old trip's replay", async () => {
+    let rejectDelete: (error: Error) => void = () => {};
+    deleteBreadcrumb.mockImplementation(() => new Promise((_, reject) => { rejectDelete = reject; }));
+    const map = renderMap(viewingSummer());
+    await startReplay();
+    fireEvent.click(screen.getByRole("button", { name: /pause replay/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
+    await waitFor(() => expect(deleteBreadcrumb).toHaveBeenCalled());
+
+    map.view(following());
+    await waitFor(() => expect(lastPath()[1]).toEqual([AUTUMN_PIN]));
+    const callsBefore = pathCalls().length;
+    await act(async () => rejectDelete(new Error("offline")));
+    await act(async () => {});
+
+    expect(summerIdsIn(cache(AUTUMN.tripId).snapshot().samples)).toEqual([]);
+    for (const call of pathCalls().slice(callsBefore)) expect(summerIdsIn(call[6])).toEqual([]);
+  });
+
+  it("a view change closes an open breadcrumb delete confirmation", async () => {
+    const map = renderMap(following());
+    await startReplay();
+    fireEvent.click(screen.getByRole("button", { name: /pause replay/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    expect(await screen.findByText("Delete trail sample?")).toBeInTheDocument();
+
+    map.view(viewingSummer());
+
+    await waitFor(() => expect(screen.queryByText(/Delete trail sample/)).not.toBeInTheDocument());
+    expect(deleteBreadcrumb).not.toHaveBeenCalled();
+  });
+
+  it("the vote panel measures from today's position only on the shared trip", async () => {
+    const map = renderMap(viewingSummer());
+    await waitFor(() => expect(lastPath()[1]).toEqual([SUMMER_PIN]));
+    expect(voteReferenceLocations.length).toBeGreaterThan(0);
+    expect(voteReferenceLocations.at(-1)).toBeNull();
+
+    map.view(following());
+    await waitFor(() => expect(voteReferenceLocations.at(-1)).toEqual(expect.objectContaining(LIVE)));
+  });
+
+  it("shows the live Traveler once the privately viewed trip becomes the shared trip (trip ids, not the viewing mode)", async () => {
+    const map = renderMap(viewingSummer());
+    await waitFor(() => expect(lastPath()[1]).toEqual([SUMMER_PIN]));
+    expect(travelerMarkers()).toHaveLength(0);
+
+    const summerShared: CurrentTrip = { ...AUTUMN, tripId: SUMMER.tripId, title: SUMMER.title, publishingEpoch: 4 };
+    map.view({ ...following(summerShared), viewingMode: "private" });
+
+    await waitFor(() => expect(travelerMarkers().length).toBeGreaterThan(0));
+    expect(accuracySources().length).toBeGreaterThan(0);
+  });
+
+  it("shows none of the old trip's pins while the new trip's pins are still loading", async () => {
+    pinsByTrip[SUMMER.tripId] = undefined;
+    const map = renderMap(following());
+    await waitFor(() => expect(lastPath()[1]).toEqual([AUTUMN_PIN]));
+    const callsBefore = pathCalls().length;
+
+    map.view(viewingSummer());
+
+    await waitFor(() => expect(argsOf(useQueryMock, tripcastApi.checkpoints.listCheckpointMapPins)).toContainEqual(
+      { token: TOKEN, tripId: SUMMER.tripId },
+    ));
+    expect(pathCalls().length).toBeGreaterThan(callsBefore);
+    for (const call of pathCalls().slice(callsBefore)) expect(call[1]).toEqual([]);
+  });
+
+  it("while the trip status is unknown on a tagged Traveler's device, today's trail cache is neither shown nor written", async () => {
+    cache(null).replaceReplay([sample("legacy-trail", 47.6, -122.3, 500)]);
+    // An untagged answer comes from the shared trip, which may not be the Legacy Trip.
+    latestByTrip[NO_TRIP] = sample("shared-latest", 47.65, -122.35, 800);
+    // The bridge remembers trip tags from the last session: multi-trip was on.
+    setNativePublishingTags(AUTUMN_TAGS);
+    const map = renderMap({ serverTripStatus: "loading" });
+    await waitFor(() => expect(argsOf(useQueryMock, tripcastApi.liveTrail.getLatestLiveTrailSample)).toContainEqual({ token: TOKEN }));
+    await act(async () => {});
+    expect(ids(lastPath()[6])).toEqual([]);
+    expect(ids(cache(null).snapshot().samples)).toEqual(["legacy-trail"]);
+
+    // Failing on the same device: still unknown.
+    map.view({ serverTripStatus: "unavailable" });
+    await act(async () => {});
+    expect(ids(lastPath()[6])).toEqual([]);
+    expect(ids(cache(null).snapshot().samples)).toEqual(["legacy-trail"]);
+
+    map.view(following());
+    await waitFor(() => expect(lastPath()[1]).toEqual([AUTUMN_PIN]));
+    expect(ids(cache(null).snapshot().samples)).toEqual(["legacy-trail"]);
+  });
+
+  it("an untagged Traveler keeps today's trail cache while the status loads, never resolves (offline) or fails", async () => {
+    cache(null).replaceReplay([sample("legacy-trail", 47.6, -122.3, 500)]);
+    latestByTrip[NO_TRIP] = sample("legacy-latest", 47.65, -122.35, 800);
+    const map = renderMap({ serverTripStatus: "loading" });
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["legacy-trail", "legacy-latest"]));
+    expect(ids(cache(null).snapshot().samples)).toEqual(["legacy-trail", "legacy-latest"]);
+
+    // Still loading on a later render (offline: it never resolves).
+    map.view({ serverTripStatus: "loading" });
+    await act(async () => {});
+    expect(ids(lastPath()[6])).toEqual(["legacy-trail", "legacy-latest"]);
+  });
+
+  it("a Follower keeps today's trail cache while the status loads or never resolves", async () => {
+    followerPreferencesValue = { visible: true, allowFollowersTripPath: true, liveTrailVisibleToFollowers: true };
+    getLiveTrailCache(TOKEN, "follower").replaceReplay([sample("follower-trail", 47.6, -122.3, 500)]);
+    const map = renderMap({ role: "follower", serverTripStatus: "loading" }, { role: "follower" });
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["follower-trail"]));
+
+    map.view({ role: "follower", serverTripStatus: "loading" });
+    await act(async () => {});
+    expect(ids(lastPath()[6])).toEqual(["follower-trail"]);
+  });
+
+  it("restarts an open credits replay for the new trip after a view change", async () => {
+    const map = renderMap(following(), { finale: true });
+    await waitFor(() => expect(tripIdsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)).toContain(AUTUMN.tripId));
+    mocks.query.mockClear();
+
+    map.view(viewingSummer());
+
+    await waitFor(() => expect(tripIdsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)).toContain(SUMMER.tripId));
+    expect(tripIdsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)).not.toContain(AUTUMN.tripId);
+    expect(await screen.findByRole("group", { name: "Trip Replay" })).toBeInTheDocument();
+  });
+
+  it("multi-trip disabled, and an older backend (failing, no remembered tags), keep today's trail cache", async () => {
+    cache(null).replaceReplay([sample("legacy-trail", 47.6, -122.3, 500)]);
+    latestByTrip[NO_TRIP] = sample("legacy-latest", 47.65, -122.35, 800);
+    const map = renderMap({});
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["legacy-trail", "legacy-latest"]));
+    expect(ids(cache(null).snapshot().samples)).toEqual(["legacy-trail", "legacy-latest"]);
+
+    map.view({ serverTripStatus: "unavailable" });
+    await act(async () => {});
+    expect(ids(lastPath()[6])).toEqual(["legacy-trail", "legacy-latest"]);
+  });
+});
+
+describe("TripMap for a Follower at a shared-trip switch", () => {
+  const effective = (trip: { tripId: string; title: string }) =>
+    ({ tripId: trip.tripId, title: trip.title, lifecycle: "in_progress" as const, isLegacy: false });
+  const followerOf = (trip: { tripId: string; title: string }): Partial<TripContextValue> => ({
+    role: "follower",
+    followerTrip: effective(trip),
+    viewingMode: "follow_current",
+    viewingTripId: trip.tripId,
+    viewingTrip: { tripId: trip.tripId, title: trip.title },
+  });
+  const followerCache = (tripKey: string) => getLiveTrailCache(TOKEN, "follower", tripKey);
+
+  it("clears the old trip's pins, trail and replay, loads the new trip's, and keeps every request's shape", async () => {
+    followerPreferencesValue = { visible: true, allowFollowersTripPath: true, liveTrailVisibleToFollowers: true };
+    // A Follower never sends a trip id: the server answers for the trip it follows.
+    pinsByTrip[NO_TRIP] = [AUTUMN_PIN];
+    breadcrumbsByTrip[NO_TRIP] = breadcrumbsByTrip[AUTUMN.tripId];
+    followerCache(AUTUMN.tripId).replaceReplay([sample("autumn-trail", 47.6, -122.3, 500)]);
+    followerCache(SUMMER.tripId).replaceReplay([sample("summer-trail", 40.7, -74.0, 600)]);
+    const map = renderMap(followerOf(AUTUMN), { role: "follower" });
+    await waitFor(() => {
+      expect(lastPath()[1]).toEqual([AUTUMN_PIN]);
+      expect(ids(lastPath()[6])).toEqual(["autumn-trail"]);
+    });
+    await startReplay();
+
+    pinsByTrip[NO_TRIP] = [SUMMER_PIN];
+    breadcrumbsByTrip[NO_TRIP] = breadcrumbsByTrip[SUMMER.tripId];
+    map.view(followerOf(SUMMER));
+
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Trip Replay" })).not.toBeInTheDocument());
+    await waitFor(() => {
+      expect(lastPath()[1]).toEqual([SUMMER_PIN]);
+      expect(ids(lastPath()[6])).toEqual(["summer-trail"]);
+    });
+    expect(ids(followerCache(SUMMER.tripId).snapshot().samples)).toEqual(["summer-trail"]);
+    expect(ids(followerCache(AUTUMN.tripId).snapshot().replay)).toEqual(["autumn-crumb-1", "autumn-crumb-2"]);
+    for (const ref of [
+      tripcastApi.checkpoints.listCheckpointMapPins,
+      tripcastApi.liveTrail.getLatestLiveTrailSample,
+      tripcastApi.replayRoutes.manifest,
+    ]) {
+      for (const args of argsOf(useQueryMock, ref)) expect(args).toStrictEqual({ token: TOKEN });
+    }
+    for (const ref of [tripcastApi.replayRoutes.manifest, tripcastApi.liveTrail.listReplayLiveTrailSamples]) {
+      for (const args of argsOf(mocks.query, ref)) expect(args).not.toHaveProperty("tripId");
+    }
   });
 });

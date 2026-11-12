@@ -1304,6 +1304,7 @@ export default function TripMap({
     viewingTripId,
     returnToCurrent,
     reportTripUnavailable,
+    serverTripStatus = "known",
   } = useTripContext();
   // The map shows the viewed trip (`viewingTripId`); TripMap is never keyed by trip, so a view change resets and
   // rebinds below. The Traveler's live marker, accuracy circle, device trail and follow camera belong to the shared
@@ -1702,6 +1703,13 @@ export default function TripMap({
     && travelerAllowsFollowerPath
     && followerPreferences.liveTrailVisibleToFollowers;
   const cacheAuthorized = role === "traveler" || followerCacheAuthorized;
+  // While the trip status is not known (loading or failing) on a Traveler's device whose bridge holds remembered trip
+  // tags (multi-trip was on), the viewed trip is unknown and today's (Legacy) key may hold the wrong trip: the trail
+  // cache is neither read nor written until it is known. Followers and untagged Travelers (multi-trip disabled, an
+  // older backend, offline) stay on today's path. The latest-sample query is unchanged (the publisher's sampler reads it).
+  const rememberedTripTags = useSyncExternalStore(subscribeNativePublishingTags, getNativePublishingTags, getNativePublishingTags);
+  const tripStatusUnknown = serverTripStatus !== "known" && role === "traveler" && rememberedTripTags !== null;
+  const cacheUsable = cacheAuthorized && !tripStatusUnknown;
   const latestLiveTrailSample = useTripQuery(
     tripcastApi.liveTrail.getLatestLiveTrailSample,
     cacheAuthorized ? (role === "traveler" ? publisherTripArgs : { token }) : "skip",
@@ -1718,25 +1726,25 @@ export default function TripMap({
     const unsubscribe = liveTrailCache.subscribe(() => {
       setCachedLiveTrail({ store: liveTrailCache, snapshot: liveTrailCache.snapshot() });
     });
-    if (cacheAuthorized) void liveTrailCache.hydrate();
+    if (cacheUsable) void liveTrailCache.hydrate();
     return unsubscribe;
-  }, [cacheAuthorized, liveTrailCache]);
+  }, [cacheUsable, liveTrailCache]);
 
   useEffect(() => {
-    if (role !== "follower" || !followerPermissionResolved) return;
+    if (role !== "follower" || !followerPermissionResolved || tripStatusUnknown) return;
     if (!followerCacheAuthorized) void liveTrailCache.clear();
-  }, [followerCacheAuthorized, followerPermissionResolved, liveTrailCache, role]);
+  }, [followerCacheAuthorized, followerPermissionResolved, liveTrailCache, role, tripStatusUnknown]);
 
   useEffect(() => {
-    if (followerCacheAuthorized && followerCacheCutoffAt !== undefined) {
+    if (followerCacheAuthorized && followerCacheCutoffAt !== undefined && !tripStatusUnknown) {
       liveTrailCache.pruneBefore(followerCacheCutoffAt);
     }
-  }, [followerCacheAuthorized, followerCacheCutoffAt, liveTrailCache]);
+  }, [followerCacheAuthorized, followerCacheCutoffAt, liveTrailCache, tripStatusUnknown]);
 
   useEffect(() => {
     // The latest sample is the shared trip's (see above): it never joins a privately viewed trip's cache.
-    if (cacheAuthorized && latestLiveTrailSample && showsLiveTraveler) liveTrailCache.addRecent(latestLiveTrailSample);
-  }, [cacheAuthorized, latestLiveTrailSample, liveTrailCache, showsLiveTraveler]);
+    if (cacheUsable && latestLiveTrailSample && showsLiveTraveler) liveTrailCache.addRecent(latestLiveTrailSample);
+  }, [cacheUsable, latestLiveTrailSample, liveTrailCache, showsLiveTraveler]);
   const replayTimeZone = (role === "traveler"
     ? movementPrefs?.travelerTimeZone
     : followerPreferences?.visible ? followerPreferences.travelerTimeZone : undefined)
@@ -1744,12 +1752,12 @@ export default function TripMap({
     ?? "UTC";
 
   const liveTrailSamples = useMemo(() => {
-    const all = cacheAuthorized ? cachedLiveTrail.samples : [];
+    const all = cacheUsable ? cachedLiveTrail.samples : [];
     const cutoffFiltered = cutoffPreview.cutoffAt
       ? all.filter((s) => s.sampledAt >= (cutoffPreview.cutoffAt as number))
       : all;
     return cutoffFiltered.filter((s) => inReplayWindow(s.sampledAt));
-  }, [cacheAuthorized, cachedLiveTrail.samples, cutoffPreview.cutoffAt, inReplayWindow]);
+  }, [cacheUsable, cachedLiveTrail.samples, cutoffPreview.cutoffAt, inReplayWindow]);
   const liveTrailPathVisible = liveTrailSamples.length >= 1;
   const replaySourceTrailSamples = replaySessionState.breadcrumbs.length > 0
     ? replaySessionState.breadcrumbs
@@ -1777,11 +1785,11 @@ export default function TripMap({
   const replaySessionCacheRef = useRef<typeof liveTrailCache | null>(null);
   useEffect(() => {
     if (replaySessionCacheRef.current !== null && replaySessionCacheRef.current !== liveTrailCache) return;
-    if (!cacheAuthorized || replaySessionState.breadcrumbs.some(sample => sample.compact)) return;
+    if (!cacheUsable || replaySessionState.breadcrumbs.some(sample => sample.compact)) return;
     if (replaySessionState.loading || replayActive || replaySessionState.breadcrumbs.length > 0) {
       liveTrailCache.replaceReplay(replaySessionState.breadcrumbs);
     }
-  }, [cacheAuthorized, liveTrailCache, replayActive, replaySessionState.breadcrumbs, replaySessionState.loading]);
+  }, [cacheUsable, liveTrailCache, replayActive, replaySessionState.breadcrumbs, replaySessionState.loading]);
 
   useEffect(() => {
     if (replayWasActiveRef.current && !replayActive) void liveTrailCache.flush("replay-exit");
@@ -2191,6 +2199,8 @@ export default function TripMap({
     let next = session.snapshot();
     do {
       next = await session.loadMore(reason);
+      // The session ended while this page loaded (a view change, a new replay): drop the page.
+      if (replaySessionRef.current !== session) return;
       setReplaySessionState({ ...next });
       if (next.error) break;
     } while (
@@ -2229,7 +2239,7 @@ export default function TripMap({
     source: ReplaySource,
     resume?: { eventId: string; occurredAt?: number; fallbackIndex: number },
   ) => {
-    if (cacheAuthorized) liveTrailCache.replaceReplay([]);
+    if (cacheUsable) liveTrailCache.replaceReplay([]);
     source = { ...source, content: source.content ?? replayContent };
     // The trip this client reads (a caller's closure may predate a view change), else the view (no trip captured).
     const requestedTripId = tripConvex.target?.tripId ?? viewingTripIdRef.current;
@@ -2296,7 +2306,7 @@ export default function TripMap({
     setReplayActive(true);
     setCurrentOverlayPin(null);
     return true;
-  }, [cacheAuthorized, tripConvex, liveTrailCache, log, replaySpeed, showToast, token, replayContent, role]);
+  }, [cacheUsable, tripConvex, liveTrailCache, log, replaySpeed, showToast, token, replayContent, role]);
 
   useEffect(() => {
     if (!replayActive || replayPlayheadIndex === null || !replaySessionState.hasMore || replaySessionState.loading) return;
@@ -4490,6 +4500,9 @@ export default function TripMap({
     tripResetRef.current = { nonce: tripDataResetNonce, tripId: viewingTripId ?? previous.tripId };
     if (!dataReset && !viewChanged) return;
     if (viewChanged) {
+      // A credits replay open across the change restarts for the new trip (its effect cancelled the old one).
+      finaleReplayStartedRef.current = false;
+      setIsDeleteConfirmOpen(false);
       setContextMenu(null);
       setPendingOpenMissionId(null);
       setPendingOpenMysteryMissionId(null);
@@ -4948,6 +4961,8 @@ export default function TripMap({
     const permittedStartAt = cutoffPreview.cutoffAt ?? undefined;
     let source: ReplaySource = { mode: mode === "recent" ? "recent" : "beginning", startAt: permittedStartAt, endAt: frozenEndAt };
     let resume: { eventId: string; occurredAt?: number; fallbackIndex: number } | undefined;
+    // A start that finishes after a view change leaves the new trip's replay controls alone.
+    const requestedTripId = viewingTripIdRef.current;
     try {
       if (mode === "continue") {
         const saved = readReplayResume(token, tripCacheKey);
@@ -4962,12 +4977,13 @@ export default function TripMap({
         }
       }
       const started = await startReplaySession(source, resume);
+      if (viewingTripIdRef.current !== requestedTripId) return;
       if (started) setIsReplayStartSheetOpen(false);
       else setReplayStartError(replaySessionRef.current?.snapshot().error ?? "No replayable located activity was found for this source.");
       log.logInteraction(started ? "replay:start" : "replay:start:failed", { mode, speed: replaySpeed });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setReplayStartError(`Replay could not start: ${message}`);
+      if (viewingTripIdRef.current === requestedTripId) setReplayStartError(`Replay could not start: ${message}`);
       log.error("replay:start:error", "query", { mode, message });
       // The privately viewed trip is gone (deleted or no longer owned): the context returns to the current trip.
       const failedTripId = tripConvex.target?.tripId;
@@ -5325,6 +5341,7 @@ export default function TripMap({
     if (!currentReplayPin || currentReplayPin.kind !== "breadcrumb" || !currentReplayPin.eventId) return;
 
     const sampleId = currentReplayPin.eventId;
+    const session = replaySessionRef.current;
     let previousState: ReplaySessionSnapshot | null = null;
 
     setDeletingBreadcrumbId(sampleId);
@@ -5342,7 +5359,8 @@ export default function TripMap({
         liveTrailCache.removeIds([sampleId]);
       })
       .catch((err) => {
-        if (previousState) setReplaySessionState(previousState);
+        // Restore only into the replay it came from: after a view change it is another trip's state.
+        if (previousState && replaySessionRef.current === session) setReplaySessionState(previousState);
         log.error("replay:delete-breadcrumb:error", "mutation", { message: err instanceof Error ? err.message : String(err) });
       })
       .finally(() => {
@@ -6340,7 +6358,7 @@ export default function TripMap({
             }}
             onRequestCoordinatePick={handleRequestCoordinatePick}
             onCoordinatePickSaved={clearPreviewPin}
-            referenceLocation={livePosition}
+            referenceLocation={showsLiveTraveler ? livePosition : null}
             onVoteOverlayChange={handleVoteOverlayChange}
             onRequestFitMap={handleRequestFitMap}
             fallbackOrigin={routeVoteFallbackOrigin}
