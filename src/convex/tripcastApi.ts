@@ -42,6 +42,18 @@ export type CheckpointMapPin = {
   createdAt: number;
 };
 
+export type CheckpointPage = {
+  page: Checkpoint[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
+export type CheckpointMapPinPage = {
+  page: CheckpointMapPin[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
 export type AddCheckpointArgs = {
   token: string;
   title?: string;
@@ -975,6 +987,8 @@ export type ContentBeforeCutoffCounts = {
   missions: number;
   trailSamples: number;
   routeVotes: number;
+  /** Present (true) when a count stopped at the server cap, so it reads "N+". */
+  capped?: boolean;
 };
 
 export type Message = {
@@ -1424,6 +1438,9 @@ export type BulkImportPayload =
   | {
       timeZone?: string;
       entries: BulkImportEntry[];
+      /** Set by an export when a cap or the read budget cut it short; `truncatedKinds` names the kinds. */
+      truncated?: true;
+      truncatedKinds?: string[];
     };
 
 export type BulkImportCounts = {
@@ -1809,7 +1826,7 @@ export const tripcastApi = {
     previewBulkImport: (anyApi as any).bulkImport.previewBulkImport as FunctionReference<
       "query",
       "public",
-      { token: string; entries: BulkImportPayload },
+      { token: string; entries: BulkImportPayload; tripId?: string },
       BulkImportPreview
     >,
     travelerBulkImport: (anyApi as any).bulkImport.travelerBulkImport as FunctionReference<
@@ -1828,7 +1845,7 @@ export const tripcastApi = {
       "query",
       "public",
       { token: string; startMs?: number; endMs?: number; includeMysteryMissions?: boolean; tripId?: string },
-      { otherCount: number; breadcrumbCount: number }
+      { otherCount: number; breadcrumbCount: number; truncated?: true; truncatedKinds?: string[] }
     >,
     travelerExportTickerFacts: (anyApi as any).bulkImport.travelerExportTickerFacts as FunctionReference<
       "query",
@@ -1881,6 +1898,18 @@ export const tripcastApi = {
       "public",
       { token: string; tripId?: string },
       CheckpointMapPin[]
+    >,
+    listPage: (anyApi as any).checkpoints.listPage as FunctionReference<
+      "query",
+      "public",
+      { token: string; tripId?: string; paginationOpts: PaginationOpts; direction?: "asc" | "desc" },
+      CheckpointPage
+    >,
+    listTripMapPins: (anyApi as any).checkpoints.listTripMapPins as FunctionReference<
+      "query",
+      "public",
+      { token: string; tripId?: string; paginationOpts: PaginationOpts; direction?: "asc" | "desc" },
+      CheckpointMapPinPage
     >,
     getStoryImageUrl: (anyApi as any).checkpoints.getStoryImageUrl as FunctionReference<
       "query",
@@ -3159,7 +3188,7 @@ export const tripcastApi = {
     setLifecycle: (anyApi as any).trips.setLifecycle as FunctionReference<
       "mutation",
       "public",
-      { token: string; tripId: string; lifecycle: TripLifecycle },
+      { token: string; tripId: string; lifecycle: TripLifecycle; expectedRevision?: number },
       { lifecycle: TripLifecycle; revision: number }
     >,
     getSwitchImpact: (anyApi as any).trips.getSwitchImpact as FunctionReference<
