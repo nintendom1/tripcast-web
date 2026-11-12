@@ -95,4 +95,20 @@ describe("useFollowerCutoffPreview 'Show all' override per trip", () => {
     expect(hook.result.current).toMatchObject({ available: false, showAll: false, cutoffAt: null });
     expect(server.reads.at(-1)).toBe("skip");
   });
+
+  it("a pinned trip decides the read and the storage key, not the view", () => {
+    const hook = renderHook(() => useFollowerCutoffPreview("traveler", "tok", "trip-a"), { wrapper: wrap(viewing("trip-b")) });
+    expect(server.reads.at(-1)).toEqual({ token: "tok", tripId: "trip-a" });
+    act(() => hook.result.current.setShowAll(true));
+    expect(sessionStorage.getItem("tripcast.followerCutoffShowAll.trip-a")).toBe("true");
+    expect(sessionStorage.getItem("tripcast.followerCutoffShowAll.trip-b")).toBeNull();
+  });
+
+  it("a pinned Legacy Trip keeps today's key", () => {
+    const hook = renderHook(() => useFollowerCutoffPreview("traveler", "tok", "legacy"), {
+      wrapper: wrap(viewing("trip-b", { currentTrip: current({ tripId: "legacy", isLegacy: true }) })),
+    });
+    act(() => hook.result.current.setShowAll(true));
+    expect(sessionStorage.getItem("tripcast.followerCutoffShowAll")).toBe("true");
+  });
 });

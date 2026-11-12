@@ -144,6 +144,15 @@ describe("TrailCompressionReview with a viewed trip", () => {
     for (const call of server.clientCalls.filter((c) => c.name === "replayRoutes:preview")) expect(call.args.tripId).toBe("trip-other");
   });
 
+  it("the nested image preparation uses the review's trip, not a fresh capture", async () => {
+    const view = render(<TripContextTestProvider value={privately}>{review(true)}</TripContextTestProvider>);
+    // The view moves before Images is tapped.
+    view.rerender(<TripContextTestProvider value={following}>{review(true)}</TripContextTestProvider>);
+    await userEvent.click(await screen.findByRole("button", { name: "Prepare images" }));
+    await waitFor(() => expect(server.inventories.length).toBeGreaterThan(0));
+    expect(server.inventories.every((target) => (target as { tripId: string } | null)?.tripId === "trip-other")).toBe(true);
+  });
+
   it("multi-trip disabled: today's requests, no tripId", async () => {
     render(review(true));
     await userEvent.click(await screen.findByRole("button", { name: "Use original trail" }));

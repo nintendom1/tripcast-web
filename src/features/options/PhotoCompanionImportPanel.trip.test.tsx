@@ -179,6 +179,20 @@ describe("PhotoCompanionImportPanel ZIP import with a viewed trip", () => {
     vi.unstubAllGlobals();
   });
 
+  it("the sheet captured A, the view moved to B, then the panel mounted: resolve and attach still go to A", async () => {
+    const user = userEvent.setup();
+    // The panel mounts under the OTHER trip's view but is told the sheet's trip.
+    render(
+      <TripContextTestProvider value={privately}>
+        <PhotoCompanionImportPanel token="tok" tripTarget={{ tripId: "trip-current", title: "Current Trip" }} />
+      </TripContextTestProvider>,
+    );
+    await importZip(user);
+    expect(server.resolves.every((call) => call.tripId === "trip-current")).toBe(true);
+    expect(server.attaches[0]).toMatchObject({ tripId: "trip-current" });
+    vi.unstubAllGlobals();
+  });
+
   it("multi-trip disabled: today's resolve and attach requests, no tripId", async () => {
     const user = userEvent.setup();
     render(<PhotoCompanionImportPanel token="tok" />);

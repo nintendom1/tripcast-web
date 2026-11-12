@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, ClipboardList, Copy, Download, Eye, EyeOff, FileJson, RadioTower, RotateCcw } from "lucide-react";
 import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { PrivateTripTargetLabel, usePrivateTripTitle } from "../trips/privateTripView";
-import { pinnedTripArgs } from "./pinnedTrip";
+import { pinnedTripArgs, useReportTripGone } from "./pinnedTrip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { MysteryMissionExportRow, MysteryMissionImportPreview, MysteryMissionImportResult } from "../../convex/tripcastApi";
@@ -177,6 +177,7 @@ export default function MysteryMissionsSheet({
   const tripTarget = setEnabled.target;
   const deleteFromTrip = usePrivateTripTitle(deleteMission.target);
   const pin = pinnedTripArgs(tripTarget);
+  const reportTripGone = useReportTripGone(tripTarget);
 
   const settings = useTripQuery(
     tripcastApi.mysteryMissions.travelerGetMysteryMissionSettings,
@@ -251,6 +252,7 @@ export default function MysteryMissionsSheet({
       log.logUi("action:save-settings", { enabled: nextEnabled, revealIntervalHours });
       music.sfx("success");
     } catch (error) {
+      reportTripGone(error);
       setSettingsError(errorText(error));
     } finally {
       setSettingsWorking(false);
@@ -270,6 +272,7 @@ export default function MysteryMissionsSheet({
       setDeleteMissionId(null);
       music.sfx("success");
     } catch (error) {
+      reportTripGone(error);
       setCommitError(errorText(error));
     } finally {
       setWorking(false);
@@ -286,6 +289,7 @@ export default function MysteryMissionsSheet({
       music.sfx("success");
       onImported?.(result);
     } catch (error) {
+      reportTripGone(error);
       setCommitError(errorText(error));
     } finally {
       setWorking(false);

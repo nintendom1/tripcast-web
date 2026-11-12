@@ -87,6 +87,7 @@ import { useMusicSafe } from "../../providers/MusicProvider";
 import { useReadingSpeedSafe } from "../../providers/ReadingSpeedProvider";
 import CreateInviteControl from "../followers/CreateInviteControl";
 import { EmergencyResetContent } from "../privacy/EmergencyResetSheet";
+import { eraseAllApplies } from "../privacy/eraseAllTrips";
 import TravelFundsSheet from "../travelfunds/TravelFundsSheet";
 import BulkImportSheet from "./BulkImportSheet";
 import { useFollowerCutoffPreview } from "./followerCutoffPreview";
@@ -249,6 +250,7 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
   // it opened and every read here is pinned to that same trip.
   const updatePreferences = useTripMutation(tripcastApi.travelerPreferences.travelerUpdatePreferences);
   const pin = pinnedTripArgs(updatePreferences.target);
+  const reportCutoffGone = useReportTripGone(updatePreferences.target);
   const preferences = useTripQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token, ...pin });
   const oldestContent = useTripQuery(tripcastApi.travelerPreferences.travelerGetOldestContent, { token, ...pin });
   // "Use now as cutoff" only makes sense for the trip Followers see right now: decided from the trip the write goes to,
@@ -258,7 +260,7 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
   const nowGate = onSharedTrip
     ? { allowed: true, reason: null }
     : { allowed: false, reason: `Return to ${sharedTripTitle} to use now as the cutoff` };
-  const preview = useFollowerCutoffPreview("traveler", token);
+  const preview = useFollowerCutoffPreview("traveler", token, updatePreferences.target?.tripId);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -306,6 +308,7 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
     try {
       await updatePreferences({ token, followerContentCutoffEnabled: nextEnabled, ...pin });
     } catch (e) {
+      reportCutoffGone(e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
@@ -324,6 +327,7 @@ export function FollowerCutoffSection({ token, log }: { token: string; log: Debu
       }
       await updatePreferences({ token, followerContentCutoffAt: nextCutoffAt, ...pin });
     } catch (e) {
+      reportCutoffGone(e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
@@ -595,6 +599,7 @@ function TravelerTimezoneSection({ token }: { token: string }) {
     tripcastApi.travelerPreferences.travelerUpdatePreferences,
   );
   const pin = pinnedTripArgs(setTimeZone.target);
+  const reportTimeZoneGone = useReportTripGone(setTimeZone.target);
   const preferences = useTripQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token, ...pin });
   const autoState = useTripQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token, ...pin });
 
@@ -685,6 +690,7 @@ function TravelerTimezoneSection({ token }: { token: string }) {
       setSelection("");
       setCustomTz("");
     } catch (e) {
+      reportTimeZoneGone(e);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaving(false);
@@ -1019,6 +1025,7 @@ function AppearanceSection() {
 function MissionSettingsSection({ token }: { token: string }) {
   // Per-trip: written to the trip captured when this section mounted (per open); the read is pinned to it.
   const updateSettings = useTripMutation(tripcastApi.missionSettings.travelerUpdateMissionSettings);
+  const reportSettingsGone = useReportTripGone(updateSettings.target);
   const settings = useTripQuery(tripcastApi.missionSettings.travelerGetMissionSettings, {
     token,
     ...pinnedTripArgs(updateSettings.target),
@@ -1030,6 +1037,7 @@ function MissionSettingsSection({ token }: { token: string }) {
     try {
       await updateSettings({ token, moderationMode: mode });
     } catch (e) {
+      reportSettingsGone(e);
       setError(e instanceof Error ? e.message : String(e));
     }
   }
@@ -1039,6 +1047,7 @@ function MissionSettingsSection({ token }: { token: string }) {
     try {
       await updateSettings({ token, rateLimitPreset: preset });
     } catch (e) {
+      reportSettingsGone(e);
       setError(e instanceof Error ? e.message : String(e));
     }
   }
@@ -2300,7 +2309,8 @@ function OptionsHome({
   onEndTrip?: () => void;
   onViewCredits?: () => void;
 }) {
-  const { multiTripEnabled } = useOptionalTripContext();
+  const tripContext = useOptionalTripContext();
+  const eraseAllRow = eraseAllApplies(tripContext.multiTripEnabled, tripContext.role, tripContext.serverTripStatus ?? "known");
   const developerSection = (
     <OptionsSection label="Developer">
       <OptionsGroup>
@@ -2609,7 +2619,7 @@ function OptionsHome({
 
           <OptionsSection label={TERMS.dangerZone}>
             <OptionsGroup>
-              {multiTripEnabled ? (
+              {eraseAllRow ? (
                 <OptionsRow icon={ShieldAlert} title="Erase ALL trips" detail={`${TERMS.emergencyReset}: removes every trip and starts over with one new empty trip`} danger onClick={onEmergencyReset} />
               ) : (
                 <OptionsRow icon={ShieldAlert} title={TERMS.emergencyReset} detail="Wipe shared trip data" danger onClick={onEmergencyReset} />
@@ -3261,6 +3271,10 @@ function TickerWeightRow({
 }
 
 export function TripTickerSettings({ token }: { token: string }) {
+  // Per-trip: captured when this view mounts (per open). The ticker read and every ticker write are pinned to that same
+  // trip, so the list, add, remove and clear never split across two trips if the view moves while this is open.
+  const commitBulkImport = useTripMutation(tripcastApi.bulkImport.travelerBulkImport);
+  const clearFromTrip = usePrivateTripTitle(commitBulkImport.target);
   const {
     settings,
     updateSettings,
@@ -3271,11 +3285,7 @@ export function TripTickerSettings({ token }: { token: string }) {
     addTip,
     removeTip,
     clearAll,
-  } = useTicker(token);
-  // Per-trip: `useTicker` captured its writes when this view mounted (per open); this mutation is captured in the same
-  // render, so the label and the ticker import name the trip the ticker edits go to.
-  const commitBulkImport = useTripMutation(tripcastApi.bulkImport.travelerBulkImport);
-  const clearFromTrip = usePrivateTripTitle(commitBulkImport.target);
+  } = useTicker(token, commitBulkImport.target?.tripId);
   const [priorityInput, setPriorityInput] = useState("");
   const [funFactInput, setFunFactInput] = useState("");
   const [tipInput, setTipInput] = useState("");

@@ -41,11 +41,12 @@ export function ReplayImagePreparationView({ open, onOpenChange, items, progress
     </SheetContent>
   </Sheet>;
 }
-function PreparationBody({ open, token, onOpenChange }: { open: boolean; token: string; onOpenChange: (open: boolean) => void }) {
+function PreparationBody({ open, token, onOpenChange, trip: pinnedTrip }: { open: boolean; token: string; onOpenChange: (open: boolean) => void; trip?: ReturnType<typeof useTripConvex> }) {
   const client = useConvex();
   // Per-trip: pinned when this body mounts (the sheet mounts it per open). A run that is already going keeps this trip
   // client even if the view changes; the helpers send its trip on every inventory, upload and URL call.
-  const trip = useTripConvex();
+  const ownTrip = useTripConvex();
+  const trip = pinnedTrip ?? ownTrip;
   const progress = useSyncExternalStore(preparationStore.subscribe, preparationStore.getSnapshot);
   const [items, setItems] = useState<ReplayImageInventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +64,7 @@ function PreparationBody({ open, token, onOpenChange }: { open: boolean; token: 
     onPrepare={() => { void prepareReplayImages(client, token, remaining, undefined, trip); }}
     onPreview={() => { const source = remaining[0]; if (source) void prepareReplayImages(client, token, [source], undefined, trip).then(async () => setPreviewUrl(await trip.query(tripcastApi.replayImages.getUrl, { token, imageId: source }))).catch(reason => setError(String(reason))); }}><PrivateTripTargetLabel target={trip.target} /><PhotoQualityControl token={token} /></ReplayImagePreparationView>;
 }
-export default function ReplayImagePreparationSheet(props: { open: boolean; token: string; onOpenChange: (open: boolean) => void }) {
+/** `trip` (optional): a host that already pinned a trip (the trail review) passes it so images use that same trip. */
+export default function ReplayImagePreparationSheet(props: { open: boolean; token: string; onOpenChange: (open: boolean) => void; trip?: ReturnType<typeof useTripConvex> }) {
   return <FeatureBoundary title="Replay preparation unavailable" resetKeys={[props.token, props.open]}>{props.open ? <PreparationBody {...props} /> : null}</FeatureBoundary>;
 }

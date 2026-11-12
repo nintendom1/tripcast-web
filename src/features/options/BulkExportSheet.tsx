@@ -4,6 +4,7 @@ import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js";
 
 import { useTripConvex, useTripQuery } from "../../convex/useTrip";
 import { pinnedTripArgs } from "./pinnedTrip";
+import { usePrivateTripTitle } from "../trips/privateTripView";
 import type { TripTarget } from "../trips/tripTypes";
 import { tripcastApi, type PhotoCompanionPage, type PhotoCompanionPageItem } from "../../convex/tripcastApi";
 import {
@@ -199,6 +200,9 @@ function BulkExportBody({
   const pin = pinnedTripArgs(target);
   // The export actions name the trip exported; without a target (disabled, no provider) their text is today's.
   const fromTrip = target ? ` from ${target.title}` : "";
+  // The ticker export and the Photo ZIP name the trip when it is not the shared current trip.
+  const otherTripTitle = usePrivateTripTitle(target);
+  const fromOtherTrip = otherTripTitle ? ` from ${otherTripTitle}` : "";
   const [range, setRange] = useState<"all" | "custom">("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -758,7 +762,7 @@ function BulkExportBody({
             className="w-full border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
           >
             <FileArchive className="mr-2 h-4 w-4" />
-            Prepare Photo ZIP
+            Prepare Photo ZIP{fromOtherTrip}
           </Button>
         )}
 
@@ -871,7 +875,7 @@ function BulkExportBody({
                 className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
               >
                 {tickerCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                {tickerCopied ? "Copied" : "Copy JSON"}
+                {tickerCopied ? "Copied" : `Copy JSON${fromOtherTrip}`}
               </Button>
               <Button
                 type="button"
@@ -880,7 +884,7 @@ function BulkExportBody({
                 className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
               >
                 <Download className="mr-2 h-4 w-4" />
-                Download .json
+                Download .json{fromOtherTrip}
               </Button>
             </div>
           </>

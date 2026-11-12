@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { ConvexError } from "convex/values";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -15,6 +16,7 @@ import OptionsSheet from "./OptionsSheet";
 type Call = { name: string; args: Record<string, unknown> };
 const server = vi.hoisted(() => ({
   mutations: [] as Array<{ name: string; args: Record<string, unknown> }>,
+  failWith: null as null | { name: string; error: unknown },
   queries: [] as Array<{ name: string; args: unknown }>,
   data: {} as Record<string, unknown>,
 }));
@@ -25,6 +27,7 @@ vi.mock("convex/react", async () => {
     useMutation: (ref: never) => (args: Record<string, unknown>) => {
       const name = getFunctionName(ref);
       server.mutations.push({ name, args });
+      if (server.failWith?.name === name) return Promise.reject(server.failWith.error);
       return Promise.resolve(name.startsWith("liveTrail:") ? { deleted: 2 } : null);
     },
     useQuery: (ref: never, args: unknown) => {
@@ -127,6 +130,7 @@ const samples = Array.from({ length: 5 }, (_, index) => ({
 beforeEach(async () => {
   await resetLiveTrailCachesForTests();
   server.mutations = [];
+  server.failWith = null;
   server.queries = [];
   server.data = {
     "travelerPreferences:travelerGetPreferences": {
@@ -409,9 +413,137 @@ describe("Erase ALL trips entry", () => {
     expect(screen.getByRole("button", { name: /Emergency Reset/ })).toBeInTheDocument();
   });
 
+  it.each(["loading", "unavailable"] as const)("the row says Erase ALL trips while the trip status is %s", (status) => {
+    render(sheet({ role: "traveler", multiTripEnabled: false, serverTripStatus: status }, true));
+    expect(screen.getByRole("button", { name: /Erase ALL trips/ })).toBeInTheDocument();
+  });
+
   it("with multi-trip disabled the row is today's Emergency Reset", () => {
     render(sheet({ role: "traveler", multiTripEnabled: false }, true));
     expect(screen.getByRole("button", { name: /Emergency Reset/ })).toHaveTextContent("Wipe shared trip data");
     expect(screen.queryByRole("button", { name: /Erase ALL trips/ })).toBeNull();
+  });
+});
+
+describe("Reads stay on the trip a section opened with when the view moves while it is open", () => {
+  const lastRead = (name: string) => server.queries.filter((q) => q.name === name && q.args !== "skip").at(-1)?.args as { tripId?: string } | undefined;
+
+  async function moveViewWhileOpen(defaultView?: Parameters<typeof sheet>[2]) {
+    const view = render(sheet(following, true, defaultView));
+    server.queries = [];
+    view.rerender(sheet(privately, true, defaultView));
+    // Force a fresh render pass after the move.
+    view.rerender(sheet({ ...privately }, true, defaultView));
+  }
+
+  it("time zone and auto-state", async () => {
+    await moveViewWhileOpen();
+    expect(lastRead("travelerPreferences:travelerGetPreferences")?.tripId).toBe("trip-current");
+    expect(lastRead("travelerAutoState:travelerGetAutoState")?.tripId).toBe("trip-current");
+  });
+
+  it("mission settings", async () => {
+    await moveViewWhileOpen();
+    expect(lastRead("missionSettings:travelerGetMissionSettings")?.tripId).toBe("trip-current");
+  });
+
+  it("follower cutoff (preferences, oldest content, counts)", async () => {
+    await moveViewWhileOpen("follower-cutoff");
+    // EVERY preferences read (the section's own and the preview hook's) names the pinned trip.
+    const prefReads = server.queries.filter((q) => q.name === "travelerPreferences:travelerGetPreferences" && q.args !== "skip");
+    expect(prefReads.length).toBeGreaterThanOrEqual(2);
+    for (const read of prefReads) expect((read.args as { tripId?: string }).tripId).toBe("trip-current");
+    expect(lastRead("travelerPreferences:travelerGetOldestContent")?.tripId).toBe("trip-current");
+    expect(lastRead("travelerPreferences:travelerCountContentBeforeCutoff")?.tripId).toBe("trip-current");
+  });
+
+  it("Live Trail status, preferences and delete preview", async () => {
+    await moveViewWhileOpen("live-trail");
+    expect(lastRead("liveTrail:travelerGetLiveTrailStatus")?.tripId).toBe("trip-current");
+    expect(lastRead("travelerPreferences:travelerGetPreferences")?.tripId).toBe("trip-current");
+    expect(lastRead("liveTrail:travelerPreviewLiveTrailDeleteRange")?.tripId).toBe("trip-current");
+  });
+
+  it("Quick Activities remote settings", async () => {
+    await moveViewWhileOpen("quick-activities");
+    expect(lastRead("currentActivity:travelerGetQuickActivitySettings")?.tripId).toBe("trip-current");
+  });
+
+  it("Trip Ticker: the list read, add and clear all name the pinned trip", async () => {
+    const view = render(sheet(following, true, "trip-ticker"));
+    server.queries = [];
+    view.rerender(sheet(privately, true, "trip-ticker"));
+    view.rerender(sheet({ ...privately }, true, "trip-ticker"));
+    expect(lastRead("ticker:getTickerSettings")?.tripId).toBe("trip-current");
+    await userEvent.type(screen.getByPlaceholderText(/Alert text/), "Low reception");
+    await userEvent.click(screen.getAllByRole("button", { name: "Add" })[0]);
+    await waitFor(() => expect(written("ticker:addTickerMessage")).toBeDefined());
+    expect(written("ticker:addTickerMessage")?.args).toMatchObject({ type: "priority", tripId: "trip-current" });
+    await userEvent.click(screen.getByRole("button", { name: "Clear all messages" }));
+    await userEvent.click(screen.getByRole("button", { name: "Tap again to confirm clear" }));
+    await waitFor(() => expect(written("ticker:clearAllTickerMessages")).toBeDefined());
+    expect(written("ticker:clearAllTickerMessages")?.args).toEqual({ token: "test-token", tripId: "trip-current" });
+  });
+
+  it("Trip Ticker without a pin elsewhere (disabled): today's arguments", async () => {
+    render(sheet({ role: "traveler", multiTripEnabled: false }, true, "trip-ticker"));
+    expect(lastRead("ticker:getTickerSettings")).toEqual({ token: "test-token" });
+    await userEvent.click(screen.getByRole("button", { name: "Clear all messages" }));
+    await userEvent.click(screen.getByRole("button", { name: "Tap again to confirm clear" }));
+    await waitFor(() => expect(written("ticker:clearAllTickerMessages")).toBeDefined());
+    expect(written("ticker:clearAllTickerMessages")?.args).toEqual({ token: "test-token" });
+  });
+});
+
+describe("A trip that vanished is reported from every write that can learn it", () => {
+  const gone = () => new ConvexError({ code: "trip_not_found", message: "That trip no longer exists." });
+
+  it.each([
+    ["time zone", "travelerPreferences:travelerSetTimeZone", undefined],
+    ["follower cutoff", "travelerPreferences:travelerUpdatePreferences", "follower-cutoff" as const],
+    ["mission moderation", "missionSettings:travelerUpdateMissionSettings", undefined],
+  ])("%s", async (label, mutation, view) => {
+    const reportTripUnavailable = vi.fn();
+    server.failWith = { name: mutation, error: gone() };
+    render(sheet({ ...privately, reportTripUnavailable }, true, view));
+    if (label === "time zone") {
+      await userEvent.selectOptions(screen.getByLabelText("Change timezone"), "Asia/Tokyo");
+      await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    } else if (label === "follower cutoff") {
+      await userEvent.click(screen.getByLabelText(/Cutoff enabled/));
+    } else {
+      await userEvent.click(screen.getByLabelText(/Auto-publish/));
+    }
+    await waitFor(() => expect(reportTripUnavailable).toHaveBeenCalledWith("trip-other"));
+  });
+
+  it("Mystery Missions", async () => {
+    const reportTripUnavailable = vi.fn();
+    server.failWith = { name: "mysteryMissions:travelerSetMysteryMissionsEnabled", error: gone() };
+    render(sheet({ ...privately, reportTripUnavailable }, true));
+    await userEvent.click(screen.getByRole("button", { name: /Mystery Missions/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Save interval" }));
+    await waitFor(() => expect(reportTripUnavailable).toHaveBeenCalledWith("trip-other"));
+  });
+
+  it("other errors are not reported", async () => {
+    const reportTripUnavailable = vi.fn();
+    server.failWith = { name: "travelerPreferences:travelerSetTimeZone", error: new Error("boom") };
+    render(sheet({ ...privately, reportTripUnavailable }, true));
+    await userEvent.selectOptions(screen.getByLabelText("Change timezone"), "Asia/Tokyo");
+    await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+    await screen.findByText("boom");
+    expect(reportTripUnavailable).not.toHaveBeenCalled();
+  });
+});
+
+describe("Cutoff 'Show all' follows the section's pinned trip", () => {
+  it("stores the override under the trip the section opened with, though the view moved", async () => {
+    server.data["travelerPreferences:travelerGetPreferences"] = { followerContentCutoffEnabled: true, followerContentCutoffAt: 1_700_000_000_000 };
+    const view = render(sheet(following, true, "follower-cutoff"));
+    view.rerender(sheet(privately, true, "follower-cutoff"));
+    await userEvent.click(screen.getByLabelText(/Show all/));
+    expect(sessionStorage.getItem("tripcast.followerCutoffShowAll.trip-current")).toBe("true");
+    expect(sessionStorage.getItem("tripcast.followerCutoffShowAll.trip-other")).toBeNull();
   });
 });

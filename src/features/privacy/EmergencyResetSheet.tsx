@@ -14,6 +14,7 @@ import {
 } from "../../components/ui/sheet";
 import { TERMS } from "../../copy/terminology";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
+import { eraseAllApplies } from "./eraseAllTrips";
 import { useOptionalTripContext } from "../../providers/TripContextProvider";
 
 type EmergencyResetSheetProps = {
@@ -51,8 +52,8 @@ export const ERASE_ALL_PHRASE = "ERASE ALL TRIPS";
 function successMessage(includeAuthSessions: boolean, eraseAll: boolean) {
   if (eraseAll) {
     return includeAuthSessions
-      ? "All trips erased. Everyone will also be logged off."
-      : "All trips erased. One new empty trip is now shared.";
+      ? "Erasing all trips. Everyone will also be logged off."
+      : "Erasing all trips. One new empty trip will be shared.";
   }
   if (includeAuthSessions) {
     return "Shared trip data deletion started. Everyone will also be logged off.";
@@ -128,9 +129,10 @@ export function EmergencyResetContent({
 }: EmergencyResetContentProps) {
   // Not trip-scoped: it erases every trip, so it stays a plain mutation (no `tripId`).
   const emergencyReset = useMutation(tripcastApi.privacy.emergencyReset);
-  const { returnToCurrent, multiTripEnabled } = useOptionalTripContext();
-  // With multi-trip on this is "Erase ALL trips" and needs the phrase typed; otherwise it is exactly today's reset.
-  const eraseAll = multiTripEnabled;
+  const { returnToCurrent, multiTripEnabled, role, serverTripStatus = "known" } = useOptionalTripContext();
+  // With multi-trip on, or while a Traveler's trip status is not known (loading, or failing: the flag then reads false),
+  // this is "Erase ALL trips" and needs the phrase typed. Only a known-disabled state and no provider keep today's reset.
+  const eraseAll = eraseAllApplies(multiTripEnabled, role, serverTripStatus);
   const [typed, setTyped] = useState("");
   const phraseOk = !eraseAll || typed.trim() === ERASE_ALL_PHRASE;
 

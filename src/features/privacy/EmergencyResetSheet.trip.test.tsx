@@ -95,7 +95,7 @@ describe("Erase ALL trips (multi-trip enabled)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Erase ALL trips" }));
     await waitFor(() => expect(returnToCurrent).toHaveBeenCalledTimes(1));
     expect(server.calls).toEqual([{ name: "privacy:emergencyReset", args: { token: "tok", includeAuthSessions: false } }]);
-    expect(p.onResetStarted).toHaveBeenCalledWith("All trips erased. One new empty trip is now shared.");
+    expect(p.onResetStarted).toHaveBeenCalledWith("Erasing all trips. One new empty trip will be shared.");
   });
 
   it("clears the typed phrase when the confirmation is cancelled", async () => {
@@ -125,6 +125,22 @@ describe("Erase ALL trips (multi-trip enabled)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Erase ALL trips" }));
     await screen.findByRole("alert");
     expect(returnToCurrent).not.toHaveBeenCalled();
+  });
+});
+
+describe("Erase ALL while the trip status is not known", () => {
+  it.each(["loading", "unavailable"] as const)("keeps the guard when the status is %s (the flag reads false)", async (status) => {
+    render(
+      <TripContextTestProvider value={{ role: "traveler", multiTripEnabled: false, serverTripStatus: status }}>
+        <EmergencyResetSheet {...props()} />
+      </TripContextTestProvider>,
+    );
+    expect(screen.getByRole("heading", { name: "Erase ALL trips" })).toBeInTheDocument();
+    await toConfirm();
+    expect(screen.getByRole("button", { name: "Erase ALL trips" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Confirm shared data deletion" })).toBeNull();
+    await userEvent.type(screen.getByLabelText(/Type ERASE ALL TRIPS to confirm/), PHRASE);
+    expect(screen.getByRole("button", { name: "Erase ALL trips" })).toBeEnabled();
   });
 });
 

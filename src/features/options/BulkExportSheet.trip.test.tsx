@@ -58,8 +58,9 @@ describe("BulkExportSheet with a viewed trip", () => {
     expect(last("bulkImport:travelerExportTripData")).toMatchObject({ tripId: "trip-other" });
     expect(last("bulkImport:travelerExportTickerMessages")).toEqual({ token: "tok", tripId: "trip-other" });
     // The actions that export name the trip too.
-    expect(screen.getByRole("button", { name: "Download .json from Other Trip" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy JSON from Other Trip" })).toBeInTheDocument();
+    // The trip's own export and the ticker export both name it.
+    expect(screen.getAllByRole("button", { name: "Download .json from Other Trip" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Copy JSON from Other Trip" })).toHaveLength(2);
   });
 
   it("keeps exporting the trip it opened on when the view changes while open", async () => {
@@ -73,6 +74,16 @@ describe("BulkExportSheet with a viewed trip", () => {
     await waitFor(() => expect(server.clientCalls.length).toBeGreaterThan(0));
     expect(server.clientCalls.every((call) => call.args.tripId === "trip-other")).toBe(true);
     expect(live("bulkImport:travelerExportTripData").every((q) => (q.args as { tripId?: string }).tripId === "trip-other")).toBe(true);
+  });
+
+  it("the ticker export and Photo ZIP name the trip when it is not the shared one, and only then", async () => {
+    const current = { tripId: "trip-current", title: "Current Trip", lifecycle: "in_progress" as const, isLegacy: false, revision: 1, publishingEpoch: 1, epochStartedAt: 1, multiTripEnabled: true };
+    server.tripData = { timeZone: "UTC", entries: [{ kind: "checkin", ref: "c1" }] };
+    const other = render(<TripContextTestProvider value={{ ...privately, currentTrip: current }}>{sheet(true)}</TripContextTestProvider>);
+    expect(await screen.findByRole("button", { name: "Prepare Photo ZIP from Other Trip" })).toBeInTheDocument();
+    other.unmount();
+    render(<TripContextTestProvider value={{ ...following, currentTrip: current }}>{sheet(true)}</TripContextTestProvider>);
+    expect(await screen.findByRole("button", { name: "Prepare Photo ZIP" })).toBeInTheDocument();
   });
 
   it("says so when the server cut the export short, and names the kinds", async () => {

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useTripQuery } from "../../convex/useTrip";
 import { tripcastApi, type Role } from "../../convex/tripcastApi";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { useTripClientKey } from "../trips/privateTripView";
 
 const STORAGE_KEY = "tripcast.followerCutoffShowAll";
@@ -57,13 +58,22 @@ export type FollowerCutoffPreview = {
  * For Followers, returns a null cutoff: the server has already filtered the
  * data they receive.
  */
-export function useFollowerCutoffPreview(role: Role | undefined, token: string | undefined): FollowerCutoffPreview {
+export function useFollowerCutoffPreview(
+  role: Role | undefined,
+  token: string | undefined,
+  pinnedTripId?: string,
+): FollowerCutoffPreview {
   const preferences = useTripQuery(
     tripcastApi.travelerPreferences.travelerGetPreferences,
-    role === "traveler" && token ? { token } : "skip",
+    role === "traveler" && token ? (pinnedTripId ? { token, tripId: pinnedTripId } : { token }) : "skip",
   );
 
-  const storageKey = storageKeyFor(useTripClientKey());
+  // `pinnedTripId` (optional): a section pinned to one trip reads and keys the override for that trip, not the view.
+  const viewKey = useTripClientKey();
+  const { currentTrip } = useOptionalTripContext();
+  const clientKey =
+    pinnedTripId === undefined ? viewKey : currentTrip?.isLegacy && currentTrip.tripId === pinnedTripId ? "" : pinnedTripId;
+  const storageKey = storageKeyFor(clientKey);
   // The override lives in sessionStorage under the viewed trip's key. `override` remembers what this hook last saw or
   // set for one key; for any other key (the view changed) it is ignored and storage is read, so switching the view
   // never carries one trip's "Show all" over to another.

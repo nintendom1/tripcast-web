@@ -45,8 +45,16 @@ function chooseNonAlertMessage(settings: TickerSettings): TickerMessage | null {
   return { ...selectedMessage, kind: selectedPool.kind };
 }
 
-export function useTicker(token?: string) {
-  const remoteSettings = useTripQuery(tripcastApi.ticker.getTickerSettings, token ? { token } : "skip");
+/**
+ * `pinnedTripId` (optional): pin the settings read and every write to that trip instead of following the view, for a
+ * settings screen that must read and write the same trip. Omitted, nothing changes (same arguments as before).
+ */
+export function useTicker(token?: string, pinnedTripId?: string) {
+  const pinArgs = useMemo(() => (pinnedTripId ? { tripId: pinnedTripId } : {}), [pinnedTripId]);
+  const remoteSettings = useTripQuery(
+    tripcastApi.ticker.getTickerSettings,
+    token ? (pinnedTripId ? { token, tripId: pinnedTripId } : { token }) : "skip",
+  );
   const updateRemoteSettings = useTripMutation(tripcastApi.ticker.updateTickerSettings);
   const addRemoteMessage = useTripMutation(tripcastApi.ticker.addTickerMessage);
   const removeRemoteMessage = useTripMutation(tripcastApi.ticker.removeTickerMessage);
@@ -81,79 +89,79 @@ export function useTicker(token?: string) {
   const updateSettings = useCallback(async (patch: Partial<TickerSettings>) => {
     if (!token) return;
     try {
-      await updateRemoteSettings({ token, ...patch });
+      await updateRemoteSettings({ token, ...patch, ...pinArgs });
       debugLog("info", "useTicker", "ticker:settings_updated", "ui");
     } catch (e) {
       console.error("Failed to update ticker settings", e);
     }
-  }, [token, updateRemoteSettings]);
+  }, [token, pinArgs, updateRemoteSettings]);
 
   const addPriorityMessage = useCallback(async (text: string) => {
     if (!token) return;
     try {
-      await addRemoteMessage({ token, type: "priority", text });
+      await addRemoteMessage({ token, type: "priority", text, ...pinArgs });
       debugLog("info", "useTicker", "ticker:priority_message_added", "ui");
     } catch (e) {
       console.error("Failed to add priority message", e);
     }
-  }, [token, addRemoteMessage]);
+  }, [token, pinArgs, addRemoteMessage]);
 
   const removePriorityMessage = useCallback(async (id: string) => {
     if (!token) return;
     try {
-      await removeRemoteMessage({ token, messageId: id });
+      await removeRemoteMessage({ token, messageId: id, ...pinArgs });
     } catch (e) {
       console.error("Failed to remove priority message", e);
     }
-  }, [token, removeRemoteMessage]);
+  }, [token, pinArgs, removeRemoteMessage]);
 
   const addFunFact = useCallback(async (text: string) => {
     if (!token) return;
     try {
-      await addRemoteMessage({ token, type: "fact", text });
+      await addRemoteMessage({ token, type: "fact", text, ...pinArgs });
       debugLog("info", "useTicker", "ticker:fun_fact_added", "ui");
     } catch (e) {
       console.error("Failed to add fun fact", e);
     }
-  }, [token, addRemoteMessage]);
+  }, [token, pinArgs, addRemoteMessage]);
 
   const addTip = useCallback(async (text: string) => {
     if (!token) return;
     try {
-      await addRemoteMessage({ token, type: "tip", text });
+      await addRemoteMessage({ token, type: "tip", text, ...pinArgs });
       debugLog("info", "useTicker", "ticker:tip_added", "ui");
     } catch (e) {
       console.error("Failed to add tip", e);
     }
-  }, [token, addRemoteMessage]);
+  }, [token, pinArgs, addRemoteMessage]);
 
   const removeFunFact = useCallback(async (id: string) => {
     if (!token) return;
     try {
-      await removeRemoteMessage({ token, messageId: id });
+      await removeRemoteMessage({ token, messageId: id, ...pinArgs });
     } catch (e) {
       console.error("Failed to remove fun fact", e);
     }
-  }, [token, removeRemoteMessage]);
+  }, [token, pinArgs, removeRemoteMessage]);
 
   const removeTip = useCallback(async (id: string) => {
     if (!token) return;
     try {
-      await removeRemoteMessage({ token, messageId: id });
+      await removeRemoteMessage({ token, messageId: id, ...pinArgs });
     } catch (e) {
       console.error("Failed to remove tip", e);
     }
-  }, [token, removeRemoteMessage]);
+  }, [token, pinArgs, removeRemoteMessage]);
 
   const clearAll = useCallback(async () => {
     if (!token) return;
     try {
-      await clearRemoteAll({ token });
+      await clearRemoteAll({ token, ...pinArgs });
       debugLog("info", "useTicker", "ticker:clear_all", "ui");
     } catch (e) {
       console.error("Failed to clear ticker messages", e);
     }
-  }, [token, clearRemoteAll]);
+  }, [token, pinArgs, clearRemoteAll]);
 
   // Priority cycling: when there are priority messages, rotate through them
   // every 30s. Preserves the current message across re-renders by id.

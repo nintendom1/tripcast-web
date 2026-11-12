@@ -136,7 +136,7 @@ function ReviewBody({ token, onOpenChange }: { token: string; onOpenChange: (ope
       {requested && !manifest?.ready ? <p role="status">Compression requested. Convex continues processing when this view closes. If interrupted, use Compress entire trip to resume.</p> : null}
       {metrics ? <p>{metrics.rawPoints} raw points → {metrics.retainedPoints} replay points in {metrics.chunks} chunks. Coordinate payload: {(metrics.payloadBytes / 1_000_000).toFixed(2)} MB (database overhead and Stories excluded). Mystery projection: {metrics.mysteryReady ? "Ready" : "Not ready"}. Checkpoint pins: {metrics.checkpointPinsReady ? "Ready" : "Not ready"}.</p> : null}
       {manifest?.ready ? <section className="space-y-3 border-t pt-4"><p>Compact route ready. Review Follow route as Traveler before enabling it for Followers.</p><label className="flex gap-2"><input type="checkbox" checked={reviewedRevision === manifest.sourceRevision} onChange={e => setReviewedRevision(e.target.checked ? manifest.sourceRevision : null)} />I verified turns, Story coverage, timing, resume and privacy.</label><Button disabled={busy || manifest.enabled || reviewedRevision !== manifest.sourceRevision} onClick={() => { void enable(true); }}>{manifest.enabled ? "Compact trail enabled" : "Use compact trail for everyone"}</Button></section> : null}
-      <ReplayImagePreparationSheet token={token} open={imagesOpen} onOpenChange={setImagesOpen} />
+      <ReplayImagePreparationSheet token={token} open={imagesOpen} onOpenChange={setImagesOpen} trip={trip} />
     </TrailCompressionView>
   </>;
 }
