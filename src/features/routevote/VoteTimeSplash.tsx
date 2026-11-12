@@ -1,14 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "convex/react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTripQuery } from "../../convex/useTrip";
 import { AnimatePresence, motion } from "framer-motion";
 import { Vote } from "lucide-react";
 
 import { tripcastApi, type VisibleRouteVote } from "../../convex/tripcastApi";
 import { formatTimeRemaining } from "../../lib/routeVoteUtils";
 import { useMusicSafe } from "../../providers/MusicProvider";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 
 const VOTE_TIME_WINDOW_MS = 24 * 60 * 60 * 1000;
 const SPLASH_DURATION_MS = 5000;
+const NO_DISMISSED_VOTES = new Set<string>();
 
 type VoteTimeSplashProps = {
   token: string;
@@ -42,11 +44,19 @@ export default function VoteTimeSplash({
   enabled,
   onOpenVotes,
 }: VoteTimeSplashProps) {
-  const votes = useQuery(
+  const votes = useTripQuery(
     tripcastApi.routeVotes.listVisibleRouteVotes,
     enabled ? { token } : "skip",
   );
-  const [dismissedVoteIds, setDismissedVoteIds] = useState<Set<string>>(new Set());
+  // Dismissed splashes are kept per viewed trip ("" when none: multi-trip disabled).
+  const tripKey = useOptionalTripContext().viewingTripId ?? "";
+  const [dismissedByTrip, setDismissedByTrip] = useState<Record<string, Set<string>>>({});
+  const dismissedVoteIds = dismissedByTrip[tripKey] ?? NO_DISMISSED_VOTES;
+  const dismissVote = useCallback(
+    (voteId: string) =>
+      setDismissedByTrip((prev) => ({ ...prev, [tripKey]: new Set(prev[tripKey]).add(voteId) })),
+    [tripKey],
+  );
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -63,10 +73,10 @@ export default function VoteTimeSplash({
   useEffect(() => {
     if (!targetVote) return;
     const id = window.setTimeout(() => {
-      setDismissedVoteIds((prev) => new Set(prev).add(targetVote._id));
+      dismissVote(targetVote._id);
     }, SPLASH_DURATION_MS);
     return () => window.clearTimeout(id);
-  }, [targetVote]);
+  }, [targetVote, dismissVote]);
 
   const music = useMusicSafe();
   useEffect(() => {
@@ -76,7 +86,7 @@ export default function VoteTimeSplash({
 
   function dismissAndOpen() {
     if (!targetVote) return;
-    setDismissedVoteIds((prev) => new Set(prev).add(targetVote._id));
+    dismissVote(targetVote._id);
     onOpenVotes();
   }
 

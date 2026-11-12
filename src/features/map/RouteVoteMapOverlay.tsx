@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import maplibregl from "maplibre-gl";
 import type { RouteVoteMapOverlay as RouteVoteMapOverlayType } from "../../convex/tripcastApi";
 import { isFiniteRouteCoordinate } from "../../lib/routeVoteUtils";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { useTheme } from "../../providers/ThemeProvider";
 import { logMapEvent } from "../../debug/debugLogger";
 
@@ -126,10 +127,13 @@ function addOverlayLayers(
 
 export default function RouteVoteMapOverlay({
   map,
-  overlay,
+  overlay: sharedOverlay,
   fallbackOrigin,
   optionNumberById,
 }: RouteVoteMapOverlayProps) {
+  // The overlay draws lines from the Traveler's live position, which belongs to the shared trip: never on a privately viewed trip.
+  const { viewingMode } = useOptionalTripContext();
+  const overlay = viewingMode === "private" ? null : sharedOverlay;
   const { resolvedTheme } = useTheme();
   const accentColor = resolvedTheme === "constellation" ? "#ffd86a" : "#c9a84c";
 

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery } from "convex/react";
+import { useTripQuery } from "../../convex/useTrip";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
 import { StatusBadge } from "../../components/rpg/StatusBadge";
@@ -17,7 +17,7 @@ type Props = {
 export default function RouteVoteSourceCard({ sourceVoteId, sourceOptionId, token, onNavigate, heading = "Source Route Vote" }: Props) {
   const log = useDebugLogger("RouteVoteSourceCard", "src/features/missions/RouteVoteSourceCard.tsx");
 
-  const vote = useQuery(tripcastApi.routeVotes.getRouteVoteSummary, {
+  const vote = useTripQuery(tripcastApi.routeVotes.getRouteVoteSummary, {
     token,
     routeVoteId: sourceVoteId,
   });

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { Plus, RadioTower, Trophy } from "lucide-react";
 import { FilterButton } from "../../components/ui/FilterButton";
 import { LocationPickerField } from "../map/MapPicker";
 
 import { tripcastApi } from "../../convex/tripcastApi";
+import { PrivateTripTargetLabel } from "./privateTripView";
 import type { Mission, JournalEvent, Role } from "../../convex/tripcastApi";
 import { getLocalDateKey } from "../achievements/dateUtils";
 import MissionCard from "./MissionCard";
@@ -158,19 +159,19 @@ export default function MissionPanel({
   // Traveler hits "← Back" inside AddCheckpointSheet's mission-completion
   // mode. We look up the Mission by id and drop the user straight back on
   // the same mission's detail view so the four-button action set is visible.
-  const pendingDetailMission = useQuery(
+  const pendingDetailMission = useTripQuery(
     tripcastApi.missions.getMission,
     pendingOpenDetailMissionId && open
       ? { token, missionId: pendingOpenDetailMissionId }
       : "skip",
   );
-  const pendingDetailMysteryMission = useQuery(
+  const pendingDetailMysteryMission = useTripQuery(
     tripcastApi.mysteryMissions.getMysteryMission,
     pendingOpenMysteryMissionId && open
       ? { token, mysteryMissionId: pendingOpenMysteryMissionId }
       : "skip",
   );
-  const pendingMysteryLinkedMission = useQuery(
+  const pendingMysteryLinkedMission = useTripQuery(
     tripcastApi.missions.getMission,
     pendingDetailMysteryMission?.linkedMissionId && open
       ? { token, missionId: pendingDetailMysteryMission.linkedMissionId }
@@ -475,7 +476,7 @@ function TravelerListView({
 }) {
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
-  const rawMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const rawMissions = useTripQuery(tripcastApi.missions.travelerListMissions, { token });
   const preview = useFollowerCutoffPreview("traveler", token);
   const allMissions = useMemo(
     () => preview.cutoffAt && rawMissions
@@ -602,7 +603,7 @@ function TravelerCreateForm({
     }
   }, [prefilledCoordinate]);
 
-  const create = useMutation(tripcastApi.missions.travelerCreateMission);
+  const create = useTripMutation(tripcastApi.missions.travelerCreateMission);
 
   function handlePickOnMap() {
     onRequestCoordinatePick?.(
@@ -642,6 +643,7 @@ function TravelerCreateForm({
 
   return (
     <form className="flex flex-col gap-3" onSubmit={handleSubmit}>
+      <PrivateTripTargetLabel target={create.target} />
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-[var(--ink-3)]">Title</label>
         <input
@@ -742,7 +744,7 @@ function FollowerListView({
   const [highlightedMissionId, setHighlightedMissionId] = useState<string | null>(null);
   const highlightTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
-  const myMissions = useQuery(tripcastApi.missions.followerListMyMissions, { token });
+  const myMissions = useTripQuery(tripcastApi.missions.followerListMyMissions, { token });
 
   const log = useDebugLogger("MissionPanel", "src/features/missions/MissionPanel.tsx");
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import maplibregl, { Marker } from "maplibre-gl";
-import { useQuery } from "convex/react";
+import { useTripQuery } from "../../convex/useTrip";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { MysteryMissionFeedItem } from "../../convex/tripcastApi";
@@ -100,7 +101,8 @@ export default function MysteryMissionMarkers({
   const signalIdsRef = useRef<Set<string>>(new Set());
   const revealedIdsRef = useRef<Set<string>>(new Set());
   const initializedRef = useRef(false);
-  const result = useQuery(
+  const tripKey = useOptionalTripContext().viewingTripId ?? "";
+  const result = useTripQuery(
     tripcastApi.mysteryMissions.listMysteryMissionMapPins,
     debugShowAll ? { token, includeDebugAll: true } : { token },
   );
@@ -113,7 +115,7 @@ export default function MysteryMissionMarkers({
     () => pins.find((pin) => pin._id === narratingMissionId) ?? null,
     [narratingMissionId, pins],
   );
-  const narratingPinFallback = useQuery(
+  const narratingPinFallback = useTripQuery(
     tripcastApi.mysteryMissions.getMysteryMission,
     narratingMissionId && !narratingPinInFeed
       ? { token, mysteryMissionId: narratingMissionId }
@@ -127,6 +129,15 @@ export default function MysteryMissionMarkers({
     if (!narratingPin || pins.some((pin) => pin._id === narratingPin._id)) return pins;
     return [...pins, narratingPin];
   }, [narratingPin, pins]);
+
+  // These refs hold one trip's pins: start over when the viewed trip changes so another trip's signals and reveals
+  // are never announced as new (no viewed trip id, multi-trip disabled: the key never changes).
+  useEffect(() => {
+    pinCacheRef.current = new Map();
+    signalIdsRef.current = new Set();
+    revealedIdsRef.current = new Set();
+    initializedRef.current = false;
+  }, [tripKey]);
 
   useEffect(() => {
     for (const pin of pins) pinCacheRef.current.set(pin._id, pin);

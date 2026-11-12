@@ -1,4 +1,4 @@
-import { useQuery } from "convex/react";
+import { useTripQuery } from "../../convex/useTrip";
 import { motion } from "framer-motion";
 import { Vote } from "lucide-react";
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -9,7 +9,7 @@ type RouteVoteButtonProps = {
 };
 
 export default function RouteVoteButton({ token, onClick }: RouteVoteButtonProps) {
-  const alert = useQuery(tripcastApi.routeVotes.getActiveRouteVoteAlert, { token });
+  const alert = useTripQuery(tripcastApi.routeVotes.getActiveRouteVoteAlert, { token });
   const hasUnseen = alert?.hasUnseen ?? false;
 
   return (

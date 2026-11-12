@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { Eye, MapPin, RadioTower } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -10,6 +10,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { LocationPickerField } from "../map/MapPicker";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
+import { PrivateTripTargetLabel, useLiveActionGate, usePrivateTripTitle } from "./privateTripView";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
@@ -157,40 +158,43 @@ export default function MissionDetailSheet({
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
   const [mysteryEditOpen, setMysteryEditOpen] = useState(false);
 
-  const accept = useMutation(tripcastApi.missions.travelerAcceptMission);
-  const drop = useMutation(tripcastApi.missions.travelerDropMission);
-  const deleteSilently = useMutation(tripcastApi.missions.travelerDeleteMission);
-  const edit = useMutation(tripcastApi.missions.travelerEditMission);
-  const start = useMutation(tripcastApi.missions.travelerStartMission);
-  const complete = useMutation(tripcastApi.missions.travelerCompleteMission);
-  const togglePin = useMutation(tripcastApi.missions.travelerToggleMissionMapPin);
-  const withdraw = useMutation(tripcastApi.missions.followerWithdrawMission);
-  const updateStatus = useMutation(tripcastApi.routeVotes.travelerUpdateMissionStatus);
-  const setCurrentActivity = useMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
+  const accept = useTripMutation(tripcastApi.missions.travelerAcceptMission);
+  const drop = useTripMutation(tripcastApi.missions.travelerDropMission);
+  const deleteSilently = useTripMutation(tripcastApi.missions.travelerDeleteMission);
+  const edit = useTripMutation(tripcastApi.missions.travelerEditMission);
+  const start = useTripMutation(tripcastApi.missions.travelerStartMission);
+  const complete = useTripMutation(tripcastApi.missions.travelerCompleteMission);
+  const togglePin = useTripMutation(tripcastApi.missions.travelerToggleMissionMapPin);
+  const withdraw = useTripMutation(tripcastApi.missions.followerWithdrawMission);
+  const updateStatus = useTripMutation(tripcastApi.routeVotes.travelerUpdateMissionStatus);
+  const setCurrentActivity = useTripMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
+  // Starting a mission is live-only: the viewed trip must be the shared current trip, in progress.
+  const startGate = useLiveActionGate("start a mission");
+  const privateTripTitle = usePrivateTripTitle(deleteSilently.target);
 
   // Live Mission subscription — keeps the detail view in sync after edits.
-  const liveMission = useQuery(
+  const liveMission = useTripQuery(
     tripcastApi.missions.getMission,
     Mission ? { token, missionId: Mission._id } : "skip",
   );
   const c = liveMission ?? Mission;
   const mysteryMissionId = c?.source === "mystery" ? c.sourceMysteryMissionId : undefined;
-  const linkedMysteryMission = useQuery(
+  const linkedMysteryMission = useTripQuery(
     tripcastApi.mysteryMissions.getMysteryMission,
     mysteryMissionId ? { token, mysteryMissionId } : "skip",
   );
 
-  const currentActivity = useQuery(
+  const currentActivity = useTripQuery(
     tripcastApi.currentActivity.travelerGetCurrentActivity,
     role === "traveler" ? { token } : "skip",
   );
-  const inProgressMissions = useQuery(
+  const inProgressMissions = useTripQuery(
     tripcastApi.missions.travelerListMissions,
     role === "traveler" ? { token, status: "in_progress" } : "skip",
   );
 
   // Linked story detection — Convex deduplicates with TripMap's existing subscription.
-  const allJournalEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
+  const allJournalEvents = useTripQuery(tripcastApi.journalEvents.listJournalEvents, { token }) ?? [];
   const linkedStory = allJournalEvents.find(
     (e) => e.type === "story" && e.missionId === c?._id,
   ) ?? null;
@@ -352,7 +356,7 @@ export default function MissionDetailSheet({
   }
 
   async function handleStart() {
-    if (!Mission) return;
+    if (!Mission || !startGate.allowed) return;
     setIsWorking(true);
     log.logUi("action:start", { missionId: Mission._id });
     setActionError(null);
@@ -391,6 +395,7 @@ export default function MissionDetailSheet({
 
   async function handleMarkInProgress() {
     setShowMarkInProgressConfirm(false);
+    if (!startGate.allowed) return;
     setIsWorking(true);
     log.logUi("action:start-confirmed", { missionId: c!._id });
     setActionError(null);
@@ -489,6 +494,7 @@ export default function MissionDetailSheet({
       <div className={cn("flex flex-col gap-4 p-4 pt-2", isMysteryMission && "mystery-theme bg-[var(--bg-paper)]")}>
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-[var(--ink-1)]">Edit Mission</span>
+          <PrivateTripTargetLabel target={edit.target} />
           <button
             type="button"
             className="text-xs text-[var(--ink-3)] underline hover:text-[var(--ink-1)]"
@@ -656,11 +662,12 @@ export default function MissionDetailSheet({
           <Button
             size="sm"
             type="button"
-            disabled={!canAct}
+            disabled={!canAct || !startGate.allowed}
             onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
           >
             {isMysteryMission ? "Start Mission" : <>Mark &lsquo;In Progress&rsquo;</>}
           </Button>
+          {startGate.reason ? <p className={missionHintClass}>{startGate.reason}</p> : null}
           <Button
             variant="outline"
             size="sm"
@@ -714,11 +721,12 @@ export default function MissionDetailSheet({
           <Button
             size="sm"
             type="button"
-            disabled={!canAct}
+            disabled={!canAct || !startGate.allowed}
             onClick={() => conflictingMission ? setShowMarkInProgressConfirm(true) : handleMarkInProgress()}
           >
             {isMysteryMission ? "Start Mission" : <>Mark &lsquo;In Progress&rsquo;</>}
           </Button>
+          {startGate.reason ? <p className={missionHintClass}>{startGate.reason}</p> : null}
           <Button
             variant="outline"
             size="sm"
@@ -1044,7 +1052,7 @@ export default function MissionDetailSheet({
         {isTraveler && showDeleteConfirm && (
           <div className="flex flex-col gap-3 border border-[var(--bg-danger)] rounded-lg p-3 bg-[var(--bg-danger)]">
             <p className="text-sm text-[var(--ink-danger)]">
-              This permanently deletes the Mission — the proposer will no longer see it. Are you sure?
+              This permanently deletes the Mission{privateTripTitle ? ` from ${privateTripTitle}` : ""} — the proposer will no longer see it. Are you sure?
             </p>
             <div className="flex gap-2">
               <Button
@@ -1062,7 +1070,7 @@ export default function MissionDetailSheet({
                 onClick={handleDeleteSilently}
                 className={primaryDangerButtonClass}
               >
-                {isWorking ? "Deleting…" : "Yes, delete"}
+                {isWorking ? "Deleting…" : privateTripTitle ? `Yes, delete from ${privateTripTitle}` : "Yes, delete"}
               </Button>
             </div>
           </div>
