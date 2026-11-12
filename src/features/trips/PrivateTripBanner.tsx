@@ -9,13 +9,23 @@ import { useTripContext } from "../../providers/TripContextProvider";
  * live-sharing preference off and works from any view. Mounted by the app shell.
  */
 export function PrivateTripBanner() {
-  const { role, multiTripEnabled, viewingMode, viewingTrip, currentTrip, followerTrip, returnToCurrent } = useTripContext();
+  const {
+    role,
+    multiTripEnabled,
+    viewingMode,
+    viewingTrip,
+    currentTrip,
+    followerTrip,
+    returnToCurrent,
+    serverTripStatus = "known",
+  } = useTripContext();
   const live = useLiveSharingEnabled();
 
   if (role !== "traveler" || !multiTripEnabled || viewingMode !== "private") return null;
 
   const viewed = viewingTrip?.title ?? "another trip";
-  const shared = currentTrip?.title ?? followerTrip?.title ?? "the current trip";
+  // While the shared trip is loading or unavailable, say so quietly instead of naming a trip that may be wrong.
+  const shared = serverTripStatus === "known" ? (currentTrip?.title ?? followerTrip?.title ?? null) : null;
 
   return (
     <div
@@ -25,9 +35,15 @@ export function PrivateTripBanner() {
       <Eye className="h-4 w-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="font-semibold">
-          Viewing {viewed} privately. Followers are viewing {shared}.
+          Viewing {viewed} privately.
+          {shared ? ` Followers are viewing ${shared}.` : ""}
         </p>
-        {live ? <p className="font-normal text-[var(--ink-2)]">Live on {shared}</p> : null}
+        {shared ? null : (
+          <p className="font-normal text-[var(--ink-3)]">
+            {serverTripStatus === "loading" ? "Loading what Followers see…" : "What Followers see is unavailable right now."}
+          </p>
+        )}
+        {live && shared ? <p className="font-normal text-[var(--ink-2)]">Live on {shared}</p> : null}
       </div>
       <div className="flex shrink-0 items-center gap-2">
         {live ? (

@@ -40,6 +40,26 @@ export function getSwitchPending(): boolean {
   return request !== null;
 }
 
+// The trip THIS device asked to make the shared current trip. Whoever announces the change (see
+// `useTripPaneActions`) uses it to tell "a switch made here" from "a switch made on another device". It stays until
+// the change is observed or the request fails: the answer and the new epoch can arrive in either order.
+let ownSwitchTripId: string | null = null;
+
+export function markOwnSwitch(tripId: string): void {
+  ownSwitchTripId = tripId;
+}
+
+export function clearOwnSwitch(tripId: string): void {
+  if (ownSwitchTripId === tripId) ownSwitchTripId = null;
+}
+
+/** True once when `tripId` is the trip this device asked for; clears the mark. */
+export function consumeOwnSwitch(tripId: string): boolean {
+  if (ownSwitchTripId !== tripId) return false;
+  ownSwitchTripId = null;
+  return true;
+}
+
 /** Anonymous set/clear for callers that have no request of their own (tests, resets). */
 export function setSwitchPending(next: boolean): void {
   if (next) {

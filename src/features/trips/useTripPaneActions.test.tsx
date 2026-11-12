@@ -127,7 +127,7 @@ describe("useTripPaneActions through TripChip", () => {
     expect(screen.getByRole("button", { name: "Show to Followers" })).toBeDisabled();
   });
 
-  it("switch, live sharing off: nothing changes until the server answers, then ONE notice and the pane closes", async () => {
+  it("switch, live sharing off: nothing changes until the server answers, then the pane closes", async () => {
     let resolve: (value: unknown) => void = () => {};
     server.impl["trips:setCurrentTrip"] = () => new Promise((r) => (resolve = r));
     const { user, returnToCurrent } = setup();
@@ -146,11 +146,12 @@ describe("useTripPaneActions through TripChip", () => {
     await act(async () => resolve({}));
     expect(returnToCurrent).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(screen.getAllByText("Followers now see Summer 2026.")).toHaveLength(1);
+    // Announcing is `useTripChangeAnnouncer`'s job (see web2Integration.test.tsx); the dialog says nothing.
+    expect(screen.queryByText(/Followers now see/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /·/ })).toBeEnabled();
   });
 
-  it("switch, live sharing on: no notice from this flow (the live-sharing notice announces it)", async () => {
+  it("switch, live sharing on: the dialog posts no notice and leaves the preference alone", async () => {
     localStorage.setItem(LIVE_SHARING_PREFERENCE_KEY, "true");
     const { user, returnToCurrent } = setup();
     await startSwitch(user);
@@ -279,7 +280,6 @@ describe("a switch the Traveler walked away from", () => {
     expect(screen.getByRole("dialog", { name: "Trips", hidden: true })).toBeInTheDocument();
     expect(getSwitchPending()).toBe(false);
     expect(returnToCurrent).toHaveBeenCalledTimes(1);
-    expect(screen.getByText("Followers now see Summer 2026.")).toBeInTheDocument();
     // C can now confirm (its snapshot is taken once the other switch is out of the way).
     await waitFor(() => expect(screen.getByRole("button", { name: "Show to Followers" })).toBeEnabled());
     expect(server.calls.filter((c) => c.name === "trips:setCurrentTrip")).toHaveLength(1);
@@ -297,7 +297,7 @@ describe("a switch the Traveler walked away from", () => {
     expect(returnToCurrent).not.toHaveBeenCalled();
   });
 
-  it("a late success with nothing else open closes the pane and announces", async () => {
+  it("a late success with nothing else open applies (returns to current, clears the flag)", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const resolvers: Array<(value: unknown) => void> = [];
     server.impl["trips:setCurrentTrip"] = () => new Promise((r) => resolvers.push(r));
@@ -306,7 +306,6 @@ describe("a switch the Traveler walked away from", () => {
     await act(async () => resolvers[0]({}));
     expect(returnToCurrent).toHaveBeenCalledTimes(1);
     expect(getSwitchPending()).toBe(false);
-    expect(screen.getByText("Followers now see Summer 2026.")).toBeInTheDocument();
   });
 
   it("goes offline after confirming: says it is still waiting, and the pane stays fully usable", async () => {

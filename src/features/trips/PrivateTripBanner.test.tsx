@@ -74,6 +74,20 @@ describe("PrivateTripBanner", () => {
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
   });
 
+  it("while the shared trip is loading or unavailable it says so quietly instead of naming a trip", () => {
+    setLiveSharingEnabled(true);
+    setup({ currentTrip: undefined, followerTrip: undefined, serverTripStatus: "loading" });
+    expect(screen.getByRole("status")).toHaveTextContent("Viewing Summer 2026 privately.");
+    expect(screen.getByRole("status")).not.toHaveTextContent("Followers are viewing");
+    expect(screen.getByText("Loading what Followers see…")).toBeInTheDocument();
+    expect(screen.queryByText(/Live on/)).not.toBeInTheDocument();
+  });
+
+  it("says what is unavailable when the shared trip fails to load", () => {
+    setup({ currentTrip: null, followerTrip: null, serverTripStatus: "unavailable" });
+    expect(screen.getByText("What Followers see is unavailable right now.")).toBeInTheDocument();
+  });
+
   it("follows a changed shared trip while staying on the viewed one", () => {
     setup({ currentTrip: { ...current, title: "Winter 2026" } });
     expect(screen.getByRole("status")).toHaveTextContent("Viewing Summer 2026 privately. Followers are viewing Winter 2026.");

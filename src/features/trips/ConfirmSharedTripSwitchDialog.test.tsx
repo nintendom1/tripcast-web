@@ -63,7 +63,7 @@ const conflict = () => new ConvexError({ code: "trip_revision_conflict", message
 type Harness = {
   ctx: Partial<TripContextValue>;
   onClose: Mock<() => void>;
-  onSwitched: Mock<(info: { liveWasOn: boolean }) => void>;
+  onSwitched: Mock<() => void>;
   onNotice: Mock<(message: string) => void>;
 };
 
@@ -304,16 +304,17 @@ describe("ConfirmSharedTripSwitchDialog", () => {
     expect(getSwitchPending()).toBe(false);
     expect(harness.ctx.returnToCurrent).toHaveBeenCalledTimes(1);
     expect(harness.onSwitched).toHaveBeenCalledTimes(1);
-    expect(harness.onSwitched).toHaveBeenCalledWith({ liveWasOn: false });
   });
 
-  it("reports whether live sharing was on before the switch", async () => {
+  it("announces nothing itself, whether live sharing was on or off (the epoch observer does)", async () => {
     const user = userEvent.setup();
     localStorage.setItem(LIVE_SHARING_PREFERENCE_KEY, "true");
     const { harness } = setup();
     await openDialog(user);
     await user.click(confirmButton());
-    await waitFor(() => expect(harness.onSwitched).toHaveBeenCalledWith({ liveWasOn: true }));
+    await waitFor(() => expect(harness.onSwitched).toHaveBeenCalledTimes(1));
+    expect(harness.onNotice).not.toHaveBeenCalled();
+    expect(localStorage.getItem(LIVE_SHARING_PREFERENCE_KEY)).toBe("true");
   });
 
   it("handles a revision conflict: names the new shared trip, clears the flag, and re-snapshots the reloaded impact", async () => {

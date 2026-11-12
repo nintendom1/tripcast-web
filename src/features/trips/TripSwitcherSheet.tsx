@@ -101,7 +101,7 @@ function TripPaneBody({
   renderCardMenu,
   highlightTripId,
 }: TripPaneBodyProps) {
-  const { followerTrip, viewingTrip, viewingMode, returnToCurrent } = useTripContext();
+  const { followerTrip, viewingTrip, viewingMode, returnToCurrent, serverTripStatus = "known" } = useTripContext();
   const liveSharing = useLiveSharingEnabled();
   const stalled = useSwitchStalled();
   const [search, setSearch] = useState("");
@@ -114,7 +114,11 @@ function TripPaneBody({
           {STILL_WAITING_MESSAGE}
         </p>
       ) : null}
-      {followerTrip ? (
+      {serverTripStatus !== "known" ? (
+        <p role="status" className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm text-[var(--ink-3)]">
+          {serverTripStatus === "loading" ? "Loading what Followers see…" : "What Followers see is unavailable right now."}
+        </p>
+      ) : followerTrip ? (
         <div className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-sm">
           <span className="text-[var(--ink-3)]">Followers currently see: </span>
           <span className="font-semibold text-[var(--ink-1)]">{followerTrip.title}</span>
@@ -287,10 +291,17 @@ type CandidateActionsProps = Pick<TripPaneActions, "onRequestSwitch"> & {
 };
 
 function CandidateActions({ card, isViewed, onClose, onRequestSwitch }: CandidateActionsProps) {
-  const { openPrivately } = useTripContext();
+  const { openPrivately, serverTripStatus = "known" } = useTripContext();
   const archived = card.lifecycle === "archived";
+  const sharedKnown = serverTripStatus === "known";
   const canSwitch = onRequestSwitch !== undefined;
-  const hint = archived ? "Restore first" : card.isCurrent ? "Followers already see this trip" : null;
+  const hint = archived
+    ? "Restore first"
+    : card.isCurrent
+      ? "Followers already see this trip"
+      : sharedKnown
+        ? null
+        : "Available once the current trip has loaded";
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -310,7 +321,7 @@ function CandidateActions({ card, isViewed, onClose, onRequestSwitch }: Candidat
           <Button
             type="button"
             variant="outline"
-            disabled={archived || card.isCurrent}
+            disabled={archived || card.isCurrent || !sharedKnown}
             aria-describedby={hint ? `trip-switch-hint-${card.tripId}` : undefined}
             onClick={() => onRequestSwitch(card)}
           >

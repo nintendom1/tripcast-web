@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { TripContextTestProvider } from "../../providers/TripContextProvider";
 import { useTripPaneActions } from "./useTripPaneActions";
 
 const chunk = vi.hoisted(() => ({ loads: 0 }));
@@ -30,7 +31,11 @@ describe("useTripPaneActions: create sheet chunk", () => {
   it("contains a failed chunk load with a retry that loads a fresh import, leaving the header up", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const user = userEvent.setup();
-    render(<Header />);
+    render(
+      <TripContextTestProvider value={{ multiTripEnabled: true }}>
+        <Header />
+      </TripContextTestProvider>,
+    );
     await user.click(screen.getByRole("button", { name: "Open create" }));
 
     const alert = await screen.findByRole("alert");

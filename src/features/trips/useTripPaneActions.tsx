@@ -2,9 +2,12 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState, type LazyExot
 import { ErrorBoundary } from "react-error-boundary";
 
 import type { TripCard } from "../../convex/tripcastApi";
+import { getLiveSharingStopNotice, subscribeLiveSharingStopped } from "../../native/nativePublishingSignal";
+import { useTripContext } from "../../providers/TripContextProvider";
 import { ConfirmSharedTripSwitchDialog } from "./ConfirmSharedTripSwitchDialog";
 import { TripLifecycleMenu } from "./TripLifecycleMenu";
 import type { TripCardMenuInfo } from "./TripSwitcherSheet";
+import { consumeOwnSwitch } from "./tripSwitchState";
 
 const NOTICE_MS = 4000;
 
@@ -16,6 +19,56 @@ function createSheetForAttempt(attempt: number) {
     import("./CreateTripSheet").then((module) => ({ default: module.CreateTripSheet })),
   );
   return createAttempts[attempt];
+}
+
+/**
+ * Announces a change of the shared trip exactly once, together with the live-sharing bridge (`LivePublishingBridge`).
+ * It watches the same fact the bridge does, the shared trip's publishing epoch. When it changes:
+ * - the bridge posts "Live sharing stopped: Followers now see <trip>." when sharing was on (`reportLiveSharingStopped`);
+ *   this announcer then stays silent. It learns that from the bridge's own channel, after every effect of the commit
+ *   has run, so the order of the two effects does not matter;
+ * - otherwise one notice from here: "Followers now see <trip>." for a switch this device made, "… (changed on
+ *   another device)." for one made elsewhere, and none for the latter while viewing another trip privately (the
+ *   banner shows the Followers' trip name).
+ * The dialog itself announces nothing, so there is never a second notice.
+ */
+function useTripChangeAnnouncer(notify: (message: string) => void) {
+  const { role, multiTripEnabled, currentTrip, viewingMode } = useTripContext();
+  const epoch = role === "traveler" && multiTripEnabled ? currentTrip?.publishingEpoch : undefined;
+  const tripId = currentTrip?.tripId;
+  const title = currentTrip?.title;
+  const modeRef = useRef(viewingMode);
+  const lastEpoch = useRef<number | null>(null);
+  const bridgeNotices = useRef(0);
+  const seenBridgeNotices = useRef(0);
+
+  useEffect(() => {
+    modeRef.current = viewingMode;
+  });
+
+  useEffect(
+    () =>
+      subscribeLiveSharingStopped(() => {
+        if (getLiveSharingStopNotice()?.message.includes("Followers now see")) bridgeNotices.current += 1;
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    if (epoch === undefined || tripId === undefined || title === undefined) return;
+    const previous = lastEpoch.current;
+    lastEpoch.current = epoch;
+    if (previous === null || previous === epoch) return;
+    // After every effect of this commit (the bridge's included) has run.
+    queueMicrotask(() => {
+      const bridgeAnnounced = bridgeNotices.current > seenBridgeNotices.current;
+      seenBridgeNotices.current = bridgeNotices.current;
+      const madeHere = consumeOwnSwitch(tripId);
+      if (bridgeAnnounced) return;
+      if (madeHere) notify(`Followers now see ${title}.`);
+      else if (modeRef.current !== "private") notify(`Followers now see ${title} (changed on another device).`);
+    });
+  }, [epoch, tripId, title, notify]);
 }
 
 export type UseTripPaneActionsOptions = {
@@ -71,6 +124,8 @@ export function useTripPaneActions({
     noticeId.current += 1;
     setNotice({ id: noticeId.current, message });
   }, []);
+
+  useTripChangeAnnouncer(notify);
 
   const rememberOpener = () => {
     openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -140,15 +195,14 @@ export function useTripPaneActions({
           returnFocusRef={openerRef}
           onClose={() => openSwitch(null)}
           onNotice={notify}
-          onSwitched={({ liveWasOn }) => {
-            const { tripId, title } = switchCard;
+          onSwitched={() => {
+            const { tripId } = switchCard;
             // Close only the dialog (and pane) this answer belongs to: another trip's dialog opened meanwhile stays.
             if (switchRef.current?.tripId === tripId) {
               openSwitch(null);
               closePane();
             }
-            // When live sharing was on, the live-sharing notice announces the switch: exactly one notice.
-            if (!liveWasOn) notify(`Followers now see ${title}.`);
+            // No notice here: the change is announced once by `useTripChangeAnnouncer` (or the bridge).
           }}
         />
       ) : null}

@@ -3,14 +3,15 @@ import { Dialog } from "@base-ui/react/dialog";
 import { Info } from "lucide-react";
 import { ErrorBoundary } from "react-error-boundary";
 
-import { getLiveSharingEnabled } from "@/lib/liveSharingPreference";
 import { useOnlineStatus } from "../../components/resilience/useOnlineStatus";
 import { tripcastApi, type TripCard, type TripSwitchImpact } from "../../convex/tripcastApi";
 import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { useTripContext } from "../../providers/TripContextProvider";
 import {
   beginSwitch,
+  clearOwnSwitch,
   endSwitch,
+  markOwnSwitch,
   STILL_WAITING_MESSAGE,
   SWITCH_SLOW_MS,
   tripErrorInfo,
@@ -47,8 +48,11 @@ export type ConfirmSharedTripSwitchDialogProps = {
   /** The card to show to Followers. Mount the dialog only while one is chosen: mounting is "opening". */
   card: TripCard;
   onClose: () => void;
-  /** The server confirmed the switch. `liveWasOn` is whether live sharing was on when the Traveler confirmed. */
-  onSwitched: (info: { liveWasOn: boolean }) => void;
+  /**
+   * The server confirmed the switch. The dialog announces nothing: the trip change is announced once, by whoever
+   * observes the epoch change (the live-sharing bridge when sharing was on, `useTripPaneActions` otherwise).
+   */
+  onSwitched: () => void;
   /** A message for the Traveler that outlives the dialog (cancelled while waiting, a late failure). */
   onNotice?: (message: string) => void;
   returnFocusRef?: RefObject<HTMLElement | null>;
@@ -144,7 +148,6 @@ function SwitchBody({ card, title, onClose, onSwitched, onNotice, onLock }: Swit
   const settled = useRef(false);
   const inFlight = useRef(0);
   const sentRevision = useRef<number | null>(null);
-  const liveWasOn = useRef(false);
   const slowTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestToken = useRef<number | null>(null);
   // Latest callbacks for a response that arrives after a re-render (or after the dialog was dismissed).
@@ -178,6 +181,7 @@ function SwitchBody({ card, title, onClose, onSwitched, onNotice, onLock }: Swit
     stopWaiting();
     endSwitch(ownToken);
     requestToken.current = null;
+    clearOwnSwitch(card.tripId);
     const info = tripErrorInfo(error, "Could not switch trips. Try again.");
     if (!mounted.current) {
       const reason =
@@ -213,7 +217,7 @@ function SwitchBody({ card, title, onClose, onSwitched, onNotice, onLock }: Swit
         stopWaiting();
         endSwitch(ownToken);
         latest.current.returnToCurrent();
-        latest.current.onSwitched({ liveWasOn: liveWasOn.current });
+        latest.current.onSwitched();
       },
       (error: unknown) => {
         inFlight.current -= 1;
@@ -226,13 +230,13 @@ function SwitchBody({ card, title, onClose, onSwitched, onNotice, onLock }: Swit
 
   const confirm = () => {
     if (snapshot === null || sending || otherPending) return;
-    liveWasOn.current = getLiveSharingEnabled();
     sentRevision.current = snapshot;
     settled.current = false;
     setMessage(null);
     setConflict(false);
     setSending(true);
     setSlow(false);
+    markOwnSwitch(card.tripId);
     const ownToken = beginSwitch(card.tripId);
     requestToken.current = ownToken;
     setMyToken(ownToken);

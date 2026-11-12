@@ -470,3 +470,22 @@ describe("TripSwitcherSheet: change flows", () => {
     expect(renderCardMenu).toHaveBeenCalledWith(expect.anything(), { onlyTrip: false });
   });
 });
+
+describe("TripSwitcherSheet: shared trip not yet known", () => {
+  it("shows a quiet loading state, not an empty pinned card, and offers no switch", async () => {
+    server.cards = [makeCard("a")];
+    setup({ followerTrip: null, serverTripStatus: "loading" }, { onRequestSwitch: vi.fn() });
+    const { user } = await openPane();
+    expect(screen.getByText("Loading what Followers see…")).toBeInTheDocument();
+    expect(screen.queryByText(/Followers currently see:/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Trip a/ }));
+    expect(screen.getByRole("button", { name: "Set as shared current" })).toBeDisabled();
+    expect(screen.getByText("Available once the current trip has loaded")).toBeInTheDocument();
+  });
+
+  it("says it is unavailable when the shared trip failed", async () => {
+    setup({ followerTrip: null, serverTripStatus: "unavailable" });
+    await openPane();
+    expect(screen.getByText("What Followers see is unavailable right now.")).toBeInTheDocument();
+  });
+});
