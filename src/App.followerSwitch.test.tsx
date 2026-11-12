@@ -1,4 +1,6 @@
 import { act, render, screen, within } from "@testing-library/react";
+import { useQuery } from "convex/react";
+import { useEffect } from "react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,6 +11,8 @@ import { setStoredSession } from "./lib/auth";
 import { getLiveTrailCache, resetLiveTrailCachesForTests } from "./features/map/liveTrailCache";
 import { useTripPath } from "./features/map/useTripPath";
 import { resetSwitchState } from "./features/trips/tripSwitchState";
+import { tripcastApi } from "./convex/tripcastApi";
+import { TripContextProvider, useTripContext } from "./providers/TripContextProvider";
 import { createFakeConvexClient, type FakeConvexClient } from "./test/fakeConvexClient";
 
 // W11B items 4 and 8 (UX 7 and 8): what a Follower and a second Traveler device see when the shared trip changes.
@@ -65,6 +69,12 @@ const PINS: Record<string, CheckpointMapPin[]> = {
   autumn: [pin("pin-autumn", 47.6, -122.3)],
   summer: [pin("pin-summer", 40.7, -74.0)],
 };
+const LATEST: Record<string, { _id: string; lat: number; lon: number; sampledAt: number }> = {
+  autumn: { _id: "autumn-latest", lat: 47.61, lon: -122.31, sampledAt: 700 },
+  summer: { _id: "summer-latest", lat: 40.71, lon: -74.01, sampledAt: 800 },
+};
+/** Summer's Follower content cutoff falls after Autumn's trail: run over Autumn's cache it would drop its points. */
+let CUTOFF: Record<string, number | undefined> = {};
 const effective = (trip: { tripId: string; title: string }, lifecycle: EffectiveTrip["lifecycle"] = "in_progress"): EffectiveTrip => ({
   ...trip,
   lifecycle,
@@ -108,7 +118,15 @@ async function startApp(role: Server["role"], token = TOKEN) {
       case "checkpoints:listCheckpointMapPins":
         return shared ? PINS[shared] : [];
       case "travelerPreferences:followerGetPreferences":
-        return { visible: true, allowFollowersTripPath: true, liveTrailVisibleToFollowers: true };
+        return {
+          visible: true,
+          allowFollowersTripPath: true,
+          liveTrailVisibleToFollowers: true,
+          ...(shared && CUTOFF[shared] !== undefined ? { followerContentCutoffAt: CUTOFF[shared] } : {}),
+        };
+      case "liveTrail:getLatestLiveTrailSample":
+        // A stable answer per shared trip: its arguments never change across a switch, only its result.
+        return shared ? LATEST[shared] : null;
       case "endTrip:getTripFinaleStatus":
         return { ended: server.finaleEnded };
       default:
@@ -125,6 +143,7 @@ async function serverChanged() {
   await settle();
 }
 
+const cacheIds = (tripId: string) => getLiveTrailCache(TOKEN, "follower", tripId).snapshot().samples.map((s) => s._id);
 const drawnPins = () => (vi.mocked(useTripPath).mock.calls.at(-1)?.[1] ?? []).map((p) => p._id);
 // The trail layer is fed cache rows, which carry their `_id` beyond the `LiveTrailPoint` type.
 const drawnTrail = () => (vi.mocked(useTripPath).mock.calls.at(-1)?.[6] ?? []).map((s) => (s as unknown as { _id: string })._id);
@@ -136,6 +155,7 @@ beforeEach(async () => {
   await resetLiveTrailCachesForTests();
   setLiveSharingEnabled(false);
   resetSwitchState();
+  CUTOFF = {};
   server = { role: "follower", effective: effective(AUTUMN), current: null, cards: [], finaleEnded: false };
 });
 
@@ -145,18 +165,37 @@ describe("a Follower when the Traveler shares another trip (UX 7)", { timeout: 2
     getLiveTrailCache(TOKEN, "follower", "summer").replaceReplay([{ _id: "summer-trail", lat: 40.7, lon: -74.0, sampledAt: 600 }]);
     await startApp("follower");
     expect(drawnPins()).toEqual(["pin-autumn"]);
-    expect(drawnTrail()).toEqual(["autumn-trail"]);
+    expect(drawnTrail()).toEqual(["autumn-trail", "autumn-latest"]);
 
     server.effective = effective(SUMMER);
     await serverChanged();
 
     expect(await screen.findByText("The Traveler is now sharing Summer 2026.")).toBeInTheDocument();
     expect(drawnPins()).toEqual(["pin-summer"]);
-    expect(drawnTrail()).toEqual(["summer-trail"]);
+    expect(drawnTrail()).toEqual(["summer-trail", "summer-latest"]);
     expect(getLiveTrailCache(TOKEN, "follower", "summer").snapshot().samples.map((s) => s._id)).not.toContain("autumn-trail");
     expect(getLiveTrailCache(TOKEN, "follower", "autumn").snapshot().replay.map((s) => s._id)).toEqual(["autumn-trail"]);
+    // The live sample answers in the same render as the switch: it joins the NEW trip's cache, never the old one's.
+    expect(cacheIds("autumn")).toEqual(["autumn-trail", "autumn-latest"]);
+    expect(cacheIds("summer")).toEqual(["summer-trail", "summer-latest"]);
     // Before and after the switch the Follower never sends a trip id: the server answers for the trip it shares.
     expect(fake.log.filter((request) => "tripId" in request.args)).toEqual([]);
+  });
+
+  it("A to B to A: no B sample and no B cutoff in A's cache, and A's trail draws no B segment", async () => {
+    getLiveTrailCache(TOKEN, "follower", "autumn").replaceReplay([{ _id: "autumn-trail", lat: 47.6, lon: -122.3, sampledAt: 500 }]);
+    CUTOFF = { summer: 650 };
+    await startApp("follower");
+    server.effective = effective(SUMMER);
+    await serverChanged();
+    expect(await screen.findByText("The Traveler is now sharing Summer 2026.")).toBeInTheDocument();
+    server.effective = effective(AUTUMN);
+    await serverChanged();
+
+    expect(cacheIds("autumn")).toEqual(["autumn-trail", "autumn-latest"]);
+    expect(cacheIds("summer")).toEqual(["summer-latest"]);
+    expect(drawnPins()).toEqual(["pin-autumn"]);
+    expect(drawnTrail()).toEqual(["autumn-trail", "autumn-latest"]);
   });
 
   it("open sheets and the credits replay close", async () => {
@@ -251,5 +290,42 @@ describe("a second Traveler device when the shared trip changes elsewhere (UX 8)
     await serverChanged();
     expect(screen.getByRole("button", { name: "Close End Trip" })).toBeInTheDocument();
     expect(credits()).toEqual(["autumn"]);
+  });
+});
+
+describe("the trip context and the data it names change in the same render", { timeout: 20_000 }, () => {
+  it("no committed render pairs one trip with another trip's untagged data", async () => {
+    const commits: Array<{ trip: string | undefined; data: string | undefined }> = [];
+    function Probe() {
+      const trip = useTripContext().followerTrip?.tripId;
+      const latest = useQuery(tripcastApi.liveTrail.getLatestLiveTrailSample, { token: TOKEN });
+      const data = latest?._id.replace("-latest", "");
+      useEffect(() => {
+        commits.push({ trip, data });
+      });
+      return null;
+    }
+    fake = createFakeConvexClient((name) => {
+      if (name === "followers:getEffectiveTrip") return server.effective;
+      if (name === "liveTrail:getLatestLiveTrailSample") return server.effective ? LATEST[server.effective.tripId] : undefined;
+      return undefined;
+    });
+    render(
+      <TripContextProvider token={TOKEN} role="follower">
+        <Probe />
+      </TripContextProvider>,
+    );
+    await settle();
+    for (const next of [SUMMER, AUTUMN, SUMMER]) {
+      server.effective = effective(next);
+      await serverChanged();
+    }
+    expect(commits.map(({ trip }) => trip).filter((trip, i, all) => trip !== all[i - 1])).toEqual([
+      "autumn",
+      "summer",
+      "autumn",
+      "summer",
+    ]);
+    expect(commits.filter(({ trip, data }) => trip !== data)).toEqual([]);
   });
 });

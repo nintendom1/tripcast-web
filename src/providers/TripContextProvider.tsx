@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "convex/react";
-import { ErrorBoundary } from "react-error-boundary";
 
 import { tripcastApi, type CurrentTrip, type EffectiveTrip, type Role } from "../convex/tripcastApi";
 import type { ServerTripStatus, TripContextValue, TripTarget } from "../features/trips/tripTypes";
@@ -37,8 +36,6 @@ function inertTripContext(token: string, role: Role): TripContextValue {
   };
 }
 
-type ServerTrips = { current: CurrentTrip | null | undefined; effective: EffectiveTrip | null | undefined };
-const NO_SERVER_TRIPS: ServerTrips = { current: undefined, effective: undefined };
 
 /**
  * Non-reversible short hash (FNV-1a, 32 bit) of a session token, for keys of state stored per session; the same scheme
@@ -80,23 +77,15 @@ function storeLegacyTripId(scope: string, tripId: string) {
 /** Delay before retrying a failed subscription when no visibility or online event comes first. */
 const SUBSCRIPTION_RETRY_MS = 20_000;
 
-type SubscriptionProps = {
-  token: string;
-  role: Role;
-  onResult: (result: ServerTrips) => void;
-  onHealthy: () => void;
-};
-
 /**
- * Renders nothing; owns the two server subscriptions and reports their results to the provider. It lives in its own
- * error boundary, so a failing query (older backend, transient or session error) never unmounts the app tree.
+ * Keeps a query result by value: a result that is equal but a fresh object (as test mocks return) keeps its identity, so
+ * nothing downstream re-runs for it.
  */
-function TripSubscription({ token, role, onResult, onHealthy }: SubscriptionProps) {
-  const current = useQuery(tripcastApi.trips.getCurrentTrip, role === "traveler" ? { token } : "skip");
-  const effective = useQuery(tripcastApi.followers.getEffectiveTrip, role === "follower" ? { token } : "skip");
-  useEffect(() => onHealthy(), [onHealthy]);
-  useEffect(() => onResult({ current, effective }), [current, effective, onResult]);
-  return null;
+function useStableResult<T>(value: T | undefined): T | undefined {
+  const key = value === undefined ? undefined : JSON.stringify(value);
+  // The key stands for the value.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => value, [key]);
 }
 
 /**
@@ -109,27 +98,50 @@ function TripSubscription({ token, role, onResult, onHealthy }: SubscriptionProp
  * the publishing bridge); a failed subscription is retried on a timer, on `visibilitychange` and on `online`.
  */
 export function TripContextProvider({ token, role, children }: TripContextProviderProps) {
-  const [server, setServer] = useState<ServerTrips>(NO_SERVER_TRIPS);
-  const [failed, setFailed] = useState(false);
-  const [retryNonce, setRetryNonce] = useState(0);
+  // The server trip is read HERE, in the provider's own render, never handed over by an effect: every consumer sees the
+  // trip change in the same render as the data of the trip it names (a Follower's untagged reads re-run on the server
+  // in the same transition as `getEffectiveTrip`, so a render in between would pair the new trip's data with the old
+  // trip's caches). A retry renders the queries skipped once, so they subscribe again.
+  const [resubscribing, setResubscribing] = useState(false);
+  // A failing trip query (older backend, transient or session error) must not unmount the app tree, so its error is
+  // caught here. Both calls are unconditional: `useQuery` runs all of its own hooks first and throws only at its end (an
+  // error result), so the hook order is the same in every render. A boundary cannot do this: React unmounts a
+  // boundary's children when it catches, which would remount the map and the publishing bridge.
+  let current: CurrentTrip | null | undefined;
+  let effective: EffectiveTrip | null | undefined;
+  let failure: unknown = null;
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    current = useQuery(tripcastApi.trips.getCurrentTrip, role === "traveler" && !resubscribing ? { token } : "skip");
+  } catch (caught) {
+    failure = caught;
+  }
+  try {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    effective = useQuery(tripcastApi.followers.getEffectiveTrip, role === "follower" && !resubscribing ? { token } : "skip");
+  } catch (caught) {
+    failure ??= caught;
+  }
+  const failed = failure !== null;
+  // While failing the context is inert, as before multi-trip.
+  const server = {
+    current: useStableResult(failed ? undefined : current),
+    effective: useStableResult(failed ? undefined : effective),
+  };
 
-  const onResult = useCallback((next: ServerTrips) => {
-    // Compare by value: a query result may be a fresh object on every render (as test mocks return), and
-    // storing it by identity would loop render -> effect -> setState.
-    setServer((prev) =>
-      JSON.stringify([prev.current, prev.effective]) === JSON.stringify([next.current, next.effective]) ? prev : next,
-    );
-  }, []);
-  const onHealthy = useCallback(() => setFailed(false), []);
-  const onError = useCallback((error: unknown) => {
-    console.error("Trip context subscription failed", error);
-    setServer(NO_SERVER_TRIPS);
-    setFailed(true);
-  }, []);
+  useEffect(() => {
+    if (resubscribing) setResubscribing(false);
+  }, [resubscribing]);
+
+  useEffect(() => {
+    // Once per failure, not per render.
+    if (failed) console.error("Trip context subscription failed", failure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [failed]);
 
   useEffect(() => {
     if (!failed) return;
-    const retry = () => setRetryNonce((n) => n + 1);
+    const retry = () => setResubscribing(true);
     const onVisible = () => {
       if (document.visibilityState === "visible") retry();
     };
@@ -211,14 +223,7 @@ export function TripContextProvider({ token, role, children }: TripContextProvid
     [token, role, currentTrip, followerTrip, multiTripEnabled, serverTripStatus, viewing, viewingTrip, openPrivately],
   );
 
-  return (
-    <TripContext.Provider value={value}>
-      <ErrorBoundary fallbackRender={() => null} resetKeys={[token, role, retryNonce]} onError={onError}>
-        <TripSubscription token={token} role={role} onResult={onResult} onHealthy={onHealthy} />
-      </ErrorBoundary>
-      {children}
-    </TripContext.Provider>
-  );
+  return <TripContext.Provider value={value}>{children}</TripContext.Provider>;
 }
 
 /** Props of `TripContextTestProvider`. */

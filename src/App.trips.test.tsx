@@ -304,6 +304,39 @@ describe("private view banner and End Trip from the trip pane (item 1)", { timeo
   });
 });
 
+describe("while the trip subscription fails (pinned as it behaves today)", { timeout: 20_000 }, () => {
+  it("a private view drops to the current trip, chip and banner hide, and Stop stays reachable in the map's Live control", async () => {
+    server.current = current(AUTUMN);
+    server.cards = [card(AUTUMN, { isCurrent: true }), card(SUMMER)];
+    await startApp("traveler");
+    await openPrivatelyFromPane(SUMMER);
+    act(() => setLiveSharingEnabled(true));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    server.failing["trips:getCurrentTrip"] = new Error("trip state unavailable");
+    await serverChanged();
+    // The context goes inert: no private view, no chip or banner, and nothing names a trip any more.
+    expect(screen.queryByRole("button", { name: /^(Current|Viewing privately) · / })).toBeNull();
+    expect(screen.queryByText(/privately/)).toBeNull();
+    expect(fake.active().filter((s) => s.args.tripId === "summer")).toEqual([]);
+    expect(watched("ticker:getTickerSettings")).toEqual([{ token: TOKEN }]);
+    // The map stays up and its own Live control still stops sharing.
+    expect(screen.queryByText("The map could not load.")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Stop sharing live location", pressed: true }));
+    expect(getLiveSharingEnabled()).toBe(false);
+
+    // Back online: the retry subscribes again (the query's own hooks ran on every failing render, so the hook order
+    // never changed) and the chip returns on the current trip.
+    delete server.failing["trips:getCurrentTrip"];
+    await act(async () => {
+      window.dispatchEvent(new Event("online"));
+    });
+    await settle();
+    expect(screen.getByRole("button", { name: "Current · Autumn 2026" })).toBeInTheDocument();
+    expect(watched("trips:getCurrentTrip")).toEqual([{ token: TOKEN }]);
+  });
+});
+
 describe("leaving a session clears its publishing identity and switch state (item 2)", { timeout: 20_000 }, () => {
   beforeEach(() => {
     server.current = current(AUTUMN, { publishingEpoch: 3 });
