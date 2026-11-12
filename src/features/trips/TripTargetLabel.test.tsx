@@ -36,3 +36,33 @@ describe("TripTargetLabel", () => {
     expect(screen.queryByTestId("trip-target-label")).toBeNull();
   });
 });
+
+describe("TripTargetLabel follows the id rule (same as PrivateTripTargetLabel)", () => {
+  const autumn = {
+    tripId: "trip-autumn",
+    title: "Autumn 2026",
+    lifecycle: "in_progress" as const,
+    isLegacy: false,
+    revision: 1,
+    publishingEpoch: 1,
+    epochStartedAt: 0,
+    multiTripEnabled: true,
+  };
+
+  it("still names a target captured in a private view after Return to current", () => {
+    renderLabel({ multiTripEnabled: true, viewingMode: "follow_current", currentTrip: autumn });
+    expect(screen.getByTestId("trip-target-label")).toHaveTextContent("Summer 2026");
+  });
+
+  it("stops naming a privately viewed target once it is the shared current trip", () => {
+    renderLabel({ multiTripEnabled: true, viewingMode: "private", currentTrip: { ...autumn, tripId: "trip-summer" } });
+    expect(screen.queryByTestId("trip-target-label")).toBeNull();
+  });
+
+  it("renders nothing for a Follower, and nothing (no throw) without a provider", () => {
+    renderLabel({ role: "follower", multiTripEnabled: true, viewingMode: "private", currentTrip: autumn });
+    expect(screen.queryByTestId("trip-target-label")).toBeNull();
+    render(<TripTargetLabel target={summer} />);
+    expect(screen.queryByTestId("trip-target-label")).toBeNull();
+  });
+});

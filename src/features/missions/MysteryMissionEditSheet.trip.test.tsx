@@ -8,6 +8,7 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import { TripContextTestProvider } from "../../providers/TripContextProvider";
 import { travelerFollowingCurrent, travelerViewingPrivately } from "../../test/renderWithTrip";
 import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
+import MysteryMissionsSheet from "../options/MysteryMissionsSheet";
 
 vi.mock("convex/react", () => ({
   useMutation: vi.fn(),
@@ -56,5 +57,59 @@ describe("MysteryMissionEditSheet with a viewed trip", () => {
     rerender(<TripContextTestProvider value={travelerFollowingCurrent}>{sheet(true)}</TripContextTestProvider>);
     await user.click(await screen.findByRole("button", { name: "Save Mystery Mission" }));
     expect(patch).toHaveBeenCalledWith(expect.objectContaining({ tripId: "trip-other" }));
+  });
+});
+
+describe("MysteryMissionEditSheet given the trip its list was opened on", () => {
+  const listedFrom = { tripId: "trip-listed", title: "Listed Trip" };
+  const editReads = () =>
+    vi.mocked(convexReact.useQuery).mock.calls
+      .filter(([ref, args]) => ref === tripcastApi.mysteryMissions.travelerGetMysteryMissionForEdit && args !== "skip")
+      .map(([, args]) => args);
+
+  it("reads and writes the list's trip, whatever trip is viewed when it opens", async () => {
+    const user = userEvent.setup();
+    const sharedTrip = { tripId: "trip-current", title: "Current Trip", lifecycle: "in_progress" as const, isLegacy: false, revision: 1, publishingEpoch: 1, epochStartedAt: 0, multiTripEnabled: true };
+    render(
+      <TripContextTestProvider value={{ ...travelerFollowingCurrent, currentTrip: sharedTrip }}>
+        <MysteryMissionEditSheet open token="t" mysteryMissionId="mm-1" onOpenChange={vi.fn()} tripTarget={listedFrom} />
+      </TripContextTestProvider>,
+    );
+    expect(await screen.findByText("Listed Trip")).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Save Mystery Mission" }));
+    expect(patch).toHaveBeenCalledWith(expect.objectContaining({ mysteryMissionId: "mm-1", tripId: "trip-listed" }));
+    expect(editReads().length).toBeGreaterThan(0);
+    for (const args of editReads()) expect(args).toStrictEqual({ token: "t", mysteryMissionId: "mm-1", tripId: "trip-listed" });
+  });
+
+  it("multi-trip off (no list trip): exactly today's read and write, with no tripId", async () => {
+    const user = userEvent.setup();
+    render(<MysteryMissionEditSheet open token="t" mysteryMissionId="mm-1" onOpenChange={vi.fn()} tripTarget={null} />);
+    await user.click(await screen.findByRole("button", { name: "Save Mystery Mission" }));
+    expect(patch.mock.calls[0]?.[0]).not.toHaveProperty("tripId");
+    expect(editReads().length).toBeGreaterThan(0);
+    for (const args of editReads()) expect(args).toStrictEqual({ token: "t", mysteryMissionId: "mm-1" });
+  });
+
+  it("from the Mystery Missions list: a row listed from one trip is edited there after the view moved", async () => {
+    const user = userEvent.setup();
+    vi.mocked(convexReact.useQuery).mockImplementation(((ref: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (ref === tripcastApi.mysteryMissions.travelerGetMysteryMissionForEdit) return row;
+      if (ref === tripcastApi.mysteryMissions.travelerListMysteryMissions) {
+        return { rows: [{ ...row, id: "signal-1" }], counts: { total: 1, active: 1, revealed: 0, dismissed: 0 } };
+      }
+      return undefined;
+    }) as never);
+    const list = (value: typeof travelerViewingPrivately) => (
+      <TripContextTestProvider value={value}>
+        <MysteryMissionsSheet open token="t" onOpenChange={vi.fn()} />
+      </TripContextTestProvider>
+    );
+    const view = render(list(travelerViewingPrivately));
+    view.rerender(list(travelerFollowingCurrent));
+    await user.click(await screen.findByRole("button", { name: "Edit" }));
+    await user.click(await screen.findByRole("button", { name: "Save Mystery Mission" }));
+    expect(patch).toHaveBeenLastCalledWith(expect.objectContaining({ mysteryMissionId: "mm-1", tripId: "trip-other" }));
   });
 });

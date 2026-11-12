@@ -5,10 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TripContextTestProvider, useTripContext } from "../providers/TripContextProvider";
 import type { TripContextValue } from "../features/trips/tripTypes";
 import { tripcastApi } from "./tripcastApi";
-import { useTripConvex, useTripMutation, useTripQuery } from "./useTrip";
+import { tripClientFor, useTripConvex, useTripMutation, useTripPaginatedQuery, useTripQuery } from "./useTrip";
 
 const mocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
+  usePaginatedQuery: vi.fn(),
   mutation: vi.fn(async (..._args: unknown[]) => "ok"),
   query: vi.fn(async (..._args: unknown[]) => "ok"),
   convex: {} as Record<string, unknown>,
@@ -16,7 +17,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("convex/react", () => {
   mocks.convex = { query: mocks.query, mutation: mocks.mutation, action: vi.fn() };
-  return { useQuery: mocks.useQuery, useMutation: () => mocks.mutation, useConvex: () => mocks.convex };
+  return {
+    useQuery: mocks.useQuery,
+    usePaginatedQuery: mocks.usePaginatedQuery,
+    useMutation: () => mocks.mutation,
+    useConvex: () => mocks.convex,
+  };
 });
 
 const summer = { tripId: "trip-summer", title: "Summer 2026" };
@@ -224,5 +230,56 @@ describe("Followers", () => {
     const c = renderHook(() => useTripConvex(), { wrapper: wrapperFor(() => follower) });
     await c.result.current.query(queryRef, { token: "t" } as never);
     expect(mocks.query).toHaveBeenLastCalledWith(queryRef, { token: "t" });
+  });
+});
+
+// A paginated trip-scoped ref (its args take `tripId` and `paginationOpts`).
+const pagedRef = tripcastApi.checkpoints.listTripMapPins;
+const PAGE = { initialNumItems: 5 };
+
+describe("useTripPaginatedQuery (same trip rule as useTripQuery)", () => {
+  it("adds the viewed trip and lets an explicit tripId win", () => {
+    renderHook(() => useTripPaginatedQuery(pagedRef, { token: "t" }, PAGE), { wrapper: wrapperFor(() => enabled) });
+    expect(mocks.usePaginatedQuery).toHaveBeenLastCalledWith(pagedRef, { token: "t", tripId: "trip-autumn" }, PAGE);
+    renderHook(() => useTripPaginatedQuery(pagedRef, { token: "t", tripId: "trip-card" }, PAGE), {
+      wrapper: wrapperFor(() => enabled),
+    });
+    expect(mocks.usePaginatedQuery).toHaveBeenLastCalledWith(pagedRef, { token: "t", tripId: "trip-card" }, PAGE);
+  });
+
+  it("follows the view on re-render, so a view change is a new request", () => {
+    let value: Partial<TripContextValue> = enabled;
+    const { rerender } = renderHook(() => useTripPaginatedQuery(pagedRef, { token: "t" }, PAGE), {
+      wrapper: wrapperFor(() => value),
+    });
+    value = { ...enabled, viewingTripId: summer.tripId, viewingTrip: summer };
+    rerender();
+    expect(mocks.usePaginatedQuery).toHaveBeenLastCalledWith(pagedRef, { token: "t", tripId: "trip-summer" }, PAGE);
+  });
+
+  it("adds nothing while disabled, for a Follower, or without a provider; skip passes through", () => {
+    renderHook(() => useTripPaginatedQuery(pagedRef, { token: "t" }, PAGE), { wrapper: wrapperFor(() => ({})) });
+    expect(mocks.usePaginatedQuery.mock.calls.at(-1)?.[1]).toStrictEqual({ token: "t" });
+    renderHook(() => useTripPaginatedQuery(pagedRef, { token: "t" }, PAGE), {
+      wrapper: wrapperFor(() => ({ ...enabled, role: "follower" })),
+    });
+    expect(mocks.usePaginatedQuery.mock.calls.at(-1)?.[1]).toStrictEqual({ token: "t" });
+    const args = { token: "t" };
+    renderHook(() => useTripPaginatedQuery(pagedRef, args, PAGE));
+    expect(mocks.usePaginatedQuery.mock.calls.at(-1)?.[1]).toBe(args);
+    renderHook(() => useTripPaginatedQuery(pagedRef, "skip", PAGE), { wrapper: wrapperFor(() => enabled) });
+    expect(mocks.usePaginatedQuery).toHaveBeenLastCalledWith(pagedRef, "skip", PAGE);
+  });
+});
+
+describe("tripClientFor", () => {
+  it("names its own trip on every call, whatever the view, with an explicit tripId winning", async () => {
+    const client = tripClientFor(mocks.convex as never, "trip-saved");
+    await client.query(queryRef, { token: "t" } as never);
+    await client.mutation(mutationRef, { token: "t" } as never);
+    await client.mutation(mutationRef, { token: "t", tripId: "trip-card" } as never);
+    expect(mocks.query).toHaveBeenCalledWith(queryRef, { token: "t", tripId: "trip-saved" });
+    expect(mocks.mutation).toHaveBeenCalledWith(mutationRef, { token: "t", tripId: "trip-saved" });
+    expect(mocks.mutation).toHaveBeenLastCalledWith(mutationRef, { token: "t", tripId: "trip-card" });
   });
 });

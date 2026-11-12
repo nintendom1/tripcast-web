@@ -592,6 +592,8 @@ export default function MysteryMissionsSheet({
       open={editingMissionId !== null}
       token={token}
       mysteryMissionId={editingMissionId}
+      // A row edits the trip this list was opened on, even if the view moved since.
+      tripTarget={tripTarget}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) setEditingMissionId(null);
       }}

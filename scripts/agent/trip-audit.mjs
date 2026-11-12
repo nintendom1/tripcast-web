@@ -4,17 +4,26 @@ import ts from "typescript";
 import { ROOT, flagValue, isMain, lineOf, walk, wantsHelp } from "./lib.mjs";
 
 const HELP = `trip-audit: counts raw Convex calls on refs that take a tripId, per web source file (static scan, heuristic).
-  node scripts/agent/trip-audit.mjs [--files a.tsx,b.ts] [--folders] [--json] [--assume-all]
+  node scripts/agent/trip-audit.mjs [--files a.tsx,b.ts] [--folders] [--json] [--assume-all] [--allowed]
 rawTripCall = useQuery/useMutation/usePaginatedQuery/useAction from convex/react, or .query(/.mutation(/.action( with a
-tripcastApi ref whose args include tripId. Such calls belong in useTripQuery/useTripMutation/useTripConvex (src/convex/useTrip.ts).
+tripcastApi ref whose args include tripId. Such calls belong in useTripQuery/useTripPaginatedQuery/useTripMutation/useTripConvex,
+or tripClientFor(client, tripId) for a call that names its own trip (src/convex/useTrip.ts; those hooks are never counted).
+A cast to TripConvexClient (\`x as TripConvexClient\`, also through \`as unknown\`) of a client that is not trip-aware also
+counts as a rawTripCall: it would make a plain client look trip-aware.
 unresolved = a convex call whose ref cannot be resolved statically (prop, argument, dynamic); never ignored, counted separately.
 --assume-all treats every ref in tripcastApi.ts as taking tripId, to compare the total with an independent count of call sites.
 --folders adds an informational "hooks=<n>" line per feature folder (all convex/react hook calls).
-A .query(/.mutation(/.action( call is trip-aware, not raw, when its receiver is (a) the result of useTripConvex() (imported from
-the useTrip module), (b) an identifier or parameter typed TripConvexClient, or (c) the result of a function declared in the same
-file with return type TripConvexClient; resolved per scope, so a plain client (useConvex(), ConvexReactClient) still counts.
+A .query(/.mutation(/.action( call is trip-aware, not raw, when its receiver is (a) the result of useTripConvex() or
+tripClientFor() (imported from the useTrip module), (b) an identifier, parameter or destructured parameter typed
+TripConvexClient, CapturedTripConvexClient or ReturnType<typeof useTripConvex>, (c) the result of a function declared in the
+same file with return type TripConvexClient, or (d) \`a ?? b\`, \`a || b\` or \`c ? a : b\` of trip-aware receivers; resolved per
+scope, so a plain client (useConvex(), ConvexReactClient) still counts.
+Marker: a line comment \`// trip-audit-ok: <reason>\` (1 to 12 words) directly above a line allows ONE rawTripCall on that line
+(untagged by design). A marker with no hit on the next line, or with no reason or more than 12 words, allows nothing and counts
+as staleMarker; any staleMarker exits 1. --allowed lists every allowed call with its reason.
 Scans src/**/*.{ts,tsx} except tests, stories, src/test/, src/convex/tripcastApi.ts and src/convex/useTrip.ts.
-Prints files with a non-zero count, then "TOTAL rawTripCall=<n> unresolved=<n>"; exit 2 if a --files entry was not scanned.`;
+Prints files with a non-zero count, then "TOTAL rawTripCall=<n> unresolved=<n> staleMarker=<n>"; exit 2 if a --files entry was
+not scanned.`;
 
 const EXEMPT = new Set(["src/convex/tripcastApi.ts", "src/convex/useTrip.ts"]);
 const HOOKS = new Set(["useQuery", "useMutation", "usePaginatedQuery", "useAction"]);
@@ -118,17 +127,36 @@ function refPaths(expr, ctx, depth = 0) {
 /** Type names of the trip-aware imperative client (`useTripConvex()` returns the captured variant). */
 const TAGGED_TYPES = new Set(["TripConvexClient", "CapturedTripConvexClient"]);
 
-/** True for `TripConvexClient`, with `| undefined` / `| null` allowed (an optional parameter). */
-function isTaggedType(type) {
+/**
+ * True for `TripConvexClient` / `CapturedTripConvexClient`, or `ReturnType<typeof f>` of a trusted helper imported from the
+ * useTrip module (`useTripConvex`, `tripClientFor`), with `| undefined` / `| null` allowed (an optional parameter).
+ */
+function isTaggedType(type, ctx) {
   if (!type) return false;
-  if (ts.isParenthesizedTypeNode(type)) return isTaggedType(type.type);
+  if (ts.isParenthesizedTypeNode(type)) return isTaggedType(type.type, ctx);
   if (ts.isUnionTypeNode(type)) {
     const members = type.types.filter((t) => !(t.kind === ts.SyntaxKind.UndefinedKeyword || (ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword)));
-    return members.length > 0 && members.every(isTaggedType);
+    return members.length > 0 && members.every((t) => isTaggedType(t, ctx));
   }
   if (!ts.isTypeReferenceNode(type)) return false;
   const name = ts.isQualifiedName(type.typeName) ? type.typeName.right.text : type.typeName.text;
+  if (name === "ReturnType" && type.typeArguments?.length === 1) {
+    const arg = type.typeArguments[0];
+    return ts.isTypeQueryNode(arg) && ts.isIdentifier(arg.exprName) && ctx.tripConvexNames.has(arg.exprName.text);
+  }
   return TAGGED_TYPES.has(name);
+}
+
+/** Declared type of a destructured parameter (`{ trip }: { trip: T }`), read from the parameter's inline type literal. */
+function bindingTypeOf(element) {
+  const pattern = element.parent;
+  if (!ts.isObjectBindingPattern(pattern) || !ts.isParameter(pattern.parent)) return undefined;
+  const literal = pattern.parent.type;
+  if (!literal || !ts.isTypeLiteralNode(literal)) return undefined;
+  const key = element.propertyName ?? element.name;
+  if (!ts.isIdentifier(key)) return undefined;
+  const member = literal.members.find((m) => ts.isPropertySignature(m) && m.name && ts.isIdentifier(m.name) && m.name.text === key.text);
+  return member?.type;
 }
 
 /** Declared return type node of a same-file function declaration, or of an arrow/function expression held in a const. */
@@ -156,20 +184,24 @@ function taggedReceiver(expr, ctx, checker, depth = 0) {
   if (depth > 6) return false;
   const e = unwrap(expr);
   if (ts.isConditionalExpression(e)) return taggedReceiver(e.whenTrue, ctx, checker, depth + 1) && taggedReceiver(e.whenFalse, ctx, checker, depth + 1);
+  if (ts.isBinaryExpression(e) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(e.operatorToken.kind)) {
+    return taggedReceiver(e.left, ctx, checker, depth + 1) && taggedReceiver(e.right, ctx, checker, depth + 1);
+  }
   if (ts.isCallExpression(e)) {
     const callee = unwrap(e.expression);
     if (ts.isIdentifier(callee)) {
       if (ctx.tripConvexNames.has(callee.text)) return true;
       const decl = declOf(callee, checker);
-      return Boolean(decl && isTaggedType(returnTypeOf(decl)));
+      return Boolean(decl && isTaggedType(returnTypeOf(decl), ctx));
     }
     return false;
   }
   if (ts.isIdentifier(e)) {
     const decl = declOf(e, checker);
     if (!decl) return false;
-    if (ts.isParameter(decl)) return isTaggedType(decl.type);
-    if (ts.isVariableDeclaration(decl)) return isTaggedType(decl.type) || Boolean(decl.initializer && taggedReceiver(decl.initializer, ctx, checker, depth + 1));
+    if (ts.isParameter(decl)) return isTaggedType(decl.type, ctx);
+    if (ts.isBindingElement(decl)) return isTaggedType(bindingTypeOf(decl), ctx);
+    if (ts.isVariableDeclaration(decl)) return isTaggedType(decl.type, ctx) || Boolean(decl.initializer && taggedReceiver(decl.initializer, ctx, checker, depth + 1));
   }
   return false;
 }
@@ -192,7 +224,7 @@ function fileBindings(sf) {
         for (const el of nb.elements) {
           const imported = (el.propertyName ?? el.name).text;
           if (imported === "tripcastApi") apiNames.add(el.name.text);
-          if (imported === "useTripConvex" && /(^|\/)useTrip$/.test(from)) tripConvexNames.add(el.name.text);
+          if ((imported === "useTripConvex" || imported === "tripClientFor") && /(^|\/)useTrip$/.test(from)) tripConvexNames.add(el.name.text);
         }
       }
     }
@@ -203,9 +235,27 @@ function fileBindings(sf) {
   return { apiNames, reactNs, hookNames, consts, tripConvexNames };
 }
 
+const MARKER = /^\s*\/\/\s*trip-audit-ok:(.*)$/;
+const MAX_REASON_WORDS = 12;
+
+/** `// trip-audit-ok: <reason>` line comments: `{ line, reason }`, `reason` null when missing or over 12 words. */
+export function markersOf(text) {
+  const out = [];
+  text.split("\n").forEach((source, index) => {
+    const match = MARKER.exec(source);
+    if (!match) return;
+    const reason = match[1].trim();
+    const words = reason ? reason.split(/\s+/).length : 0;
+    out.push({ line: index + 1, reason: words > 0 && words <= MAX_REASON_WORDS ? reason : null });
+  });
+  return out;
+}
+
 /**
- * Per-file `{ rawTripCall: line[], unresolved: line[], hooks }`. `hooks` counts every convex/react hook call, trip-scoped or not.
- * `unresolved` lists convex calls whose ref is not statically known. `refs` is a Set of tripId paths.
+ * Per-file `{ rawTripCall: line[], unresolved: line[], hooks, allowed: {line, reason}[], staleMarker: line[] }`. `hooks` counts
+ * every convex/react hook call, trip-scoped or not. `unresolved` lists convex calls whose ref is not statically known. A valid
+ * marker moves one rawTripCall on the next line to `allowed`; a marker that allows nothing is a `staleMarker` (its line).
+ * `refs` is a Set of tripId paths.
  */
 export function auditText(text, refs, fileName = "/virtual/src/fixture.tsx") {
   const program = programFor({ [fileName]: text });
@@ -216,6 +266,11 @@ export function auditText(text, refs, fileName = "/virtual/src/fixture.tsx") {
   const unresolved = [];
   let hooks = 0;
   walk(sf, (node) => {
+    // A cast that makes a client look trip-aware counts unless the client already is.
+    if ((ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && isTaggedType(node.type, ctx)) {
+      if (!taggedReceiver(node.expression, ctx, checker)) rawTripCall.push(lineOf(sf, node));
+      return;
+    }
     if (!ts.isCallExpression(node)) return;
     const callee = node.expression;
     let hook;
@@ -230,7 +285,18 @@ export function auditText(text, refs, fileName = "/virtual/src/fixture.tsx") {
     if (!paths) unresolved.push(lineOf(sf, node));
     else if (paths.some((p) => refs.has(p))) rawTripCall.push(lineOf(sf, node));
   });
-  return { rawTripCall, unresolved, hooks };
+  const allowed = [];
+  const staleMarker = [];
+  for (const marker of markersOf(text)) {
+    const hit = marker.reason === null ? -1 : rawTripCall.indexOf(marker.line + 1);
+    if (hit === -1) {
+      staleMarker.push(marker.line);
+      continue;
+    }
+    rawTripCall.splice(hit, 1);
+    allowed.push({ line: marker.line + 1, reason: marker.reason });
+  }
+  return { rawTripCall, unresolved, hooks, allowed, staleMarker };
 }
 
 const EXCLUDED_FILE = /\.(test|spec|stories)\.tsx?$/;
@@ -270,14 +336,25 @@ export function auditRepo({ targets, root = ROOT, assumeAll = false } = {}) {
   const files = {};
   const unresolved = {};
   const folders = {};
+  const allowed = {};
+  const staleMarker = {};
   for (const file of targets ?? scanned) {
-    const { rawTripCall, unresolved: lost, hooks } = auditText(readFileSync(join(root, file), "utf8"), refs, join(root, file));
+    const result = auditText(readFileSync(join(root, file), "utf8"), refs, join(root, file));
+    const { rawTripCall, unresolved: lost, hooks } = result;
     if (rawTripCall.length > 0) files[file] = { rawTripCall: rawTripCall.length, lines: rawTripCall };
     if (lost.length > 0) unresolved[file] = lost;
+    if (result.allowed.length > 0) allowed[file] = result.allowed;
+    if (result.staleMarker.length > 0) staleMarker[file] = result.staleMarker;
     if (hooks > 0) folders[folderOf(file)] = (folders[folderOf(file)] ?? 0) + hooks;
   }
-  const total = { rawTripCall: Object.values(files).reduce((n, v) => n + v.rawTripCall, 0), unresolved: Object.values(unresolved).reduce((n, v) => n + v.length, 0) };
-  return { files, unresolved, folders, total, scanned: (targets ?? scanned).length, tripRefs: refs.size };
+  const count = (byFile) => Object.values(byFile).reduce((n, v) => n + v.length, 0);
+  const total = {
+    rawTripCall: Object.values(files).reduce((n, v) => n + v.rawTripCall, 0),
+    unresolved: count(unresolved),
+    staleMarker: count(staleMarker),
+    allowed: count(allowed),
+  };
+  return { files, unresolved, allowed, staleMarker, folders, total, scanned: (targets ?? scanned).length, tripRefs: refs.size };
 }
 
 function main(args) {
@@ -294,11 +371,17 @@ function main(args) {
     targets = resolved.targets;
   }
   const result = auditRepo({ targets, assumeAll: args.includes("--assume-all") });
+  if (result.total.staleMarker > 0) process.exitCode = 1;
   if (args.includes("--json")) return console.log(JSON.stringify(result, null, 2));
   for (const [file, { rawTripCall }] of Object.entries(result.files)) console.log(`${file}: rawTripCall=${rawTripCall}`);
   for (const [file, lines] of Object.entries(result.unresolved)) console.log(`${file}: unresolved=${lines.length} (lines ${lines.join(",")})`);
+  for (const [file, lines] of Object.entries(result.staleMarker)) console.log(`${file}: staleMarker=${lines.length} (lines ${lines.join(",")})`);
+  if (args.includes("--allowed")) {
+    for (const [file, entries] of Object.entries(result.allowed)) for (const { line, reason } of entries) console.log(`allowed ${file}:${line} ${reason}`);
+    console.log(`allowed=${result.total.allowed}`);
+  }
   if (args.includes("--folders")) for (const [folder, hooks] of Object.entries(result.folders).sort()) console.log(`${folder}: hooks=${hooks}`);
-  console.log(`TOTAL rawTripCall=${result.total.rawTripCall} unresolved=${result.total.unresolved}`);
+  console.log(`TOTAL rawTripCall=${result.total.rawTripCall} unresolved=${result.total.unresolved} staleMarker=${result.total.staleMarker}`);
 }
 
 if (isMain(import.meta.url)) main(process.argv.slice(2));

@@ -3,7 +3,7 @@
 // under vitest too (it uses the vitest globals there, node:test here; assertions are node:assert either way).
 import assert from "node:assert/strict";
 import * as nodeTest from "node:test";
-import { auditText, tripRefs } from "./trip-audit.mjs";
+import { auditText, markersOf, tripRefs } from "./trip-audit.mjs";
 
 const { describe, it } = globalThis.describe ? globalThis : nodeTest;
 
@@ -77,5 +77,90 @@ function D(convex: ConvexReactClient) { return convex.query(${CALL}); }`;
 
   it("refs without tripId are never counted, tagged receiver or not", () => {
     assert.equal(raw(`function A() { return useConvex().query(tripcastApi.checkpoints.mine, { token: "t" }); }`), 0);
+  });
+});
+
+const HELPERS = `import { useConvex, usePaginatedQuery } from "convex/react";
+import type { ConvexReactClient } from "convex/react";
+import { tripcastApi } from "../convex/tripcastApi";
+import { tripClientFor, useTripConvex, useTripPaginatedQuery, type TripConvexClient } from "../convex/useTrip";
+`;
+const audit = (body) => auditText(HELPERS + body, REFS);
+const PAGES = `tripcastApi.checkpoints.listCheckpoints, { token: "t" }, { initialNumItems: 5 }`;
+
+describe("trip-audit helpers from useTrip", () => {
+  it("trusts tripClientFor(client, tripId) only when imported from the useTrip module", () => {
+    assert.equal(audit(`function A(c: ConvexReactClient) { return tripClientFor(c, "trip-a").query(${CALL}); }`).rawTripCall.length, 0);
+    assert.equal(audit(`function A(c: ConvexReactClient) { const k = tripClientFor(c, "trip-a"); return k.mutation(tripcastApi.checkpoints.add, { token: "t" }); }`).rawTripCall.length, 0);
+    const fake = `import { tripcastApi } from "../convex/tripcastApi";\nimport { tripClientFor } from "./elsewhere";\nfunction A(c) { return tripClientFor(c, "x").query(${CALL}); }`;
+    assert.equal(auditText(fake, REFS).rawTripCall.length, 1);
+  });
+
+  it("never counts useTripPaginatedQuery; a plain usePaginatedQuery on a tripId ref still counts", () => {
+    assert.equal(audit(`function A() { return useTripPaginatedQuery(${PAGES}); }`).rawTripCall.length, 0);
+    assert.equal(audit(`function A() { return usePaginatedQuery(${PAGES}); }`).rawTripCall.length, 1);
+  });
+
+  it("trusts ReturnType<typeof useTripConvex>, destructured parameters and a ?? of trip-aware clients", () => {
+    assert.equal(audit(`function A({ trip }: { trip: ReturnType<typeof useTripConvex> }) { return trip.query(${CALL}); }`).rawTripCall.length, 0);
+    assert.equal(audit(`function A({ trip: pinned }: { trip?: TripConvexClient }) { const own = useTripConvex(); const t = pinned ?? own; return t.query(${CALL}); }`).rawTripCall.length, 0);
+  });
+
+  it("MUTATION CHECK: a destructured plain client, a ?? with a plain side, or ReturnType of another function still counts", () => {
+    assert.equal(audit(`function A({ client }: { client: ConvexReactClient }) { return client.query(${CALL}); }`).rawTripCall.length, 1);
+    assert.equal(audit(`function A({ trip }: { trip?: TripConvexClient }) { const t = trip ?? useConvex(); return t.query(${CALL}); }`).rawTripCall.length, 1);
+    assert.equal(audit(`function A({ c }: { c: ReturnType<typeof useConvex> }) { return c.query(${CALL}); }`).rawTripCall.length, 1);
+  });
+});
+
+describe("trip-audit casts", () => {
+  it("MUTATION CHECK: a cast of a plain client to TripConvexClient counts as a hit, also through unknown", () => {
+    assert.deepEqual(audit(`function A(c: ConvexReactClient) {\n  return c as TripConvexClient;\n}`).rawTripCall, [6]);
+    assert.equal(audit(`function A(c: ConvexReactClient) { return { query: c.query } as unknown as TripConvexClient; }`).rawTripCall.length, 1);
+    assert.equal(audit(`function A() { return useConvex() as TripConvexClient; }`).rawTripCall.length, 1);
+  });
+
+  it("a cast of a client that is already trip-aware does not count", () => {
+    assert.equal(audit(`function A() { return useTripConvex() as TripConvexClient; }`).rawTripCall.length, 0);
+    assert.equal(audit(`function A(c: ConvexReactClient) { return tripClientFor(c, "x") as unknown as TripConvexClient; }`).rawTripCall.length, 0);
+  });
+});
+
+describe("trip-audit-ok markers", () => {
+  const RAW = `const mutate = useConvex().mutation(tripcastApi.checkpoints.add, { token: "t" });`;
+
+  it("a marker with a reason allows one hit on the next line and names it", () => {
+    const result = audit(`function A() {\n  // trip-audit-ok: publisher names the shared trip itself\n  ${RAW}\n}`);
+    assert.deepEqual(result.rawTripCall, []);
+    assert.deepEqual(result.allowed, [{ line: 7, reason: "publisher names the shared trip itself" }]);
+    assert.deepEqual(result.staleMarker, []);
+  });
+
+  it("MUTATION CHECK: a marker above a line without a hit is a staleMarker and allows nothing", () => {
+    const result = audit(`function A() {\n  // trip-audit-ok: publisher names the shared trip itself\n  const x = 1;\n  ${RAW}\n}`);
+    assert.deepEqual(result.staleMarker, [6]);
+    assert.deepEqual(result.rawTripCall, [8]);
+    assert.deepEqual(result.allowed, []);
+  });
+
+  it("MUTATION CHECK: a marker with no reason, or more than 12 words, is a staleMarker and the hit stays", () => {
+    for (const comment of ["// trip-audit-ok:", "// trip-audit-ok:   ", `// trip-audit-ok: ${"word ".repeat(13)}`]) {
+      const result = audit(`function A() {\n  ${comment}\n  ${RAW}\n}`);
+      assert.deepEqual(result.staleMarker, [6], comment);
+      assert.deepEqual(result.rawTripCall, [7], comment);
+    }
+    assert.equal(markersOf(`// trip-audit-ok: ${"word ".repeat(12)}`)[0].reason?.split(" ").length, 12);
+  });
+
+  it("one marker allows exactly one hit: a second hit on the same line still counts", () => {
+    const result = audit(`function A() {\n  // trip-audit-ok: by design\n  ${RAW} ${RAW.replace("mutate", "again")}\n}`);
+    assert.deepEqual(result.rawTripCall, [7]);
+    assert.equal(result.allowed.length, 1);
+  });
+
+  it("covers a counted cast too", () => {
+    const result = audit(`function A(c: ConvexReactClient) {\n  // trip-audit-ok: untagged path by design\n  return c as TripConvexClient;\n}`);
+    assert.deepEqual(result.rawTripCall, []);
+    assert.equal(result.allowed.length, 1);
   });
 });

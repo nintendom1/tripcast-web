@@ -40,6 +40,29 @@ function inertTripContext(token: string, role: Role): TripContextValue {
 type ServerTrips = { current: CurrentTrip | null | undefined; effective: EffectiveTrip | null | undefined };
 const NO_SERVER_TRIPS: ServerTrips = { current: undefined, effective: undefined };
 
+/**
+ * Remembers the Legacy Trip's id once the trip query (or a catalog card opened privately) has named it, so the Legacy
+ * Trip keeps today's client-side keys (rule 11) when viewed privately after another trip became shared, even after a
+ * restart. Trip ids are unique, so a value left by another account never matches a trip of this one.
+ */
+const LEGACY_TRIP_ID_KEY = "tripcast.legacyTripId";
+
+function readLegacyTripId(): string | null {
+  try {
+    return localStorage.getItem(LEGACY_TRIP_ID_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeLegacyTripId(tripId: string) {
+  try {
+    if (localStorage.getItem(LEGACY_TRIP_ID_KEY) !== tripId) localStorage.setItem(LEGACY_TRIP_ID_KEY, tripId);
+  } catch {
+    // Storage unavailable: the id is still known for this session.
+  }
+}
+
 /** Delay before retrying a failed subscription when no visibility or online event comes first. */
 const SUBSCRIPTION_RETRY_MS = 20_000;
 
@@ -119,6 +142,38 @@ export function TripContextProvider({ token, role, children }: TripContextProvid
   }, [currentTrip, followerTrip]);
   const viewing = useTravelerViewingTrip({ role, token, currentTarget: serverTarget });
 
+  // The Legacy flag of the viewed trip, with no extra subscription: the trip query says it for the shared trip, and the
+  // Legacy Trip's id, once learned from it (or from a catalog card passed to `openPrivately`), is remembered, so a
+  // private view of the Legacy Trip after another trip became shared still knows it. Learned and stored only for a
+  // Traveler with multi-trip on (Followers read `followerTrip.isLegacy`; they never view privately).
+  const [legacyTripId, setLegacyTripId] = useState<string | null>(readLegacyTripId);
+  const learnLegacyTrip = useCallback((tripId: string) => {
+    storeLegacyTripId(tripId);
+    setLegacyTripId(tripId);
+  }, []);
+  const sharedLegacyTripId = currentTrip?.isLegacy ? currentTrip.tripId : null;
+  useEffect(() => {
+    if (sharedLegacyTripId) learnLegacyTrip(sharedLegacyTripId);
+  }, [sharedLegacyTripId, learnLegacyTrip]);
+
+  const { openPrivately: openViewPrivately, viewingTrip: viewedTarget } = viewing;
+  const openPrivately = useCallback(
+    (target: TripTarget) => {
+      if (role === "traveler" && multiTripEnabled && target.isLegacy === true) learnLegacyTrip(target.tripId);
+      openViewPrivately(target);
+    },
+    [role, multiTripEnabled, learnLegacyTrip, openViewPrivately],
+  );
+  const viewingTrip = useMemo<TripTarget | null>(() => {
+    if (!viewedTarget) return null;
+    const shared = role === "traveler" ? currentTrip : followerTrip;
+    const isLegacy =
+      (shared?.tripId === viewedTarget.tripId && shared.isLegacy) ||
+      (role === "traveler" && multiTripEnabled && viewedTarget.tripId === legacyTripId);
+    // Only a Legacy Trip is marked; any other target keeps its identity and shape.
+    return isLegacy && viewedTarget.isLegacy !== true ? { ...viewedTarget, isLegacy: true } : viewedTarget;
+  }, [viewedTarget, role, currentTrip, followerTrip, multiTripEnabled, legacyTripId]);
+
   const value = useMemo<TripContextValue>(
     () => ({
       token,
@@ -129,8 +184,10 @@ export function TripContextProvider({ token, role, children }: TripContextProvid
       multiTripEnabled,
       serverTripStatus,
       ...viewing,
+      viewingTrip,
+      openPrivately,
     }),
-    [token, role, currentTrip, followerTrip, multiTripEnabled, serverTripStatus, viewing],
+    [token, role, currentTrip, followerTrip, multiTripEnabled, serverTripStatus, viewing, viewingTrip, openPrivately],
   );
 
   return (

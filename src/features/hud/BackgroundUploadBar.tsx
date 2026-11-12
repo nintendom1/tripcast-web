@@ -1,15 +1,28 @@
 import React from "react";
 import { motion } from "framer-motion";
 import { useBackgroundSave } from "../../providers/BackgroundSaveProvider";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { Loader2, CheckCircle2 } from "lucide-react";
 import { PendingSave } from "../../lib/idb";
+
+/**
+ * Title of the trip a queued save was made for, when a Traveler with multi-trip on is not looking at that trip;
+ * otherwise `null` (the trip on screen, untagged saves, Followers and multi-trip off show exactly today's HUD).
+ */
+export function useOffScreenSaveTrip(save: PendingSave | null): string | null {
+  const { role, multiTripEnabled, viewingTrip } = useOptionalTripContext();
+  if (role !== "traveler" || !multiTripEnabled || !save?.tripId || !save.tripTitle) return null;
+  return save.tripId === viewingTrip?.tripId ? null : save.tripTitle;
+}
 
 export interface BackgroundUploadBarViewProps {
   currentSave: PendingSave | null;
   extraCount?: number;
+  /** The save's trip when it is not the trip on screen. */
+  tripTitle?: string | null;
 }
 
-export function BackgroundUploadBarView({ currentSave, extraCount = 0 }: BackgroundUploadBarViewProps) {
+export function BackgroundUploadBarView({ currentSave, extraCount = 0, tripTitle = null }: BackgroundUploadBarViewProps) {
   if (!currentSave) return null;
 
   return (
@@ -30,6 +43,11 @@ export function BackgroundUploadBarView({ currentSave, extraCount = 0 }: Backgro
         <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ink-2)]">
           {currentSave.status === "uploading" ? "Uploading Photo..." : "Saving Pin..."}
         </span>
+        {tripTitle ? (
+          <span data-testid="bg-save-trip" className="max-w-32 truncate text-[10px] text-[var(--ink-3)]">
+            {tripTitle}
+          </span>
+        ) : null}
         <div className="h-1 w-32 overflow-hidden rounded-full bg-[var(--meter-track)]">
           <motion.div
             data-bg-upload-bar-fill
@@ -54,6 +72,7 @@ export function BackgroundUploadBar() {
   const activeSaves = saves.filter(s => s.status === "uploading" || s.status === "saving");
   const currentSave = activeSaves[activeSaves.length - 1] ?? null;
   const extraCount = Math.max(0, activeSaves.length - 1);
+  const tripTitle = useOffScreenSaveTrip(currentSave);
 
-  return <BackgroundUploadBarView currentSave={currentSave} extraCount={extraCount} />;
+  return <BackgroundUploadBarView currentSave={currentSave} extraCount={extraCount} tripTitle={tripTitle} />;
 }

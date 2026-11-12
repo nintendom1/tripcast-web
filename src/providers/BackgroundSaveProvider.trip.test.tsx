@@ -7,7 +7,7 @@ import type { CurrentTrip } from "../convex/tripcastApi";
 import type { PendingSave } from "../lib/idb";
 import type { TripContextValue } from "../features/trips/tripTypes";
 import { travelerFollowingCurrent, travelerViewingPrivately } from "../test/renderWithTrip";
-import { BackgroundSaveProvider, useBackgroundSave } from "./BackgroundSaveProvider";
+import { BackgroundSaveProvider, isUnplacedSave, useBackgroundSave } from "./BackgroundSaveProvider";
 import { TripContextTestProvider } from "./TripContextProvider";
 import { setNativePublishingTags } from "../native/nativePublishingSignal";
 import { prepareUploadedReplayImage } from "../features/journal/replayImagePreparation";
@@ -362,5 +362,58 @@ describe("BackgroundSaveProvider with trips", () => {
       await api.startSave(DATA, undefined, undefined, OTHER);
     });
     await waitFor(() => expect(screen.getByTestId("state").textContent).toContain("offline (Other Trip)"));
+  });
+});
+
+describe("Retry keeps the queued save (W11A)", () => {
+  const WITH_EXPENSES: PendingSave["data"] = { ...DATA, happenedAt: 777, stagedTransactionIds: ["tx-1"] };
+
+  it("re-sends a tagged save to its own trip with its time and linked expenses; an offered trip never moves it", async () => {
+    addCheckpoint.mockRejectedValueOnce(new Error("offline"));
+    const { rerender } = await mount(onOther);
+    await act(async () => {
+      await api.startSave(WITH_EXPENSES, undefined, undefined, OTHER);
+    });
+    await waitFor(() => expect(screen.getByTestId("state").textContent).toContain(":failed:trip-other:"));
+    rerender(tree(sharedChanged));
+    await act(async () => {
+      await api.retrySave(api.saves[0].id, { tripId: "trip-new", title: "New Shared Trip" });
+    });
+    await waitFor(() => expect(addCheckpoint).toHaveBeenCalledTimes(2));
+    expect(sentArgs()[1]).toMatchObject({ tripId: "trip-other", happenedAt: 777 });
+    await waitFor(() => expect(updateTransaction).toHaveBeenCalledWith(expect.objectContaining({ transactionId: "tx-1", tripId: "trip-other" })));
+  });
+
+  it("never re-sends a save it couldn't place on its own; only to the trip the Traveler chose, keeping its time and expenses", async () => {
+    resolveTripAt.mockResolvedValue(null);
+    seed({ id: "old", status: "saving", data: WITH_EXPENSES });
+    await mount(onCurrent);
+    await waitFor(() => expect(screen.getByTestId("state").textContent).toContain(":failed:none:Couldn't tell which trip"));
+    expect(isUnplacedSave(api.saves[0])).toBe(true);
+
+    // A plain retry asks again by the save's own time and still sends nothing.
+    await act(async () => {
+      await api.retrySave("old");
+    });
+    await waitFor(() => expect(resolveTripAt).toHaveBeenCalledTimes(2));
+    expect(addCheckpoint).not.toHaveBeenCalled();
+    expect(resolveTripAt).toHaveBeenLastCalledWith({ token: "t", at: 1234 });
+
+    // The Traveler chooses the trip on screen.
+    await waitFor(() => expect(isUnplacedSave(api.saves[0])).toBe(true));
+    await act(async () => {
+      await api.retrySave("old", { tripId: "trip-current", title: "Current Trip" });
+    });
+    await waitFor(() => expect(addCheckpoint).toHaveBeenCalledTimes(1));
+    expect(sentArgs()[0]).toMatchObject({ tripId: "trip-current", happenedAt: 777 });
+    await waitFor(() => expect(updateTransaction).toHaveBeenCalledWith(expect.objectContaining({ transactionId: "tx-1", tripId: "trip-current" })));
+    expect(resolveTripAt).toHaveBeenCalledTimes(2);
+  });
+
+  it("isUnplacedSave is false for a tagged, waiting or link-failed save", () => {
+    const base = { id: "s", data: DATA, progress: 0, createdAt: 1, retryCount: 1 } as const;
+    expect(isUnplacedSave({ ...base, status: "failed", tripId: "trip-a", error: "offline" })).toBe(false);
+    expect(isUnplacedSave({ ...base, status: "failed", error: "Waiting to learn which trip this save belongs to." })).toBe(false);
+    expect(isUnplacedSave({ ...base, status: "link-failed", checkpointId: "cp" })).toBe(false);
   });
 });

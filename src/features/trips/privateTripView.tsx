@@ -25,7 +25,7 @@ export function usePrivateTripTitle(target: TripTarget | null): string | null {
   return differs ? target.title : null;
 }
 
-/** Names `target` (same markup as `TripTargetLabel`) unless it is the shared current trip; needs no provider. */
+/** Names `target` unless it is the shared current trip (`TripTargetLabel` renders this); needs no provider. */
 export function PrivateTripTargetLabel({ target, className }: { target: TripTarget | null; className?: string }) {
   const title = usePrivateTripTitle(target);
   if (title === null) return null;
@@ -58,13 +58,15 @@ export function useLiveActionGate(verb: string, target: TripTarget | null): Live
 }
 
 /**
- * Key suffix for client-side state that holds one trip's content (dismissed prompts, unread markers). `""` (today's
- * key) when no trip is known or the viewed or followed trip is the Legacy Trip, so bootstrapping a deployment resets
- * nothing; the trip id otherwise. The Legacy flag is known only for the shared current trip.
+ * Key suffix for client-side state that holds one trip's content (dismissed prompts, unread markers, caches). `""`
+ * (today's key) when no trip is known or the viewed or followed trip is the Legacy Trip, so bootstrapping a deployment
+ * resets nothing; the trip id otherwise. The Legacy flag comes from the viewed trip (`viewingTrip.isLegacy`, also set
+ * for a private view) or from the shared trip when it is the one viewed.
  */
 export function useTripClientKey(): string {
-  const { role, viewingTripId, currentTrip, followerTrip } = useOptionalTripContext();
+  const { role, viewingTripId, viewingTrip, currentTrip, followerTrip } = useOptionalTripContext();
   if (!viewingTripId) return "";
+  if (viewingTrip?.isLegacy && viewingTrip.tripId === viewingTripId) return "";
   const info = role === "follower" ? followerTrip : currentTrip;
   if (info?.isLegacy && info.tripId === viewingTripId) return "";
   return viewingTripId;

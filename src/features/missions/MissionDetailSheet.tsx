@@ -11,6 +11,7 @@ import { LocationPickerField } from "../map/MapPicker";
 import LinkedTransactionsSection from "../travelfunds/LinkedTransactionsSection";
 import RouteVoteSourceCard from "./RouteVoteSourceCard";
 import { PrivateTripTargetLabel, useLiveActionGate, usePrivateTripTitle } from "../trips/privateTripView";
+import type { TripTarget } from "../trips/tripTypes";
 import AttributionBlock from "../attributions/AttributionBlock";
 import AwardBadgeSheet from "../achievements/AwardBadgeSheet";
 import MysteryMissionEditSheet from "./MysteryMissionEditSheet";
@@ -66,7 +67,8 @@ type Props = {
    *  "Complete Mission" action. The parent (TripMap) owns the story-prefill
    *  state, opens AddCheckpointSheet, and calls travelerCompleteMission
    *  after the resulting story lands. */
-  onCompleteAsStory?: (Mission: Mission) => void;
+  /** With multi-trip on, the mission carries `tripTarget`: the trip this detail was opened on. */
+  onCompleteAsStory?: (Mission: Mission & { tripTarget?: TripTarget }) => void;
   onRequestNavigateToVote?: (voteId: string) => void;
   onOpenLinkedStory?: (event: JournalEvent) => void;
   onMysteryMissionReveal?: () => void;
@@ -392,7 +394,9 @@ export default function MissionDetailSheet({
   function handleCompleteAsStory() {
     if (!Mission || !onCompleteAsStory) return;
     log.logUi("action:complete-story", { missionId: Mission._id });
-    onCompleteAsStory(Mission);
+    // The Story form completes this mission on the trip this detail was opened on (its captured target), not on the
+    // trip on screen when the form opens. Untagged (multi-trip off, no provider): the mission exactly as before.
+    onCompleteAsStory(complete.target ? { ...Mission, tripTarget: complete.target } : Mission);
   }
 
   async function handleMarkInProgress() {

@@ -3,7 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useIsDesktop } from "../../lib/useIsDesktop";
 import { DesktopMapFrame } from "../layout/DesktopMapFrame";
-import { useConvex, useMutation, usePaginatedQuery, useQuery } from "convex/react";
+import { useConvex, useMutation, useQuery } from "convex/react";
 import maplibregl, { Marker } from "maplibre-gl";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronLeft, ChevronRight, Crosshair, DollarSign, EyeOff, Pause, Play, Plus, RotateCcw, Trash2, X } from "lucide-react";
@@ -100,8 +100,10 @@ import {
   subscribeNativePublishingTags,
 } from "../../native/nativePublishingSignal";
 import { useTripContext } from "../../providers/TripContextProvider";
-import { useTripConvex, useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { useTripConvex, useTripMutation, useTripPaginatedQuery, useTripQuery } from "../../convex/useTrip";
 import { tripErrorInfo } from "../trips/tripSwitchState";
+import { useTripClientKey } from "../trips/privateTripView";
+import type { TripTarget } from "../trips/tripTypes";
 import { useNativeTrackingState } from "../../native/nativeTrackingState";
 import { useNativeReadinessState } from "../../native/nativeReadinessState";
 import { usePendingTrail, type LocalTrailPoint } from "./usePendingTrail";
@@ -1038,6 +1040,9 @@ function CloakingPinSheet({
   );
 }
 
+/** A Story form's prefill; a mission completion also carries the trip its mission was shown on (`trip`). */
+type StoryPrefill = CheckpointPrefill & { trip?: TripTarget | null };
+
 function ConvexCheckpointSheet({
   selectedCoordinate,
   token,
@@ -1054,7 +1059,7 @@ function ConvexCheckpointSheet({
   selectedCoordinate: SelectedCoordinate | null;
   token: string;
   onClose: () => void;
-  prefill?: CheckpointPrefill;
+  prefill?: StoryPrefill;
   prefillImage?: StoryImageDraft;
   onCheckpointCreated?: (id: string, prefill?: CheckpointPrefill) => void;
   onBack?: () => void;
@@ -1066,6 +1071,16 @@ function ConvexCheckpointSheet({
   const log = useDebugLogger("ConvexCheckpointSheet", "src/features/map/TripMap.tsx");
   const bgSave = useBackgroundSave();
   const convex = useConvex();
+  // The trip this Story writes to (rule 3), captured when the form OPENS: a mission completion brings the trip its
+  // mission was shown on, any other Story takes the trip on screen at that moment. It is kept until the form closes,
+  // whatever the view does meanwhile (Return to current, a switch from another device), and stamped on the queued save.
+  // Multi-trip off: `null`, so the save is untagged as today.
+  const { viewingTrip } = useTripContext();
+  const formOpen = selectedCoordinate !== null;
+  const [openedOn, setOpenedOn] = useState<{ open: boolean; trip: TripTarget | null }>({ open: false, trip: null });
+  if (openedOn.open !== formOpen) {
+    setOpenedOn({ open: formOpen, trip: formOpen ? (prefill?.trip ?? viewingTrip) : null });
+  }
   const isFromMission = Boolean(prefill?.missionId);
   const badgeDefinitions = useQuery(
     tripcastApi.badges.listBadgeDefinitions,
@@ -1116,7 +1131,7 @@ function ConvexCheckpointSheet({
         completeMission: prefill.completeMission,
         mysteryReveal: prefill.mysteryReveal,
       } : undefined,
-    } as any, image, onCheckpointCreated);
+    } as any, image, onCheckpointCreated, openedOn.trip);
     onSaveQueued?.();
   }
 
@@ -1328,11 +1343,10 @@ export default function TripMap({
   const showsLiveTraveler = role !== "traveler" || viewingTripId === null || viewingTripId === currentTrip?.tripId;
   const showsLiveTravelerRef = useRef(showsLiveTraveler);
   showsLiveTravelerRef.current = showsLiveTraveler;
-  // Client caches and stored replay state are keyed by the viewed (Follower: followed) trip. The Legacy Trip, and no
-  // trip at all (multi-trip off, loading), keep today's keys (`null`), so existing caches keep working.
-  const sharedTrip = role === "traveler" ? currentTrip : followerTrip;
-  const viewsLegacyTrip = viewingTripId !== null && sharedTrip?.tripId === viewingTripId && sharedTrip.isLegacy;
-  const tripCacheKey = viewingTripId === null || viewsLegacyTrip ? null : viewingTripId;
+  // Client caches and stored replay state are keyed by the viewed (Follower: followed) trip. The Legacy Trip (shared or
+  // viewed privately), and no trip at all (multi-trip off, loading), keep today's keys (`null`), so existing caches keep
+  // working. One rule for every feature: `useTripClientKey`.
+  const tripCacheKey = useTripClientKey() || null;
   const viewingTripIdRef = useRef(viewingTripId);
   viewingTripIdRef.current = viewingTripId;
 
@@ -1461,7 +1475,7 @@ export default function TripMap({
   const photoRouletteAvailable = useMemo(() => isPhotoRouletteAvailable(), []);
   const [isVotePanelOpen, setIsVotePanelOpen] = useState(false);
   const [isTravelerStateOpen, setIsTravelerStateOpen] = useState(false);
-  const { dismissSave } = useBackgroundSave();
+  const { dismissSave, retrySave } = useBackgroundSave();
   const [voteMapOverlay, setVoteMapOverlay] = useState<RouteVoteMapOverlayType | null>(null);
   const [voteOptionNumberById, setVoteOptionNumberById] = useState<Record<string, number> | null>(null);
   const [snoozedUntil, setSnoozedUntil] = useState<number | null>(() =>
@@ -1538,7 +1552,7 @@ export default function TripMap({
   // branch in a mission detail, this prefill seeds AddCheckpointSheet with the
   // mission's title/location and carries the missionId through so we can call
   // `travelerCompleteMission` after the resulting story lands.
-  const [storyPrefill, setStoryPrefill] = useState<CheckpointPrefill | null>(null);
+  const [storyPrefill, setStoryPrefill] = useState<StoryPrefill | null>(null);
   // Set alongside `storyPrefill` so hitting "← Back" inside the story sheet
   // can reopen MissionsPanel directly on the originating mission's detail
   // view (the four-button action set the Traveler expects to return to).
@@ -1602,10 +1616,12 @@ export default function TripMap({
   const mapCooldownUntil = mapCooldownState.until;
   const isMapServiceUnavailable = mapCooldownUntil !== null || !mapStyleUrl;
 
+  // trip-audit-ok: JS publisher names the shared trip from the bridge's tags
   const updateTravelerLocation = useMutation(tripcastApi.travelerLocations.updateTravelerLocation);
   const stopTravelerLocationSharing = useMutation(
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
+  // trip-audit-ok: JS publisher names the shared trip from the bridge's tags
   const recordLiveTrailSample = useMutation(tripcastApi.liveTrail.travelerRecordLiveTrailSample);
   const setTripLifecycle = useTripMutation(tripcastApi.trips.setLifecycle);
   const reopenTrip = useTripMutation(tripcastApi.endTrip.travelerReopenTrip);
@@ -1634,10 +1650,12 @@ export default function TripMap({
     tripcastApi.cloakingPins.travelerListCloakingPins,
     role === "traveler" ? { token } : "skip",
   );
-  const nativeMysteryMissionRevision = useQuery(
+  // The phone's Mystery Missions are the shared current trip's, never the viewed trip's: its id is explicit while known
+  // (untagged, exactly as before, otherwise).
+  const nativeMysteryMissionRevision = useTripQuery(
     tripcastApi.mysteryMissions.travelerGetNativeMysteryMissionRevision,
     role === "traveler" && isAdaptiveLocationAvailable()
-      ? { token, includeDebugAll: debugShowAllMysteryPins || undefined }
+      ? { token, includeDebugAll: debugShowAllMysteryPins || undefined, ...(currentTrip ? { tripId: currentTrip.tripId } : {}) }
       : "skip",
   );
   const [nativeMysterySyncRetryNonce, setNativeMysterySyncRetryNonce] = useState(0);
@@ -1650,8 +1668,8 @@ export default function TripMap({
   // paints at once and the rest load in the background until done. Every loaded page stays a live subscription (a new
   // Story lands on the first page) and Convex pins each page's end cursor, so a shifting boundary neither duplicates
   // nor drops a pin. A view change resets the pages: the old trip's are dropped and nothing shows until the new first
-  // page. Followers, multi-trip off and loading keep today's unpaginated call with today's arguments. `useTrip.ts` has
-  // no paginated hook, so the trip id is passed explicitly: the id `useTripQuery` would add.
+  // page. Followers, multi-trip off and loading keep today's unpaginated call with today's arguments. The paged read
+  // adds the viewed trip like `useTripQuery` (`pinPageTripId` is that same id).
   // While the trip status is not known (loading or failing) on a Traveler's device whose bridge holds remembered trip
   // tags (multi-trip was on), the viewed trip is unknown and today's (Legacy) key may hold the wrong trip: the trail
   // cache is neither read nor written, and the untagged pin read (up to 8,000 rows) is skipped, until it is known. Followers and untagged Travelers (multi-trip disabled, an
@@ -1663,9 +1681,9 @@ export default function TripMap({
     tripcastApi.checkpoints.listCheckpointMapPins,
     pinPageTripId || tripStatusUnknown ? "skip" : { token },
   );
-  const pagedPins = usePaginatedQuery(
+  const pagedPins = useTripPaginatedQuery(
     tripcastApi.checkpoints.listTripMapPins,
-    pinPageTripId ? { token, tripId: pinPageTripId } : "skip",
+    pinPageTripId ? { token } : "skip",
     { initialNumItems: PIN_PAGE_SIZE },
   );
   const { results: pagedPinRows, status: pinPageStatus, loadMore: loadMorePins } = pagedPins;
@@ -5504,6 +5522,8 @@ export default function TripMap({
     locationLabel?: string;
     lat?: number;
     lon?: number;
+    /** The trip the mission detail was opened on (set by MissionDetailSheet with multi-trip on). */
+    tripTarget?: TripTarget | null;
   }) {
     music.sfx("page");
     setCheckInDebugSource({ source: "missions:complete-as-story", sourceLabel: "Mission detail -> Complete as Story" });
@@ -5515,6 +5535,8 @@ export default function TripMap({
       title: Mission.title,
       note: Mission.description,
       locationLabel: Mission.locationLabel,
+      // The completion goes to the mission's trip, even if the view changed after its detail opened.
+      ...(Mission.tripTarget ? { trip: Mission.tripTarget } : {}),
     });
     // Remember which mission to land on if the Traveler backs out of the story
     // form — the MissionPanel re-opens directly on this detail view.
@@ -5579,7 +5601,15 @@ export default function TripMap({
   }, [music, showToast]);
 
   function handleRetrySave(save: any) {
-    // Re-populate the form with the failed save's data
+    // A save that carries its trip, or any save while multi-trip is on, is re-sent from the queue as it was made: its
+    // trip, time, linked expenses and state fields are kept, and an older untagged save is placed by its own time
+    // (never the trip on screen). A save that couldn't be placed is offered to the trip on screen only by the toast's
+    // explicit "Save to <trip>" choice.
+    if (save.tripId || multiTripEnabled) {
+      void retrySave(save.id);
+      return;
+    }
+    // Multi-trip off: as today, re-populate the form with the failed save's data
     setStoryPrefill({
       missionId: save.data.missionId,
       completeMission: save.data.missionId ? true : false, // heuristic

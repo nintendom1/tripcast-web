@@ -36,6 +36,11 @@ export type ServerTripStatus = "loading" | "known" | "unavailable";
 export type TripTarget = {
   tripId: string;
   title: string;
+  /**
+   * Whether this is the Legacy Trip, when known (rule 11: it keeps today's client-side keys). Set on the context's
+   * `viewingTrip`; a catalog card passes it to `openPrivately`. Absent means unknown, read as not Legacy.
+   */
+  isLegacy?: boolean;
 };
 
 /**
@@ -70,7 +75,8 @@ export type TripContextValue = {
   /**
    * The viewed trip with its title (same trip as `viewingTripId`): the chip, banner and editors build their captured
    * `TripTarget` from it. In `follow_current` it is the current trip (Follower: `followerTrip`); in `private` the
-   * trip passed to `openPrivately`. `null` when `viewingTripId` is `null` (stub, loading).
+   * trip passed to `openPrivately`. `null` when `viewingTripId` is `null` (stub, loading). `isLegacy` is set by
+   * `TripContextProvider` (from the trip query, or the Legacy Trip id it learned from it or from a catalog card).
    */
   viewingTrip: TripTarget | null;
   /**

@@ -6,9 +6,9 @@ import {
   deletePendingSave,
   getAllPendingSaves
 } from "../lib/idb";
-import { useConvex, useMutation, type ConvexReactClient } from "convex/react";
+import { useConvex, useMutation } from "convex/react";
 import { tripcastApi } from "../convex/tripcastApi";
-import { useTripMutation, type TripConvexClient } from "../convex/useTrip";
+import { tripClientFor, useTripMutation } from "../convex/useTrip";
 import { useOptionalTripContext } from "./TripContextProvider";
 import type { TripTarget } from "../features/trips/tripTypes";
 import { tripErrorInfo } from "../features/trips/tripSwitchState";
@@ -55,7 +55,11 @@ interface BackgroundSaveContextType {
    * sent there. A caller that passes none gets the viewed trip at enqueue time (a Traveler with multi-trip on only).
    */
   startSave: (data: PendingSave["data"], image?: StoryImageDraft, onComplete?: (id: string, prefill?: any) => void, trip?: TripTarget | null) => Promise<string>;
-  retrySave: (id: string) => Promise<void>;
+  /**
+   * Re-sends a queued save as it was made (its trip, time, linked expenses). `trip` is a trip the Traveler explicitly
+   * chose for a save that has none and no Story yet (one that couldn't be placed); it is stamped before sending.
+   */
+  retrySave: (id: string, trip?: TripTarget | null) => Promise<void>;
   dismissSave: (id: string) => Promise<void>;
   /** Saves dropped because their trip was deleted, for the HUD to show until dismissed. */
   notices: BackgroundSaveNotice[];
@@ -69,17 +73,15 @@ class UnplacedSaveError extends Error {
   }
 }
 
+/** Message of an older untagged save whose trip could not be told (its trip is gone or being deleted). */
+const UNPLACED_SAVE_MESSAGE = "Couldn't tell which trip this save belongs to. Choose where to save it, or dismiss it.";
+
 /**
- * Trip-scoped client for a save's own trip, for the replay image job: every call names that trip explicitly (an
- * explicit `tripId` in the args still wins), never the view or the shared trip at the time it runs.
+ * True for a failed save that could not be placed on any trip: it is never re-sent on its own, only to a trip the
+ * Traveler chooses (`retrySave(id, trip)`) or dismissed.
  */
-function clientForTrip(client: ConvexReactClient, tripId: string): TripConvexClient {
-  const named = (args: object) => ((args as { tripId?: string }).tripId !== undefined ? args : { ...args, tripId });
-  return {
-    query: (ref: never, args: object) => client.query(ref, named(args) as never),
-    mutation: (ref: never, args: object) => client.mutation(ref, named(args) as never),
-    action: (ref: never, args: object) => client.action(ref, named(args) as never),
-  } as unknown as TripConvexClient;
+export function isUnplacedSave(save: PendingSave): boolean {
+  return save.status === "failed" && !save.tripId && !save.checkpointId && save.error === UNPLACED_SAVE_MESSAGE;
 }
 
 const BackgroundSaveContext = createContext<BackgroundSaveContextType | undefined>(undefined);
@@ -141,7 +143,7 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
     if (!context.multiTripEnabled) return s;
     const resolved = await replayImageClient.query(tripcastApi.trips.resolveTripAt, { token, at: s.createdAt });
     if (!resolved) {
-      throw new UnplacedSaveError("Couldn't tell which trip this save belongs to. Retry or dismiss it.", false);
+      throw new UnplacedSaveError(UNPLACED_SAVE_MESSAGE, false);
     }
     const title = [context.currentTrip, context.viewingTrip].find((t) => t?.tripId === resolved.tripId)?.title;
     const placed: PendingSave = { ...s, tripId: resolved.tripId, ...(title ? { tripTitle: title } : {}) };
@@ -284,7 +286,7 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
             replayImageClient,
             token,
             imageId,
-            save.tripId ? clientForTrip(replayImageClient, save.tripId) : undefined,
+            save.tripId ? tripClientFor(replayImageClient, save.tripId) : undefined,
           );
         }
 
@@ -305,6 +307,7 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
               // Untagged save (disabled, or an older save whose Story already landed): send the update untagged, as
               // before multi-trip; the backend resolves an untagged edit to the row's own trip. The plain client, since
               // the trip hooks would add the trip captured when this provider mounted.
+              // trip-audit-ok: untagged save; the backend edits the row's own trip
               await replayImageClient.mutation(tripcastApi.travelFunds.travelerUpdateTransaction, {
                 token,
                 transactionId: txId as any,
@@ -449,11 +452,13 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
     return id;
   }, [performSave]);
 
-  const retrySave = useCallback(async (id: string) => {
+  const retrySave = useCallback(async (id: string, trip?: TripTarget | null) => {
     const save = savesRef.current.find(s => s.id === id);
     if (!save || retryingIds.current.has(id)) return;
     retryingIds.current.add(id);
-    const saveToRetry = { ...save, nextRetryAt: undefined };
+    // A trip the Traveler chose for a save that has none (and no Story yet) is stamped; a save's own trip never changes.
+    const chosen = trip && !save.tripId && !save.checkpointId ? { tripId: trip.tripId, tripTitle: trip.title } : {};
+    const saveToRetry = { ...save, ...chosen, nextRetryAt: undefined };
     setSaves(prev => prev.map(s => s.id === id ? saveToRetry : s));
     await savePendingSave(saveToRetry);
     performSave(saveToRetry).finally(() => {
