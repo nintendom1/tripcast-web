@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import { Button } from "../../components/ui/button";
@@ -12,6 +12,10 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
+import { setLiveSharingEnabled } from "../../lib/liveSharingPreference";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import { tripErrorInfo } from "../trips/tripSwitchState";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 
 type Props = {
@@ -29,9 +33,24 @@ const MAX_NOTE = 1000;
  * unlocks the credits finale), or reopen it. Ending never locks the app.
  */
 export default function EndTripSheet({ token, open, onOpenChange, onViewCredits }: Props) {
-  const credits = useQuery(tripcastApi.endTrip.getTripCredits, open ? { token } : "skip");
-  const endTrip = useMutation(tripcastApi.endTrip.travelerEndTrip);
-  const reopenTrip = useMutation(tripcastApi.endTrip.travelerReopenTrip);
+  const endTrip = useTripMutation(tripcastApi.endTrip.travelerEndTrip);
+  const reopenTrip = useTripMutation(tripcastApi.endTrip.travelerReopenTrip);
+  const { multiTripEnabled, viewingMode, currentTrip, reportTripUnavailable } = useOptionalTripContext();
+  // The sheet stays mounted while closed: take the trip on screen each time it opens. Everything below (the credits
+  // read, End Trip, Reopen) then names that trip explicitly, so a view change while it is open changes nothing.
+  const target = endTrip.target;
+  const recaptureEnd = endTrip.recapture;
+  const recaptureReopen = reopenTrip.recapture;
+  useEffect(() => {
+    if (open) {
+      recaptureEnd();
+      recaptureReopen();
+    }
+  }, [open, recaptureEnd, recaptureReopen]);
+  const credits = useTripQuery(
+    tripcastApi.endTrip.getTripCredits,
+    open ? { token, ...(target ? { tripId: target.tripId } : {}) } : "skip",
+  );
   const log = useDebugLogger("EndTripSheet", "src/features/endtrip/EndTripSheet.tsx");
 
   const [note, setNote] = useState("");
@@ -57,6 +76,10 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
     if (!open && populated) setPopulated(false);
   }, [open, credits, populated]);
 
+  function reportIfTripGone(e: unknown) {
+    if (target && tripErrorInfo(e).code === "trip_not_found") reportTripUnavailable?.(target.tripId);
+  }
+
   async function handleEnd() {
     setWorking(true);
     setError(null);
@@ -68,9 +91,13 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
     try {
       await endTrip({ token, thankYouNote: note.trim() || undefined });
       log.logMutation("endTrip:submit:success");
+      // Ending the SHARED current trip stops this device's own live sharing (the server stops the others). Ending
+      // a privately viewed trip that is not shared leaves sharing alone. Same local switch as the private banner's Stop.
+      if (multiTripEnabled && target && target.tripId === currentTrip?.tripId) setLiveSharingEnabled(false);
       onOpenChange(false);
       onViewCredits();
     } catch (e) {
+      reportIfTripGone(e);
       setError(e instanceof Error ? e.message : "Could not end the trip.");
     } finally {
       setWorking(false);
@@ -84,6 +111,7 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
       await reopenTrip({ token });
       log.logMutation("endTrip:reopen:success");
     } catch (e) {
+      reportIfTripGone(e);
       setError(e instanceof Error ? e.message : "Could not reopen the trip.");
     } finally {
       setWorking(false);
@@ -109,6 +137,10 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
         </div>
 
         <SheetBody className="grid gap-4 px-5">
+          <PrivateTripTargetLabel target={target} />
+          {multiTripEnabled && viewingMode !== "private" && target ? (
+            <p className="text-xs text-[var(--ink-3)]">{target.title}</p>
+          ) : null}
           <p className="text-sm text-[var(--ink-3)]">
             Ending the trip launches the finale for everyone and marks the trip as
             complete. Traveler controls stay available so the trip can be reopened.

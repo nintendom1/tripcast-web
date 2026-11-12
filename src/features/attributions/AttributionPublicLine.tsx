@@ -1,4 +1,4 @@
-import { useQuery } from "convex/react";
+import { useTripQuery } from "../../convex/useTrip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { AttributionSourceType } from "../../convex/tripcastApi";
@@ -16,7 +16,7 @@ export default function AttributionPublicLine({
   sourceId,
   className,
 }: AttributionPublicLineProps) {
-  const data = useQuery(tripcastApi.attributions.listAttributionsForSource, {
+  const data = useTripQuery(tripcastApi.attributions.listAttributionsForSource, {
     token,
     sourceType,
     sourceId,

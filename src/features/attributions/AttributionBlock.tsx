@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { UserRound } from "lucide-react";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
 
 import { Button } from "../../components/ui/button";
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -50,7 +52,7 @@ export default function AttributionBlock({
   editable = true,
 }: AttributionBlockProps) {
   const log = useDebugLogger("AttributionBlock", "src/features/attributions/AttributionBlock.tsx");
-  const data = useQuery(tripcastApi.attributions.listAttributionsForSource, {
+  const data = useTripQuery(tripcastApi.attributions.listAttributionsForSource, {
     token,
     sourceType,
     sourceId,
@@ -59,8 +61,13 @@ export default function AttributionBlock({
     tripcastApi.followerAdmin.listFollowers,
     viewerRole === "traveler" ? { token } : "skip",
   );
-  const setAttributions = useMutation(tripcastApi.attributions.travelerSetFollowerAttributions);
+  const setAttributions = useTripMutation(tripcastApi.attributions.travelerSetFollowerAttributions);
   const [isEditing, setIsEditing] = useState(false);
+  // The block stays mounted while the editor is closed: take the trip on screen when editing opens.
+  const recaptureTrip = setAttributions.recapture;
+  useEffect(() => {
+    if (isEditing) recaptureTrip();
+  }, [isEditing, recaptureTrip]);
   const [draft, setDraft] = useState<DraftAttribution[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedRole, setSelectedRole] = useState<AttributionRole>("traveler_added");
@@ -193,6 +200,7 @@ export default function AttributionBlock({
 
       {isTraveler && editable && isEditing ? (
         <div className="grid gap-2">
+          <PrivateTripTargetLabel target={setAttributions.target} />
           <div className="grid gap-1">
             {draft.length === 0 ? (
               <p className="text-xs text-[var(--ink-3)]">No Followers credited.</p>

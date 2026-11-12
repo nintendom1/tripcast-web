@@ -5,7 +5,8 @@ import {
   STALE_THRESHOLD_OPTIONS,
 } from "../../lib/sleepTimeUtils";
 import { useDebugLogger } from "../../debug/useDebugLogger";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { AnimatePresence, motion } from "framer-motion";
 import { Heart, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -48,6 +49,7 @@ import {
 import { formatSaveError } from "./formatSaveError";
 import AutoStateTab, { type AutoStateFooterAction } from "./AutoStateTab";
 import MotionDiagnosticsModal from "./MotionDiagnosticsModal";
+import { PrivateTripTargetLabel, useLiveActionGate } from "../trips/privateTripView";
 import {
   DEFAULT_MOTION_ACTIVITY_VALUES,
   MovementDetectionSettings,
@@ -318,16 +320,16 @@ function SheetSaveFooter({
 }
 
 export default function TravelerStateSheet({ token, onClose, onToast, debugSource }: TravelerStateSheetProps) {
-  const result = useQuery(tripcastApi.travelerState.travelerGetState, { token });
-  const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
-  const currentActivity = useQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
-  const stalenessSettings = useQuery(tripcastApi.currentActivity.travelerGetStalenessSettings, { token });
-  const prefs = useQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
-  const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
-  const setActivity = useMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
-  const updateStalenessSettings = useMutation(tripcastApi.currentActivity.travelerUpdateStalenessSettings);
-  const updateVisibility = useMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
-  const updateSleepHours = useMutation(tripcastApi.travelerPreferences.travelerUpdateSleepHours);
+  const result = useTripQuery(tripcastApi.travelerState.travelerGetState, { token });
+  const autoState = useTripQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
+  const currentActivity = useTripQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
+  const stalenessSettings = useTripQuery(tripcastApi.currentActivity.travelerGetStalenessSettings, { token });
+  const prefs = useTripQuery(tripcastApi.travelerPreferences.travelerGetPreferences, { token });
+  const updateState = useTripMutation(tripcastApi.travelerState.travelerUpdateState);
+  const setActivity = useTripMutation(tripcastApi.currentActivity.travelerSetCurrentActivity);
+  const updateStalenessSettings = useTripMutation(tripcastApi.currentActivity.travelerUpdateStalenessSettings);
+  const updateVisibility = useTripMutation(tripcastApi.travelerState.travelerUpdateStateVisibility);
+  const updateSleepHours = useTripMutation(tripcastApi.travelerPreferences.travelerUpdateSleepHours);
   const updateMovementDetection = useMutation(
     tripcastApi.travelerPreferences.travelerUpdateMovementDetection,
   );
@@ -564,6 +566,12 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
     return Date.now();
   }
 
+  // Updating the CURRENT state and activity is live-only: decided from the trip these writes go to (captured when
+  // the sheet mounted) against the shared current trip. A past entry (an earlier "When") stays possible anywhere.
+  const stateGate = useLiveActionGate("update your current state", updateState.target);
+  const isPastEntry = stateAt !== "" && getStateAtMs() < Date.now();
+  const stateBlocked = !stateGate.allowed && !isPastEntry;
+
   function handleClearAll() {
     setMoodValue(undefined);
     setEnergyLevel(undefined);
@@ -621,7 +629,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
   }
 
   async function handleSaveStatus() {
-    if (saving) return;
+    if (saving || stateBlocked) return;
     setSaving(true);
     setError(null);
     log.logInteraction("status:submit", {
@@ -801,6 +809,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
         data-role="traveler-state-sheet-body"
         className={cn("flex-1 overflow-y-auto", BODY_FOOTER_CLEARANCE_CLASS)}
       >
+        {tab !== "auto" && <PrivateTripTargetLabel target={updateState.target} className="mx-4 mt-4" />}
         {tab === "state" && (
           <div className="grid gap-4 p-4">
             {autoState?.autoStateEnabled && (
@@ -809,12 +818,13 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
               </p>
             )}
 
-            <StateSegment title="Current Activity" hint="what you're doing now">
+            <StateSegment title="Current Activity" hint={stateGate.reason ?? "what you're doing now"}>
               <div className="grid grid-cols-[repeat(auto-fit,minmax(120px,1fr))] gap-1.5">
                 {quickActivities.activities.slice(0, quickActivities.displayCount).map((activity: QuickActivity, idx: number) => (
                   <button
                     key={`${activity.label}-${idx}`}
                     type="button"
+                    disabled={!stateGate.allowed}
                     onClick={() => {
                       setActivityTitle(activity.label);
                       setActivityEmoji(activity.emoji);
@@ -840,6 +850,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     id="status-activity-emoji"
                     type="text"
                     value={activityEmoji}
+                    disabled={!stateGate.allowed}
                     onChange={(e) => setActivityEmoji(e.target.value.slice(0, 10))}
                     maxLength={10}
                     placeholder="🚶"
@@ -854,6 +865,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
                     id="status-activity-title"
                     type="text"
                     value={activityTitle}
+                    disabled={!stateGate.allowed}
                     onChange={(e) => setActivityTitle(e.target.value.slice(0, 80))}
                     placeholder="What are you doing?"
                     className={cn("h-9 px-3 text-sm placeholder:text-[var(--ink-3)]", stateInputClass)}
@@ -1236,6 +1248,9 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
 
       {/* Pinned footer (#7) */}
       <SheetSaveFooter error={footerError} savedAt={savedAt} showSavedAt={tab === "state"}>
+        {tab === "state" && stateBlocked ? (
+          <p className="mb-3 text-xs text-[var(--ink-3)]">{stateGate.reason}. Pick an earlier time under When to edit a past entry.</p>
+        ) : null}
         {tab === "state" ? (
           <div className="flex gap-2">
             <Button
@@ -1247,7 +1262,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
             >
               Clear All
             </Button>
-            <Button onClick={handleSaveStatus} disabled={saving} className="flex-1">
+            <Button onClick={handleSaveStatus} disabled={saving || stateBlocked} className="flex-1">
               {saving ? "Saving…" : "Save Status"}
             </Button>
           </div>
@@ -1259,7 +1274,7 @@ export default function TravelerStateSheet({ token, onClose, onToast, debugSourc
           <Button
             type="button"
             onClick={() => autoFooterAction?.onSave()}
-            disabled={!autoFooterAction || autoFooterAction.saving}
+            disabled={!autoFooterAction || autoFooterAction.saving || autoFooterAction.disabled}
             className="w-full"
           >
             {autoFooterAction?.saving ? "Saving…" : "Save Auto settings"}
