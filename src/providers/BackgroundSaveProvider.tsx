@@ -12,6 +12,7 @@ import { useTripMutation, type TripConvexClient } from "../convex/useTrip";
 import { useOptionalTripContext } from "./TripContextProvider";
 import type { TripTarget } from "../features/trips/tripTypes";
 import { tripErrorInfo } from "../features/trips/tripSwitchState";
+import { getNativePublishingTags } from "../native/nativePublishingSignal";
 import { uploadStoryImage, type StoryImageDraft } from "../features/journal/storyImageUpload";
 import { registerPlugin } from "@capacitor/core";
 
@@ -124,11 +125,17 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
 
   // Gives an untagged (older) save its trip: none with multi-trip off or for a Follower (as today); otherwise the
   // trip current at the save's own time, asked once and stored. No answer keeps the save and surfaces it.
+  // A save whose Story already landed (`checkpointId`) is not placed: that checkpoint went to whatever trip was
+  // current when the old build sent it, which `createdAt` may not name; its expense update goes untagged instead.
   const placeSave = useCallback(async (s: PendingSave): Promise<PendingSave> => {
-    if (s.tripId) return s;
+    if (s.tripId || s.checkpointId) return s;
     const context = tripContextRef.current;
     if (context.role !== "traveler") return s;
     if (context.serverTripStatus !== undefined && context.serverTripStatus !== "known") {
+      // Trip state unknown (cold start, failing subscription). Wait only on a device that can be multi-trip: the
+      // bridge remembers its trip tags from earlier launches. With none remembered (disabled, never multi-trip) send
+      // as today, immediately.
+      if (getNativePublishingTags() === null) return s;
       throw new UnplacedSaveError("Waiting to learn which trip this save belongs to.", true);
     }
     if (!context.multiTripEnabled) return s;
@@ -292,7 +299,18 @@ export function BackgroundSaveProvider({ children, token }: { children: React.Re
       if (save.data.stagedTransactionIds?.length) {
         for (const txId of save.data.stagedTransactionIds) {
           try {
-            await updateTransaction({ token, transactionId: txId as any, linkedCheckpointId: checkpointId, ...tripArg });
+            if (save.tripId) {
+              await updateTransaction({ token, transactionId: txId as any, linkedCheckpointId: checkpointId, tripId: save.tripId });
+            } else {
+              // Untagged save (disabled, or an older save whose Story already landed): send the update untagged, as
+              // before multi-trip; the backend resolves an untagged edit to the row's own trip. The plain client, since
+              // the trip hooks would add the trip captured when this provider mounted.
+              await replayImageClient.mutation(tripcastApi.travelFunds.travelerUpdateTransaction, {
+                token,
+                transactionId: txId as any,
+                linkedCheckpointId: checkpointId,
+              });
+            }
           } catch (e) {
             console.error("Failed to link transaction in background:", e);
             linkFailed = true;

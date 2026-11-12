@@ -13,6 +13,7 @@ import {
 } from "../../components/ui/sheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { setLiveSharingEnabled } from "../../lib/liveSharingPreference";
+import { clearLiveSnooze } from "../../lib/liveSnooze";
 import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { PrivateTripTargetLabel } from "../trips/privateTripView";
 import { tripErrorInfo } from "../trips/tripSwitchState";
@@ -93,7 +94,12 @@ export default function EndTripSheet({ token, open, onOpenChange, onViewCredits 
       log.logMutation("endTrip:submit:success");
       // Ending the SHARED current trip stops this device's own live sharing (the server stops the others). Ending
       // a privately viewed trip that is not shared leaves sharing alone. Same local switch as the private banner's Stop.
-      if (multiTripEnabled && target && target.tripId === currentTrip?.tripId) setLiveSharingEnabled(false);
+      // A stored snooze would resume sharing onto the completed trip when it expires, so clear it too, as the bridge
+      // does when the shared trip changes (`stopLiveSharingForTripChange`).
+      if (multiTripEnabled && target && target.tripId === currentTrip?.tripId) {
+        clearLiveSnooze();
+        setLiveSharingEnabled(false);
+      }
       onOpenChange(false);
       onViewCredits();
     } catch (e) {

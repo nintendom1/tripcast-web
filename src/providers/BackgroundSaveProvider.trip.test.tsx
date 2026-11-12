@@ -9,6 +9,7 @@ import type { TripContextValue } from "../features/trips/tripTypes";
 import { travelerFollowingCurrent, travelerViewingPrivately } from "../test/renderWithTrip";
 import { BackgroundSaveProvider, useBackgroundSave } from "./BackgroundSaveProvider";
 import { TripContextTestProvider } from "./TripContextProvider";
+import { setNativePublishingTags } from "../native/nativePublishingSignal";
 import { prepareUploadedReplayImage } from "../features/journal/replayImagePreparation";
 
 // A developer's .env.local may turn on the provider's latency and failure simulation; tests need it off.
@@ -115,6 +116,7 @@ const sentArgs = () => addCheckpoint.mock.calls.map((call) => call[0] as Record<
 beforeEach(() => {
   vi.clearAllMocks();
   store.clear();
+  setNativePublishingTags(null);
   addCheckpoint.mockResolvedValue("cp-1");
   completeMission.mockResolvedValue("cp-2");
   updateTransaction.mockResolvedValue(null);
@@ -221,12 +223,56 @@ describe("BackgroundSaveProvider with trips", () => {
     expect(store.get("old")?.nextRetryAt).toBeUndefined();
   });
 
-  it("waits, rather than sending untagged, while an older save's trip state is still loading", async () => {
+  it("waits, rather than sending untagged, while a multi-trip device's trip state is still loading", async () => {
+    setNativePublishingTags({ tripId: "trip-current", publishingEpoch: 1, tripTitle: "Current Trip" });
     seed({ id: "old", status: "saving" });
     await mount({ ...travelerFollowingCurrent, multiTripEnabled: false, serverTripStatus: "loading" });
     await waitFor(() => expect(screen.getByTestId("state").textContent).toContain("Waiting to learn which trip"));
     expect(addCheckpoint).not.toHaveBeenCalled();
     expect(resolveTripAt).not.toHaveBeenCalled();
+  });
+
+  it("keeps waiting while the subscription is failing on a multi-trip device", async () => {
+    setNativePublishingTags({ tripId: "trip-current", publishingEpoch: 1, tripTitle: "Current Trip" });
+    seed({ id: "old", status: "saving" });
+    await mount({ ...travelerFollowingCurrent, multiTripEnabled: false, serverTripStatus: "unavailable" });
+    await waitFor(() => expect(screen.getByTestId("state").textContent).toContain("Waiting to learn which trip"));
+    expect(addCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it("sends an interrupted untagged save at once at a disabled cold start, with no failure shown", async () => {
+    seed({ id: "old", status: "saving" });
+    await mount({ multiTripEnabled: false, serverTripStatus: "loading" });
+    await waitFor(() => expect(addCheckpoint).toHaveBeenCalledTimes(1));
+    expect(sentArgs()[0]).not.toHaveProperty("tripId");
+    expect(screen.getByTestId("state").textContent).not.toContain("Waiting");
+    expect(resolveTripAt).not.toHaveBeenCalled();
+  });
+
+  it("sends an untagged save at once while the subscription is failing when the device was never multi-trip", async () => {
+    seed({ id: "old", status: "saving" });
+    await mount({ multiTripEnabled: false, serverTripStatus: "unavailable" });
+    await waitFor(() => expect(addCheckpoint).toHaveBeenCalledTimes(1));
+    expect(sentArgs()[0]).not.toHaveProperty("tripId");
+  });
+
+  it("sends an older untagged save that already has its Story as an untagged expense update, never placing it", async () => {
+    seed({
+      id: "old",
+      status: "saving",
+      checkpointId: "cp-old",
+      data: { ...DATA, stagedTransactionIds: ["tx-1"] },
+    });
+    await mount(onCurrent);
+    await waitFor(() => expect(convexClient.mutation).toHaveBeenCalled());
+    expect(convexClient.mutation).toHaveBeenCalledWith(tripcastApi.travelFunds.travelerUpdateTransaction, {
+      token: "t",
+      transactionId: "tx-1",
+      linkedCheckpointId: "cp-old",
+    });
+    expect(resolveTripAt).not.toHaveBeenCalled();
+    expect(addCheckpoint).not.toHaveBeenCalled();
+    expect(updateTransaction).not.toHaveBeenCalled();
   });
 
   it("removes a save whose trip was deleted, names the trip and reports it", async () => {

@@ -6,6 +6,7 @@ import * as convexReact from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { CurrentTrip, TripCredits } from "../../convex/tripcastApi";
 import { getLiveSharingEnabled, setLiveSharingEnabled } from "../../lib/liveSharingPreference";
+import { clearLiveSnooze, readLiveSnooze, writeLiveSnooze } from "../../lib/liveSnooze";
 import { TripContextTestProvider } from "../../providers/TripContextProvider";
 import type { TripContextValue } from "../trips/tripTypes";
 import { travelerFollowingCurrent, travelerViewingPrivately } from "../../test/renderWithTrip";
@@ -50,6 +51,7 @@ beforeEach(() => {
   endTrip.mockResolvedValue(null);
   reopenTrip.mockResolvedValue(null);
   setLiveSharingEnabled(true);
+  clearLiveSnooze();
   vi.mocked(convexReact.useMutation).mockImplementation(((ref: unknown) =>
     ref === tripcastApi.endTrip.travelerEndTrip ? endTrip : reopenTrip) as never);
   vi.mocked(convexReact.useQuery).mockReturnValue(credits as never);
@@ -84,6 +86,36 @@ describe("EndTripSheet with trips", () => {
     await end();
     await waitFor(() => expect(endTrip).toHaveBeenCalledWith(expect.objectContaining({ tripId: "trip-other" })));
     expect(getLiveSharingEnabled()).toBe(true);
+  });
+
+  it("clears a stored live snooze when ending the shared trip, so nothing resumes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    try {
+      writeLiveSnooze(1_000_000 + 3_600_000);
+      render(inContext(onCurrent));
+      await end();
+      await waitFor(() => expect(endTrip).toHaveBeenCalled());
+      expect(readLiveSnooze()).toBeNull();
+      expect(getLiveSharingEnabled()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves a stored live snooze alone when ending a trip that is not shared", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    try {
+      writeLiveSnooze(1_000_000 + 3_600_000);
+      render(inContext(onOther));
+      await end();
+      await waitFor(() => expect(endTrip).toHaveBeenCalled());
+      expect(readLiveSnooze()).toBe(1_000_000 + 3_600_000);
+      expect(getLiveSharingEnabled()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not stop sharing when the End Trip call fails", async () => {
