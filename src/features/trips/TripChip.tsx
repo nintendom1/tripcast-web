@@ -5,6 +5,8 @@ import { ErrorBoundary } from "react-error-boundary";
 import { cn } from "@/lib/utils";
 import { useTripContext } from "../../providers/TripContextProvider";
 import type { TripPaneActions } from "./TripSwitcherSheet";
+import { useSwitchPending } from "./tripSwitchState";
+import { useTripPaneActions } from "./useTripPaneActions";
 
 // The pane (list subscription, previews) loads on first open, so the header carries none of it.
 // `React.lazy` caches a rejected import, so each retry after a failed chunk load builds a fresh lazy component.
@@ -16,18 +18,26 @@ function sheetForAttempt(attempt: number) {
   return sheetAttempts[attempt];
 }
 
-export type TripChipProps = TripPaneActions & { className?: string };
+export type TripChipProps = TripPaneActions & {
+  className?: string;
+  /** Opens the app's End Trip sheet for the shared current trip (the card menu's Complete trip). */
+  onRequestEndCurrentTrip?: () => void;
+};
 
 /**
  * Header chip naming the trip on the map ("Current · <title>" or "Viewing privately · <title>"). Tapping it opens
  * the trip pane, whose open state it owns. Renders only for a Traveler while multi-trip is enabled.
  */
-export function TripChip({ className, ...actions }: TripChipProps) {
+export function TripChip({ className, onRequestEndCurrentTrip, ...actions }: TripChipProps) {
   const { role, multiTripEnabled, viewingMode, viewingTrip, currentTrip } = useTripContext();
   const [open, setOpen] = useState(false);
   const [everOpened, setEverOpened] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const chipRef = useRef<HTMLButtonElement>(null);
+  // While a switch awaits the server the chip reads "Switching…" but still opens the pane: a switch that never
+  // answers (offline) must not lock the Traveler out. Only starting ANOTHER switch is disabled.
+  const switching = useSwitchPending();
+  const pane = useTripPaneActions({ closePane: () => setOpen(false), onRequestEndCurrentTrip });
 
   if (role !== "traveler" || !multiTripEnabled) return null;
 
@@ -40,7 +50,7 @@ export function TripChip({ className, ...actions }: TripChipProps) {
       <button
         ref={chipRef}
         type="button"
-        aria-label={`${label} · ${title}`}
+        aria-label={switching ? "Switching…" : `${label} · ${title}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
@@ -52,8 +62,14 @@ export function TripChip({ className, ...actions }: TripChipProps) {
           className,
         )}
       >
-        <span className="hidden min-w-0 truncate sm:inline">{label} ·</span>
-        <span className="min-w-0 truncate">{title}</span>
+        {switching ? (
+          <span className="min-w-0 truncate">Switching…</span>
+        ) : (
+          <>
+            <span className="hidden min-w-0 truncate sm:inline">{label} ·</span>
+            <span className="min-w-0 truncate">{title}</span>
+          </>
+        )}
         <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       </button>
       {everOpened ? (
@@ -78,10 +94,19 @@ export function TripChip({ className, ...actions }: TripChipProps) {
               </span>
             }
           >
-            <TripSwitcherSheet open={open} onOpenChange={setOpen} returnFocusRef={chipRef} {...actions} />
+            <TripSwitcherSheet
+              open={open}
+              onOpenChange={setOpen}
+              returnFocusRef={chipRef}
+              onRequestSwitch={actions.onRequestSwitch ?? pane.props.onRequestSwitch}
+              onRequestCreate={actions.onRequestCreate ?? pane.props.onRequestCreate}
+              renderCardMenu={actions.renderCardMenu ?? pane.props.renderCardMenu}
+              highlightTripId={pane.props.highlightTripId}
+            />
           </Suspense>
         </ErrorBoundary>
       ) : null}
+      {pane.nodes}
     </>
   );
 }

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useEffect } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { setLiveSharingEnabled } from "@/lib/liveSharingPreference";
 import type { TripCard, TripPreview } from "../../convex/tripcastApi";
 import { ThemeProvider } from "../../providers/ThemeProvider";
 import { TripContextTestProvider } from "../../providers/TripContextProvider";
@@ -200,7 +201,7 @@ describe("TripSwitcherSheet: subscriptions", () => {
     const { user } = await openPane();
 
     for (let i = 0; i < 10; i += 1) {
-      await user.click(screen.getByRole("button", { name: new RegExp(`Trip t${i}`) }));
+      await user.click(screen.getByRole("button", { name: new RegExp(`^Trip t${i}`) }));
     }
     expect(server.oneShot.length).toBeLessThanOrEqual(10);
     expect(server.oneShot.length).toBe(10);
@@ -216,11 +217,11 @@ describe("TripSwitcherSheet: subscriptions", () => {
     setup();
     const { user } = await openPane();
 
-    await user.click(screen.getByRole("button", { name: /Trip a/ }));
+    await user.click(screen.getByRole("button", { name: /^Trip a/ }));
     await act(async () => server.oneShot[0].resolve(previewOf("a")));
-    await user.click(screen.getByRole("button", { name: /Trip b/ }));
+    await user.click(screen.getByRole("button", { name: /^Trip b/ }));
     await act(async () => server.oneShot[1].resolve(previewOf("b")));
-    await user.click(screen.getByRole("button", { name: /Trip a/ }));
+    await user.click(screen.getByRole("button", { name: /^Trip a/ }));
 
     expect(server.oneShot).toHaveLength(2);
     expect(screen.getByTestId("trip-preview")).toBeInTheDocument();
@@ -231,9 +232,9 @@ describe("TripSwitcherSheet: subscriptions", () => {
     setup();
     const { user } = await openPane();
 
-    await user.click(screen.getByRole("button", { name: /Trip a/ }));
+    await user.click(screen.getByRole("button", { name: /^Trip a/ }));
     expect(screen.getByRole("status", { name: "Loading preview" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Trip b/ }));
+    await user.click(screen.getByRole("button", { name: /^Trip b/ }));
     await act(async () => server.oneShot[1].resolve({ ...previewOf("b"), storyCount: 9 }));
     expect(screen.getByText(/9 stories/)).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Route sketch" })).toBeInTheDocument();
@@ -247,7 +248,7 @@ describe("TripSwitcherSheet: subscriptions", () => {
     server.cards = [makeCard("a", { previewStatus: "none" })];
     setup();
     const { user } = await openPane();
-    await user.click(screen.getByRole("button", { name: /Trip a/ }));
+    await user.click(screen.getByRole("button", { name: /^Trip a/ }));
     await act(async () => server.oneShot[0].resolve({ ...previewOf("a"), previewStatus: "none", route: null }));
     expect(screen.getByText("No route preview yet")).toBeInTheDocument();
   });
@@ -269,7 +270,7 @@ describe("TripSwitcherSheet: candidate actions", () => {
     server.cards = [makeCard("summer", { title: "Summer 2026" })];
     const ctx = setup();
     const { user } = await openPane();
-    await user.click(screen.getByRole("button", { name: /Summer 2026/ }));
+    await user.click(screen.getByRole("button", { name: /^Summer 2026/ }));
     await user.click(screen.getByRole("button", { name: "Open privately" }));
     expect(ctx.openPrivately).toHaveBeenCalledWith({ tripId: "summer", title: "Summer 2026" });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -279,19 +280,29 @@ describe("TripSwitcherSheet: candidate actions", () => {
     server.cards = [makeCard("autumn", { title: "Autumn 2026", isCurrent: true })];
     setup();
     const { user } = await openPane();
-    await user.click(screen.getByRole("button", { name: /Autumn 2026/ }));
+    await user.click(screen.getByRole("button", { name: /^Autumn 2026/ }));
     expect(screen.queryByRole("button", { name: "Open privately" })).not.toBeInTheDocument();
   });
 
   it("renders nothing for optional actions that are not supplied", async () => {
     server.cards = [makeCard("summer", { title: "Summer 2026" })];
-    setup();
-    const { user } = await openPane();
-    await user.click(screen.getByRole("button", { name: /Summer 2026/ }));
+    // The pane on its own (the chip always supplies the actions through `useTripPaneActions`).
+    const { TripSwitcherSheet } = await import("./TripSwitcherSheet");
+    render(
+      <ThemeProvider>
+        <TripContextTestProvider
+          value={{ multiTripEnabled: true, viewingTripId: autumn.tripId, viewingTrip: autumn, openPrivately: vi.fn() }}
+        >
+          <TripSwitcherSheet open onOpenChange={() => {}} />
+        </TripContextTestProvider>
+      </ThemeProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: /^Summer 2026/ }));
     expect(screen.getByRole("button", { name: "Open privately" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Set as shared current" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Create trip" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /menu/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /menu|actions for/i })).not.toBeInTheDocument();
   });
 
   it("renders the supplied actions: switch, create and card menu", async () => {
@@ -305,11 +316,11 @@ describe("TripSwitcherSheet: candidate actions", () => {
     expect(onRequestCreate).toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Menu summer" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /Summer 2026/ }));
+    await user.click(screen.getByRole("button", { name: /^Summer 2026/ }));
     await user.click(screen.getByRole("button", { name: "Set as shared current" }));
     expect(onRequestSwitch).toHaveBeenCalledWith(expect.objectContaining({ tripId: "summer" }));
 
-    await user.click(screen.getByRole("button", { name: /Autumn 2026/ }));
+    await user.click(screen.getByRole("button", { name: /^Autumn 2026/ }));
     const current = screen.getByRole("button", { name: "Set as shared current" });
     expect(current).toBeDisabled();
     expect(screen.getByText("Followers already see this trip")).toBeInTheDocument();
@@ -319,7 +330,7 @@ describe("TripSwitcherSheet: candidate actions", () => {
     server.cards = [makeCard("old", { title: "Old trip", lifecycle: "archived", archivedFrom: "completed" })];
     setup({}, { onRequestSwitch: vi.fn() });
     const { user } = await openPane();
-    await user.click(screen.getByRole("button", { name: /Old trip/ }));
+    await user.click(screen.getByRole("button", { name: /^Old trip/ }));
     const button = screen.getByRole("button", { name: "Set as shared current" });
     expect(button).toBeDisabled();
     expect(screen.getByText("Restore first")).toBeInTheDocument();
@@ -342,31 +353,36 @@ describe("TripSwitcherSheet: keyboard", () => {
     server.cards = [makeCard("a"), makeCard("b"), makeCard("c")];
     setup();
     const { user } = await openPane();
-    screen.getByRole("button", { name: /Trip a/ }).focus();
+    screen.getByRole("button", { name: /^Trip a/ }).focus();
     await user.keyboard("{ArrowDown}");
-    expect(screen.getByRole("button", { name: /Trip b/ })).toHaveFocus();
+    expect(screen.getByRole("button", { name: /^Trip b/ })).toHaveFocus();
     await user.keyboard("{ArrowDown}{ArrowDown}");
-    expect(screen.getByRole("button", { name: /Trip c/ })).toHaveFocus();
+    expect(screen.getByRole("button", { name: /^Trip c/ })).toHaveFocus();
     await user.keyboard("{ArrowUp}");
-    expect(screen.getByRole("button", { name: /Trip b/ })).toHaveFocus();
+    expect(screen.getByRole("button", { name: /^Trip b/ })).toHaveFocus();
   });
 
   it("puts the highlighted card's actions next in tab order", async () => {
     server.cards = [makeCard("a"), makeCard("b"), makeCard("c")];
     setup();
     const { user } = await openPane();
-    await user.click(screen.getByRole("button", { name: /Trip a/ }));
+    await user.click(screen.getByRole("button", { name: /^Trip a/ }));
+    await user.tab();
+    // The card's own ⋯ menu sits beside it; the panel's actions follow.
+    expect(screen.getByRole("button", { name: "Actions for Trip a" })).toHaveFocus();
     await user.tab();
     expect(screen.getByRole("button", { name: "Open privately" })).toHaveFocus();
     await user.tab();
-    expect(screen.getByRole("button", { name: /Trip b/ })).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Set as shared current" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: /^Trip b/ })).toHaveFocus();
   });
 
   it("keeps the preview panel while a search change reloads the list", async () => {
     server.cards = [makeCard("a")];
     setup();
     const { user } = await openPane();
-    await user.click(screen.getByRole("button", { name: /Trip a/ }));
+    await user.click(screen.getByRole("button", { name: /^Trip a/ }));
     await act(async () => server.oneShot[0].resolve(previewOf("a")));
     expect(screen.getByRole("region", { name: "Preview of Trip a" })).toBeInTheDocument();
 
@@ -416,7 +432,41 @@ describe("TripSwitcherSheet: states", () => {
     server.fail = false;
     server.cards = [makeCard("a")];
     await user.click(within(alert).getByRole("button", { name: "Retry" }));
-    expect(await screen.findByRole("button", { name: /Trip a/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Trip a/ })).toBeInTheDocument();
     expect(server.activeSubscriptions).toBe(1);
+  });
+});
+
+describe("TripSwitcherSheet: change flows", () => {
+  it("tags the pinned shared-trip card Live only while live sharing is on", async () => {
+    setLiveSharingEnabled(true);
+    setup();
+    const { user } = await openPane();
+    const pinned = screen.getByText(/Followers currently see:/).parentElement as HTMLElement;
+    expect(within(pinned).getByText("Live")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    setLiveSharingEnabled(false);
+    await user.click(screen.getByRole("button", { name: /·/ }));
+    await screen.findByRole("dialog");
+    expect(within(screen.getByText(/Followers currently see:/).parentElement as HTMLElement).queryByText("Live")).toBeNull();
+  });
+
+  it("tells a card's menu it is the only trip when the unfiltered catalog is one card", async () => {
+    server.cards = [makeCard("a")];
+    const renderCardMenu = vi.fn(() => null);
+    setup({}, { renderCardMenu });
+    await openPane();
+    expect(renderCardMenu).toHaveBeenCalledWith(expect.objectContaining({ tripId: "a" }), { onlyTrip: true });
+  });
+
+  it("does not claim the only trip while more pages exist", async () => {
+    server.cards = [makeCard("a")];
+    server.status = "CanLoadMore";
+    const renderCardMenu = vi.fn(() => null);
+    setup({}, { renderCardMenu });
+    await openPane();
+    expect(renderCardMenu).toHaveBeenCalledWith(expect.anything(), { onlyTrip: false });
   });
 });
