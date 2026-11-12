@@ -82,11 +82,16 @@ type SourceScan<T> = {
   boundary: number | null;
 };
 
-const resumeKey = (token: string) => `tripcast.replay.lastPin.${token}`;
+/**
+ * Replay resume targets are per trip: `tripKey` is the viewed trip's id, or `null` for the Legacy Trip and while
+ * multi-trip is off, which keep today's key so existing resume points still work.
+ */
+const resumeKey = (token: string, tripKey: string | null = null) =>
+  tripKey ? `tripcast.replay.lastPin.${token}.${tripKey}` : `tripcast.replay.lastPin.${token}`;
 
-export function readReplayResume(token: string): ReplayResume | null {
+export function readReplayResume(token: string, tripKey: string | null = null): ReplayResume | null {
   try {
-    const parsed = JSON.parse(localStorage.getItem(resumeKey(token)) ?? "null") as Partial<ReplayResume> | null;
+    const parsed = JSON.parse(localStorage.getItem(resumeKey(token, tripKey)) ?? "null") as Partial<ReplayResume> | null;
     if (!parsed || typeof parsed.eventId !== "string" || typeof parsed.index !== "number") return null;
     if (
       parsed.version !== 2 ||
@@ -100,9 +105,9 @@ export function readReplayResume(token: string): ReplayResume | null {
   }
 }
 
-export function readLegacyReplayResume(token: string): { eventId: string; index: number } | null {
+export function readLegacyReplayResume(token: string, tripKey: string | null = null): { eventId: string; index: number } | null {
   try {
-    const parsed = JSON.parse(localStorage.getItem(resumeKey(token)) ?? "null") as Record<string, unknown> | null;
+    const parsed = JSON.parse(localStorage.getItem(resumeKey(token, tripKey)) ?? "null") as Record<string, unknown> | null;
     if (!parsed || typeof parsed.eventId !== "string" || typeof parsed.index !== "number") return null;
     return { eventId: parsed.eventId, index: parsed.index };
   } catch {
@@ -110,17 +115,24 @@ export function readLegacyReplayResume(token: string): { eventId: string; index:
   }
 }
 
-export function writeReplayResume(token: string, resume: ReplayResume) {
+export function writeReplayResume(token: string, resume: ReplayResume, tripKey: string | null = null) {
   try {
-    localStorage.setItem(resumeKey(token), JSON.stringify(resume));
+    localStorage.setItem(resumeKey(token, tripKey), JSON.stringify(resume));
   } catch {
     // Resume is best-effort in private browsing and under storage pressure.
   }
 }
 
+/** Clears the token's resume targets for every trip (today's key and each per-trip key). */
 export function clearReplayResume(token: string) {
   try {
-    localStorage.removeItem(resumeKey(token));
+    const base = resumeKey(token);
+    const keys: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key !== null && (key === base || key.startsWith(`${base}.`))) keys.push(key);
+    }
+    for (const key of keys) localStorage.removeItem(key);
   } catch {
     // ignore
   }
@@ -198,8 +210,12 @@ const pageCache = new Map<string, CacheEntry>();
 let cacheIdentity = "";
 let nextReplayLogSessionId = 1;
 
-export function setReplayCacheIdentity(token: string, role: Role, cutoffAt: number | null, revision = "") {
-  const next = `${token}:${role}:${cutoffAt ?? "none"}:${revision}`;
+/**
+ * Page cache keys start with this identity. `tripKey` (the viewed trip's id; `null` for the Legacy Trip and while
+ * multi-trip is off, which keep today's identity) keeps two trips' pages apart even when their revisions match.
+ */
+export function setReplayCacheIdentity(token: string, role: Role, cutoffAt: number | null, revision = "", tripKey: string | null = null) {
+  const next = `${token}:${role}:${cutoffAt ?? "none"}:${revision}${tripKey ? `:${tripKey}` : ""}`;
   if (cacheIdentity !== next) {
     cacheIdentity = next;
     pageCache.clear();

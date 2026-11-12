@@ -4,8 +4,11 @@ import {
   LIVE_TRAIL_CACHE_RECENT_LIMIT,
   LIVE_TRAIL_CACHE_TOTAL_LIMIT,
   LiveTrailCacheStore,
+  clearLiveTrailCachesForToken,
   fingerprintLiveTrailCacheIdentity,
+  getLiveTrailCache,
   indexedDbLiveTrailCachePersistence,
+  resetLiveTrailCachesForTests,
   selectLiveTrailCachePools,
   type LiveTrailCachePersistence,
 } from "./liveTrailCache";
@@ -118,3 +121,68 @@ describe("LiveTrailCacheStore", () => {
     expect(traveler).not.toContain("secret-session-token");
   });
 });
+
+describe("per-trip live trail caches", () => {
+  afterEach(async () => {
+    await resetLiveTrailCachesForTests();
+  });
+
+  it("keys a trip's cache by role, token and trip; the Legacy Trip (no trip key) keeps today's id", async () => {
+    const today = await fingerprintLiveTrailCacheIdentity("token", "traveler");
+    const summer = await fingerprintLiveTrailCacheIdentity("token", "traveler", "trip-summer");
+    const autumn = await fingerprintLiveTrailCacheIdentity("token", "traveler", "trip-autumn");
+    expect(await fingerprintLiveTrailCacheIdentity("token", "traveler", null)).toBe(today);
+    expect(new Set([today, summer, autumn]).size).toBe(3);
+    expect(summer).toMatch(/^[a-f0-9]{64}$/);
+
+    expect(getLiveTrailCache("token", "traveler", null)).toBe(getLiveTrailCache("token", "traveler"));
+    getLiveTrailCache("token", "traveler", "trip-summer").addRecent(sample(1));
+    expect(getLiveTrailCache("token", "traveler", "trip-autumn").snapshot().samples).toEqual([]);
+    expect(getLiveTrailCache("token", "traveler").snapshot().samples).toEqual([]);
+  });
+
+  it("clears every trip's cache for a token (sign-out), stored or loaded, and leaves other tokens alone", async () => {
+    const owner = await fingerprintLiveTrailCacheIdentity("token", "traveler");
+    const ids = await Promise.all([
+      owner,
+      fingerprintLiveTrailCacheIdentity("token", "traveler", "trip-summer"),
+      fingerprintLiveTrailCacheIdentity("token", "traveler", "trip-autumn"),
+    ]);
+    const today = getLiveTrailCache("token", "traveler");
+    const summer = getLiveTrailCache("token", "traveler", "trip-summer");
+    const otherToken = getLiveTrailCache("other-token", "traveler", "trip-summer");
+    // A trip cached in an earlier session: stored in IndexedDB but not loaded in memory.
+    const storedOnly = new LiveTrailCacheStore(
+      Promise.resolve(ids[2]),
+      indexedDbLiveTrailCachePersistence,
+      1,
+      Promise.resolve(owner),
+    );
+    for (const [store, index] of [[today, 1], [summer, 2], [storedOnly, 3], [otherToken, 4]] as const) {
+      store.addRecent(sample(index));
+      await store.flush();
+    }
+
+    await clearLiveTrailCachesForToken("token");
+
+    const rows = await new Promise<Array<{ id: string }>>((resolve) => {
+      const open = indexedDB.open("tripcast_live_trail_cache", 1);
+      open.onsuccess = () => {
+        const request = open.result.transaction("trailCaches", "readonly").objectStore("trailCaches").getAll();
+        request.onsuccess = () => resolve(request.result as Array<{ id: string }>);
+      };
+    });
+    expect(rows.filter((row) => ids.includes(row.id))).toEqual([]);
+    const reloaded = getLiveTrailCache("token", "traveler", "trip-summer");
+    expect(reloaded).not.toBe(summer);
+    await reloaded.hydrate();
+    expect(reloaded.snapshot().samples).toEqual([]);
+    const reloadedOther = new LiveTrailCacheStore(
+      fingerprintLiveTrailCacheIdentity("other-token", "traveler", "trip-summer"),
+      indexedDbLiveTrailCachePersistence,
+    );
+    await reloadedOther.hydrate();
+    expect(reloadedOther.snapshot().samples.map((row) => row._id)).toEqual(["sample-4"]);
+  });
+});
+

@@ -10,9 +10,13 @@ export interface ReplayDateRangeSheetProps {
   onApply: (startAt: number, endAt: number) => void;
   onReset: () => void;
   onClose: () => void;
+  /** The viewed trip's id, or `null` for the Legacy Trip and while multi-trip is off (today's key). */
+  tripKey?: string | null;
 }
 
 const LAST_RANGE_KEY = "tripcast.replay.lastCustomRange";
+/** The last custom range is remembered per trip; the Legacy Trip keeps today's key. */
+export const lastCustomRangeKey = (tripKey: string | null = null) => (tripKey ? `${LAST_RANGE_KEY}.${tripKey}` : LAST_RANGE_KEY);
 
 function partsInZone(timestamp: number, timeZone: string) {
   const values = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
@@ -60,6 +64,7 @@ export default function ReplayDateRangeSheet({
   onApply,
   onReset,
   onClose,
+  tripKey = null,
 }: ReplayDateRangeSheetProps) {
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -68,7 +73,7 @@ export default function ReplayDateRangeSheet({
     if (!open) return;
     let saved: { startAt: number; endAt: number } | null = null;
     try {
-      saved = JSON.parse(localStorage.getItem(LAST_RANGE_KEY) ?? "null") as typeof saved;
+      saved = JSON.parse(localStorage.getItem(lastCustomRangeKey(tripKey)) ?? "null") as typeof saved;
     } catch {
       saved = null;
     }
@@ -76,7 +81,7 @@ export default function ReplayDateRangeSheet({
     if (!range) return;
     setStart(inputValue(range.startAt, timeZone));
     setEnd(inputValue(range.endAt, timeZone));
-  }, [open, bounds, window, timeZone]);
+  }, [open, bounds, window, timeZone, tripKey]);
 
   const parsed = useMemo(() => {
     const startAt = parseInput(start, timeZone);
@@ -102,7 +107,7 @@ export default function ReplayDateRangeSheet({
           <SheetTitle className="text-base font-semibold text-[var(--ink-1)]">Custom Date Range</SheetTitle>
           <button type="button" disabled={!parsed} onClick={() => {
             if (!parsed) return;
-            try { localStorage.setItem(LAST_RANGE_KEY, JSON.stringify(parsed)); } catch { /* best effort */ }
+            try { localStorage.setItem(lastCustomRangeKey(tripKey), JSON.stringify(parsed)); } catch { /* best effort */ }
             onApply(parsed.startAt, parsed.endAt);
           }} className="text-sm font-semibold text-[var(--flag)] disabled:opacity-40">Apply</button>
         </div>

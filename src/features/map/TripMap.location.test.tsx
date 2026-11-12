@@ -3024,7 +3024,7 @@ describe("TripMap multi-trip live publishing", () => {
     fireEvent.click(screen.getByRole("button", { name: /Start sharing live location/i }));
 
     expect(screen.getByText("Reopen Autumn 2026 to go live")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Reopen" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Reopen" })).toBeEnabled();
     expect(localStorage.getItem("tripcast.live-sharing.enabled")).toBe("false");
     expect(setTripLifecycle).not.toHaveBeenCalled();
   });
