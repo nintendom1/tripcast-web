@@ -47,6 +47,9 @@ function update(patch: Partial<PreparationState>) { state = { ...state, ...patch
 function jobCalls(client: ConvexReactClient, trip?: TripConvexClient): TripConvexClient {
   if (trip) return trip;
   // Untagged: the plain client takes the same args without a tripId (the disabled and Follower path, unchanged).
+  // This shim is a plain client cast to `TripConvexClient`, which the audit cannot tell from a tagged one. Callers
+  // that still reach it, and so send NO trip: BackgroundSaveProvider (queued Story saves), ReplayImagePreparationSheet
+  // and TrailCompressionReview (they pass no `trip`); only JournalSheet and StoryDetailSheet pass their captured trip.
   const plain = {
     get query() { return client.query.bind(client); },
     get mutation() { return client.mutation.bind(client); },

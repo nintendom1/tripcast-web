@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTripQuery } from "../../convex/useTrip";
-import { useOptionalTripContext } from "../../providers/TripContextProvider";
-import { TripTargetLabel } from "../trips/TripTargetLabel";
+import { PrivateTripTargetLabel, useIsSharedCurrentTrip } from "../trips/privateTripView";
+import { useReportTripUnavailable } from "../journal/useReportTripUnavailable";
 import type { TripTarget } from "../trips/tripTypes";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -100,7 +100,9 @@ export default function TransactionForm({
 }: TransactionFormProps) {
   const log = useDebugLogger("TransactionForm", "src/features/travelfunds/TransactionForm.tsx");
   const activity = useTripQuery(tripcastApi.currentActivity.travelerGetCurrentActivity, { token });
-  const { viewingMode } = useOptionalTripContext();
+  // Named in the delete confirmation whenever the write goes to a trip other than the shared current one (by id).
+  const targetIsShared = useIsSharedCurrentTrip(target?.tripId ?? null);
+  const reportTripUnavailable = useReportTripUnavailable();
 
   const [title, setTitle] = useState(initial?.title ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
@@ -325,6 +327,7 @@ export default function TransactionForm({
         throw submitError;
       }
     } catch (err) {
+      reportTripUnavailable(err, target ?? null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsSubmitting(false);
@@ -333,12 +336,13 @@ export default function TransactionForm({
 
   async function handleDelete() {
     if (!onDelete) return;
-    const named = target && viewingMode === "private" ? `Delete from ${target.title}?` : "Delete this transaction?";
+    const named = target && !targetIsShared ? `Delete from ${target.title}?` : "Delete this transaction?";
     if (!confirm(`${named} This cannot be undone.`)) return;
     setIsDeleting(true);
     try {
       await onDelete();
     } catch (err) {
+      reportTripUnavailable(err, target ?? null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsDeleting(false);
@@ -352,6 +356,7 @@ export default function TransactionForm({
     try {
       await onUnlink();
     } catch (err) {
+      reportTripUnavailable(err, target ?? null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsUnlinking(false);
@@ -360,7 +365,7 @@ export default function TransactionForm({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-      {target ? <TripTargetLabel target={target} /> : null}
+      <PrivateTripTargetLabel target={target ?? null} />
       <div className="flex flex-col gap-1">
         <label className={labelClass} htmlFor="tx-title">Title</label>
         <Input

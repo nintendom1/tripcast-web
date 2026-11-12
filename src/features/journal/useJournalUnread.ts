@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import type { JournalEvent } from "../../convex/tripcastApi";
-import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { useTripClientKey } from "../trips/privateTripView";
 
 const LAST_READ_KEY = "tripcast.journalLastReadAt";
 
-/** Per viewed trip: each trip's Story list keeps its own read marker. No viewed trip keeps today's key. */
-function journalReadKey(tripId: string | null): string {
-  return tripId ? `${LAST_READ_KEY}:${tripId}` : LAST_READ_KEY;
+/** Per viewed trip: each trip's Story list keeps its own read marker. No trip key (disabled, Legacy Trip) keeps today's key. */
+function journalReadKey(tripKey: string): string {
+  return tripKey ? `${LAST_READ_KEY}:${tripKey}` : LAST_READ_KEY;
 }
 
 function readStoredAt(key: string): number {
@@ -15,8 +15,7 @@ function readStoredAt(key: string): number {
 }
 
 export function useJournalUnread(events: JournalEvent[]) {
-  const { viewingTripId } = useOptionalTripContext();
-  const key = journalReadKey(viewingTripId);
+  const key = journalReadKey(useTripClientKey());
   const [stored, setStored] = useState<{ key: string; at: number }>(() => ({ key, at: readStoredAt(key) }));
   // A trip switch changes the key: read that trip's marker instead of the one stored for the previous trip.
   const lastReadAt = stored.key === key ? stored.at : readStoredAt(key);

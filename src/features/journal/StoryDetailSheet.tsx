@@ -10,8 +10,9 @@ import { Textarea } from "../../components/ui/textarea";
 import { StatBar } from "../../components/rpg/StatBar";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import { useTripConvex, useTripMutation, useTripQuery } from "../../convex/useTrip";
-import { useOptionalTripContext } from "../../providers/TripContextProvider";
-import { TripTargetLabel } from "../trips/TripTargetLabel";
+import { PrivateTripTargetLabel, useIsSharedCurrentTrip } from "../trips/privateTripView";
+import { useRecaptureOnOpen } from "./useRecaptureOnOpen";
+import { useReportTripUnavailable } from "./useReportTripUnavailable";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -181,10 +182,6 @@ export default function StoryDetailSheet({
   const replayTrip = useTripConvex();
   // Upload URLs are per user, not per trip: a plain mutation.
   const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
-  const { viewingMode } = useOptionalTripContext();
-  const retargetUpdate = updateCheckpoint.recapture;
-  const retargetDelete = deleteCheckpoint.recapture;
-  const retargetReplay = replayTrip.recapture;
 
   const [isEditing, setIsEditing] = useState(false);
   const [awardBadgeOpen, setAwardBadgeOpen] = useState(false);
@@ -212,12 +209,16 @@ export default function StoryDetailSheet({
   const [pendingDelete, setPendingDelete] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [optimisticEvent, setOptimisticEvent] = useState<JournalEvent | null>(null);
-  useEffect(() => {
-    if (!isEditing && !pendingDelete) return;
-    retargetUpdate();
-    retargetDelete();
-    retargetReplay();
-  }, [isEditing, pendingDelete, retargetUpdate, retargetDelete, retargetReplay]);
+  // Pinned when the editor opens, or when the sheet is reused for another Story. Delete is only offered inside the
+  // editor, so it shares the editor's pin: opening Delete re-pins nothing, and the Story is deleted from the trip it
+  // is being edited on.
+  const reportTripUnavailable = useReportTripUnavailable();
+  const editKey = isEditing ? `edit:${event?._id}` : null;
+  useRecaptureOnOpen(editKey, updateCheckpoint.recapture);
+  useRecaptureOnOpen(editKey, deleteCheckpoint.recapture);
+  useRecaptureOnOpen(editKey, replayTrip.recapture);
+  // Named in the delete confirmation whenever the delete goes to a trip other than the shared current one (by id).
+  const deleteTargetIsShared = useIsSharedCurrentTrip(deleteCheckpoint.target?.tripId ?? null);
 
   // Performance instrumentation only — no UI badges, no re-renders. Tracks when
   // we first saw an imageId vs. when its presigned URL resolved, so onImageLoad
@@ -527,6 +528,7 @@ export default function StoryDetailSheet({
       setEditImagePreviewUrl(null);
       setEditClearImage(false);
     } catch (e) {
+      reportTripUnavailable(e, updateCheckpoint.target);
       log.logInteraction("form:submit:error", { message: String(e) });
       setActionError(friendlyError(e));
     } finally {
@@ -548,6 +550,7 @@ export default function StoryDetailSheet({
       setPendingDelete(false);
       onClose();
     } catch (e) {
+      reportTripUnavailable(e, deleteCheckpoint.target);
       log.logInteraction("delete:error", { message: String(e) });
       setPendingDelete(false);
     } finally {
@@ -684,7 +687,7 @@ export default function StoryDetailSheet({
             <SheetBody className="px-5" style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}>
               {isEditing ? (
                 <div className="flex flex-col gap-3 pt-1">
-                  {updateCheckpoint.target ? <TripTargetLabel target={updateCheckpoint.target} /> : null}
+                  <PrivateTripTargetLabel target={updateCheckpoint.target} />
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-[var(--ink-1)]">Edit {isNarrative ? "Story" : "Check In"}</span>
                     <button type="button" className="text-xs text-[var(--ink-3)] underline hover:text-[var(--ink-1)]" onClick={cancelEditMode}>
@@ -980,7 +983,7 @@ export default function StoryDetailSheet({
                 if (!open) setPendingDelete(false);
               }}
               title={
-                deleteCheckpoint.target && viewingMode === "private"
+                deleteCheckpoint.target && !deleteTargetIsShared
                   ? `Delete this ${isNarrative ? "Story" : "Check In"} from ${deleteCheckpoint.target.title}?`
                   : `Delete this ${isNarrative ? "Story" : "Check In"}?`
               }

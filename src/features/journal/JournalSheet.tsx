@@ -45,7 +45,9 @@ import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import { LoadingImage } from "../../components/ui/LoadingImage";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import { useTripConvex, useTripMutation, useTripQuery } from "../../convex/useTrip";
-import { TripTargetLabel } from "../trips/TripTargetLabel";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import { useRecaptureOnOpen } from "./useRecaptureOnOpen";
+import { useReportTripUnavailable } from "./useReportTripUnavailable";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 
 type FilterTab = "story" | "all" | "entries";
@@ -217,19 +219,15 @@ export default function JournalSheet({
   const [createError, setCreateError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const costMap = useTripQuery(tripcastApi.travelFunds.getLinkedCostMap, open ? { token } : "skip");
-  // The sheet stays mounted while closed, so its writes are pinned when the create form opens (see the effect below).
+  // The sheet stays mounted while closed, so its writes are pinned when the create form opens (see below).
   const addCheckpoint = useTripMutation(tripcastApi.checkpoints.addCheckpoint);
   const replayImageClient = useConvex();
   const replayTrip = useTripConvex();
   // Upload URLs are per user, not per trip: a plain mutation.
   const generateStoryImageUploadUrl = useMutation(tripcastApi.checkpoints.generateStoryImageUploadUrl);
-  const retargetAdd = addCheckpoint.recapture;
-  const retargetReplay = replayTrip.recapture;
-  useEffect(() => {
-    if (viewMode !== "create") return;
-    retargetAdd();
-    retargetReplay();
-  }, [viewMode, retargetAdd, retargetReplay]);
+  const reportTripUnavailable = useReportTripUnavailable();
+  useRecaptureOnOpen(open && viewMode === "create", addCheckpoint.recapture);
+  useRecaptureOnOpen(open && viewMode === "create", replayTrip.recapture);
   const log = useDebugLogger("JournalSheet", "src/features/journal/JournalSheet.tsx");
   const calibration = useCenteringCalibration();
   const sheetPersonalities = useSheetPersonalities();
@@ -425,6 +423,7 @@ export default function JournalSheet({
       setViewMode("list");
       onCoordinatePickSaved?.();
     } catch (e) {
+      reportTripUnavailable(e, addCheckpoint.target);
       log.error("create-story:error", "mutation", {
         message: e instanceof Error ? e.message : String(e),
         hadImage: Boolean(storyImageFile),
@@ -508,7 +507,7 @@ export default function JournalSheet({
         {viewMode === "create" ? (
           <SheetBody style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}>
             <div className="flex flex-col gap-3 p-1">
-              {addCheckpoint.target ? <TripTargetLabel target={addCheckpoint.target} /> : null}
+              <PrivateTripTargetLabel target={addCheckpoint.target} />
               <Input
                 placeholder="Story title (optional)"
                 value={storyTitle}

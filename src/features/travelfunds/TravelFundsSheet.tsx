@@ -12,8 +12,8 @@ import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
 import TransactionRows from "./TransactionRows";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useTripMutation, useTripQuery } from "../../convex/useTrip";
-import { useOptionalTripContext } from "../../providers/TripContextProvider";
-import { TripTargetLabel } from "../trips/TripTargetLabel";
+import { PrivateTripTargetLabel, useIsSharedCurrentTrip } from "../trips/privateTripView";
+import { useReportTripUnavailable } from "../journal/useReportTripUnavailable";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
 import { TERMS } from "../../copy/terminology";
@@ -81,9 +81,11 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
   const addTransaction = useTripMutation(tripcastApi.travelFunds.travelerAddTransaction);
   const updateTransaction = useTripMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
   const deleteTransaction = useTripMutation(tripcastApi.travelFunds.travelerDeleteTransaction);
-  const { viewingMode } = useOptionalTripContext();
+  // Named whenever the delete goes to a trip other than the shared current one (by id, not by the view).
+  const deleteTargetIsShared = useIsSharedCurrentTrip(deleteTransaction.target?.tripId ?? null);
+  const reportTripUnavailable = useReportTripUnavailable();
   const swipeDeleteTitle =
-    deleteTransaction.target && viewingMode === "private"
+    deleteTransaction.target && !deleteTargetIsShared
       ? `Delete from ${deleteTransaction.target.title}?`
       : "Delete this transaction?";
 
@@ -138,6 +140,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       await updateConfig({ token, featureEnabled: next });
       music.sfx("success");
     } catch (err) {
+      reportTripUnavailable(err, updateConfig.target);
       setSettingsError(friendlyTravelFundsError(err));
     }
   }
@@ -175,6 +178,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       music.sfx("success");
       setView("summary");
     } catch (err) {
+      reportTripUnavailable(err, updateConfig.target);
       setSettingsError(friendlyTravelFundsError(err));
     } finally {
       setSavingSettings(false);
@@ -218,7 +222,8 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
       await deleteTransaction({ token, transactionId: pendingDeleteTx._id });
       music.sfx("success");
       setPendingDeleteTx(null);
-    } catch {
+    } catch (err) {
+      reportTripUnavailable(err, deleteTransaction.target);
       // Surface a no-op close on failure — the data subscription refreshes
       // anyway, so the row will either still be there (failed) or gone
       // (succeeded server-side after the throw, unlikely but defensive).
@@ -285,7 +290,7 @@ export default function TravelFundsSheet({ token, onClose, debugSource }: Travel
 
       {view === "settings" && (
           <>
-          {updateConfig.target ? <TripTargetLabel target={updateConfig.target} /> : null}
+          <PrivateTripTargetLabel target={updateConfig.target} />
           <SettingsBody
             enabled={config?.enabled ?? false}
             budgetInput={budgetInput}

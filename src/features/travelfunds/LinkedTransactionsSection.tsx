@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Transaction } from "../../convex/tripcastApi";
 import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { useRecaptureOnOpen } from "../journal/useRecaptureOnOpen";
 import { Button } from "../../components/ui/button";
 import { formatUsd } from "./currency";
 import TransactionForm, { type TransactionFormValues } from "./TransactionForm";
@@ -73,14 +74,9 @@ function LinkedMode({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editing, setEditing] = useState<EditState>(null);
   // This section sits inside long-lived sheets: pin the edit and delete writes to the trip when a row's editor opens.
-  const retargetUpdate = updateTransaction.recapture;
-  const retargetDelete = deleteTransaction.recapture;
   const editingId = editing?.tx._id ?? null;
-  useEffect(() => {
-    if (editingId === null) return;
-    retargetUpdate();
-    retargetDelete();
-  }, [editingId, retargetUpdate, retargetDelete]);
+  useRecaptureOnOpen(editingId, updateTransaction.recapture);
+  useRecaptureOnOpen(editingId, deleteTransaction.recapture);
 
   const total = useTransactionTotal(transactions ?? undefined);
 
