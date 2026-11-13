@@ -151,7 +151,7 @@ export default function InviteRedemptionScreen({
           : "bg-[var(--meadow-bg)] text-[var(--meadow-ink)]",
       )}
     >
-      <section className="relative overflow-hidden pb-10 pt-6">
+      <section className="relative overflow-hidden pb-10 pt-[calc(1.5rem+env(safe-area-inset-top,0px))]">
         <IntroBackdrop
           beat={5}
           isDark={isDark}
