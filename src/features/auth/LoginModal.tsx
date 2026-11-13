@@ -46,14 +46,14 @@ export default function LoginModal({
         />
         <Dialog.Popup
           className={cn(
-            "fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 rounded-3xl p-1 shadow-2xl outline-none transition duration-200 ease-out",
+            "fixed left-1/2 top-[calc(50%+(env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))/2)] z-50 flex max-h-[calc(100dvh-1rem-env(safe-area-inset-top,0px)-env(safe-area-inset-bottom,0px))] w-[calc(100vw-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2 flex-col rounded-3xl p-1 shadow-2xl outline-none transition duration-200 ease-out",
             "data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0",
             isDark ? "bg-[var(--bg-paper)]" : "bg-[var(--meadow-bg)]",
           )}
         >
           <div
             className={cn(
-              "relative overflow-hidden rounded-[22px] border p-6",
+              "relative flex min-h-0 flex-col overflow-hidden rounded-[22px] border p-6",
               isDark
                 ? "border-[var(--ink-3)] bg-[var(--bg-card)]"
                 : "border-[var(--meadow-paper-edge)] bg-[var(--bg-card)]",
@@ -74,7 +74,7 @@ export default function LoginModal({
               <X className="h-5 w-5" aria-hidden />
             </Dialog.Close>
 
-            <div className="mt-2">
+            <div data-testid="login-modal-scroll" className="mt-2 min-h-0 overflow-y-auto">
               {showTravelerLogin ? (
                 <AuthScreen
                   onSignIn={(session) => onSignIn({ ...session, sessionType: "legacy" })}
