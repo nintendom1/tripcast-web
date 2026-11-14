@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import { useDebugLogger, type DebugLogger } from "../../debug/useDebugLogger";
@@ -24,11 +24,14 @@ import {
   getStomachLevelFromScore,
 } from "./travelerStateUtils";
 import { TERMS } from "../../copy/terminology";
+import { PrivateTripTargetLabel, useLiveActionGate } from "../trips/privateTripView";
 
 export interface AutoStateFooterAction {
   saving: boolean;
   error: string | null;
   onSave: () => void;
+  /** True when the update is unavailable (not the shared current trip in progress). */
+  disabled?: boolean;
 }
 
 interface AutoStateTabProps {
@@ -176,11 +179,13 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
   const { resolvedTheme } = useTheme();
   const nativeInputStyle = { colorScheme: resolvedTheme === "constellation" ? "dark" : "light" } as const;
 
-  const autoState = useQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
-  const setEnabled = useMutation(tripcastApi.travelerAutoState.travelerSetAutoStateEnabled);
-  const updateSettings = useMutation(tripcastApi.travelerAutoState.travelerUpdateAutoStateSettings);
-  const rebaseTimeZone = useMutation(tripcastApi.travelerAutoState.travelerRebaseAutoStateTimeZone);
-  const updateState = useMutation(tripcastApi.travelerState.travelerUpdateState);
+  const autoState = useTripQuery(tripcastApi.travelerAutoState.travelerGetAutoState, { token });
+  const setEnabled = useTripMutation(tripcastApi.travelerAutoState.travelerSetAutoStateEnabled);
+  const updateSettings = useTripMutation(tripcastApi.travelerAutoState.travelerUpdateAutoStateSettings);
+  const rebaseTimeZone = useTripMutation(tripcastApi.travelerAutoState.travelerRebaseAutoStateTimeZone);
+  const updateState = useTripMutation(tripcastApi.travelerState.travelerUpdateState);
+  // Automatic state is a live action: decided from the trip these writes go to (captured at mount), not the view.
+  const liveGate = useLiveActionGate("change automatic state", setEnabled.target);
 
   const hasPopulatedRef = useRef(false);
   const rebasePromptLoggedRef = useRef(false);
@@ -322,7 +327,7 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
   }
 
   const handleSaveSettings = useCallback(async () => {
-    if (saving) return;
+    if (saving || !liveGate.allowed) return;
     setError(null);
     if (energyMin > energyMax) {
       setError("Energy min cannot exceed energy max.");
@@ -372,6 +377,7 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
     stomachAboveEvery,
     stomachBelowEvery,
     log,
+    liveGate.allowed,
     updateSettings,
     token,
     bedtime,
@@ -383,9 +389,9 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
   ]);
 
   useEffect(() => {
-    onFooterActionChange?.({ saving, error, onSave: handleSaveSettings });
+    onFooterActionChange?.({ saving, error, onSave: handleSaveSettings, disabled: !liveGate.allowed });
     return () => onFooterActionChange?.(null);
-  }, [onFooterActionChange, saving, error, handleSaveSettings]);
+  }, [onFooterActionChange, saving, error, handleSaveSettings, liveGate.allowed]);
 
   async function handleApplyEstimate() {
     if (applying || !liveEstimate) return;
@@ -441,6 +447,8 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
 
   return (
     <div className="grid gap-5 p-4 text-[var(--ink-1)]">
+      <PrivateTripTargetLabel target={setEnabled.target} />
+      {liveGate.reason ? <p className={autoHintClass}>{liveGate.reason}</p> : null}
       {/* Toggle */}
       <div className={cn("flex items-center justify-between px-3 py-2.5", autoPanelClass)}>
         <span className="text-sm font-medium">{TERMS.autoState}</span>
@@ -448,12 +456,12 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
           type="button"
           role="switch"
           aria-checked={enabled}
-          disabled={loading || toggling}
+          disabled={loading || toggling || !liveGate.allowed}
           onClick={() => handleToggle(!enabled)}
           className={cn(
             "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
             enabled ? "bg-[var(--flag)]" : "bg-[var(--meter-track)]",
-            (loading || toggling) && "opacity-60",
+            (loading || toggling || !liveGate.allowed) && "opacity-60",
           )}
         >
           <span
@@ -481,7 +489,7 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
           <Button
             type="button"
             variant="outline"
-            disabled={rebasing}
+            disabled={rebasing || !liveGate.allowed}
             onClick={handleRebase}
             className="w-full border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
           >
@@ -769,7 +777,7 @@ export default function AutoStateTab({ token, onToast, onFooterActionChange }: A
         type="button"
         variant="outline"
         onClick={handleApplyEstimate}
-        disabled={applying || !liveEstimate}
+        disabled={applying || !liveEstimate || !liveGate.allowed}
         className="w-full border-[var(--line-soft)] bg-[var(--bg-card)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
       >
         {applying ? "Applying…" : "Apply estimate to saved State"}

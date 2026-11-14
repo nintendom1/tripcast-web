@@ -1,7 +1,10 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
+import { useOnlineStatus } from "../../components/resilience/useOnlineStatus";
 import type { TripCard, TripLifecycle } from "../../convex/tripcastApi";
+import { useDeleteTripCall } from "./DeleteTripDialog";
+import { tripErrorInfo } from "./tripSwitchState";
 
 export const LIFECYCLE_LABELS: Record<TripLifecycle, string> = {
   planned: "Planned",
@@ -21,9 +24,57 @@ export type TripListRowProps = {
   menu?: ReactNode;
 };
 
-/** One thin catalog card. Tapping only highlights it; a deleting trip is inert and shows "Deleting…". */
+/**
+ * True when the server says a trip's delete stopped without finishing (`deleteFailed` on a deleting card). The field is
+ * newer than the API type on this branch, so it is read defensively.
+ */
+export function isDeleteFailed(card: TripCard): boolean {
+  return card.deletingAt !== undefined && (card as TripCard & { deleteFailed?: boolean }).deleteFailed === true;
+}
+
+/** Calls `deleteTrip` again for `card`'s trip with the same arguments the delete dialog sends. */
+function RetryDelete({ card }: { card: TripCard }) {
+  const deleteTripCall = useDeleteTripCall();
+  const online = useOnlineStatus();
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const retry = async () => {
+    setWorking(true);
+    setError(null);
+    try {
+      await deleteTripCall(card);
+    } catch (reason) {
+      setError(tripErrorInfo(reason, "Could not retry the delete. Try again.").message);
+    } finally {
+      setWorking(false);
+    }
+  };
+  return (
+    <div className="flex shrink-0 flex-col items-end gap-1 pr-2">
+      <button
+        type="button"
+        disabled={working || !online}
+        onClick={() => void retry()}
+        className="rounded-full px-3 py-1 text-xs font-semibold text-[var(--ink-danger)] transition-colors hover:bg-[var(--bg-danger)] disabled:opacity-50"
+      >
+        {working ? "Retrying…" : "Retry"}
+      </button>
+      {error ? (
+        <span role="alert" className="max-w-40 text-right text-[10px] text-[var(--ink-danger)]">
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * One thin catalog card. Tapping only highlights it; a deleting trip is inert (it cannot be highlighted, opened,
+ * switched to or edited) and shows "Deleting…", or "Delete did not finish" with a Retry when the server says it stopped.
+ */
 export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: TripListRowProps) {
   const deleting = card.deletingAt !== undefined;
+  const deleteFailed = isDeleteFailed(card);
   const body = (
     <>
       <span className="flex min-w-0 items-center gap-2">
@@ -32,7 +83,7 @@ export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: T
         {viewing ? <Tag>Viewing</Tag> : null}
       </span>
       <span className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
-        <span>{deleting ? "Deleting…" : LIFECYCLE_LABELS[card.lifecycle]}</span>
+        <span>{deleteFailed ? "Delete did not finish" : deleting ? "Deleting…" : LIFECYCLE_LABELS[card.lifecycle]}</span>
         {card.destinationSummary ? <span className="truncate">{card.destinationSummary}</span> : null}
       </span>
     </>
@@ -58,6 +109,7 @@ export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: T
           {body}
         </button>
       )}
+      {deleteFailed ? <RetryDelete card={card} /> : null}
       {deleting ? null : menu}
     </li>
   );

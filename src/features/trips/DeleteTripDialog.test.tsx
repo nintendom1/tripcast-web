@@ -129,6 +129,15 @@ describe("DeleteTripDialog", () => {
     expect(server.calls).toHaveLength(0);
   });
 
+  it("is unavailable for a trip that is already being deleted", async () => {
+    await setup(card({ deletingAt: 1 }));
+    expect(screen.getByText("This trip is already being deleted.")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(deleteButton()).toBeDisabled();
+    expect(server.calls).toHaveLength(0);
+    expect(deleteBlockedReason(card({ deletingAt: 1, isCurrent: true }), false)).toBe("This trip is already being deleted.");
+  });
+
   it("explains each refusal reason", () => {
     expect(deleteBlockedReason(card(), false)).toBeNull();
     expect(deleteBlockedReason(card({ isCurrent: true, isLegacy: true }), true)).toMatch(/Followers are viewing/);

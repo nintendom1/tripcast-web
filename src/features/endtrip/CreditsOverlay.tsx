@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { useQuery } from "convex/react";
+import { useTripQuery } from "../../convex/useTrip";
 import { X } from "lucide-react";
 
 import { tripcastApi, type Role } from "../../convex/tripcastApi";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMusicSafe } from "../../providers/MusicProvider";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 
 type Props = {
   token: string;
@@ -32,13 +33,19 @@ function CreditRow({ role, names }: { role: string; names: string[] }) {
  * never locked — this is purely an overlay the user can dismiss any time.
  */
 export default function CreditsOverlay({ token, role, onClose }: Props) {
-  const credits = useQuery(tripcastApi.endTrip.getTripCredits, { token });
-  const queriedEvents = useQuery(tripcastApi.journalEvents.listJournalEvents, { token });
-  const queriedMissions = useQuery(
+  // The finale is about the trip on screen when it opened (the one just ended): name it explicitly so the credits,
+  // the events and the missions stay on that trip if the view changes while the overlay is up. A Follower, and
+  // multi-trip disabled (no viewed trip), add nothing, exactly as before.
+  const { role: contextRole, viewingTripId } = useOptionalTripContext();
+  const [openedTripId] = useState(viewingTripId);
+  const tripArg = contextRole === "traveler" && openedTripId ? { tripId: openedTripId } : {};
+  const credits = useTripQuery(tripcastApi.endTrip.getTripCredits, { token, ...tripArg });
+  const queriedEvents = useTripQuery(tripcastApi.journalEvents.listJournalEvents, { token, ...tripArg });
+  const queriedMissions = useTripQuery(
     role === "traveler"
       ? tripcastApi.missions.travelerListMissions
       : tripcastApi.missions.followerListMissions,
-    { token },
+    { token, ...tripArg },
   );
   const log = useDebugLogger("CreditsOverlay", "src/features/endtrip/CreditsOverlay.tsx");
   const ref = useRef<HTMLDivElement>(null);

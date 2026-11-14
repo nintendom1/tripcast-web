@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { BadgeSourceType, BadgeType } from "../../convex/tripcastApi";
@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useActiveUiContext } from "../../debug/useActiveUiContext";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
 
 type Props = {
   open: boolean;
@@ -40,11 +41,17 @@ export default function AwardBadgeSheet({
     "AwardBadgeSheet",
     "src/features/achievements/AwardBadgeSheet.tsx",
   );
-  const context = useQuery(
+  const context = useTripQuery(
     tripcastApi.badges.travelerGetBadgeAwardContext,
     open ? { token, sourceType, sourceId } : "skip",
   );
-  const awardBadges = useMutation(tripcastApi.badges.travelerAwardBadges);
+  const awardBadges = useTripMutation(tripcastApi.badges.travelerAwardBadges);
+  // The sheet stays mounted while closed: take the trip on screen each time it opens, so the award goes to the trip
+  // shown (works on any owned trip, not only the shared current one).
+  const recaptureTrip = awardBadges.recapture;
+  useEffect(() => {
+    if (open) recaptureTrip();
+  }, [open, recaptureTrip]);
 
   const [selectedRecipients, setSelectedRecipients] = useState<Set<string>>(new Set());
   const [badgeType, setBadgeType] = useState<BadgeType | null>(null);
@@ -183,6 +190,7 @@ export default function AwardBadgeSheet({
         </SheetGradientHeader>
 
         <SheetBody className="grid gap-4 px-5">
+          <PrivateTripTargetLabel target={awardBadges.target} />
           {!context ? (
             <p className="rounded-xl bg-[var(--bg-card)] p-3 text-sm text-[var(--ink-3)]">
               Loading…

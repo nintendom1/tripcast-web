@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Loader2, MapPin, Sparkles } from "lucide-react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import type { TripTarget } from "../trips/tripTypes";
+import { pinnedTripArgs } from "./pinnedTrip";
 
 import { Button } from "../../components/ui/button";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
@@ -47,6 +50,8 @@ export type DeveloperMysteryPinContentProps = {
   status: CreateStatus;
   settingsEnabled?: boolean;
   debugPinsEnabled: boolean;
+  /** The trip the pin will be created in (shown only when it is not the shared current trip). */
+  tripTarget?: TripTarget | null;
 };
 
 export function DeveloperMysteryPinContent({
@@ -59,12 +64,14 @@ export function DeveloperMysteryPinContent({
   status,
   settingsEnabled,
   debugPinsEnabled,
+  tripTarget = null,
 }: DeveloperMysteryPinContentProps) {
   const working = status.type === "locating" || status.type === "creating";
   const needsSetup = settingsEnabled === false || !debugPinsEnabled;
 
   return (
     <SheetBody className="grid gap-5 px-5 py-4 text-[var(--ink-1)]">
+      <PrivateTripTargetLabel target={tripTarget} />
       <section className="grid gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-4">
         <div className="flex items-start gap-3">
           <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-[var(--flag)]" aria-hidden="true" />
@@ -191,11 +198,13 @@ function locationErrorText(error: unknown) {
 }
 
 function DeveloperMysteryPinBody({ open, token }: { open: boolean; token: string }) {
-  const settings = useQuery(
+  const createTest = useTripMutation(tripcastApi.mysteryMissions.travelerCreateDeveloperTestMysteryMission);
+  // Per-trip: the pin is created in the trip captured when this body mounted (per open), and its settings are read from
+  // that same trip.
+  const settings = useTripQuery(
     tripcastApi.mysteryMissions.travelerGetMysteryMissionSettings,
-    open ? { token } : "skip",
+    open ? { token, ...pinnedTripArgs(createTest.target) } : "skip",
   );
-  const createTest = useMutation(tripcastApi.mysteryMissions.travelerCreateDeveloperTestMysteryMission);
   const [mysteryText, setMysteryText] = useState("");
   const [trueIntent, setTrueIntent] = useState("");
   const [status, setStatus] = useState<CreateStatus>({ type: "idle" });
@@ -283,6 +292,7 @@ function DeveloperMysteryPinBody({ open, token }: { open: boolean; token: string
         status={status}
         settingsEnabled={settings?.enabled}
         debugPinsEnabled={debugPinsEnabled}
+        tripTarget={createTest.target}
       />
       <ConfirmModal
         open={confirmSetup}

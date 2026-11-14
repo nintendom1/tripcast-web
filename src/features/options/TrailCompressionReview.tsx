@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { useConvex, useQuery } from "convex/react";
+import { useConvex } from "convex/react";
+import { useTripConvex, useTripQuery } from "../../convex/useTrip";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import { pinnedTripArgs } from "./pinnedTrip";
 import { MapPinMinus } from "lucide-react";
 import { tripcastApi, type ReplayRouteManifest, type ReplayRoutePreview, type ReplayRoutePreviewPoint } from "../../convex/tripcastApi";
 import { Sheet, SheetBody, SheetContent, SheetTitle, SheetCloseButton } from "../../components/ui/sheet";
@@ -49,8 +52,12 @@ export function TrailCompressionView(props: TrailCompressionViewProps) {
 const emptyPreview: PreviewState = { points: [], done: false, loading: false, stopping: false, started: false, error: null };
 function ReviewBody({ token, onOpenChange }: { token: string; onOpenChange: (open: boolean) => void }) {
   const client = useConvex();
-  const manifest = useQuery(tripcastApi.replayRoutes.manifest, { token });
-  const metrics = useQuery(tripcastApi.replayRoutes.metrics, manifest?.ready ? { token } : "skip");
+  // Per-trip: this body mounts per open, so `trip` is pinned to the trip shown when the review opened. Reads are pinned
+  // to it too, so the manifest, every preview page and Compress/Enable always describe the same trip.
+  const trip = useTripConvex();
+  const pin = pinnedTripArgs(trip.target);
+  const manifest = useTripQuery(tripcastApi.replayRoutes.manifest, { token, ...pin });
+  const metrics = useTripQuery(tripcastApi.replayRoutes.metrics, manifest?.ready ? { token, ...pin } : "skip");
   const [preview, setPreview] = useState(emptyPreview);
   const [snapshot, setSnapshot] = useState<Pick<ReplayRouteManifest, "sourceRevision" | "compressionVersion"> | null>(null);
   const cursor = useRef<Pick<ReplayRoutePreview, "day" | "cursor">>({ day: null, cursor: null });
@@ -68,11 +75,11 @@ function ReviewBody({ token, onOpenChange }: { token: string; onOpenChange: (ope
   useEffect(() => () => { worker.current.epoch++; worker.current.stop = true; worker.current.running = false; initial.current = false; }, []);
   useEffect(() => {
     let cancelled = false;
-    void readPreparationInventory(client, token).then(items => {
+    void readPreparationInventory(client, token, trip).then(items => {
       if (!cancelled) setImageStatus(`${items.filter(p => p.status === "ready").length}/${items.length} images ready · ${items.filter(p => p.status === "failed").length} failed.`);
     }).catch(() => { if (!cancelled) setImageStatus("Image status unavailable."); });
     return () => { cancelled = true; };
-  }, [client, token, progress.running, imagesOpen]);
+  }, [client, trip, token, progress.running, imagesOpen]);
   const load = useCallback(async (all: boolean, reset = false) => {
     const source = latest.current;
     if (!source?.ended || worker.current.running) return;
@@ -86,7 +93,7 @@ function ReviewBody({ token, onOpenChange }: { token: string; onOpenChange: (ope
     try {
       let pages = 0;
       do {
-        const result = await client.query(tripcastApi.replayRoutes.preview, { token, sourceRevision: identity.sourceRevision, compressionVersion: identity.compressionVersion, ...cursor.current });
+        const result = await trip.query(tripcastApi.replayRoutes.preview, { token, sourceRevision: identity.sourceRevision, compressionVersion: identity.compressionVersion, ...cursor.current });
         if (worker.current.epoch !== epoch) return;
         if (latest.current?.sourceRevision !== identity.sourceRevision || !latest.current?.ended) break;
         cursor.current = { day: result.day, cursor: result.cursor };
@@ -98,25 +105,26 @@ function ReviewBody({ token, onOpenChange }: { token: string; onOpenChange: (ope
     finally {
       if (worker.current.epoch === epoch) { worker.current.running = false; setPreview(p => ({ ...p, loading: false, stopping: false })); }
     }
-  }, [client, token, snapshot]);
+  }, [trip, token, snapshot]);
   const initial = useRef(false);
   useEffect(() => { if (manifest?.ended && !initial.current) { initial.current = true; void load(false); } }, [manifest?.ended, load]);
   async function compress() {
     if (!snapshot) return;
     setBusy(true);
-    try { await client.mutation(tripcastApi.replayRoutes.prepare, { token, ...snapshot }); setRequested(true); }
+    try { await trip.mutation(tripcastApi.replayRoutes.prepare, { token, ...snapshot }); setRequested(true); }
     catch (reason) { setPreview(p => ({ ...p, error: String(reason) })); }
     finally { setBusy(false); }
   }
   async function enable(enabled: boolean) {
     setDeliveryMessage("");
     setBusy(true);
-    try { await client.mutation(tripcastApi.replayRoutes.enable, { token, enabled }); setDeliveryMessage("Trail quality saved for everyone."); }
+    try { await trip.mutation(tripcastApi.replayRoutes.enable, { token, enabled }); setDeliveryMessage("Trail quality saved for everyone."); }
     catch (reason) { setPreview(p => ({ ...p, error: String(reason) })); }
     finally { setBusy(false); }
   }
   return <>
     <TrailCompressionView {...preview} open hidden={imagesOpen} onOpenChange={onOpenChange} stale={stale} ended={manifest?.ended} imageStatus={imageStatus} onImages={() => setImagesOpen(true)} onLoad={all => { void load(all); }} onStop={() => { worker.current.stop = true; setPreview(p => ({ ...p, stopping: true })); }} onReload={() => { void load(false, true); }} onCompress={() => { void compress(); }} busy={busy} ready={!!manifest?.ready}>
+      <PrivateTripTargetLabel target={trip.target} />
       <section className="space-y-3 border-t pt-4">
         <h3 className="font-semibold">Trail viewing quality</h3>
         <p>Applies to you and all Followers. {manifest?.originalOnly ? "Original trail selected for everyone." : manifest?.enabled ? "Compact trail selected for everyone." : manifest?.ready ? "Traveler preview: compact. Followers: original until enabled." : "Original trail is in use while no compact route is ready."}</p>
@@ -128,7 +136,7 @@ function ReviewBody({ token, onOpenChange }: { token: string; onOpenChange: (ope
       {requested && !manifest?.ready ? <p role="status">Compression requested. Convex continues processing when this view closes. If interrupted, use Compress entire trip to resume.</p> : null}
       {metrics ? <p>{metrics.rawPoints} raw points → {metrics.retainedPoints} replay points in {metrics.chunks} chunks. Coordinate payload: {(metrics.payloadBytes / 1_000_000).toFixed(2)} MB (database overhead and Stories excluded). Mystery projection: {metrics.mysteryReady ? "Ready" : "Not ready"}. Checkpoint pins: {metrics.checkpointPinsReady ? "Ready" : "Not ready"}.</p> : null}
       {manifest?.ready ? <section className="space-y-3 border-t pt-4"><p>Compact route ready. Review Follow route as Traveler before enabling it for Followers.</p><label className="flex gap-2"><input type="checkbox" checked={reviewedRevision === manifest.sourceRevision} onChange={e => setReviewedRevision(e.target.checked ? manifest.sourceRevision : null)} />I verified turns, Story coverage, timing, resume and privacy.</label><Button disabled={busy || manifest.enabled || reviewedRevision !== manifest.sourceRevision} onClick={() => { void enable(true); }}>{manifest.enabled ? "Compact trail enabled" : "Use compact trail for everyone"}</Button></section> : null}
-      <ReplayImagePreparationSheet token={token} open={imagesOpen} onOpenChange={setImagesOpen} />
+      <ReplayImagePreparationSheet token={token} open={imagesOpen} onOpenChange={setImagesOpen} trip={trip} />
     </TrailCompressionView>
   </>;
 }

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Check, Copy, Download, Loader2, FileArchive } from "lucide-react";
-import { useQuery, useConvex } from "convex/react";
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js";
 
+import { useTripConvex, useTripQuery } from "../../convex/useTrip";
+import { pinnedTripArgs } from "./pinnedTrip";
+import { usePrivateTripTitle } from "../trips/privateTripView";
+import type { TripTarget } from "../trips/tripTypes";
 import { tripcastApi, type PhotoCompanionPage, type PhotoCompanionPageItem } from "../../convex/tripcastApi";
 import {
   Sheet,
@@ -43,6 +46,9 @@ type BulkExportSheetProps = {
 type BulkExportResult = {
   timeZone?: string;
   entries: unknown[];
+  /** Set by the server when a cap or the read budget cut the export short. */
+  truncated?: true;
+  truncatedKinds?: string[];
 };
 
 function isBulkExportResult(value: unknown): value is BulkExportResult {
@@ -67,7 +73,7 @@ function isTickerExportResult(value: unknown): value is TickerExportResult {
   );
 }
 
-type ExportCounts = { otherCount: number; breadcrumbCount: number };
+type ExportCounts = { otherCount: number; breadcrumbCount: number; truncated?: true; truncatedKinds?: string[] };
 
 function isExportCounts(value: unknown): value is ExportCounts {
   return (
@@ -76,6 +82,12 @@ function isExportCounts(value: unknown): value is ExportCounts {
     typeof (value as { otherCount?: unknown }).otherCount === "number" &&
     typeof (value as { breadcrumbCount?: unknown }).breadcrumbCount === "number"
   );
+}
+
+/** The server cut an export short: say so, and name the kinds, instead of implying it is complete. */
+function truncationNote(kinds: string[] | undefined): string {
+  const named = kinds && kinds.length > 0 ? `: ${kinds.join(", ")}` : "";
+  return `This export is incomplete. A limit was reached${named}. Narrow the date range and export again.`;
 }
 
 async function runWithLimit<T, R>(
@@ -111,6 +123,13 @@ export default function BulkExportSheet({
   onOpenChange,
 }: BulkExportSheetProps) {
   const log = useDebugLogger("BulkExportSheet", "src/features/options/BulkExportSheet.tsx");
+  // The trip exported is captured when the sheet opens (rule 3 and 13) and sent explicitly by every read and call.
+  const tripClient = useTripConvex();
+  const recaptureTrip = tripClient.recapture;
+  const exportTarget = tripClient.target;
+  useEffect(() => {
+    if (open) recaptureTrip();
+  }, [open, recaptureTrip]);
 
   useEffect(() => {
     log.logUi(open ? "sheet:open" : "sheet:close");
@@ -135,7 +154,7 @@ export default function BulkExportSheet({
         <div className="flex items-start justify-between gap-2 px-5 pt-2">
           <div className="flex min-w-0 flex-col gap-1.5">
             <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              Bulk Export
+              {exportTarget ? `Bulk Export: ${exportTarget.title}` : "Bulk Export"}
             </SheetTitle>
           </div>
           <SheetCloseButton aria-label="Close bulk export" />
@@ -151,7 +170,7 @@ export default function BulkExportSheet({
           onClose={() => onOpenChange(false)}
           resetKeys={[open]}
         >
-          <BulkExportBody open={open} token={token} />
+          <BulkExportBody open={open} token={token} tripClient={tripClient} target={exportTarget} />
         </FeatureBoundary>
       </SheetContent>
     </Sheet>
@@ -167,7 +186,23 @@ type PhotoZipState =
   | { type: "complete"; fileCount: number; missingCount: number }
   | { type: "error"; message: string };
 
-function BulkExportBody({ open, token }: { open: boolean; token: string }) {
+function BulkExportBody({
+  open,
+  token,
+  tripClient,
+  target,
+}: {
+  open: boolean;
+  token: string;
+  tripClient: ReturnType<typeof useTripConvex>;
+  target: TripTarget | null;
+}) {
+  const pin = pinnedTripArgs(target);
+  // The export actions name the trip exported; without a target (disabled, no provider) their text is today's.
+  const fromTrip = target ? ` from ${target.title}` : "";
+  // The ticker export and the Photo ZIP name the trip when it is not the shared current trip.
+  const otherTripTitle = usePrivateTripTitle(target);
+  const fromOtherTrip = otherTripTitle ? ` from ${otherTripTitle}` : "";
   const [range, setRange] = useState<"all" | "custom">("all");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -185,7 +220,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
   const endMs = endDate ? new Date(endDate).getTime() + 86399999 : undefined;
 
   // Photo ZIP State
-  const convex = useConvex();
+  const convex = tripClient;
   const [photoZipState, setPhotoZipState] = useState<PhotoZipState>({ type: "idle" });
   const [isConfirmZipWarningOpen, setIsConfirmZipWarningOpen] = useState(false);
 
@@ -202,9 +237,9 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
 
   // Preflight count only runs once breadcrumbs are requested (the default-off
   // toggle), since breadcrumbs are the only realistic way to blow the cap.
-  const countResult = useQuery(
+  const countResult = useTripQuery(
     tripcastApi.bulkImport.travelerCountExportEntries,
-    open && includeLiveTrail ? { token, startMs, endMs, includeMysteryMissions } : "skip",
+    open && includeLiveTrail ? { token, startMs, endMs, includeMysteryMissions, ...pin } : "skip",
   );
   const counts = isExportCounts(countResult) ? countResult : undefined;
   const totalIfAll = counts ? counts.otherCount + counts.breadcrumbCount : undefined;
@@ -222,15 +257,16 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
         includeMysteryMissions: boolean;
         includeLiveTrail: boolean;
         liveTrailLimit?: number;
+        tripId?: string;
       }
     | "skip" = (() => {
     if (!open) return "skip";
     if (!includeLiveTrail) {
-      return { token, startMs, endMs, includeMysteryMissions, includeLiveTrail: false };
+      return { token, startMs, endMs, includeMysteryMissions, includeLiveTrail: false, ...pin };
     }
     if (counts === undefined) return "skip";
     if (!overCap) {
-      return { token, startMs, endMs, includeMysteryMissions, includeLiveTrail: true };
+      return { token, startMs, endMs, includeMysteryMissions, includeLiveTrail: true, ...pin };
     }
     if (confirmRecent) {
       return {
@@ -240,17 +276,18 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
         includeMysteryMissions,
         includeLiveTrail: true,
         liveTrailLimit: recentN,
+        ...pin,
       };
     }
     return "skip";
   })();
 
-  const queryResult = useQuery(tripcastApi.bulkImport.travelerExportTripData, exportArgs);
+  const queryResult = useTripQuery(tripcastApi.bulkImport.travelerExportTripData, exportArgs);
   const data = isBulkExportResult(queryResult) ? queryResult : undefined;
 
-  const tickerQueryResult = useQuery(
+  const tickerQueryResult = useTripQuery(
     tripcastApi.bulkImport.travelerExportTickerMessages,
-    open ? { token } : "skip"
+    open ? { token, ...pin } : "skip"
   );
   const tickerData = isTickerExportResult(tickerQueryResult) ? tickerQueryResult : undefined;
 
@@ -646,6 +683,11 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
                 {(counts?.breadcrumbCount ?? 0).toLocaleString()} breadcrumbs recorded
               </span>
             </div>
+            {counts?.truncated ? (
+              <p role="alert" className="text-xs font-semibold text-[var(--ink-danger)]">
+                {truncationNote(counts.truncatedKinds)}
+              </p>
+            ) : null}
             <p className="text-xs text-[var(--ink-2)]">
               That's over the {SAFE_CAP.toLocaleString()}-entry safe limit for a single export.
             </p>
@@ -658,7 +700,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
                 }}
                 className="border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
               >
-                Export most recent {recentN.toLocaleString()}
+                Export most recent {recentN.toLocaleString()}{fromTrip}
               </Button>
             ) : (
               <p className="text-xs text-[var(--ink-3)]">
@@ -676,6 +718,11 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
             <p className="text-sm font-semibold text-[var(--ink-1)]">
               {data.entries.length} items ready for export
             </p>
+            {data.truncated ? (
+              <p role="alert" className="text-xs font-semibold text-[var(--ink-danger)]">
+                {truncationNote(data.truncatedKinds)}
+              </p>
+            ) : null}
             {usedRecentLimit ? (
               <p className="text-xs text-[var(--ink-2)]">
                 Most recent {recentN.toLocaleString()} of {(counts?.breadcrumbCount ?? 0).toLocaleString()} breadcrumbs.
@@ -689,7 +736,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
                 className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
               >
                 {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                {copied ? "Copied" : "Copy JSON"}
+                {copied ? "Copied" : `Copy JSON${fromTrip}`}
               </Button>
               <Button
                 type="button"
@@ -697,7 +744,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
                 className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
               >
                 <Download className="mr-2 h-4 w-4" />
-                Download .json
+                Download .json{fromTrip}
               </Button>
             </div>
           </>
@@ -715,7 +762,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
             className="w-full border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
           >
             <FileArchive className="mr-2 h-4 w-4" />
-            Prepare Photo ZIP
+            Prepare Photo ZIP{fromOtherTrip}
           </Button>
         )}
 
@@ -828,7 +875,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
                 className="flex-1 border-[var(--line-soft)] bg-[var(--bg-paper)] text-[var(--ink-1)] hover:bg-[var(--meter-track)] hover:text-[var(--ink-1)]"
               >
                 {tickerCopied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
-                {tickerCopied ? "Copied" : "Copy JSON"}
+                {tickerCopied ? "Copied" : `Copy JSON${fromOtherTrip}`}
               </Button>
               <Button
                 type="button"
@@ -837,7 +884,7 @@ function BulkExportBody({ open, token }: { open: boolean; token: string }) {
                 className="flex-1 border-0 bg-[var(--flag)] text-[var(--ink-on-brand)] hover:bg-[var(--flag)] hover:opacity-90"
               >
                 <Download className="mr-2 h-4 w-4" />
-                Download .json
+                Download .json{fromOtherTrip}
               </Button>
             </div>
           </>

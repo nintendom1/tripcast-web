@@ -1,5 +1,9 @@
 export interface PendingSave {
   id: string;
+  // Trip this save was MADE for (the trip the form was opened on) and its title for messages. Optional so records
+  // written before multi-trip still load: the store keeps whole objects, so no schema or DB_VERSION change is needed.
+  tripId?: string;
+  tripTitle?: string;
   data: {
     title?: string;
     note?: string;

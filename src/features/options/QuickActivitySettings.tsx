@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import { pinnedTripArgs } from "./pinnedTrip";
 import { ArrowDown, ArrowUp, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
 import { Button } from "../../components/ui/button";
@@ -240,8 +242,13 @@ export default function QuickActivitySettingsView({ token }: { token: string }) 
   const [status, setStatus] = useState<StatusMessage>(null);
   const [saving, setSaving] = useState(false);
 
-  const updateMutation = useMutation(tripcastApi.currentActivity.travelerUpdateQuickActivitySettings);
-  const remoteQueryData = useQuery(tripcastApi.currentActivity.travelerGetQuickActivitySettings, { token });
+  // Per-trip: the remote settings are the viewed trip's. Push writes the trip captured when this view mounted, and the
+  // remote read is pinned to that same trip, so Pull and Push never mix two trips if the view moves while it is open.
+  const updateMutation = useTripMutation(tripcastApi.currentActivity.travelerUpdateQuickActivitySettings);
+  const remoteQueryData = useTripQuery(tripcastApi.currentActivity.travelerGetQuickActivitySettings, {
+    token,
+    ...pinnedTripArgs(updateMutation.target),
+  });
   const { activities, displayCount } = draft;
 
   const saveToLocal = (nextDraftActivities: DraftActivity[], nextDisplayCount: number) => {
@@ -371,6 +378,7 @@ export default function QuickActivitySettingsView({ token }: { token: string }) 
         <h3 className="font-[var(--font-mono)] text-[11px] font-semibold uppercase text-[var(--ink-3)]">
           Quick Activities
         </h3>
+        <PrivateTripTargetLabel target={updateMutation.target} className="basis-full" />
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ClipboardList, Copy, Download, Eye, EyeOff, FileJson, RadioTower, RotateCcw } from "lucide-react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { PrivateTripTargetLabel, usePrivateTripTitle } from "../trips/privateTripView";
+import { pinnedTripArgs, useReportTripGone } from "./pinnedTrip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { MysteryMissionExportRow, MysteryMissionImportPreview, MysteryMissionImportResult } from "../../convex/tripcastApi";
@@ -158,25 +160,41 @@ export default function MysteryMissionsSheet({
     file: "src/features/options/MysteryMissionsSheet.tsx",
   }, { boundsSelector: "[data-role='mystery-missions-sheet']" });
 
-  const settings = useQuery(
+  // Per-trip, and this sheet stays mounted while closed: the writes capture a trip when the component mounts, so they
+  // are re-captured every time the sheet opens (rule 13), and every read is pinned to that same trip.
+  const setEnabled = useTripMutation(tripcastApi.mysteryMissions.travelerSetMysteryMissionsEnabled);
+  const importMissions = useTripMutation(tripcastApi.mysteryMissions.travelerImportMysteryMissions);
+  const deleteMission = useTripMutation(tripcastApi.mysteryMissions.travelerDeleteMysteryMission);
+  const recaptureSetEnabled = setEnabled.recapture;
+  const recaptureImport = importMissions.recapture;
+  const recaptureDelete = deleteMission.recapture;
+  useEffect(() => {
+    if (!open) return;
+    recaptureSetEnabled();
+    recaptureImport();
+    recaptureDelete();
+  }, [open, recaptureSetEnabled, recaptureImport, recaptureDelete]);
+  const tripTarget = setEnabled.target;
+  const deleteFromTrip = usePrivateTripTitle(deleteMission.target);
+  const pin = pinnedTripArgs(tripTarget);
+  const reportTripGone = useReportTripGone(tripTarget);
+
+  const settings = useTripQuery(
     tripcastApi.mysteryMissions.travelerGetMysteryMissionSettings,
-    open ? { token } : "skip",
+    open ? { token, ...pin } : "skip",
   );
-  const management = useQuery(
+  const management = useTripQuery(
     tripcastApi.mysteryMissions.travelerListMysteryMissions,
-    open ? { token } : "skip",
+    open ? { token, ...pin } : "skip",
   );
-  const preview = useQuery(
+  const preview = useTripQuery(
     tripcastApi.mysteryMissions.previewMysteryMissionImport,
-    payload ? { token, payload } : "skip",
+    payload ? { token, payload, ...pin } : "skip",
   ) as MysteryMissionImportPreview | undefined;
-  const exportData = useQuery(
+  const exportData = useTripQuery(
     tripcastApi.mysteryMissions.travelerExportMysteryMissions,
-    open ? { token } : "skip",
+    open ? { token, ...pin } : "skip",
   );
-  const setEnabled = useMutation(tripcastApi.mysteryMissions.travelerSetMysteryMissionsEnabled);
-  const importMissions = useMutation(tripcastApi.mysteryMissions.travelerImportMysteryMissions);
-  const deleteMission = useMutation(tripcastApi.mysteryMissions.travelerDeleteMysteryMission);
 
   const enabled = settings?.enabled ?? false;
   const revealIntervalHours = settings?.revealIntervalHours ?? 1 / 60;
@@ -230,10 +248,11 @@ export default function MysteryMissionsSheet({
     setSettingsError(null);
     try {
       const revealIntervalHours = parsed / 60;
-      await setEnabled({ token, enabled: nextEnabled, revealIntervalHours });
+      await setEnabled({ token, enabled: nextEnabled, revealIntervalHours, ...pin });
       log.logUi("action:save-settings", { enabled: nextEnabled, revealIntervalHours });
       music.sfx("success");
     } catch (error) {
+      reportTripGone(error);
       setSettingsError(errorText(error));
     } finally {
       setSettingsWorking(false);
@@ -249,10 +268,11 @@ export default function MysteryMissionsSheet({
     setWorking(true);
     setCommitError(null);
     try {
-      await deleteMission({ token, mysteryMissionId: rowId });
+      await deleteMission({ token, mysteryMissionId: rowId, ...pin });
       setDeleteMissionId(null);
       music.sfx("success");
     } catch (error) {
+      reportTripGone(error);
       setCommitError(errorText(error));
     } finally {
       setWorking(false);
@@ -265,10 +285,11 @@ export default function MysteryMissionsSheet({
     setCommitError(null);
     log.logUi("action:import", { count: preview.counts.total });
     try {
-      const result = await importMissions({ token, payload });
+      const result = await importMissions({ token, payload, ...pin });
       music.sfx("success");
       onImported?.(result);
     } catch (error) {
+      reportTripGone(error);
       setCommitError(errorText(error));
     } finally {
       setWorking(false);
@@ -318,6 +339,7 @@ export default function MysteryMissionsSheet({
             <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
               Mystery Missions
             </SheetTitle>
+            <PrivateTripTargetLabel target={tripTarget} />
           </div>
           <SheetCloseButton aria-label="Close Mystery Missions" />
         </div>
@@ -455,7 +477,7 @@ export default function MysteryMissionsSheet({
                     </div>
                     {deleteMissionId === row._id ? (
                       <div className="flex items-center justify-end gap-2 rounded-lg border border-[var(--ink-danger)] bg-[var(--bg-danger)] p-2">
-                        <span className="mr-auto text-xs text-[var(--ink-danger)]">Delete this Mystery Mission?</span>
+                        <span className="mr-auto text-xs text-[var(--ink-danger)]">Delete this Mystery Mission{deleteFromTrip ? ` from ${deleteFromTrip}` : ""}?</span>
                         <Button type="button" size="sm" variant="outline" onClick={() => setDeleteMissionId(null)}>
                           Cancel
                         </Button>

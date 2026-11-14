@@ -1,11 +1,17 @@
-import { renderHook } from "@testing-library/react";
+import { render, renderHook, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
 import type { CurrentTrip } from "../../convex/tripcastApi";
 import { TripContextTestProvider } from "../../providers/TripContextProvider";
 import type { TripContextValue } from "./tripTypes";
-import { useIsSharedCurrentTrip, useLiveActionGate, useTripClientKey } from "./privateTripView";
+import {
+  PrivateTripTargetLabel,
+  useIsSharedCurrentTrip,
+  useLiveActionGate,
+  usePrivateTripTitle,
+  useTripClientKey,
+} from "./privateTripView";
 
 const current = (over: Partial<CurrentTrip> = {}): CurrentTrip => ({
   tripId: "A",
@@ -71,5 +77,43 @@ describe("useTripClientKey", () => {
       }),
     ).toBe("");
     expect(run(() => useTripClientKey(), traveler({ viewingTripId: "B", currentTrip: current({ isLegacy: true }) }))).toBe("B");
+  });
+});
+
+describe("PrivateTripTargetLabel and usePrivateTripTitle", () => {
+  const b = { tripId: "B", title: "Summer" };
+  const label = (value?: Partial<TripContextValue>, target: typeof b | null = b) =>
+    render(
+      <TripContextTestProvider value={value}>
+        <PrivateTripTargetLabel target={target} />
+      </TripContextTestProvider>,
+    );
+
+  it("names a trip that is not the shared current trip, in a private view", () => {
+    label(traveler({ viewingMode: "private", viewingTripId: "B" }));
+    expect(screen.getByTestId("trip-target-label")).toHaveTextContent("Summer");
+  });
+  it("still names it after Return to current (a form left open keeps writing to its pinned trip)", () => {
+    label(traveler({ viewingMode: "follow_current", viewingTripId: "A" }));
+    expect(screen.getByTestId("trip-target-label")).toHaveTextContent("Summer");
+    expect(run(() => usePrivateTripTitle(b), traveler({ viewingMode: "follow_current", viewingTripId: "A" }))).toBe("Summer");
+  });
+  it("shows nothing when the target is the shared current trip, even in a private view", () => {
+    label(traveler({ viewingMode: "private", viewingTripId: "A" }), { tripId: "A", title: "Autumn" });
+    expect(screen.queryByTestId("trip-target-label")).toBeNull();
+    expect(run(() => usePrivateTripTitle({ tripId: "A", title: "Autumn" }), traveler())).toBeNull();
+  });
+  it("while the shared current trip is unknown, only a private view names its target", () => {
+    label({ role: "traveler", multiTripEnabled: true, viewingMode: "private", viewingTripId: "B" });
+    expect(screen.getByTestId("trip-target-label")).toHaveTextContent("Summer");
+    expect(run(() => usePrivateTripTitle(b), { role: "traveler", multiTripEnabled: true, viewingMode: "follow_current" })).toBeNull();
+  });
+  it("shows nothing for a Follower, when multi-trip is disabled, without a target and without a provider", () => {
+    label({ role: "follower", multiTripEnabled: true, currentTrip: current(), viewingMode: "follow_current" });
+    label({ role: "traveler", multiTripEnabled: false, currentTrip: current() });
+    label(traveler(), null);
+    render(<PrivateTripTargetLabel target={b} />);
+    expect(screen.queryByTestId("trip-target-label")).toBeNull();
+    expect(run(() => usePrivateTripTitle(b))).toBeNull();
   });
 });

@@ -39,7 +39,7 @@ export default function AchievementsConnected({
   onOpenChange,
   showButton = true,
 }: Props) {
-  const { summary, untoasted, markToasted, markSeen } = useAchievements(token);
+  const { summary, untoasted, markToasted, markSeen, viewedTrip } = useAchievements(token);
   const music = useMusicSafe();
   const log = useDebugLogger(
     "AchievementsConnected",
@@ -97,10 +97,10 @@ export default function AchievementsConnected({
     setQueue((current) => [...current, ...newToasts]);
     log.logUi("achievement:toast:queued", { count: newToasts.length });
 
-    markToasted({ token, ids: fresh.map((e) => e._id) }).catch(() => {
+    markToasted({ token, ids: fresh.map((e) => e._id), ...viewedTrip }).catch(() => {
       // best-effort; will retry next open if it failed
     });
-  }, [untoasted, token, markToasted, log]);
+  }, [untoasted, token, markToasted, viewedTrip, log]);
 
   // Show the next queued toast once nothing is showing (small gap so the prior
   // toast finishes its exit animation before the next enters).
@@ -126,10 +126,10 @@ export default function AchievementsConnected({
       return;
     }
     if (open && !wasOpenRef.current) {
-      markSeen({ token }).catch(() => {});
+      markSeen({ token, ...viewedTrip }).catch(() => {});
     }
     wasOpenRef.current = open;
-  }, [open, summary, token, markSeen]);
+  }, [open, summary, token, markSeen, viewedTrip]);
 
   // Still loading. We no longer hide the button/sheet if summary is null (e.g. Traveler with scoring off).
   if (summary === undefined) {

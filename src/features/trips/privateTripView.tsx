@@ -1,21 +1,42 @@
 import { useOptionalTripContext } from "../../providers/TripContextProvider";
-import { TripTargetLabel } from "./TripTargetLabel";
 import type { TripTarget } from "./tripTypes";
 
 /**
- * Title of `target` while multi-trip is on and this device views a trip privately, otherwise `null` (so copy,
- * labels and tests are exactly today's). Safe without a `TripContextProvider`.
+ * True while a Traveler with multi-trip on shows the shared current trip's live position for `tripId`'s content.
+ * (Declared first: the label helpers below use it.)
  */
-export function usePrivateTripTitle(target: TripTarget | null): string | null {
-  const { multiTripEnabled, viewingMode } = useOptionalTripContext();
-  return multiTripEnabled && viewingMode === "private" && target ? target.title : null;
+export function useIsSharedCurrentTrip(tripId: string | null): boolean {
+  const { role, multiTripEnabled, currentTrip } = useOptionalTripContext();
+  if (role !== "traveler" || !multiTripEnabled || !tripId) return true;
+  return tripId === currentTrip?.tripId;
 }
 
-/** `TripTargetLabel` that renders nothing (and needs no provider) unless the device views privately. */
+/**
+ * Title of `target` when a Traveler with multi-trip on writes to a trip that is not the shared current trip, compared by
+ * trip id (so a form opened in a private view still names its trip after Return to current, and a privately viewed trip
+ * that became the shared current trip stops being named), otherwise `null` (so copy, labels and tests are exactly
+ * today's). While the shared current trip is not known yet, only a private view names its target. Safe without a
+ * `TripContextProvider`.
+ */
+export function usePrivateTripTitle(target: TripTarget | null): string | null {
+  const { role, multiTripEnabled, currentTrip, viewingMode } = useOptionalTripContext();
+  if (role !== "traveler" || !multiTripEnabled || !target) return null;
+  const differs = currentTrip ? target.tripId !== currentTrip.tripId : viewingMode === "private";
+  return differs ? target.title : null;
+}
+
+/** Names `target` (same markup as `TripTargetLabel`) unless it is the shared current trip; needs no provider. */
 export function PrivateTripTargetLabel({ target, className }: { target: TripTarget | null; className?: string }) {
-  const { multiTripEnabled, viewingMode } = useOptionalTripContext();
-  if (!multiTripEnabled || viewingMode !== "private") return null;
-  return <TripTargetLabel target={target} className={className} />;
+  const title = usePrivateTripTitle(target);
+  if (title === null) return null;
+  return (
+    <p
+      data-testid="trip-target-label"
+      className={["text-xs text-[var(--meadow-ink-soft)]", className].filter(Boolean).join(" ")}
+    >
+      {title}
+    </p>
+  );
 }
 
 export type LiveActionGate = { allowed: boolean; reason: string | null };
@@ -34,13 +55,6 @@ export function useLiveActionGate(verb: string, target: TripTarget | null): Live
   if (target.tripId !== currentTrip.tripId) return { allowed: false, reason: `Return to ${currentTrip.title} to ${verb}` };
   if (currentTrip.lifecycle !== "in_progress") return { allowed: false, reason: `${currentTrip.title} isn't in progress` };
   return ALLOWED;
-}
-
-/** True while a Traveler with multi-trip on shows the shared current trip's live position for `tripId`'s content. */
-export function useIsSharedCurrentTrip(tripId: string | null): boolean {
-  const { role, multiTripEnabled, currentTrip } = useOptionalTripContext();
-  if (role !== "traveler" || !multiTripEnabled || !tripId) return true;
-  return tripId === currentTrip?.tripId;
 }
 
 /**

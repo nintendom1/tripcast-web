@@ -6,7 +6,8 @@ import {
   FileJson,
   RotateCcw,
 } from "lucide-react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { pinnedTripArgs, useReportTripGone } from "./pinnedTrip";
 
 import {
   tripcastApi,
@@ -452,6 +453,13 @@ export default function BulkImportSheet({
   const [isCommitting, setIsCommitting] = useState(false);
   const [isSchemaCopied, setIsSchemaCopied] = useState(false);
   const music = useMusicSafe();
+  // The trip imported INTO: captured when the sheet opens (rule 13), named in the title and the confirm button, and
+  // sent explicitly by the preview, the commit and every photo chunk.
+  const commitBulkImport = useTripMutation(tripcastApi.bulkImport.travelerBulkImport);
+  const recaptureTrip = commitBulkImport.recapture;
+  const importTarget = commitBulkImport.target;
+  const pin = pinnedTripArgs(importTarget);
+  const reportTripGone = useReportTripGone(importTarget);
   const log = useDebugLogger("BulkImportSheet", "src/features/options/BulkImportSheet.tsx");
 
   useEffect(() => {
@@ -468,11 +476,14 @@ export default function BulkImportSheet({
     file: "src/features/options/BulkImportSheet.tsx",
   }, { boundsSelector: "[data-role='bulk-import-sheet']" });
 
-  const preview = useQuery(
+  const preview = useTripQuery(
     tripcastApi.bulkImport.previewBulkImport,
-    entries ? { token, entries } : "skip",
+    entries ? { token, entries, ...pin } : "skip",
   ) as BulkImportPreview | undefined;
-  const commitBulkImport = useMutation(tripcastApi.bulkImport.travelerBulkImport);
+
+  useEffect(() => {
+    if (open) recaptureTrip();
+  }, [open, recaptureTrip]);
 
   useEffect(() => {
     if (!open) {
@@ -513,12 +524,13 @@ export default function BulkImportSheet({
     setCommitError(null);
     setIsCommitting(true);
     try {
-      const nextResult = await commitBulkImport({ token, entries });
+      const nextResult = await commitBulkImport({ token, entries, ...pin });
       setResult(nextResult);
       setStage("done");
       music.sfx("success");
       onImported?.(nextResult);
     } catch (error) {
+      reportTripGone(error);
       setCommitError(errorText(error));
     } finally {
       setIsCommitting(false);
@@ -541,7 +553,7 @@ export default function BulkImportSheet({
           <div className="pointer-events-none absolute inset-x-0 top-0 h-12 bg-[var(--header-gradient)]" />
           <div className="flex min-w-0 flex-col gap-1.5">
             <SheetTitle className="font-[var(--font-display)] text-2xl font-extrabold tracking-tight text-[var(--ink-1)]">
-              Bulk Import
+              {importTarget ? `Bulk Import into ${importTarget.title}` : "Bulk Import"}
             </SheetTitle>
           </div>
           <SheetCloseButton aria-label="Close bulk import" />
@@ -584,7 +596,7 @@ export default function BulkImportSheet({
           )}
 
           {importMode === "photo_zip" && stage !== "done" ? (
-            <PhotoCompanionImportPanel token={token} />
+            <PhotoCompanionImportPanel token={token} tripTarget={importTarget} />
           ) : (
             <>
               {stage === "paste" ? (
@@ -696,7 +708,7 @@ export default function BulkImportSheet({
                     </Button>
                     <Button type="button" disabled={!preview?.valid || isCommitting} className={primaryButtonClass} onClick={commit}>
                       <Check className="mr-1.5 h-4 w-4" aria-hidden="true" />
-                      {isCommitting ? "Importing..." : `Commit ${preview?.rows.length ?? 0} Entries`}
+                      {isCommitting ? "Importing..." : `Commit ${preview?.rows.length ?? 0} Entries${importTarget ? ` into ${importTarget.title}` : ""}`}
                     </Button>
                   </div>
                 </>

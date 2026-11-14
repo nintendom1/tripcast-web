@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "convex/react";
+import { useTripQuery } from "../../convex/useTrip";
 import { Award, ChevronLeft, Lock, Medal } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
@@ -230,7 +231,7 @@ export default function AchievementsSheet({
     file: "src/features/achievements/AchievementsSheet.tsx",
   }, { boundsSelector: "[data-role='achievements-sheet']" });
 
-  const board = useQuery(
+  const board = useTripQuery(
     tripcastApi.badges.getMyBadges,
     open && summary !== null ? { token } : "skip",
   );
@@ -238,7 +239,7 @@ export default function AchievementsSheet({
     tripcastApi.badges.listBadgeDefinitions,
     open ? { token } : "skip",
   );
-  const history = useQuery(
+  const history = useTripQuery(
     tripcastApi.scoring.listAchievementHistory,
     open && tab === "history" && summary !== null ? { token } : "skip",
   );
