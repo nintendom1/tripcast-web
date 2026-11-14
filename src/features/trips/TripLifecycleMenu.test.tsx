@@ -264,11 +264,11 @@ describe("TripLifecycleMenu placement in the pane's scroll area", () => {
   const rect = (top: number, height: number) =>
     ({ top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
 
-  /** The pane's scroll area spans 0-400px; the ⋯ sits at `triggerTop`; the menu is 160px tall. */
-  function layout(triggerTop: number) {
+  /** The pane's scroll area spans 0 to `areaHeight`; the 32px ⋯ sits at `triggerTop`; the menu is `menuHeight` tall. */
+  function layout(triggerTop: number, areaHeight = 400, menuHeight = 160) {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-      if (this.hasAttribute("data-trip-pane-scroll")) return rect(0, 400);
-      if (this.getAttribute("role") === "menu") return rect(0, 160);
+      if (this.hasAttribute("data-trip-pane-scroll")) return rect(0, areaHeight);
+      if (this.getAttribute("role") === "menu") return rect(0, menuHeight);
       if (this.getAttribute("aria-haspopup") === "menu") return rect(triggerTop, 32);
       return rect(0, 0);
     });
@@ -313,6 +313,38 @@ describe("TripLifecycleMenu placement in the pane's scroll area", () => {
     const menu = await openMenu(user, card);
     expect(menu).toHaveClass("top-full", "mt-1");
     expect(menu).not.toHaveClass("bottom-full");
+    expect(menu.style.maxHeight).toBe("");
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("in a short scroll area (landscape) a first-row menu opens toward the larger side, capped to it, and scrolls itself", async () => {
+    // 170px area, ⋯ at 10-42px, 180px menu: 2px of room above, 120px below.
+    layout(10, 170, 180);
+    const { user, card } = renderInPane();
+    const menu = await openMenu(user, card);
+    expect(menu).toHaveClass("top-full", "overflow-y-auto");
+    expect(menu).not.toHaveClass("bottom-full");
+    expect(menu.style.maxHeight).toBe("120px");
+    expect(within(menu).getAllByRole("menuitem")).toHaveLength(4);
+  });
+
+  it("in a short scroll area a last-row menu opens upward, capped to the room above", async () => {
+    // 170px area, ⋯ at 130-162px: 122px of room above, none below.
+    layout(130, 170, 180);
+    const { user, card } = renderInPane();
+    const menu = await openMenu(user, card);
+    expect(menu).toHaveClass("bottom-full", "mb-1", "overflow-y-auto");
+    expect(menu.style.maxHeight).toBe("122px");
+  });
+
+  it("measures again on every opening", async () => {
+    layout(360);
+    const { user, card } = renderInPane();
+    expect(await openMenu(user, card)).toHaveClass("bottom-full");
+    await user.click(screen.getByRole("button", { name: `Actions for ${card.title}` }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+
+    layout(40);
+    expect(await openMenu(user, card)).toHaveClass("top-full");
   });
 });

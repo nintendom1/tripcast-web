@@ -40,6 +40,29 @@ export function menuItemsFor(card: TripCard): MenuItem[] {
   return items;
 }
 
+/** Space kept between the menu and the edge of the pane's scroll area. */
+const MENU_MARGIN = 8;
+
+type MenuPlacement = { up: boolean; maxHeight?: number };
+
+/**
+ * Downward when the menu fits below the ⋯; otherwise toward the side with MORE room, capped to that room (the menu
+ * then scrolls itself), so every item is reachable however short the scroll area is (a landscape phone). A menu with
+ * no measured height (no layout) opens downward, uncapped.
+ */
+export function placeMenu(
+  area: { top: number; bottom: number },
+  anchor: { top: number; bottom: number },
+  height: number,
+): MenuPlacement {
+  const below = area.bottom - anchor.bottom - MENU_MARGIN;
+  const above = anchor.top - area.top - MENU_MARGIN;
+  if (height === 0 || height <= below) return { up: false };
+  const up = above > below;
+  const room = Math.max(0, up ? above : below);
+  return height > room ? { up, maxHeight: room } : { up };
+}
+
 export type TripLifecycleMenuProps = {
   card: TripCard;
   /** The catalog holds no other trip (the pane knows; the server refuses regardless). */
@@ -65,32 +88,29 @@ export function TripLifecycleMenu({
   onRequestEndCurrentTrip,
 }: TripLifecycleMenuProps) {
   const [open, setOpen] = useState(false);
-  const [dropUp, setDropUp] = useState(false);
+  // `null` until measured for this opening: the menu first renders downward, uncapped, at its natural height.
+  const [placement, setPlacement] = useState<MenuPlacement | null>(null);
   const [action, setAction] = useState<MenuAction | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const items = menuItemsFor(card);
 
-  // The menu opens downward unless the pane's scroll area has no room for it below the ⋯ and more room above; then
-  // it is scrolled fully into view. Measured before paint, so it never shows clipped first.
+  // Placed against the pane's scroll area (`placeMenu`), then scrolled fully into view. Measured before paint, so it
+  // never shows clipped first.
   useLayoutEffect(() => {
     const trigger = triggerRef.current;
     const menu = menuRef.current;
     if (!open || !trigger || !menu) return;
-    const area = trigger.closest("[data-trip-pane-scroll]")?.getBoundingClientRect() ?? {
-      top: 0,
-      bottom: window.innerHeight,
-    };
-    const anchor = trigger.getBoundingClientRect();
-    const below = area.bottom - anchor.bottom;
-    const above = anchor.top - area.top;
-    const up = below < menu.getBoundingClientRect().height + 8 && above > below;
-    if (up !== dropUp) {
-      setDropUp(up);
+    if (placement === null) {
+      const area = trigger.closest("[data-trip-pane-scroll]")?.getBoundingClientRect() ?? {
+        top: 0,
+        bottom: window.innerHeight,
+      };
+      setPlacement(placeMenu(area, trigger.getBoundingClientRect(), menu.getBoundingClientRect().height));
       return;
     }
     menu.scrollIntoView?.({ block: "nearest" });
-  }, [open, dropUp]);
+  }, [open, placement]);
 
   useEffect(() => {
     if (!open) return;
@@ -152,7 +172,10 @@ export function TripLifecycleMenu({
         aria-label={`Actions for ${card.title}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          setPlacement(null);
+          setOpen((value) => !value);
+        }}
         className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--ink-2)] hover:bg-[var(--meter-track)]"
       >
         <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
@@ -164,9 +187,10 @@ export function TripLifecycleMenu({
           aria-label={`Actions for ${card.title}`}
           onKeyDown={onMenuKeyDown}
           className={cn(
-            "absolute right-0 z-20 grid min-w-40 gap-0.5 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1 shadow-xl",
-            dropUp ? "bottom-full mb-1" : "top-full mt-1",
+            "absolute right-0 z-20 grid min-w-40 gap-0.5 overflow-y-auto overscroll-contain rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1 shadow-xl",
+            placement?.up ? "bottom-full mb-1" : "top-full mt-1",
           )}
+          style={placement?.maxHeight !== undefined ? { maxHeight: placement.maxHeight } : undefined}
         >
           {items.map((item) => (
             <button

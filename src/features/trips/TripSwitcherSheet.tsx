@@ -1,4 +1,4 @@
-import { useState, type ComponentProps, type ReactNode, type RefObject } from "react";
+import { useRef, useState, type ComponentProps, type ReactNode, type RefObject } from "react";
 import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -73,8 +73,8 @@ function keepsPaneOpen(details: ChangeDetails, toggle: HTMLElement | null): bool
 
 /**
  * Bottom pane, like the Awards pane: not modal, so the map stays usable and touching it closes the pane. Browses,
- * filters and previews the Traveler's trips and opens one privately. Nothing is focused on open, so no keyboard
- * pops up. The list subscription and preview cache live in `TripCatalog`, which exists only while the pane is open.
+ * filters and previews the Traveler's trips and opens one privately. On open the pane itself takes focus (no
+ * control, no keyboard). The list subscription and preview cache live in `TripCatalog`, which exists only while the pane is open.
  */
 export function TripSwitcherSheet({
   open,
@@ -86,6 +86,9 @@ export function TripSwitcherSheet({
   highlightTripId,
 }: TripSwitcherSheetProps) {
   const personality = useTripsPersonality();
+  // Focus lands on the pane itself: inside it for a keyboard or screen-reader user, on no control (no focus ring on
+  // Create trip, no keyboard). Without this Base UI focuses the first tabbable, as no Dialog.Trigger opened it.
+  const paneRef = useRef<HTMLDivElement>(null);
 
   return (
     <Sheet
@@ -101,9 +104,11 @@ export function TripSwitcherSheet({
     >
       {/* No pb-* or pt-* here: `cn` would drop `mapAdjacent`'s Dock clearance. The body carries the safe area. */}
       <SheetContent
+        ref={paneRef}
         side="bottom"
         showBackdrop={false}
         mapAdjacent
+        initialFocus={paneRef}
         finalFocus={returnFocusRef}
         className="z-[10] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >

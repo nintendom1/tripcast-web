@@ -145,16 +145,19 @@ beforeEach(() => {
 });
 
 describe("TripSwitcherSheet: shell", () => {
-  it("focuses no field on open (no keyboard), shows the pinned cards, and closes with Escape returning focus to the logo", async () => {
+  it("focuses the pane itself on open, no control (no keyboard, no focus ring), and closes with Escape back to the logo", async () => {
     server.cards = [makeCard("autumn", { isCurrent: true })];
     setup({ viewingTrip: { tripId: "summer", title: "Summer 2026" }, viewingTripId: "summer", viewingMode: "private" });
     const { user, logo } = await openPane();
 
     const pane = screen.getByRole("dialog", { name: "Trips" });
-    // No search box, and focus is not on anything that would raise the on-screen keyboard.
+    // Focus is in the pane (a keyboard or screen-reader user lands there) but on no control, Create trip included.
+    await waitFor(() => expect(pane).toHaveFocus());
+    const controls = [...within(pane).queryAllByRole("button"), screen.getByRole("button", { name: /^TripCast: Trips/ })];
+    expect(controls).toContain(screen.getByRole("button", { name: "Create trip" }));
+    expect(controls.some((control) => control === document.activeElement)).toBe(false);
     expect(within(pane).queryByRole("searchbox")).not.toBeInTheDocument();
     expect(within(pane).queryByRole("textbox")).not.toBeInTheDocument();
-    expect(document.activeElement?.matches("input, textarea, select, [contenteditable]")).toBe(false);
     // A bottom pane beside the map, not a modal: no backdrop, the logo stays reachable.
     expect(pane).not.toHaveAttribute("aria-modal", "true");
     expect(logo).toHaveAttribute("aria-expanded", "true");
