@@ -40,6 +40,8 @@ describe("useTripPaneActions: create sheet chunk", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Create trip could not load.");
+    // It sits beside the non-modal Trips pane: marked, so a press or Escape in it does not close the pane.
+    expect(alert).toHaveAttribute("data-sheet-nested-dialog");
     // The header around it is untouched (the failure did not reach a page-level boundary).
     expect(screen.getByRole("button", { name: "Open create" })).toBeInTheDocument();
 

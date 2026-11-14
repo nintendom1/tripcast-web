@@ -104,6 +104,7 @@ import { useTripConvex, useTripMutation, useTripPaginatedQuery, useTripQuery } f
 import { tripErrorInfo } from "../trips/tripSwitchState";
 import { useTripClientKey } from "../trips/privateTripView";
 import type { TripTarget } from "../trips/tripTypes";
+import { announcePaneOpened, subscribePaneOpened } from "../trips/paneExclusion";
 import { useNativeTrackingState } from "../../native/nativeTrackingState";
 import { useNativeReadinessState } from "../../native/nativeReadinessState";
 import { usePendingTrail, type LocalTrailPoint } from "./usePendingTrail";
@@ -3046,6 +3047,27 @@ export default function TripMap({
             : isMessagingOpen
               ? "messaging"
             : null;
+
+  // One bottom pane at a time (`paneExclusion.ts`): a Dock pane opening closes the Trips pane, and the Trips pane
+  // opening closes the Dock panes. Every way of opening a Dock pane ends in `activeDockTab`.
+  useEffect(() => {
+    if (activeDockTab !== null) announcePaneOpened("map");
+  }, [activeDockTab]);
+  useEffect(
+    () =>
+      subscribePaneOpened((owner) => {
+        if (owner !== "trips") return;
+        setFanOpen(false);
+        setIsTravelerStateOpen(false);
+        setIsJournalOpen(false);
+        setIsMissionsPanelOpen(false);
+        setIsVotePanelOpen(false);
+        setIsTravelFundsSheetOpen(false);
+        setIsAchievementsOpen(false);
+        setIsMessagingOpen(false);
+      }),
+    [],
+  );
 
   function handleDockSelect(tab: DockTab) {
     if (coordinatePickModeRef.current) cancelCoordinatePick();

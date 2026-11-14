@@ -104,10 +104,11 @@ afterEach(() => {
 });
 
 describe("CreateTripSheet", () => {
-  it("focuses the title, shows the copy picker with Defaults selected, and the helper text", async () => {
+  it("focuses the sheet, not a field (no keyboard pops up), and shows the copy picker with Defaults selected", async () => {
     server.cards = [makeCard("summer", "Summer 2026")];
     await setup();
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Title" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("dialog", { name: "Create trip" })).toHaveFocus());
+    expect(screen.getByRole("textbox", { name: "Title" })).not.toHaveFocus();
     const select = screen.getByRole("combobox", { name: "Copy settings from" });
     expect(select).toHaveValue("defaults");
     expect(screen.getByRole("option", { name: "Defaults" })).toBeInTheDocument();
@@ -115,25 +116,36 @@ describe("CreateTripSheet", () => {
     expect(screen.getByText("Copies settings only. Stories, expenses and budget amounts are never copied.")).toBeInTheDocument();
   });
 
-  it("reaches trips beyond the first page: search narrows the list and Load more fetches the next page", async () => {
+  it("is a full-width bottom sheet below the status bar, over a backdrop, marked as a dialog beside the pane", async () => {
+    await setup();
+    const sheet = screen.getByRole("dialog", { name: "Create trip" });
+    expect(sheet).toHaveClass("inset-x-0", "bottom-0", "max-h-[calc(100dvh-env(safe-area-inset-top)-1rem)]");
+    expect(sheet).not.toHaveClass("max-h-[85dvh]", "w-3/4");
+    expect(sheet).toHaveAttribute("data-sheet-nested-dialog");
+    const marked = document.querySelectorAll(`[data-sheet-nested-dialog="${sheet.getAttribute("data-sheet-nested-dialog")}"]`);
+    // The popup and its backdrop carry the same mark.
+    expect(marked).toHaveLength(2);
+    expect(sheet.querySelector("form")).toHaveClass("mx-auto", "w-full", "max-w-md");
+  });
+
+  it("reaches trips beyond the first page with Load more; there is no search box", async () => {
     server.cards = [makeCard("a", "Alpha")];
     server.status = "CanLoadMore";
     const { user } = await setup();
+    expect(screen.queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(server.listArgs.at(-1)).toEqual({ token: "tok" });
     await user.click(screen.getByRole("button", { name: "Load more trips" }));
     expect(server.loadMore).toHaveBeenCalledWith(20);
-    await user.type(screen.getByRole("searchbox", { name: "Search trips to copy from" }), "zed");
-    await waitFor(() => expect(server.listArgs.at(-1)).toMatchObject({ search: "zed" }));
   });
 
-  it("keeps the chosen source selected when a search no longer lists it, and sends it", async () => {
+  it("keeps the chosen source selected when the loaded pages no longer list it, and sends it", async () => {
     server.cards = [makeCard("a", "Alpha")];
     const { user } = await setup();
     await user.selectOptions(screen.getByRole("combobox", { name: "Copy settings from" }), "a");
     server.cards = [makeCard("z", "Zulu")];
-    await user.type(screen.getByRole("searchbox", { name: "Search trips to copy from" }), "z");
+    await user.type(screen.getByRole("textbox", { name: "Title" }), "Winter");
     await waitFor(() => expect(screen.getByRole("option", { name: "Zulu" })).toBeInTheDocument());
     expect(screen.getByRole("combobox", { name: "Copy settings from" })).toHaveValue("a");
-    await user.type(screen.getByRole("textbox", { name: "Title" }), "Winter");
     await user.click(submit());
     await waitFor(() => expect(server.calls).toHaveLength(1));
     expect(server.calls[0].args.copySettingsFrom).toBe("a");

@@ -11,7 +11,7 @@ import { consumeOwnSwitch } from "./tripSwitchState";
 
 const NOTICE_MS = 4000;
 
-// The create sheet lists trips (a paginated subscription), so it loads on first use and the header chip stays light.
+// The create sheet lists trips (a paginated subscription), so it loads on first use and the header logo stays light.
 // `React.lazy` caches a rejected import, so each retry after a failed chunk load builds a fresh lazy component.
 const createAttempts: Array<LazyExoticComponent<typeof import("./CreateTripSheet").CreateTripSheet>> = [];
 function createSheetForAttempt(attempt: number) {
@@ -72,7 +72,7 @@ function useTripChangeAnnouncer(notify: (message: string) => void) {
 }
 
 export type UseTripPaneActionsOptions = {
-  /** Closes the trip pane (the chip owns its open state). */
+  /** Closes the trip pane (the logo toggle owns its open state). */
   closePane: () => void;
   /** Opens the app's End Trip sheet for the shared current trip. */
   onRequestEndCurrentTrip?: () => void;
@@ -163,6 +163,8 @@ export function useTripPaneActions({
           fallbackRender={({ resetErrorBoundary }) => (
             <div
               role="alert"
+              // Beside the non-modal pane, not inside it: a press here must not close the pane.
+              data-sheet-nested-dialog=""
               className="fixed inset-x-4 bottom-24 z-[120] mx-auto flex w-fit max-w-sm items-center gap-3 rounded-2xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-4 py-3 text-sm text-[var(--ink-1)] shadow-xl"
             >
               <span>Create trip could not load.</span>

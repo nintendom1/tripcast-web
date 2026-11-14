@@ -43,7 +43,7 @@ describe("TopBar", () => {
     expect(screen.getByRole("button", { name: /current theme: light/i })).toBeInTheDocument();
   });
 
-  it("renders no trip chip while multi-trip is disabled or for a Follower", () => {
+  it("keeps the logo the same inert div for a Follower and with multi-trip off (no Trips button)", () => {
     const { rerender } = render(
       <ThemeProvider>
         <TripContextTestProvider>
@@ -51,7 +51,13 @@ describe("TopBar", () => {
         </TripContextTestProvider>
       </ThemeProvider>,
     );
-    expect(screen.queryByRole("button", { name: /current ·/i })).not.toBeInTheDocument();
+    const travelerOff = screen.getByText("TripCast");
+    expect(travelerOff.tagName).toBe("DIV");
+    expect(travelerOff).toHaveClass(
+      "flex items-center gap-2 font-[var(--font-display)] text-base font-extrabold tracking-tight text-[var(--ink-1)]",
+    );
+    expect(screen.queryByRole("button", { name: /TripCast/ })).not.toBeInTheDocument();
+    const travelerOffMarkup = travelerOff.outerHTML;
 
     rerender(
       <ThemeProvider>
@@ -60,11 +66,23 @@ describe("TopBar", () => {
         </TripContextTestProvider>
       </ThemeProvider>,
     );
-    expect(screen.queryByRole("button", { name: /current ·/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /TripCast/ })).not.toBeInTheDocument();
+    expect(screen.getByText("TripCast").outerHTML).toBe(travelerOffMarkup);
   });
 
-  it("renders the trip chip for a Traveler with multi-trip enabled", () => {
-    render(
+  it("makes the logo the Trips button for a Traveler with multi-trip on, with the same logo inside", () => {
+    const { rerender } = render(
+      <ThemeProvider>
+        <TripContextTestProvider value={{ role: "follower", multiTripEnabled: true }}>
+          <TopBar role="follower" onOpenOptions={vi.fn()} />
+        </TripContextTestProvider>
+      </ThemeProvider>,
+    );
+    const inert = screen.getByText("TripCast");
+    const inertContent = inert.innerHTML;
+    const inertClass = inert.className;
+
+    rerender(
       <ThemeProvider>
         <TripContextTestProvider
           value={{ multiTripEnabled: true, viewingTrip: { tripId: "t1", title: "Autumn 2026" } }}
@@ -73,6 +91,10 @@ describe("TopBar", () => {
         </TripContextTestProvider>
       </ThemeProvider>,
     );
-    expect(screen.getByRole("button", { name: /current · autumn 2026/i })).toBeInTheDocument();
+    const logo = screen.getByRole("button", { name: "TripCast: Trips" });
+    expect(logo.innerHTML).toBe(inertContent);
+    expect(logo).toHaveClass(...inertClass.split(" "));
+    // No trip name in the bar any more.
+    expect(screen.queryByText("Autumn 2026")).not.toBeInTheDocument();
   });
 });

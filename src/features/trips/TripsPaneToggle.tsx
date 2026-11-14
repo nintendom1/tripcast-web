@@ -1,9 +1,9 @@
-import { lazy, Suspense, useRef, useState, type LazyExoticComponent } from "react";
-import { ChevronDown } from "lucide-react";
+import { lazy, Suspense, useEffect, useRef, useState, type LazyExoticComponent, type ReactNode } from "react";
 import { ErrorBoundary } from "react-error-boundary";
 
 import { cn } from "@/lib/utils";
 import { useTripContext } from "../../providers/TripContextProvider";
+import { announcePaneOpened, subscribePaneOpened } from "./paneExclusion";
 import type { TripPaneActions } from "./TripSwitcherSheet";
 import { useSwitchPending } from "./tripSwitchState";
 import { useTripPaneActions } from "./useTripPaneActions";
@@ -18,59 +18,80 @@ function sheetForAttempt(attempt: number) {
   return sheetAttempts[attempt];
 }
 
-export type TripChipProps = TripPaneActions & {
-  className?: string;
+export type TripsPaneToggleProps = TripPaneActions & {
+  /** The top bar's logo: its class string and its contents (flag square and wordmark). */
+  logoClassName: string;
+  logo: ReactNode;
   /** Opens the app's End Trip sheet for the shared current trip (the card menu's Complete trip). */
   onRequestEndCurrentTrip?: () => void;
 };
 
 /**
- * Header chip naming the trip on the map ("Current · <title>" or "Viewing privately · <title>"). Tapping it opens
- * the trip pane, whose open state it owns. Renders only for a Traveler while multi-trip is enabled.
+ * The top bar's logo. For a Traveler with multi-trip on it is the show/hide button of the Trips pane, whose open
+ * state it owns; a dot on the flag marks a private view. Otherwise it renders the same inert `<div>` as the top bar.
  */
-export function TripChip({ className, onRequestEndCurrentTrip, ...actions }: TripChipProps) {
-  const { role, multiTripEnabled, viewingMode, viewingTrip, currentTrip } = useTripContext();
+export function TripsPaneToggle({ logoClassName, logo, onRequestEndCurrentTrip, ...actions }: TripsPaneToggleProps) {
+  const { role, multiTripEnabled, viewingMode } = useTripContext();
   const [open, setOpen] = useState(false);
   const [everOpened, setEverOpened] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const chipRef = useRef<HTMLButtonElement>(null);
-  // While a switch awaits the server the chip reads "Switching…" but still opens the pane: a switch that never
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // While a switch awaits the server the logo says "switching…" but still opens the pane: a switch that never
   // answers (offline) must not lock the Traveler out. Only starting ANOTHER switch is disabled.
   const switching = useSwitchPending();
   const pane = useTripPaneActions({ closePane: () => setOpen(false), onRequestEndCurrentTrip });
+  const enabled = role === "traveler" && multiTripEnabled;
 
-  if (role !== "traveler" || !multiTripEnabled) return null;
+  // A Dock pane opening closes this one (one bottom pane at a time).
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribePaneOpened((owner) => {
+      if (owner === "map") setOpen(false);
+    });
+  }, [enabled]);
 
-  const label = viewingMode === "private" ? "Viewing privately" : "Current";
-  const title = viewingTrip?.title ?? currentTrip?.title ?? "Trip";
+  if (!enabled) return <div className={logoClassName}>{logo}</div>;
+
+  const privateView = viewingMode === "private";
+  const label = ["TripCast: Trips", privateView ? "viewing privately" : null, switching ? "switching…" : null]
+    .filter(Boolean)
+    .join(", ");
   const TripSwitcherSheet = sheetForAttempt(attempt);
 
   return (
     <>
       <button
-        ref={chipRef}
+        ref={toggleRef}
         type="button"
-        aria-label={switching ? "Switching…" : `${label} · ${title}`}
+        aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-busy={switching || undefined}
         onClick={() => {
+          // The pane ignores a press on this button as an outside press, so this click alone decides.
+          if (open) {
+            setOpen(false);
+            return;
+          }
+          announcePaneOpened("trips");
           setEverOpened(true);
           setOpen(true);
         }}
-        className={cn(
-          "flex h-8 min-w-0 max-w-full flex-1 items-center justify-start gap-1 sm:flex-none rounded-full border border-[var(--line-soft)] px-2.5 text-xs font-semibold text-[var(--ink-1)] transition-colors hover:bg-[var(--bg-paper-2)]",
-          className,
-        )}
+        // Concatenated, not `cn`: twMerge would drop the logo's `font-[var(--font-display)]` as a font weight.
+        // 44px to tap, 36px in the row (-my-1), the logo where it was (-ml-2 against px-2).
+        className={`${logoClassName} relative -my-1 -ml-2 h-11 rounded-lg px-2`}
       >
-        {switching ? (
-          <span className="min-w-0 truncate">Switching…</span>
-        ) : (
-          <>
-            <span className="hidden min-w-0 truncate sm:inline">{label} ·</span>
-            <span className="min-w-0 truncate">{title}</span>
-          </>
-        )}
-        <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+        {logo}
+        {privateView || switching ? (
+          <span
+            aria-hidden="true"
+            data-testid="trips-pane-dot"
+            className={cn(
+              "absolute left-7 top-1.5 h-2 w-2 rounded-full bg-[var(--teal)] ring-2 ring-[var(--bg-paper)]",
+              switching && "animate-pulse",
+            )}
+          />
+        ) : null}
       </button>
       {everOpened ? (
         <ErrorBoundary
@@ -97,7 +118,7 @@ export function TripChip({ className, onRequestEndCurrentTrip, ...actions }: Tri
             <TripSwitcherSheet
               open={open}
               onOpenChange={setOpen}
-              returnFocusRef={chipRef}
+              returnFocusRef={toggleRef}
               onRequestSwitch={actions.onRequestSwitch ?? pane.props.onRequestSwitch}
               onRequestCreate={actions.onRequestCreate ?? pane.props.onRequestCreate}
               renderCardMenu={actions.renderCardMenu ?? pane.props.renderCardMenu}
