@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { motion, AnimatePresence } from "framer-motion";
 import { Check, CheckSquare, Plus } from "lucide-react";
 import {
@@ -42,6 +42,8 @@ import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
 import { TERMS } from "../../copy/terminology";
 import { useSheetPersonalities } from "../redesign/sheetPersonality";
 import CreateRouteVoteForm from "./CreateRouteVoteForm";
+import { PrivateTripTargetLabel, useIsSharedCurrentTrip, useLiveActionGate } from "../trips/privateTripView";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { ReactionSection } from "../../components/ui/ReactionSection";
 import { cn } from "@/lib/utils";
 
@@ -265,8 +267,8 @@ function FollowerVoteDetail({
   onRequestFitMap,
   fallbackOrigin,
 }: FollowerVoteDetailProps) {
-  const submitVote = useMutation(tripcastApi.routeVotes.submitRouteVote);
-  const markSeen = useMutation(tripcastApi.routeVotes.markRouteVoteSeen);
+  const submitVote = useTripMutation(tripcastApi.routeVotes.submitRouteVote);
+  const markSeen = useTripMutation(tripcastApi.routeVotes.markRouteVoteSeen);
   const music = useMusicSafe();
   const log = useDebugLogger("RouteVotePanel", "src/features/routevote/RouteVotePanel.tsx");
   const { votes: votesPersonality } = useSheetPersonalities();
@@ -282,7 +284,7 @@ function FollowerVoteDetail({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const overlay = useQuery(
+  const overlay = useTripQuery(
     tripcastApi.routeVotes.getRouteVoteMapOverlay,
     { token, routeVoteId: vote._id },
   );
@@ -505,20 +507,22 @@ function TravelerVoteDetail({
   fallbackOrigin: { lat: number; lon: number } | null;
   onRequestOpenMissionDetail?: (missionId: string) => void;
 }) {
-  const detail = useQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
+  const detail = useTripQuery(tripcastApi.routeVotes.travelerGetRouteVoteDetail, {
     token,
     routeVoteId: vote._id,
   });
-  const overlay = useQuery(tripcastApi.routeVotes.getRouteVoteMapOverlay, {
+  const overlay = useTripQuery(tripcastApi.routeVotes.getRouteVoteMapOverlay, {
     token,
     routeVoteId: vote._id,
   });
 
-  const confirmWinner = useMutation(tripcastApi.routeVotes.travelerConfirmRouteVoteWinner);
-  const hideComment = useMutation(tripcastApi.routeVotes.travelerHideRouteVoteComment);
-  const closeVote = useMutation(tripcastApi.routeVotes.travelerCloseRouteVote);
-  const cancelVote = useMutation(tripcastApi.routeVotes.travelerCancelRouteVote);
-  const archiveVote = useMutation(tripcastApi.routeVotes.travelerArchiveRouteVote);
+  // The overlay is drawn from the Traveler's live position, which belongs to the shared current trip: only for it.
+  const showsLivePosition = useIsSharedCurrentTrip(useOptionalTripContext().viewingTripId);
+  const confirmWinner = useTripMutation(tripcastApi.routeVotes.travelerConfirmRouteVoteWinner);
+  const hideComment = useTripMutation(tripcastApi.routeVotes.travelerHideRouteVoteComment);
+  const closeVote = useTripMutation(tripcastApi.routeVotes.travelerCloseRouteVote);
+  const cancelVote = useTripMutation(tripcastApi.routeVotes.travelerCancelRouteVote);
+  const archiveVote = useTripMutation(tripcastApi.routeVotes.travelerArchiveRouteVote);
   const music = useMusicSafe();
 
   const [confirmingOptionId, setConfirmingOptionId] = useState<string | null>(null);
@@ -531,7 +535,7 @@ function TravelerVoteDetail({
     );
     onVoteOverlayChange(overlay, optionNumberById);
 
-    if (!overlay || overlay.coordinateOptions.length === 0) {
+    if (!overlay || overlay.coordinateOptions.length === 0 || !showsLivePosition) {
       onRequestFitMap(null);
       return;
     }
@@ -544,7 +548,7 @@ function TravelerVoteDetail({
       onVoteOverlayChange(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [overlay, fallbackOrigin, vote.options]);
+  }, [overlay, fallbackOrigin, vote.options, showsLivePosition]);
 
   useEffect(() => {
     if (detail === null) {
@@ -624,6 +628,7 @@ function TravelerVoteDetail({
 
       {(detail.effectiveStatus === "active" || canCancel || canArchive) && (
         <div className="flex flex-wrap gap-2">
+          <PrivateTripTargetLabel target={closeVote.target} className="w-full" />
           {detail.effectiveStatus === "active" ? (
             <Button
               size="sm"
@@ -844,11 +849,15 @@ export default function RouteVotePanel({
 }: RouteVotePanelProps) {
   const isTraveler = role === "traveler";
   const { votes: votesPersonality } = useSheetPersonalities();
-  const followerVotes = useQuery(
+  const followerVotes = useTripQuery(
     tripcastApi.routeVotes.listVisibleRouteVotes,
     open && !isTraveler ? { token } : "skip",
   );
-  const travelerVotesRaw = useQuery(
+  // Opening a new vote asks Followers to take part: only on the shared current trip while it is in progress.
+  // The write is made by CreateRouteVoteForm, which captures the viewed trip when the button mounts it, so the gate
+  // looks at the trip viewed now.
+  const openVoteGate = useLiveActionGate("open a vote", useOptionalTripContext().viewingTrip);
+  const travelerVotesRaw = useTripQuery(
     tripcastApi.routeVotes.travelerListRouteVotes,
     open && isTraveler ? { token } : "skip",
   );
@@ -873,13 +882,13 @@ export default function RouteVotePanel({
   // navigation scale-independent so detail opens regardless of list size.
   const listVote = votes?.find((v) => v._id === selectedVoteId) ?? null;
   const needByIdFetch = Boolean(selectedVoteId) && listVote === null;
-  const followerByIdVote = useQuery(
+  const followerByIdVote = useTripQuery(
     tripcastApi.routeVotes.getVisibleRouteVote,
     needByIdFetch && !isTraveler && selectedVoteId
       ? { token, routeVoteId: selectedVoteId }
       : "skip",
   );
-  const travelerByIdVote = useQuery(
+  const travelerByIdVote = useTripQuery(
     tripcastApi.routeVotes.travelerGetRouteVoteDetail,
     needByIdFetch && isTraveler && selectedVoteId
       ? { token, routeVoteId: selectedVoteId }
@@ -1087,6 +1096,7 @@ export default function RouteVotePanel({
                 {isTraveler && onRequestCoordinatePick ? (
                   <Button
                     size="sm"
+                    disabled={!openVoteGate.allowed}
                     onClick={() => {
                       music.sfx("page");
                       log.logInteraction("view:change", { from: view, to: "create" });
@@ -1098,6 +1108,9 @@ export default function RouteVotePanel({
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                     Propose new route
                   </Button>
+                ) : null}
+                {isTraveler && onRequestCoordinatePick && openVoteGate.reason ? (
+                  <p className="text-center text-xs text-[var(--ink-3)]">{openVoteGate.reason}</p>
                 ) : null}
                 {votes === undefined ? (
                   <PendingNotice

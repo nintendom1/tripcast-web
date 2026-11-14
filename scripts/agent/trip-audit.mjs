@@ -10,6 +10,9 @@ tripcastApi ref whose args include tripId. Such calls belong in useTripQuery/use
 unresolved = a convex call whose ref cannot be resolved statically (prop, argument, dynamic); never ignored, counted separately.
 --assume-all treats every ref in tripcastApi.ts as taking tripId, to compare the total with an independent count of call sites.
 --folders adds an informational "hooks=<n>" line per feature folder (all convex/react hook calls).
+A .query(/.mutation(/.action( call is trip-aware, not raw, when its receiver is (a) the result of useTripConvex() (imported from
+the useTrip module), (b) an identifier or parameter typed TripConvexClient, or (c) the result of a function declared in the same
+file with return type TripConvexClient; resolved per scope, so a plain client (useConvex(), ConvexReactClient) still counts.
 Scans src/**/*.{ts,tsx} except tests, stories, src/test/, src/convex/tripcastApi.ts and src/convex/useTrip.ts.
 Prints files with a non-zero count, then "TOTAL rawTripCall=<n> unresolved=<n>"; exit 2 if a --files entry was not scanned.`;
 
@@ -112,9 +115,69 @@ function refPaths(expr, ctx, depth = 0) {
   return prop ? refPaths(prop.initializer, ctx, depth + 1) : undefined;
 }
 
+/** Type names of the trip-aware imperative client (`useTripConvex()` returns the captured variant). */
+const TAGGED_TYPES = new Set(["TripConvexClient", "CapturedTripConvexClient"]);
+
+/** True for `TripConvexClient`, with `| undefined` / `| null` allowed (an optional parameter). */
+function isTaggedType(type) {
+  if (!type) return false;
+  if (ts.isParenthesizedTypeNode(type)) return isTaggedType(type.type);
+  if (ts.isUnionTypeNode(type)) {
+    const members = type.types.filter((t) => !(t.kind === ts.SyntaxKind.UndefinedKeyword || (ts.isLiteralTypeNode(t) && t.literal.kind === ts.SyntaxKind.NullKeyword)));
+    return members.length > 0 && members.every(isTaggedType);
+  }
+  if (!ts.isTypeReferenceNode(type)) return false;
+  const name = ts.isQualifiedName(type.typeName) ? type.typeName.right.text : type.typeName.text;
+  return TAGGED_TYPES.has(name);
+}
+
+/** Declared return type node of a same-file function declaration, or of an arrow/function expression held in a const. */
+function returnTypeOf(decl) {
+  if (ts.isFunctionDeclaration(decl) || ts.isFunctionExpression(decl) || ts.isArrowFunction(decl) || ts.isMethodDeclaration(decl)) return decl.type;
+  if (ts.isVariableDeclaration(decl) && decl.initializer) {
+    const init = unwrap(decl.initializer);
+    if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) return init.type;
+  }
+  return undefined;
+}
+
+const declOf = (identifier, checker) => {
+  const symbol = checker.getSymbolAtLocation(identifier);
+  return symbol?.valueDeclaration ?? symbol?.declarations?.[0];
+};
+
+/**
+ * Whether the receiver of a `.query(`/`.mutation(`/`.action(` call is a trip-aware client: (a) the result of
+ * `useTripConvex()`, (b) an identifier or parameter typed `TripConvexClient`, (c) the result of a same-file function
+ * whose declared return type is `TripConvexClient`. Identifiers resolve through the checker, so shadowing is honoured and
+ * a plain `useConvex()` client is never hidden.
+ */
+function taggedReceiver(expr, ctx, checker, depth = 0) {
+  if (depth > 6) return false;
+  const e = unwrap(expr);
+  if (ts.isConditionalExpression(e)) return taggedReceiver(e.whenTrue, ctx, checker, depth + 1) && taggedReceiver(e.whenFalse, ctx, checker, depth + 1);
+  if (ts.isCallExpression(e)) {
+    const callee = unwrap(e.expression);
+    if (ts.isIdentifier(callee)) {
+      if (ctx.tripConvexNames.has(callee.text)) return true;
+      const decl = declOf(callee, checker);
+      return Boolean(decl && isTaggedType(returnTypeOf(decl)));
+    }
+    return false;
+  }
+  if (ts.isIdentifier(e)) {
+    const decl = declOf(e, checker);
+    if (!decl) return false;
+    if (ts.isParameter(decl)) return isTaggedType(decl.type);
+    if (ts.isVariableDeclaration(decl)) return isTaggedType(decl.type) || Boolean(decl.initializer && taggedReceiver(decl.initializer, ctx, checker, depth + 1));
+  }
+  return false;
+}
+
 /** Local names bound to `tripcastApi` and to the `convex/react` namespace in one file. */
 function fileBindings(sf) {
   const apiNames = new Set(["tripcastApi"]);
+  const tripConvexNames = new Set();
   const reactNs = new Set();
   const hookNames = new Map();
   const consts = new Map();
@@ -126,14 +189,18 @@ function fileBindings(sf) {
         if (ts.isNamespaceImport(nb)) reactNs.add(nb.name.text);
         else for (const el of nb.elements) if (HOOKS.has((el.propertyName ?? el.name).text)) hookNames.set(el.name.text, (el.propertyName ?? el.name).text);
       } else if (ts.isNamedImports(nb)) {
-        for (const el of nb.elements) if ((el.propertyName ?? el.name).text === "tripcastApi") apiNames.add(el.name.text);
+        for (const el of nb.elements) {
+          const imported = (el.propertyName ?? el.name).text;
+          if (imported === "tripcastApi") apiNames.add(el.name.text);
+          if (imported === "useTripConvex" && /(^|\/)useTrip$/.test(from)) tripConvexNames.add(el.name.text);
+        }
       }
     }
   }
   walk(sf, (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && node.parent.flags & ts.NodeFlags.Const && !consts.has(node.name.text)) consts.set(node.name.text, node.initializer);
   });
-  return { apiNames, reactNs, hookNames, consts };
+  return { apiNames, reactNs, hookNames, consts, tripConvexNames };
 }
 
 /**
@@ -141,7 +208,9 @@ function fileBindings(sf) {
  * `unresolved` lists convex calls whose ref is not statically known. `refs` is a Set of tripId paths.
  */
 export function auditText(text, refs, fileName = "/virtual/src/fixture.tsx") {
-  const sf = programFor({ [fileName]: text }).getSourceFile(fileName);
+  const program = programFor({ [fileName]: text });
+  const sf = program.getSourceFile(fileName);
+  const checker = program.getTypeChecker();
   const ctx = fileBindings(sf);
   const rawTripCall = [];
   const unresolved = [];
@@ -155,6 +224,7 @@ export function auditText(text, refs, fileName = "/virtual/src/fixture.tsx") {
     const client = ts.isPropertyAccessExpression(callee) && CLIENT_CALLS.has(callee.name.text) && !(ts.isIdentifier(callee.expression) && ctx.reactNs.has(callee.expression.text));
     if (hook) hooks++;
     if (!hook && !client) return;
+    if (client && taggedReceiver(callee.expression, ctx, checker)) return;
     const first = node.arguments[0];
     const paths = first && refPaths(first, ctx);
     if (!paths) unresolved.push(lineOf(sf, node));

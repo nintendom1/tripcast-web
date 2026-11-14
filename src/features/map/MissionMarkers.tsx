@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import maplibregl, { Marker } from "maplibre-gl";
-import { useQuery } from "convex/react";
+import { useTripQuery } from "../../convex/useTrip";
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Mission, Role } from "../../convex/tripcastApi";
 import { useFollowerCutoffPreview } from "../options/followerCutoffPreview";
@@ -95,7 +95,7 @@ export default function MissionMarkers({
 }: Props) {
   const markersRef = useRef<{ marker: Marker; id: string }[]>([]);
 
-  const pins = useQuery(tripcastApi.missions.listMissionMapPins, { token });
+  const pins = useTripQuery(tripcastApi.missions.listMissionMapPins, { token });
   const preview = useFollowerCutoffPreview(role, token);
 
   useEffect(() => {

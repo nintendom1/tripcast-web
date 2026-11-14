@@ -1,5 +1,4 @@
 import * as React from "react";
-import { useMutation, useQuery } from "convex/react";
 
 import {
   tripcastApi,
@@ -14,6 +13,9 @@ import {
   type TravelerStomachLevel,
   type TravelerStressLevel,
 } from "@/convex/tripcastApi";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
+import { useIsSharedCurrentTrip } from "../trips/privateTripView";
 import {
   ENERGY_SCORE_FOR_LEVEL,
   STOMACH_SCORE_FOR_LEVEL,
@@ -203,41 +205,55 @@ export function StatusCardConnected({
   onOpenState,
   className,
 }: StatusCardConnectedProps) {
-  const travelerState = useQuery(
+  const travelerState = useTripQuery(
     tripcastApi.travelerState.travelerGetState,
     role === "traveler" ? { token } : "skip",
   );
-  const followerState = useQuery(
+  const followerState = useTripQuery(
     tripcastApi.travelerState.followerGetTravelerState,
     role === "follower" ? { token } : "skip",
   );
 
-  const travelerActivity = useQuery(
+  const travelerActivity = useTripQuery(
     tripcastApi.currentActivity.travelerGetCurrentActivity,
     role === "traveler" ? { token } : "skip",
   );
-  const followerActivity = useQuery(
+  const followerActivity = useTripQuery(
     tripcastApi.currentActivity.followerGetCurrentActivity,
     role === "follower" ? { token } : "skip",
   );
 
-  const travelerAutoState = useQuery(
+  const travelerAutoState = useTripQuery(
     tripcastApi.travelerAutoState.travelerGetAutoState,
     role === "traveler" ? { token } : "skip",
   );
-  const followerAutoState = useQuery(
+  const followerAutoState = useTripQuery(
     tripcastApi.travelerAutoState.followerGetAutoState,
     role === "follower" ? { token } : "skip",
   );
-  const travelerPreferences = useQuery(
+  const travelerPreferences = useTripQuery(
     tripcastApi.travelerPreferences.travelerGetPreferences,
     role === "traveler" ? { token } : "skip",
   );
-  const followerPreferences = useQuery(
+  const followerPreferences = useTripQuery(
     tripcastApi.travelerPreferences.followerGetPreferences,
     role === "follower" ? { token } : "skip",
   );
-  const ensureTimeZone = useMutation(tripcastApi.travelerPreferences.travelerEnsureTimeZone);
+  const ensureTimeZone = useTripMutation(tripcastApi.travelerPreferences.travelerEnsureTimeZone);
+  // The device time zone belongs to the shared current trip (what Followers read), not the viewed one: the gate below
+  // reads that trip's preferences and the write names it, so both are about the same trip. No shared trip (multi-trip
+  // disabled, no provider) keeps today's arguments.
+  const { currentTrip, multiTripEnabled, viewingTripId } = useOptionalTripContext();
+  const sharedTripId = multiTripEnabled ? currentTrip?.tripId : undefined;
+  const sharedIsOther = Boolean(sharedTripId && viewingTripId && sharedTripId !== viewingTripId);
+  const sharedPreferences = useTripQuery(
+    tripcastApi.travelerPreferences.travelerGetPreferences,
+    role === "traveler" && sharedIsOther ? { token, tripId: sharedTripId } : "skip",
+  );
+  const timeZoneGatePreferences = sharedIsOther ? sharedPreferences : travelerPreferences;
+  // Only the shared current trip's own state is live: a privately viewed other trip shows stored values, never ones
+  // extrapolated to now (estimated meters, the Traveler's clock, "for X" / "saved X ago").
+  const isLive = useIsSharedCurrentTrip(viewingTripId);
   const ensureAttemptedRef = React.useRef<string | null>(null);
 
   const [now, setNow] = React.useState(() => Date.now());
@@ -250,16 +266,22 @@ export function StatusCardConnected({
 
   React.useEffect(() => {
     if (role !== "traveler") return;
-    if (!detectedTimeZone || travelerPreferences === undefined) return;
-    if (travelerPreferences.travelerTimeZone) return;
+    if (!detectedTimeZone || timeZoneGatePreferences === undefined) return;
+    if (timeZoneGatePreferences.travelerTimeZone) return;
 
-    const attemptKey = `${token}:${detectedTimeZone}`;
+    // The trip is part of the key: a later shared trip is tried once as well.
+    const attemptKey = `${token}:${sharedTripId ?? ""}:${detectedTimeZone}`;
     if (ensureAttemptedRef.current === attemptKey) return;
     ensureAttemptedRef.current = attemptKey;
-    ensureTimeZone({ token, timeZone: detectedTimeZone, source: "device" }).catch(() => {
+    ensureTimeZone({
+      token,
+      timeZone: detectedTimeZone,
+      source: "device",
+      ...(sharedTripId ? { tripId: sharedTripId } : {}),
+    }).catch(() => {
       ensureAttemptedRef.current = null;
     });
-  }, [detectedTimeZone, ensureTimeZone, role, token, travelerPreferences]);
+  }, [detectedTimeZone, ensureTimeZone, role, sharedTripId, timeZoneGatePreferences, token]);
 
   const auto = React.useMemo<NormalizedAuto | null>(() => {
     if (role === "traveler") return normalizeTraveler(travelerAutoState);
@@ -278,8 +300,8 @@ export function StatusCardConnected({
         ? followerPreferences.travelerTimeZone
         : null;
   const clockLabel = React.useMemo(
-    () => (clockTimeZone ? formatTravelerClock(now, clockTimeZone) : null),
-    [clockTimeZone, now],
+    () => (isLive && clockTimeZone ? formatTravelerClock(now, clockTimeZone) : null),
+    [isLive, clockTimeZone, now],
   );
 
   const stateFacts: StateFacts | null = React.useMemo(() => {
@@ -326,7 +348,7 @@ export function StatusCardConnected({
 
   // The estimate walks every tick since Auto State was enabled, and TripMap
   // re-renders this card on each GPS fix, so only recompute when its inputs change.
-  const autoEnergyResult = React.useMemo(() => isAutoEnergyOn && auto
+  const autoEnergyResult = React.useMemo(() => isLive && isAutoEnergyOn && auto
     ? computeAutoState({
         autoTimeZone: auto.autoTimeZone,
         autoBedtimeMinutes: auto.autoBedtimeMinutes,
@@ -345,7 +367,7 @@ export function StatusCardConnected({
         autoEnabledAt: auto.autoEnabledAt,
         targetTime: now,
       })
-    : null, [auto, isAutoEnergyOn, now]);
+    : null, [auto, isAutoEnergyOn, isLive, now]);
 
   if (
     (role === "traveler" && travelerState === undefined && travelerActivity === undefined) ||
@@ -407,7 +429,7 @@ export function StatusCardConnected({
   const scheduleLabel = stateFacts?.schedulePressureLevel
     ? SCHEDULE_LABELS[stateFacts.schedulePressureLevel]
     : null;
-  const stateUpdatedAgo = stateFacts?.updatedAt
+  const stateUpdatedAgo = isLive && stateFacts?.updatedAt
     ? formatBaseSavedAgo(stateFacts.updatedAt, now)
     : null;
   const staleInfo =
@@ -424,10 +446,11 @@ export function StatusCardConnected({
       ? "Status update"
       : "Waiting for status";
   const activityEmoji = activity?.emoji ?? stateFacts?.statusEmoji ?? getStateEmoji(stateFacts);
-  const activitySince = activity ? formatActivitySince(activity.startedAt, now) : null;
+  const activitySince = isLive && activity ? formatActivitySince(activity.startedAt, now) : null;
   const statusMeta = [
     scheduleLabel ? `Schedule: ${scheduleLabel}` : null,
     !activity && stateUpdatedAgo ? `Updated ${stateUpdatedAgo}` : null,
+    !isLive && stateFacts ? "Saved status, not live" : null,
   ].filter(Boolean).join(" · ") || null;
 
   return (

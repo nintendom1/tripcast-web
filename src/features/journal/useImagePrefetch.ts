@@ -1,12 +1,22 @@
 import { useEffect, useRef } from "react";
-import { useConvex } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
+import { useTripConvex } from "../../convex/useTrip";
+import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { logMapEvent } from "../../debug/debugLogger";
 
 const MAX_CONCURRENT_PREFETCHES = 3;
 
 export function useImagePrefetch(token: string, imageIds: string[], mode: "original" | "replay" | "replay-original" = "original") {
-  const convex = useConvex();
+  // Prefetch reads follow the viewed trip. The client captures its trip once, so after a view change it lags the view
+  // until it is re-captured (an effect, after this render): skip the prefetch pass meanwhile, so the new trip's image
+  // ids are never queried with the old trip, and run it once the client names the viewed trip.
+  const convex = useTripConvex();
+  const { viewingTrip } = useOptionalTripContext();
+  const retarget = convex.recapture;
+  const lagsView = (convex.target?.tripId ?? null) !== (viewingTrip?.tripId ?? null);
+  useEffect(() => {
+    if (lagsView) retarget();
+  }, [lagsView, retarget]);
   // Track image IDs we've already resolved (or warmed) so a re-render with the
   // same array doesn't fan out duplicate Convex queries. Keyed by token so a
   // sign-out / role switch invalidates. Errors clear the entry so a later
@@ -14,7 +24,7 @@ export function useImagePrefetch(token: string, imageIds: string[], mode: "origi
   const fetched = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!token || imageIds.length === 0) return;
+    if (!token || imageIds.length === 0 || lagsView) return;
     let cancelled = false;
 
     const cacheKey = (id: string) => `${token}:${mode}:${id}`;
@@ -81,5 +91,5 @@ export function useImagePrefetch(token: string, imageIds: string[], mode: "origi
     return () => {
       cancelled = true;
     };
-  }, [convex, token, imageIds, mode]);
+  }, [convex, lagsView, token, imageIds, mode]);
 }

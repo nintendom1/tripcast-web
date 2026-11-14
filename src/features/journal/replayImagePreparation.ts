@@ -1,5 +1,6 @@
 import type { ConvexReactClient } from "convex/react";
 import { tripcastApi, type ReplayImageInventoryItem } from "../../convex/tripcastApi";
+import type { TripConvexClient } from "../../convex/useTrip";
 import { recordUploadedFileBytes } from "../../lib/usageBaselines";
 
 export async function encodeReplayImage(input: Blob) {
@@ -39,18 +40,37 @@ export const preparationStore = {
   stop: () => update({ stopping: true }),
 };
 function update(patch: Partial<PreparationState>) { state = { ...state, ...patch }; listeners.forEach(listener => listener()); }
-export async function readPreparationInventory(client: ConvexReactClient, token: string) {
+/**
+ * Trip-scoped calls for a preparation job. `trip` is the trip the job was started for (captured by the caller when the
+ * upload or sheet opened); without it the calls are untagged, exactly as before multi-trip.
+ */
+function jobCalls(client: ConvexReactClient, trip?: TripConvexClient): TripConvexClient {
+  if (trip) return trip;
+  // Untagged: the plain client takes the same args without a tripId (the disabled and Follower path, unchanged).
+  // This shim is a plain client cast to `TripConvexClient`, which the audit cannot tell from a tagged one. Callers
+  // that still reach it, and so send NO trip: BackgroundSaveProvider (queued Story saves), ReplayImagePreparationSheet
+  // and TrailCompressionReview (they pass no `trip`); only JournalSheet and StoryDetailSheet pass their captured trip.
+  const plain = {
+    get query() { return client.query.bind(client); },
+    get mutation() { return client.mutation.bind(client); },
+    get action() { return client.action.bind(client); },
+  };
+  return plain as TripConvexClient;
+}
+
+export async function readPreparationInventory(client: ConvexReactClient, token: string, trip?: TripConvexClient) {
   const unique = new Map<string, ReplayImageInventoryItem>();
   let cursor: string | null = null;
   for (;;) {
-    const page: { page: ReplayImageInventoryItem[]; isDone: boolean; continueCursor: string } = await client.query(tripcastApi.replayImages.inventory, { token, paginationOpts: { numItems: 64, cursor } });
+    const page: { page: ReplayImageInventoryItem[]; isDone: boolean; continueCursor: string } = await jobCalls(client, trip).query(tripcastApi.replayImages.inventory, { token, paginationOpts: { numItems: 64, cursor } });
     page.page.forEach(item => unique.set(item.source, item));
     if (page.isDone) return [...unique.values()];
     cursor = page.continueCursor;
   }
 }
-export async function prepareReplayImages(client: ConvexReactClient, token: string, sources: string[], local?: { source: string; blob: Blob }) {
+export async function prepareReplayImages(client: ConvexReactClient, token: string, sources: string[], local?: { source: string; blob: Blob }, trip?: TripConvexClient) {
   if (state.running) return;
+  const calls = jobCalls(client, trip);
   update({ running: true, stopping: false, completed: 0, total: sources.length, error: null });
   const epoch = signOutEpoch;
   const owner = crypto.randomUUID();
@@ -61,7 +81,7 @@ export async function prepareReplayImages(client: ConvexReactClient, token: stri
     for (const source of sources) {
       if (state.stopping || epoch !== signOutEpoch) break;
       update({ source });
-      const claim = await client.mutation(tripcastApi.replayImages.claim, { token, owner, source });
+      const claim = await calls.mutation(tripcastApi.replayImages.claim, { token, owner, source });
       if (claim) {
         try {
           let input = local?.source === source ? local.blob : undefined;
@@ -73,12 +93,12 @@ export async function prepareReplayImages(client: ConvexReactClient, token: stri
           }
           const preview = await encodeReplayImage(input);
           if (epoch !== signOutEpoch) break;
-          const accepted = await client.action(tripcastApi.replayImages.finish, { token, owner, source, bytes: await preview.blob.arrayBuffer(), width: preview.width, height: preview.height });
+          const accepted = await calls.action(tripcastApi.replayImages.finish, { token, owner, source, bytes: await preview.blob.arrayBuffer(), width: preview.width, height: preview.height });
           if (!accepted) throw new Error("Photo changed during preparation. Refresh and retry.");
           recordUploadedFileBytes(preview.blob.size);
         } catch (error) {
           if (epoch !== signOutEpoch) break;
-          await client.mutation(tripcastApi.replayImages.fail, { token, owner, source });
+          await calls.mutation(tripcastApi.replayImages.fail, { token, owner, source });
           update({ error: error instanceof Error ? error.message : String(error) });
         }
       }
@@ -94,7 +114,7 @@ export async function prepareReplayImages(client: ConvexReactClient, token: stri
       const next = queuedUploads.entries().next().value;
       if (next) {
         queuedUploads.delete(next[0]);
-        void prepareReplayImages(next[1].client, next[1].token, [next[0]], next[1].blob ? { source: next[0], blob: next[1].blob } : undefined);
+        void prepareReplayImages(next[1].client, next[1].token, [next[0]], next[1].blob ? { source: next[0], blob: next[1].blob } : undefined, next[1].trip);
       }
     }
   }
@@ -102,17 +122,17 @@ export async function prepareReplayImages(client: ConvexReactClient, token: stri
 
 // Keep only a few just-uploaded blobs until the Story mutation attaches them.
 const uploadedSources = new Map<string, Blob>();
-const queuedUploads = new Map<string, { client: ConvexReactClient; token: string; blob?: Blob }>();
+const queuedUploads = new Map<string, { client: ConvexReactClient; token: string; blob?: Blob; trip?: TripConvexClient }>();
 export function rememberReplaySource(source: string, blob: Blob) {
   uploadedSources.set(source, blob);
   while (uploadedSources.size > 8) uploadedSources.delete(uploadedSources.keys().next().value!);
 }
-export function prepareUploadedReplayImage(client: ConvexReactClient, token: string, source: string) {
+export function prepareUploadedReplayImage(client: ConvexReactClient, token: string, source: string, trip?: TripConvexClient) {
   const blob = uploadedSources.get(source);
   uploadedSources.delete(source);
-  if (state.running) { queuedUploads.set(source, { client, token, blob }); return; }
+  if (state.running) { queuedUploads.set(source, { client, token, blob, trip }); return; }
   // A competing device leaves this source pending in the inventory for resumption.
-  void prepareReplayImages(client, token, [source], blob ? { source, blob } : undefined);
+  void prepareReplayImages(client, token, [source], blob ? { source, blob } : undefined, trip);
 }
 
 export function stopReplayPreparationForSignOut() {

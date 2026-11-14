@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { TripContextTestProvider } from "../providers/TripContextProvider";
+import { TripContextTestProvider, useTripContext } from "../providers/TripContextProvider";
 import type { TripContextValue } from "../features/trips/tripTypes";
 import { tripcastApi } from "./tripcastApi";
 import { useTripConvex, useTripMutation, useTripQuery } from "./useTrip";
@@ -169,6 +169,41 @@ describe("useTripConvex", () => {
     act(() => result.current.recapture());
     await result.current.query(queryRef, { token: "t" } as never);
     expect(mocks.query).toHaveBeenLastCalledWith(queryRef, { token: "t", tripId: "trip-autumn" });
+  });
+});
+
+describe("without a TripContextProvider", () => {
+  it("useTripQuery is plain useQuery: same args object, no tripId, skip passes through", () => {
+    const args = { token: "t" } as never;
+    renderHook(() => useTripQuery(queryRef, args));
+    expect(mocks.useQuery.mock.calls[0]?.[0]).toBe(queryRef);
+    expect(mocks.useQuery.mock.calls[0]?.[1]).toBe(args);
+    renderHook(() => useTripQuery(queryRef, "skip"));
+    expect(mocks.useQuery).toHaveBeenLastCalledWith(queryRef, "skip");
+  });
+
+  it("useTripMutation sends exactly the given args and captures no target", async () => {
+    const { result } = renderHook(() => useTripMutation(mutationRef));
+    const args = { token: "t" } as never;
+    await result.current(args);
+    expect(mocks.mutation.mock.calls[0]?.[0]).toBe(args);
+    expect(result.current.target).toBeNull();
+  });
+
+  it("useTripConvex sends exactly the given args and captures no target", async () => {
+    const { result } = renderHook(() => useTripConvex());
+    const args = { token: "t" } as never;
+    await result.current.query(queryRef, args);
+    await result.current.mutation(mutationRef, args);
+    expect(mocks.query.mock.calls[0]?.[1]).toBe(args);
+    expect(mocks.mutation.mock.calls[0]?.[1]).toBe(args);
+    expect(result.current.target).toBeNull();
+  });
+
+  it("useTripContext itself still throws", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(() => renderHook(() => useTripContext())).toThrow("useTripContext must be used within");
+    vi.restoreAllMocks();
   });
 });
 

@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import { getLocalDateKey } from "../achievements/dateUtils";
@@ -57,8 +57,8 @@ export default function MissionProposalForm({
     }
   }, [prefilledCoordinate]);
 
-  const settings = useQuery(tripcastApi.missionSettings.followerGetMissionSettings, { token });
-  const propose = useMutation(tripcastApi.missions.followerProposeMission);
+  const settings = useTripQuery(tripcastApi.missionSettings.followerGetMissionSettings, { token });
+  const propose = useTripMutation(tripcastApi.missions.followerProposeMission);
 
   function reset() {
     setTitle("");

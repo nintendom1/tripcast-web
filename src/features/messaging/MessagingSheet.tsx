@@ -1,7 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import { MessageSquare, Send, Trash2, Info } from "lucide-react";
-import { useMutation } from "convex/react";
 import { tripcastApi, type Doc, type Role } from "../../convex/tripcastApi";
+import { useTripMutation } from "../../convex/useTrip";
+import { useRecaptureOnOpen } from "../journal/useRecaptureOnOpen";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import { useReportTripUnavailable } from "../journal/useReportTripUnavailable";
 import { Sheet, SheetContent, SheetTitle, SheetCloseButton } from "../../components/ui/sheet";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { useMusicSafe } from "../../providers/MusicProvider";
@@ -63,8 +66,12 @@ export function MessagingSheet({
   const music = useMusicSafe();
   const { resolvedTheme } = useTheme();
   const palette = CHAT_PALETTES[resolvedTheme];
-  const sendMessage = useMutation(tripcastApi.messages.sendMessage);
-  const deleteMessage = useMutation(tripcastApi.messages.deleteMessage);
+  // The sheet is always mounted (`open` toggles): pin the chat's writes to the trip the Traveler views when it opens.
+  const sendMessage = useTripMutation(tripcastApi.messages.sendMessage);
+  const deleteMessage = useTripMutation(tripcastApi.messages.deleteMessage);
+  const reportTripUnavailable = useReportTripUnavailable();
+  useRecaptureOnOpen(open, sendMessage.recapture);
+  useRecaptureOnOpen(open, deleteMessage.recapture);
   
   const [inputText, setInputText] = useState("");
   const [dividerBeforeMessageId, setDividerBeforeMessageId] = useState<string | null>(null);
@@ -201,6 +208,7 @@ export function MessagingSheet({
     try {
       await sendMessage({ token, text });
     } catch (err: any) {
+      reportTripUnavailable(err, sendMessage.target);
       log.error("messages:sendMessage:error", "mutation", { message: err.message });
     }
   }
@@ -260,6 +268,7 @@ export function MessagingSheet({
         </div>
 
         <form onSubmit={handleSend} className="border-t border-[var(--line-soft)] bg-[var(--bg-card)] p-4 pb-[calc(100px + env(safe-area-inset-bottom))]">
+          <PrivateTripTargetLabel target={sendMessage.target} className="mb-1" />
           <div className="flex items-center gap-2">
             <input
               type="text"

@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
 import { ChevronLeft, Plus } from "lucide-react";
 
 import { tripcastApi } from "../../convex/tripcastApi";
 import type { Transaction } from "../../convex/tripcastApi";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
+import { useRecaptureOnOpen } from "../journal/useRecaptureOnOpen";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import { useReportTripUnavailable } from "../journal/useReportTripUnavailable";
 import { Button } from "../../components/ui/button";
 import {
   Sheet,
@@ -66,12 +69,16 @@ export default function TransactionPickerSheet({
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const unlinked = useQuery(
+  const unlinked = useTripQuery(
     tripcastApi.travelFunds.travelerListUnlinkedTransactions,
     open ? { token } : "skip",
   );
-  const addTransaction = useMutation(tripcastApi.travelFunds.travelerAddTransaction);
-  const updateTransaction = useMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
+  const addTransaction = useTripMutation(tripcastApi.travelFunds.travelerAddTransaction);
+  const updateTransaction = useTripMutation(tripcastApi.travelFunds.travelerUpdateTransaction);
+  // The picker is always mounted (its `open` prop toggles): pin its writes to the trip the Traveler views when it opens.
+  const reportTripUnavailable = useReportTripUnavailable();
+  useRecaptureOnOpen(open, addTransaction.recapture);
+  useRecaptureOnOpen(open, updateTransaction.recapture);
 
   function resetAndClose() {
     setView("list");
@@ -116,6 +123,7 @@ export default function TransactionPickerSheet({
       onLinked?.(tx._id);
       resetAndClose();
     } catch (e) {
+      reportTripUnavailable(e, updateTransaction.target);
       log.error("transaction:link-existing:error", "funds", {
         transactionId: tx._id,
         targetType: target.type,
@@ -224,6 +232,7 @@ export default function TransactionPickerSheet({
         <SheetBody className="px-4 pb-4">
           {view === "list" ? (
             <div className="flex flex-col gap-3 pt-2">
+              <PrivateTripTargetLabel target={updateTransaction.target} />
               <Button
                 type="button"
                 size="sm"
@@ -258,6 +267,7 @@ export default function TransactionPickerSheet({
               <TransactionForm
                 token={token}
                 mode="add"
+                target={addTransaction.target}
                 onSubmit={handleAddSubmit}
                 onCancel={() => setView("list")}
                 prefillMissionId={target?.type === "mission" ? target.id : undefined}

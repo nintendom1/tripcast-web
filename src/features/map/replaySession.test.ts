@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { JournalEvent, LiveTrailReplayPage, LiveTrailSample, ReplayStoryPage } from "../../convex/tripcastApi";
 import {
   ProgressiveReplaySession,
+  clearReplayResume,
   estimateReplayBufferMs,
   mergeReplayPins,
   readLegacyReplayResume,
@@ -232,5 +233,42 @@ describe("replaySession", () => {
     });
     expect(readReplayResume("token")).toMatchObject({ eventId: "story-2", index: 3, source });
     expect(readLegacyReplayResume("token")).toEqual({ eventId: "story-2", index: 3 });
+  });
+
+  it("keeps resume targets per trip, keeps today's key for the Legacy Trip, and clears every trip", () => {
+    const resume = (eventId: string) => ({ version: 2 as const, eventId, index: 1, occurredAt: 1_000, source });
+    writeReplayResume("token", resume("legacy-story"));
+    writeReplayResume("token", resume("summer-story"), "trip-summer");
+    writeReplayResume("other-token", resume("other-story"));
+
+    expect(localStorage.getItem("tripcast.replay.lastPin.token")).toContain("legacy-story");
+    expect(localStorage.getItem("tripcast.replay.lastPin.token.trip-summer")).toContain("summer-story");
+    expect(readReplayResume("token")?.eventId).toBe("legacy-story");
+    expect(readReplayResume("token", null)?.eventId).toBe("legacy-story");
+    expect(readReplayResume("token", "trip-summer")?.eventId).toBe("summer-story");
+    expect(readLegacyReplayResume("token", "trip-autumn")).toBeNull();
+
+    clearReplayResume("token");
+    expect(readReplayResume("token")).toBeNull();
+    expect(readReplayResume("token", "trip-summer")).toBeNull();
+    expect(readReplayResume("other-token")?.eventId).toBe("other-story");
+  });
+
+  it("keeps two trips' cached pages apart even when their revisions match; no trip keeps today's identity", async () => {
+    const breadcrumbs = vi.fn().mockResolvedValue(breadcrumbPage([breadcrumb(1), breadcrumb(2)]));
+    const stories = vi.fn().mockResolvedValue(storyPage([]));
+    const load = () => new ProgressiveReplaySession("same-key", source, { breadcrumbs, stories }).start(1, () => 10_000, () => 1);
+
+    setReplayCacheIdentity("token", "traveler", null, "rev-1", "trip-autumn");
+    await load();
+    setReplayCacheIdentity("token", "traveler", null, "rev-1", "trip-summer");
+    await load();
+    expect(breadcrumbs).toHaveBeenCalledTimes(2);
+
+    setReplayCacheIdentity("token", "traveler", null, "rev-1");
+    await load();
+    setReplayCacheIdentity("token", "traveler", null, "rev-1", null);
+    await load();
+    expect(breadcrumbs).toHaveBeenCalledTimes(3);
   });
 });

@@ -3,12 +3,16 @@
 // Every web call on a `tripcastApi` ref whose args accept `tripId` goes through these hooks, so the client always
 // sends the trip it means (`scripts/agent/trip-audit.mjs` counts calls that bypass them). The types allow only such
 // refs. WC ships them as pass-throughs to `convex/react` that add nothing; W1 makes them inject the trip.
+//
+// The hooks read the context through the non-throwing `useOptionalTripContext`: with no `TripContextProvider`
+// mounted they add no `tripId`, capture no target and pass calls straight through, exactly like plain
+// `convex/react` hooks, so component tests and stories need no wrapper. (`useTripContext` itself still throws.)
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConvex, useMutation, useQuery } from "convex/react";
 import type { OptionalRestArgsOrSkip } from "convex/react";
 import type { TripTarget } from "../features/trips/tripTypes";
-import { useTripContext } from "../providers/TripContextProvider";
+import { useOptionalTripContext } from "../providers/TripContextProvider";
 import type { FunctionArgs, FunctionReference, FunctionReturnType, FunctionType, OptionalRestArgs } from "convex/server";
 
 /** A public Convex ref of the given kind. */
@@ -71,7 +75,7 @@ type Captured = { target: TripTarget | null; sendTripId: string | null };
  * Followers never send a `tripId` (the server resolves them to the shared trip) but keep the target for labels.
  */
 function useCapturedTrip(): Captured & { recapture: () => void } {
-  const { role, viewingTrip } = useTripContext();
+  const { role, viewingTrip } = useOptionalTripContext();
   const read = (): Captured => ({
     target: viewingTrip ? { tripId: viewingTrip.tripId, title: viewingTrip.title } : null,
     sendTripId: role === "follower" ? null : (viewingTrip?.tripId ?? null),
@@ -89,13 +93,14 @@ function useCapturedTrip(): Captured & { recapture: () => void } {
  * `useQuery` for a trip-scoped ref: sends `tripId` = the context's `viewingTripId` (the viewed trip for a Traveler)
  * unless `args.tripId` is given; no `tripId` while none is known (multi-trip disabled) and never for a Follower.
  * `"skip"` skips as in `useQuery`. The trip is part of the args, so a trip change re-subscribes and a previous
- * trip's result is never returned for the new one.
+ * trip's result is never returned for the new one. With no `TripContextProvider` mounted it is plain `useQuery`
+ * (no `tripId` added, same args object).
  */
 export function useTripQuery<Q extends AnyRef<"query">>(
   ref: Q & TripScopedRef<Q>,
   args: TripArgs<Q> | "skip",
 ): FunctionReturnType<Q> | undefined {
-  const { role, viewingTripId } = useTripContext();
+  const { role, viewingTripId } = useOptionalTripContext();
   const tripArgs = args === "skip" ? "skip" : withTrip(args, role === "follower" ? null : viewingTripId);
   return useQuery(ref as Q, ...([tripArgs] as OptionalRestArgsOrSkip<Q>));
 }
@@ -106,7 +111,8 @@ export function useTripQuery<Q extends AnyRef<"query">>(
  * captured `{tripId, title}` is `.target`; `.recapture()` deliberately retargets to the current view.
  *
  * Call it in the sheet or editor component that is mounted per open. A long-lived parent must not hold this hook
- * for sheets it opens later: it would capture the trip once, at the parent's mount.
+ * for sheets it opens later: it would capture the trip once, at the parent's mount. With no `TripContextProvider`
+ * mounted it is plain `useMutation` (no `tripId`, `target` null).
  */
 export function useTripMutation<M extends AnyRef<"mutation">>(ref: M & TripScopedRef<M>): CapturedTripMutation<M> {
   const mutation = useMutation(ref as M);
@@ -120,7 +126,8 @@ export function useTripMutation<M extends AnyRef<"mutation">>(ref: M & TripScope
 /**
  * `useConvex` for imperative trip-scoped calls (one-shot queries, mutations, actions): each call sends the `tripId`
  * captured when the hook mounted unless `args.tripId` is given. Same capture rules as `useTripMutation`: call it in
- * the component that owns the editor, not in a long-lived parent.
+ * the component that owns the editor, not in a long-lived parent. With no `TripContextProvider` mounted it is plain
+ * `useConvex` (no `tripId`, `target` null).
  */
 export function useTripConvex(): CapturedTripConvexClient {
   const convex = useConvex();

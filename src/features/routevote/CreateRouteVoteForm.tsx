@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import { tripcastApi, type EnergyImpact, type Mission, type ResultsVisibility } from "../../convex/tripcastApi";
 import { useDebugLogger } from "../../debug/useDebugLogger";
 import { Button } from "../../components/ui/button";
@@ -9,6 +9,7 @@ import { Textarea } from "../../components/ui/textarea";
 import { DialogueBox } from "../../components/rpg/DialogueBox";
 import { haversineDistanceMiles } from "../../lib/routeVoteUtils";
 import { TERMS } from "../../copy/terminology";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
 import { cn } from "@/lib/utils";
 
 type OptionFormValue = {
@@ -303,8 +304,8 @@ export default function CreateRouteVoteForm({
   onRequestCoordinatePick,
   referenceLocation,
 }: CreateRouteVoteFormProps) {
-  const createVote = useMutation(tripcastApi.routeVotes.travelerCreateRouteVote);
-  const allMissions = useQuery(tripcastApi.missions.travelerListMissions, { token });
+  const createVote = useTripMutation(tripcastApi.routeVotes.travelerCreateRouteVote);
+  const allMissions = useTripQuery(tripcastApi.missions.travelerListMissions, { token });
   const linkableMissions = (allMissions ?? []).filter(
     (m) => m.status !== "completed" && m.status !== "dropped",
   );
@@ -395,6 +396,7 @@ export default function CreateRouteVoteForm({
 
   return (
     <form className="flex flex-col gap-4" onSubmit={handleSubmit(onSubmit)}>
+      <PrivateTripTargetLabel target={createVote.target} />
       <DialogueBox title={`Propose a ${TERMS.routeVote}`}>
         <div className="flex flex-col gap-4 mt-2">
           <label className="flex flex-col gap-1 text-sm font-medium">

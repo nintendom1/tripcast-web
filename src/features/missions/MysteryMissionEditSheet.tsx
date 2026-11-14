@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -12,6 +12,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { tripcastApi } from "../../convex/tripcastApi";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
 import type { MysteryMissionExportRow } from "../../convex/tripcastApi";
 import { useMusicSafe } from "../../providers/MusicProvider";
 
@@ -165,11 +166,16 @@ export default function MysteryMissionEditSheet({
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const music = useMusicSafe();
-  const mission = useQuery(
+  const mission = useTripQuery(
     tripcastApi.mysteryMissions.travelerGetMysteryMissionForEdit,
     open && mysteryMissionId ? { token, mysteryMissionId } : "skip",
   ) as MysteryMissionExportRow | null | undefined;
-  const patchMission = useMutation(tripcastApi.mysteryMissions.travelerPatchMysteryMission);
+  const patchMission = useTripMutation(tripcastApi.mysteryMissions.travelerPatchMysteryMission);
+  // This sheet stays mounted while closed, so pin the write to the trip viewed when it opens (not when it mounted).
+  const retargetPatch = patchMission.recapture;
+  useEffect(() => {
+    if (open) retargetPatch();
+  }, [open, retargetPatch]);
 
   useEffect(() => {
     if (!open) {
@@ -235,6 +241,7 @@ export default function MysteryMissionEditSheet({
           <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
             Edit Mystery Mission
           </SheetTitle>
+          <PrivateTripTargetLabel target={patchMission.target} />
           <SheetCloseButton aria-label="Close Mystery Mission editor" />
         </div>
         <SheetBody className="grid gap-4 px-5 py-4 text-[var(--ink-1)]">

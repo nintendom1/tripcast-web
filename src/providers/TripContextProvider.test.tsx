@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tripcastApi, type CurrentTrip, type EffectiveTrip } from "../convex/tripcastApi";
 import type { TripContextValue } from "../features/trips/tripTypes";
 import { useTripQuery } from "../convex/useTrip";
-import { TripContextProvider, TripContextTestProvider, useTripContext } from "./TripContextProvider";
+import { TripContextProvider, TripContextTestProvider, useOptionalTripContext, useTripContext } from "./TripContextProvider";
 
 const server = vi.hoisted(() => ({
   current: undefined as unknown,
@@ -374,5 +374,21 @@ describe("TripContextProvider", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     expect(() => render(<Orphan />)).toThrow("useTripContext must be used within a TripContextProvider");
     spy.mockRestore();
+  });
+
+  it("useOptionalTripContext returns the inert value outside a provider and the provided value inside", () => {
+    let outside: TripContextValue | undefined;
+    function Optional() {
+      outside = useOptionalTripContext();
+      return null;
+    }
+    render(<Optional />);
+    expect(outside).toMatchObject({ ...inert, token: "", role: "traveler" });
+    render(
+      <TripContextTestProvider value={{ multiTripEnabled: true, viewingTripId: "trip-x" }}>
+        <Optional />
+      </TripContextTestProvider>,
+    );
+    expect(outside).toMatchObject({ multiTripEnabled: true, viewingTripId: "trip-x", token: "test-token" });
   });
 });

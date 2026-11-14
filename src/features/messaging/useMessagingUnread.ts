@@ -1,12 +1,20 @@
 import { useCallback, useMemo, useState, useEffect } from "react";
 import { type Doc, type Role } from "../../convex/tripcastApi";
 import { isUnreadForViewer } from "./messagingRules";
+import { useTripClientKey } from "../trips/privateTripView";
+
+function readStoredAt(key: string): number {
+  const stored = localStorage.getItem(key);
+  return stored ? parseInt(stored, 10) : 0;
+}
 
 export function useMessagingUnread(messages: Doc<"messages">[], userId?: string, role?: Role, sessionId?: string) {
-  const [lastReadAt, setLastReadAt] = useState<number>(() => {
-    const stored = localStorage.getItem("tripcast.messagesLastReadAt");
-    return stored ? parseInt(stored, 10) : 0;
-  });
+  // Per viewed trip: each trip's chat keeps its own read marker. No trip key (disabled, Legacy Trip) keeps today's key.
+  const tripKey = useTripClientKey();
+  const key = tripKey ? `tripcast.messagesLastReadAt:${tripKey}` : "tripcast.messagesLastReadAt";
+  const [stored, setStored] = useState<{ key: string; at: number }>(() => ({ key, at: readStoredAt(key) }));
+  // A trip switch changes the key: read that trip's marker instead of the one stored for the previous trip.
+  const lastReadAt = stored.key === key ? stored.at : readStoredAt(key);
 
   const unreadCount = useMemo(() => {
     if (!messages.length) return 0;
@@ -16,9 +24,9 @@ export function useMessagingUnread(messages: Doc<"messages">[], userId?: string,
 
   const markAllRead = useCallback(() => {
     const now = Date.now();
-    localStorage.setItem("tripcast.messagesLastReadAt", now.toString());
-    setLastReadAt(now);
-  }, []);
+    localStorage.setItem(key, now.toString());
+    setStored({ key, at: now });
+  }, [key]);
 
   // Best-effort haptics on receipt
   useEffect(() => {

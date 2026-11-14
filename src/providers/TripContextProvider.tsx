@@ -161,7 +161,7 @@ export function TripContextTestProvider({ value, children }: TripContextTestProv
 
 /**
  * Reads the multi-trip context (shape: `TripContextValue`). Throws outside a `TripContextProvider`, so a missing
- * provider fails loudly instead of silently targeting the wrong trip.
+ * provider fails loudly instead of silently targeting the wrong trip. Components that render trip UI use this one.
  */
 export function useTripContext(): TripContextValue {
   const context = useContext(TripContext);
@@ -169,4 +169,17 @@ export function useTripContext(): TripContextValue {
     throw new Error("useTripContext must be used within a TripContextProvider");
   }
   return context;
+}
+
+/** What the trip-aware Convex hooks see without a provider: inert (no trip, multi-trip disabled). Stable identity. */
+const NO_PROVIDER_CONTEXT = inertTripContext("", "traveler");
+
+/**
+ * Non-throwing `useTripContext` for the trip-aware Convex hooks (`useTripQuery`, `useTripMutation`, `useTripConvex`).
+ * Outside a `TripContextProvider` it returns the inert value, so those hooks add no `tripId`, capture no target and
+ * behave exactly like plain `convex/react` hooks; component tests and stories need no wrapper. With a provider it
+ * returns the same value as `useTripContext`. Components that render trip UI must keep using `useTripContext`.
+ */
+export function useOptionalTripContext(): TripContextValue {
+  return useContext(TripContext) ?? NO_PROVIDER_CONTEXT;
 }

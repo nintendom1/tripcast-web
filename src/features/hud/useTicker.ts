@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useQuery, useMutation } from "convex/react";
 import { tripcastApi } from "../../convex/tripcastApi";
+import { useTripMutation, useTripQuery } from "../../convex/useTrip";
 import {
   TickerSettings,
   DEFAULT_TICKER_SETTINGS,
@@ -46,11 +46,11 @@ function chooseNonAlertMessage(settings: TickerSettings): TickerMessage | null {
 }
 
 export function useTicker(token?: string) {
-  const remoteSettings = useQuery(tripcastApi.ticker.getTickerSettings, token ? { token } : "skip");
-  const updateRemoteSettings = useMutation(tripcastApi.ticker.updateTickerSettings);
-  const addRemoteMessage = useMutation(tripcastApi.ticker.addTickerMessage);
-  const removeRemoteMessage = useMutation(tripcastApi.ticker.removeTickerMessage);
-  const clearRemoteAll = useMutation(tripcastApi.ticker.clearAllTickerMessages);
+  const remoteSettings = useTripQuery(tripcastApi.ticker.getTickerSettings, token ? { token } : "skip");
+  const updateRemoteSettings = useTripMutation(tripcastApi.ticker.updateTickerSettings);
+  const addRemoteMessage = useTripMutation(tripcastApi.ticker.addTickerMessage);
+  const removeRemoteMessage = useTripMutation(tripcastApi.ticker.removeTickerMessage);
+  const clearRemoteAll = useTripMutation(tripcastApi.ticker.clearAllTickerMessages);
 
   // Rotation timing — persisted across refreshes so the ticker doesn't
   // immediately fire a fresh fact when the page reloads inside the interval

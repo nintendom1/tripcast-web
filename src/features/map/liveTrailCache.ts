@@ -22,6 +22,8 @@ type CacheRecord = {
   version: number;
   recent: LiveTrailSample[];
   replay: LiveTrailSample[];
+  /** Per-trip records only: the token's trip-less identity, so sign-out can remove every trip's record. */
+  owner?: string;
 };
 
 type CachePools = Pick<LiveTrailCacheSnapshot, "recent" | "replay" | "samples">;
@@ -30,6 +32,8 @@ export type LiveTrailCachePersistence = {
   read(identity: string): Promise<unknown>;
   write(record: CacheRecord): Promise<void>;
   remove(identity: string): Promise<void>;
+  /** Removes every per-trip record whose `owner` is `owner`. */
+  removeOwned?(owner: string): Promise<void>;
 };
 
 const emptyPools = (): CachePools => ({ recent: [], replay: [], samples: [] });
@@ -118,6 +122,18 @@ export const indexedDbLiveTrailCachePersistence: LiveTrailCachePersistence = {
       database.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(identity),
     );
   },
+  async removeOwned(owner) {
+    const database = await openDatabase();
+    const rows = await requestResult(
+      database.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll(),
+    );
+    const ids = rows
+      .filter((row) => (row as Partial<CacheRecord>)?.owner === owner)
+      .map((row) => (row as CacheRecord).id);
+    if (ids.length === 0) return;
+    const store = database.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME);
+    await Promise.all(ids.map((id) => requestResult(store.delete(id))));
+  },
 };
 
 async function sha256(value: string) {
@@ -126,8 +142,13 @@ async function sha256(value: string) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-export async function fingerprintLiveTrailCacheIdentity(token: string, role: Role) {
-  return sha256(`${role}\u0000${token}`);
+/**
+ * The cache record id: sha256(role + token), plus the trip for a trip other than the Legacy Trip. `tripKey` is the
+ * viewed (Follower: followed) trip's id, or `null` for the Legacy Trip and while multi-trip is off: today's id, so
+ * existing caches keep working.
+ */
+export async function fingerprintLiveTrailCacheIdentity(token: string, role: Role, tripKey: string | null = null) {
+  return sha256(tripKey ? `${role}\u0000${token}\u0000${tripKey}` : `${role}\u0000${token}`);
 }
 
 export class LiveTrailCacheStore {
@@ -143,6 +164,7 @@ export class LiveTrailCacheStore {
     private readonly identity: Promise<string>,
     private readonly persistence: LiveTrailCachePersistence = indexedDbLiveTrailCachePersistence,
     private readonly debounceMs = WRITE_DEBOUNCE_MS,
+    private readonly owner: Promise<string> | null = null,
   ) {}
 
   snapshot(): LiveTrailCacheSnapshot {
@@ -289,7 +311,14 @@ export class LiveTrailCacheStore {
     this.operation = this.operation.then(async () => {
       try {
         const identity = await this.identity;
-        await this.persistence.write({ id: identity, version: RECORD_VERSION, recent: pools.recent, replay: pools.replay });
+        const owner = this.owner ? await this.owner : undefined;
+        await this.persistence.write({
+          id: identity,
+          version: RECORD_VERSION,
+          recent: pools.recent,
+          replay: pools.replay,
+          ...(owner ? { owner } : {}),
+        });
         debugLog("info", "LiveTrailCache", "cache:write", "state", {
           status: "ok",
           reason,
@@ -324,27 +353,43 @@ export class LiveTrailCacheStore {
 const stores = new Map<string, LiveTrailCacheStore>();
 const allStores = new Set<LiveTrailCacheStore>();
 
-function runtimeKey(token: string, role: Role) {
-  return `${role}\u0000${token}`;
+function runtimeKey(token: string, role: Role, tripKey: string | null = null) {
+  return tripKey ? `${role}\u0000${token}\u0000${tripKey}` : `${role}\u0000${token}`;
 }
 
-export function getLiveTrailCache(token: string, role: Role) {
-  const key = runtimeKey(token, role);
+/** The cache for one trip (`tripKey`: see `fingerprintLiveTrailCacheIdentity`; `null` keeps today's cache). */
+export function getLiveTrailCache(token: string, role: Role, tripKey: string | null = null) {
+  const key = runtimeKey(token, role, tripKey);
   let store = stores.get(key);
   if (!store) {
-    store = new LiveTrailCacheStore(fingerprintLiveTrailCacheIdentity(token, role));
+    store = new LiveTrailCacheStore(
+      fingerprintLiveTrailCacheIdentity(token, role, tripKey),
+      undefined,
+      undefined,
+      tripKey ? fingerprintLiveTrailCacheIdentity(token, role) : null,
+    );
     stores.set(key, store);
     allStores.add(store);
   }
   return store;
 }
 
+/** Clears the role's cache for every trip: today's record, each loaded trip store and every stored trip record. */
 export async function clearLiveTrailCache(token: string, role: Role) {
   const key = runtimeKey(token, role);
   const store = stores.get(key) ?? new LiveTrailCacheStore(fingerprintLiveTrailCacheIdentity(token, role));
   allStores.add(store);
   stores.delete(key);
-  await store.clear();
+  const tripStores = [...stores].filter(([storeKey]) => storeKey.startsWith(`${key}\u0000`));
+  for (const [storeKey] of tripStores) stores.delete(storeKey);
+  const removeTripRecords = async () => {
+    try {
+      await indexedDbLiveTrailCachePersistence.removeOwned?.(await fingerprintLiveTrailCacheIdentity(token, role));
+    } catch {
+      debugLog("error", "LiveTrailCache", "cache:clear", "state", { status: "failed", sampleCount: 0 });
+    }
+  };
+  await Promise.all([store.clear(), ...tripStores.map(([, tripStore]) => tripStore.clear()), removeTripRecords()]);
 }
 
 export async function clearLiveTrailCachesForToken(token: string) {
