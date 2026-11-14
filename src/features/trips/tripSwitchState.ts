@@ -2,9 +2,10 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { useOnlineStatus } from "../../components/resilience/useOnlineStatus";
 
-// "A shared-trip switch is awaiting the server": the chip reads `Switching… ⌄` while it is set. A tiny module store
-// (not React state) so the chip, the pane, the dialog and a late response all see one record. The record carries
-// the token of the request that made it, so an answer can only clear (or act on) its OWN request.
+// "A shared-trip switch is awaiting the server": the pane reads "Switching…" and the logo's dot pulses while it is
+// set. A tiny module store (not React state) so the logo, the pane, the dialog and a late response all see one
+// record. The record carries the token of the request that made it, so an answer can only clear (or act on) its OWN
+// request.
 
 /** How long a switch may wait for the server before it is called slow ("Waiting for server…", Retry). */
 export const SWITCH_SLOW_MS = 8000;

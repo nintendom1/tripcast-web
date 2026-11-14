@@ -73,7 +73,7 @@ export type TripContextValue = {
    */
   viewingTripId: string | null;
   /**
-   * The viewed trip with its title (same trip as `viewingTripId`): the chip, banner and editors build their captured
+   * The viewed trip with its title (same trip as `viewingTripId`): the pane, banner and editors build their captured
    * `TripTarget` from it. In `follow_current` it is the current trip (Follower: `followerTrip`); in `private` the
    * trip passed to `openPrivately`. `null` when `viewingTripId` is `null` (stub, loading). `isLegacy` is set by
    * `TripContextProvider` (from the trip query, or the Legacy Trip id it learned from it or from a catalog card).
@@ -87,7 +87,7 @@ export type TripContextValue = {
   /** Go back to following the latest server current trip (`viewingMode` = `follow_current`). No GPS calls. */
   returnToCurrent: () => void;
   /**
-   * Server flag (`CurrentTrip.multiTripEnabled`), Traveler only. The Traveler's chip, pane, banner and
+   * Server flag (`CurrentTrip.multiTripEnabled`), Traveler only. The Traveler's Trips button, pane, banner and
    * `TripTargetLabel` render only when true. `false` in the stub and while loading. For a Follower it is always
    * `false`: do not gate Follower UI on it; a Follower detects a switch by `followerTrip.tripId` changing.
    */

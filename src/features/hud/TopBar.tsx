@@ -5,8 +5,35 @@ import { cn } from "@/lib/utils";
 import type { Role } from "@/convex/tripcastApi";
 import { TERMS } from "../../copy/terminology";
 import { useThemeMode } from "../../providers/ThemeProvider";
-import { TripChip } from "../trips/TripChip";
 import type { TripPaneActions } from "../trips/TripSwitcherSheet";
+import { TripsPaneToggle } from "../trips/TripsPaneToggle";
+
+// The logo, shared by the inert `<div>` (a Follower, or multi-trip off) and the Traveler's Trips pane toggle.
+const LOGO_CLASS =
+  "flex items-center gap-2 font-[var(--font-display)] text-base font-extrabold tracking-tight text-[var(--ink-1)]";
+const LOGO = (
+  <>
+    <span
+      className="flex h-6 w-6 items-center justify-center rounded-md text-white"
+      style={{ background: "var(--flag)" }}
+      aria-hidden="true"
+    >
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 22V4 M4 4l9 4-3 4 7 3-9 3" />
+      </svg>
+    </span>
+    TripCast
+  </>
+);
 
 export interface TopBarProps {
   role: Role;
@@ -49,29 +76,16 @@ export function TopBar({ role, onOpenOptions, tripPane, onRequestEndCurrentTrip,
       )}
     >
       <div className="tripcast-frame flex items-center justify-between px-4 pt-2 pb-0">
-      <div className="flex items-center gap-2 font-[var(--font-display)] text-base font-extrabold tracking-tight text-[var(--ink-1)]">
-        <span
-          className="flex h-6 w-6 items-center justify-center rounded-md text-white"
-          style={{ background: "var(--flag)" }}
-          aria-hidden="true"
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M4 22V4 M4 4l9 4-3 4 7 3-9 3" />
-          </svg>
-        </span>
-        TripCast
-      </div>
-
-      {isTraveler ? <TripChip className="mx-2 min-w-0" {...tripPane} onRequestEndCurrentTrip={onRequestEndCurrentTrip} /> : null}
+      {isTraveler ? (
+        <TripsPaneToggle
+          logoClassName={LOGO_CLASS}
+          logo={LOGO}
+          {...tripPane}
+          onRequestEndCurrentTrip={onRequestEndCurrentTrip}
+        />
+      ) : (
+        <div className={LOGO_CLASS}>{LOGO}</div>
+      )}
 
       <div className="flex items-center gap-2">
         <button

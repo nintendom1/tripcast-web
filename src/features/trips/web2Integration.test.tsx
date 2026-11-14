@@ -13,11 +13,11 @@ import { LivePublishingBridge } from "../../native/LivePublishingBridge";
 import { ThemeProvider } from "../../providers/ThemeProvider";
 import { TripContextTestProvider } from "../../providers/TripContextProvider";
 import { PrivateTripBanner } from "./PrivateTripBanner";
-import { TripChip } from "./TripChip";
+import { TripsPaneToggle } from "./TripsPaneToggle";
 import { setSwitchPending } from "./tripSwitchState";
 import type { TripContextValue } from "./tripTypes";
 
-// The chip, pane, switch dialog, banner and the REAL LivePublishingBridge together. Only Convex and the native
+// The logo toggle, pane, switch dialog, banner and the REAL LivePublishingBridge together. Only Convex and the native
 // plugin are mocked; the epoch moves by re-rendering the context, as the live subscription would.
 
 const server = vi.hoisted(() => ({
@@ -121,7 +121,7 @@ function App({ value }: { value: Partial<TripContextValue> }) {
     <ThemeProvider>
       <TripContextTestProvider value={value}>
         <LivePublishingBridge token="token-1" role="traveler" gpsSuppressedUntil={null} />
-        <TripChip />
+        <TripsPaneToggle logoClassName="flex" logo="TripCast" />
         <PrivateTripBanner />
       </TripContextTestProvider>
     </ThemeProvider>
@@ -153,7 +153,7 @@ function mount(value: Partial<TripContextValue>) {
 }
 
 async function confirmSwitchToSummer(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /·/ }));
+  await user.click(screen.getByRole("button", { name: /^TripCast: Trips/ }));
   await screen.findByRole("dialog", { name: "Trips" });
   await user.click(screen.getByRole("button", { name: /^Summer 2026/ }));
   await user.click(screen.getByRole("button", { name: "Set as shared current" }));
@@ -161,7 +161,7 @@ async function confirmSwitchToSummer(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Show to Followers" }));
 }
 
-// The chip loads the pane lazily; warm the module so a loaded CI machine does not time the first test out.
+// The toggle loads the pane lazily; warm the module so a loaded CI machine does not time the first test out.
 beforeAll(async () => {
   await import("./TripSwitcherSheet");
 }, 60_000);
@@ -249,7 +249,7 @@ describe("one notice per trip change, with the real bridge", { timeout: 20_000 }
     await update(contextFor(SUMMER, WINTER));
     expect(allNotices()).toEqual([]);
     expect(returnToCurrent).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Viewing privately · Winter 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "TripCast: Trips, viewing privately" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Viewing Winter 2026 privately. Followers are viewing Summer 2026.");
   });
 
@@ -263,7 +263,7 @@ describe("one notice per trip change, with the real bridge", { timeout: 20_000 }
     expect(screen.queryByText(/Live on/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /·/ }));
+    await user.click(screen.getByRole("button", { name: /^TripCast: Trips/ }));
     const pinned = (await screen.findByText(/Followers currently see:/)).parentElement as HTMLElement;
     expect(pinned).toHaveTextContent("Summer 2026");
     expect(within(pinned).queryByText("Live")).not.toBeInTheDocument();
@@ -276,7 +276,7 @@ describe("a switch that awaits the server", { timeout: 20_000 }, () => {
     server.setCurrent = () => new Promise((r) => (resolve = r));
     const { user, update } = mount(contextFor(AUTUMN));
     await confirmSwitchToSummer(user);
-    expect(screen.getByRole("button", { name: "Switching…", hidden: true })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "TripCast: Trips, switching…", hidden: true })).toBeEnabled();
 
     Object.defineProperty(window.navigator, "onLine", { value: false, configurable: true });
     await act(async () => {
@@ -286,7 +286,7 @@ describe("a switch that awaits the server", { timeout: 20_000 }, () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     const pane = await screen.findByRole("dialog", { name: "Trips" });
     expect(within(pane).getByText(/Still waiting: this switch may apply when you are back online/)).toBeInTheDocument();
-    await user.type(within(pane).getByRole("searchbox", { name: "Search trips" }), "x");
+    await user.click(within(pane).getByRole("button", { name: "In progress" }));
     await user.click(within(pane).getByRole("button", { name: "Actions for Summer 2026" }));
     expect(screen.getByRole("menuitem", { name: "Edit" })).toBeEnabled();
 
@@ -297,10 +297,11 @@ describe("a switch that awaits the server", { timeout: 20_000 }, () => {
     });
     await update(contextFor(SUMMER));
     await act(async () => resolve({}));
-    // The Traveler walked away from the dialog, so the pane they are using stays open; the chip behind it is back.
+    // The Traveler walked away from the dialog, so the pane they are using stays open; the logo is no longer busy.
     await waitFor(() => expect(returnToCurrent).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole("button", { name: "Current · Summer 2026", hidden: true })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Switching…", hidden: true })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "TripCast: Trips", hidden: true })).not.toHaveAttribute("aria-busy");
+    expect(screen.queryByRole("button", { name: /switching…/, hidden: true })).not.toBeInTheDocument();
+    expect(screen.getByText(/You are viewing:/)).toHaveTextContent("You are viewing: Summer 2026");
     expect(within(screen.getByRole("dialog", { name: "Trips" })).queryByText(/Still waiting/)).not.toBeInTheDocument();
   });
 });

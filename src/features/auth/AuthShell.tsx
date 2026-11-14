@@ -29,7 +29,7 @@ export default function AuthShell({
   footer,
 }: AuthShellProps) {
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-[var(--bg-paper)] px-4 py-8">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-[var(--bg-paper)] px-4 pb-[calc(2rem+env(safe-area-inset-bottom,0px))] pt-[calc(2rem+env(safe-area-inset-top,0px))]">
       <div className="flex w-full max-w-sm flex-col gap-4">
         <div className="flex flex-col items-center gap-1.5">
           <BrandMark />

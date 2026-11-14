@@ -28,7 +28,7 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
     >
       <header
         className={cn(
-          "fixed left-0 right-0 top-0 z-40 flex h-14 items-center justify-between border-b px-4 backdrop-blur-md transition-colors duration-500 sm:px-6",
+          "fixed left-0 right-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top,0px))] items-center pt-[env(safe-area-inset-top,0px)] justify-between border-b px-4 backdrop-blur-md transition-colors duration-500 sm:px-6",
           isDark
             ? "border-[var(--ink-3)] bg-[var(--bg-paper)]/82"
             : "border-[var(--meadow-paper-edge)] bg-[var(--meadow-bg)]/82",
@@ -52,7 +52,7 @@ export default function LandingPage({ onLoginClick }: LandingPageProps) {
         </Button>
       </header>
 
-      <section className="relative overflow-hidden pb-10 pt-20">
+      <section className="relative overflow-hidden pb-10 pt-[calc(5rem+env(safe-area-inset-top,0px))]">
         <IntroBackdrop
           beat={5}
           isDark={isDark}

@@ -142,7 +142,7 @@ const identityKey = (token: string) => `tripcast.live-publishing.identity.${toke
 const epochKey = (token: string) => `tripcast.live-sharing.last-epoch.${tokenScope(token)}`;
 
 async function openPrivatelyFromPane(trip: { title: string }) {
-  await userEvent.click(await screen.findByRole("button", { name: /^Current · / }));
+  await userEvent.click(await screen.findByRole("button", { name: /^TripCast: Trips/ }));
   await userEvent.click(await screen.findByRole("button", { name: new RegExp(`^${trip.title}`) }));
   await userEvent.click(await screen.findByRole("button", { name: "Open privately" }));
   await settle();
@@ -224,14 +224,14 @@ const TODAY = {
 };
 
 const MULTI_TRIP_COPY =
-  /Current · |Viewing privately|Followers are viewing|Live on|Switching…|now sharing|hasn't started yet|no longer available|Upgrading…|Return to current/;
+  /TripCast: Trips|Current · |Viewing privately|Followers are viewing|Live on|Switching…|now sharing|hasn't started yet|no longer available|Upgrading…|Return to current/;
 
 describe("flag gating: multi-trip off, or a Follower, starts exactly as today (item 6)", { timeout: 20_000 }, () => {
   it.each([
     ["a", "traveler", () => {}],
     ["b", "traveler", () => (server.current = current({ tripId: "legacy", title: "Legacy" }, { isLegacy: true, multiTripEnabled: false }))],
     ["c", "follower", () => (server.effective = { tripId: "legacy", title: "Legacy", lifecycle: "in_progress", isLegacy: true })],
-  ] as const)("(%s) same functions, argument keys and count; no trip chip, pane, banner, notice or label", async (id, role, seed) => {
+  ] as const)("(%s) same functions, argument keys and count; no Trips button, pane, banner, notice or label", async (id, role, seed) => {
     seed();
     await startApp(role);
     expect(screen.getByRole("button", { name: "Options" })).toBeInTheDocument();
@@ -241,12 +241,14 @@ describe("flag gating: multi-trip off, or a Follower, starts exactly as today (i
     expect(fake.log.some((request) => "tripId" in request.args)).toBe(false);
     expect(screen.queryByText(MULTI_TRIP_COPY)).toBeNull();
     expect(screen.queryByRole("button", { name: MULTI_TRIP_COPY })).toBeNull();
+    // The logo is the plain wordmark.
+    expect(screen.getByText("TripCast").tagName).toBe("DIV");
   });
 
-  it("with multi-trip on the chip renders and the shell's reads name the shared trip (the gate is real)", async () => {
+  it("with multi-trip on the logo is the Trips button and the shell's reads name the shared trip (the gate is real)", async () => {
     server.current = current(AUTUMN);
     await startApp("traveler");
-    expect(await screen.findByRole("button", { name: "Current · Autumn 2026" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "TripCast: Trips" })).toBeInTheDocument();
     expect(watched("endTrip:getTripFinaleStatus")).toEqual([{ token: TOKEN, tripId: "autumn" }]);
   });
 });
@@ -272,13 +274,13 @@ describe("private view banner and End Trip from the trip pane (item 1)", { timeo
     await userEvent.click(within(banner).getByRole("button", { name: "Return to current" }));
     await settle();
     expect(screen.queryByText(/privately/)).toBeNull();
-    expect(screen.getByRole("button", { name: "Current · Autumn 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "TripCast: Trips" })).toBeInTheDocument();
   });
 
   it("Complete trip on the shared trip's card returns to it, and the End Trip sheet works on THAT trip", async () => {
     await startApp("traveler");
     await openPrivatelyFromPane(SUMMER);
-    await userEvent.click(screen.getByRole("button", { name: "Viewing privately · Summer 2026" }));
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips, viewing privately" }));
     await userEvent.click(await screen.findByRole("button", { name: "Actions for Autumn 2026" }));
     await userEvent.click(screen.getByRole("menuitem", { name: "Complete trip" }));
     await settle();
@@ -288,7 +290,7 @@ describe("private view banner and End Trip from the trip pane (item 1)", { timeo
     expect(watched("endTrip:getTripCredits")).toEqual([{ token: TOKEN, tripId: "autumn" }]);
   });
 
-  it("the chip and the banner stay usable while the map shows its error fallback", async () => {
+  it("the logo and the banner stay usable while the map shows its error fallback", async () => {
     await startApp("traveler");
     await openPrivatelyFromPane(SUMMER);
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -298,14 +300,14 @@ describe("private view banner and End Trip from the trip pane (item 1)", { timeo
     }
     await serverChanged();
     expect(await screen.findByText("The map could not load.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Viewing privately · Summer 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "TripCast: Trips, viewing privately" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Return to current" }));
     expect(screen.queryByText(/privately/)).toBeNull();
   });
 });
 
 describe("while the trip subscription fails (pinned as it behaves today)", { timeout: 20_000 }, () => {
-  it("a private view drops to the current trip, chip and banner hide, and Stop stays reachable in the map's Live control", async () => {
+  it("a private view drops to the current trip, the Trips button and banner hide, and Stop stays reachable in the map's Live control", async () => {
     server.current = current(AUTUMN);
     server.cards = [card(AUTUMN, { isCurrent: true }), card(SUMMER)];
     await startApp("traveler");
@@ -315,8 +317,8 @@ describe("while the trip subscription fails (pinned as it behaves today)", { tim
 
     server.failing["trips:getCurrentTrip"] = new Error("trip state unavailable");
     await serverChanged();
-    // The context goes inert: no private view, no chip or banner, and nothing names a trip any more.
-    expect(screen.queryByRole("button", { name: /^(Current|Viewing privately) · / })).toBeNull();
+    // The context goes inert: no private view, no Trips button or banner, and nothing names a trip any more.
+    expect(screen.queryByRole("button", { name: /^TripCast: Trips/ })).toBeNull();
     expect(screen.queryByText(/privately/)).toBeNull();
     expect(fake.active().filter((s) => s.args.tripId === "summer")).toEqual([]);
     expect(watched("ticker:getTickerSettings")).toEqual([{ token: TOKEN }]);
@@ -326,13 +328,13 @@ describe("while the trip subscription fails (pinned as it behaves today)", { tim
     expect(getLiveSharingEnabled()).toBe(false);
 
     // Back online: the retry subscribes again (the query's own hooks ran on every failing render, so the hook order
-    // never changed) and the chip returns on the current trip.
+    // never changed) and the Trips button returns on the current trip.
     delete server.failing["trips:getCurrentTrip"];
     await act(async () => {
       window.dispatchEvent(new Event("online"));
     });
     await settle();
-    expect(screen.getByRole("button", { name: "Current · Autumn 2026" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "TripCast: Trips" })).toBeInTheDocument();
     expect(watched("trips:getCurrentTrip")).toEqual([{ token: TOKEN }]);
   });
 });
@@ -415,8 +417,11 @@ describe("leaving a session clears its publishing identity and switch state (ite
     // Account B on the same device: its own trip, at another epoch.
     server.current = current({ tripId: "winter", title: "Winter 2027" }, { publishingEpoch: 9 });
     await startApp("traveler", "token-b");
-    expect(await screen.findByRole("button", { name: "Current · Winter 2027" })).toBeInTheDocument();
+    // Not private, not switching: the bare name. The pane names the trip.
+    expect(await screen.findByRole("button", { name: "TripCast: Trips" })).not.toHaveAttribute("aria-busy");
     expect(screen.queryByText(/changed on another device|privately|Switching…/)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips" }));
+    expect(await screen.findByText(/You are viewing:/)).toHaveTextContent("You are viewing: Winter 2027");
   });
 });
 
@@ -439,5 +444,65 @@ describe("the finale names the shared trip (items 8 and 10)", { timeout: 20_000 
     await openPrivatelyFromPane(SUMMER);
     expect(watched("endTrip:getTripFinaleStatus")).toEqual([{ token: TOKEN, tripId: "autumn" }]);
     expect(sent("endTrip:getTripFinaleStatus").some((args) => args.tripId === "summer")).toBe(false);
+  });
+});
+
+/**
+ * A finger tap whose compatibility mouse events never come (pointer and click only). A non-modal pane takes the
+ * mousedown of a full tap as an outside press and closes itself; without it, only the one-pane rule
+ * (`paneExclusion.ts`) can close the other pane, so these tests see that rule alone.
+ */
+function tapWithoutMouseEvents(element: Element) {
+  fireEvent.pointerDown(element, { pointerType: "touch", button: 0, isPrimary: true });
+  fireEvent.pointerUp(element, { pointerType: "touch", button: 0, isPrimary: true });
+  fireEvent.click(element, { button: 0 });
+}
+
+const dockButton = (name: string) =>
+  within(screen.getByRole("navigation", { name: "Map sections" })).getByRole("button", { name });
+
+describe("one bottom pane at a time: the Trips pane and the Dock panes (real TripMap)", { timeout: 20_000 }, () => {
+  beforeEach(() => {
+    server.current = current(AUTUMN);
+    server.cards = [card(AUTUMN, { isCurrent: true }), card(SUMMER)];
+  });
+
+  it("opening Journal closes the Trips pane", async () => {
+    await startApp("traveler");
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips" }));
+    await screen.findByRole("dialog", { name: "Trips" });
+
+    tapWithoutMouseEvents(dockButton("Journal"));
+    await settle();
+    expect(await screen.findByRole("dialog", { name: "Journal" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trips" })).toBeNull());
+    expect(screen.getByRole("button", { name: "TripCast: Trips" })).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("opening the Trips pane closes Journal", async () => {
+    await startApp("traveler");
+    await userEvent.click(dockButton("Journal"));
+    await screen.findByRole("dialog", { name: "Journal" });
+
+    tapWithoutMouseEvents(screen.getByRole("button", { name: "TripCast: Trips" }));
+    await settle();
+    expect(await screen.findByRole("dialog", { name: "Trips" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Journal" })).toBeNull());
+    expect(dockButton("Journal")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("with ordinary clicks the same holds both ways", async () => {
+    await startApp("traveler");
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips" }));
+    await screen.findByRole("dialog", { name: "Trips" });
+    await userEvent.click(dockButton("Journal"));
+    await settle();
+    expect(await screen.findByRole("dialog", { name: "Journal" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Trips" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips" }));
+    await settle();
+    expect(await screen.findByRole("dialog", { name: "Trips" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Journal" })).toBeNull());
   });
 });

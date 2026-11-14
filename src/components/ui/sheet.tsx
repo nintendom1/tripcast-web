@@ -19,25 +19,44 @@ function matchesSelector(event: Event, selector: string) {
   );
 }
 
-const Sheet = ({ onOpenChange, ...props }: SheetProps) => (
-  <Dialog.Root
-    onOpenChange={(open, eventDetails) => {
-      if (
-        !open &&
-        (eventDetails.reason === "outside-press" || eventDetails.reason === "focus-out") &&
-        (matchesSelector(eventDetails.event, DEBUG_CHIP_SELECTOR) ||
-          matchesSelector(eventDetails.event, REACTION_TRAY_SELECTOR) ||
-          matchesSelector(eventDetails.event, NESTED_DIALOG_SELECTOR))
-      ) {
-        eventDetails.cancel();
-        return;
-      }
+/**
+ * The event happened in a nested dialog that is not this sheet's own. A `SheetContent` with `nestedDialog` stamps
+ * its popup and backdrop with its sheet's id, so a press on its own backdrop still closes it.
+ */
+function inOtherNestedDialog(event: Event, sheetId: string) {
+  const relatedTarget = event instanceof FocusEvent ? event.relatedTarget : null;
+  return [event.target, relatedTarget].some((node) => {
+    const nested = node instanceof Element ? node.closest(NESTED_DIALOG_SELECTOR) : null;
+    return nested !== null && nested.getAttribute("data-sheet-nested-dialog") !== sheetId;
+  });
+}
 
-      onOpenChange?.(open, eventDetails);
-    }}
-    {...props}
-  />
-);
+const SheetIdContext = React.createContext<string | undefined>(undefined);
+
+const Sheet = ({ onOpenChange, ...props }: SheetProps) => {
+  const sheetId = React.useId();
+  return (
+    <SheetIdContext.Provider value={sheetId}>
+      <Dialog.Root
+        onOpenChange={(open, eventDetails) => {
+          if (
+            !open &&
+            (eventDetails.reason === "outside-press" || eventDetails.reason === "focus-out") &&
+            (matchesSelector(eventDetails.event, DEBUG_CHIP_SELECTOR) ||
+              matchesSelector(eventDetails.event, REACTION_TRAY_SELECTOR) ||
+              inOtherNestedDialog(eventDetails.event, sheetId))
+          ) {
+            eventDetails.cancel();
+            return;
+          }
+
+          onOpenChange?.(open, eventDetails);
+        }}
+        {...props}
+      />
+    </SheetIdContext.Provider>
+  );
+};
 
 const SheetTrigger = Dialog.Trigger;
 const SheetClose = Dialog.Close;
@@ -68,33 +87,47 @@ interface SheetContentProps extends React.ComponentPropsWithoutRef<typeof Dialog
    * Use on all bottom sheets with modal={false} showBackdrop={false}.
    */
   mapAdjacent?: boolean;
+  /**
+   * A dialog opened over a non-modal sheet it does not belong to (beside it in the React tree): marks the popup AND
+   * its backdrop with `data-sheet-nested-dialog`, so a press on either does not also close that sheet. The mark
+   * carries this sheet's id, so a press on its own backdrop still closes this one.
+   */
+  nestedDialog?: boolean;
 }
 
 const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
-  ({ side = "right", showBackdrop = true, mapAdjacent = false, className, children, ...props }, ref) => (
-    <SheetPortal>
-      {showBackdrop ? <SheetBackdrop /> : null}
-      <Dialog.Popup
-        ref={ref}
-        className={cn(
-          "fixed z-50 flex flex-col bg-background shadow-xl",
-          mapAdjacent && "z-[10] pb-[100px]",
-          side === "bottom" &&
-            "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t transition-transform duration-[340ms] ease-[cubic-bezier(0.22,0.9,0.3,1.05)] data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full",
-          side === "top" &&
-            "inset-x-0 top-0 max-h-[85dvh] rounded-b-xl border-b transition-transform duration-200 ease-out data-[ending-style]:-translate-y-full data-[starting-style]:-translate-y-full",
-          side === "left" &&
-            "inset-y-0 left-0 h-full w-3/4 max-w-sm border-r transition-transform duration-200 ease-out data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full",
-          side === "right" &&
-            "inset-y-0 right-0 h-full w-3/4 max-w-sm border-l transition-transform duration-200 ease-out data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full",
-          className,
-        )}
-        {...props}
-      >
-        {children}
-      </Dialog.Popup>
-    </SheetPortal>
-  ),
+  (
+    { side = "right", showBackdrop = true, mapAdjacent = false, nestedDialog = false, className, children, ...props },
+    ref,
+  ) => {
+    const sheetId = React.useContext(SheetIdContext);
+    const nestedMark = nestedDialog ? (sheetId ?? "") : undefined;
+    return (
+      <SheetPortal>
+        {showBackdrop ? <SheetBackdrop data-sheet-nested-dialog={nestedMark} /> : null}
+        <Dialog.Popup
+          ref={ref}
+          data-sheet-nested-dialog={nestedMark}
+          className={cn(
+            "fixed z-50 flex flex-col bg-background shadow-xl",
+            mapAdjacent && "z-[10] pb-[100px]",
+            side === "bottom" &&
+              "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-xl border-t transition-transform duration-[340ms] ease-[cubic-bezier(0.22,0.9,0.3,1.05)] data-[ending-style]:translate-y-full data-[starting-style]:translate-y-full",
+            side === "top" &&
+              "inset-x-0 top-0 max-h-[85dvh] rounded-b-xl border-b transition-transform duration-200 ease-out data-[ending-style]:-translate-y-full data-[starting-style]:-translate-y-full",
+            side === "left" &&
+              "inset-y-0 left-0 h-full w-3/4 max-w-sm border-r transition-transform duration-200 ease-out data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full",
+            side === "right" &&
+              "inset-y-0 right-0 h-full w-3/4 max-w-sm border-l transition-transform duration-200 ease-out data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full",
+            className,
+          )}
+          {...props}
+        >
+          {children}
+        </Dialog.Popup>
+      </SheetPortal>
+    );
+  },
 );
 SheetContent.displayName = "SheetContent";
 

@@ -8,7 +8,7 @@ import type { TravelerTripsStatus } from "./useTravelerTrips";
 export type TripListProps = {
   cards: TripCard[];
   status: TravelerTripsStatus;
-  /** Whether a search or lifecycle filter is applied (picks the empty-state wording). */
+  /** Whether a lifecycle filter is applied (picks the empty-state wording). */
   filtered: boolean;
   highlightedId: string | null;
   viewingTripId: string | null;
@@ -61,7 +61,7 @@ export function TripList({
   if (cards.length === 0) {
     return (
       <p className="py-6 text-center text-sm text-[var(--ink-3)]">
-        {filtered ? "No trips match your search." : "No trips yet."}
+        {filtered ? "No trips with this status." : "No trips yet."}
       </p>
     );
   }
@@ -69,18 +69,26 @@ export function TripList({
   return (
     <div className="grid gap-2">
       <ul aria-label="Trips" className="grid gap-2" onKeyDown={moveRowFocus}>
-        {cards.map((card) => (
-          <Fragment key={card.tripId}>
-            <TripListRow
-              card={card}
-              highlighted={card.tripId === highlightedId}
-              viewing={card.tripId === viewingTripId}
-              onHighlight={onHighlight}
-              menu={renderCardMenu?.(card)}
-            />
-            {card.tripId === highlightedId && renderDetail ? <li className="list-none">{renderDetail(card)}</li> : null}
-          </Fragment>
-        ))}
+        {cards.map((card) => {
+          const detailId = card.tripId === highlightedId && renderDetail ? `trip-detail-${card.tripId}` : undefined;
+          return (
+            <Fragment key={card.tripId}>
+              <TripListRow
+                card={card}
+                highlighted={card.tripId === highlightedId}
+                viewing={card.tripId === viewingTripId}
+                onHighlight={onHighlight}
+                menu={renderCardMenu?.(card)}
+                detailId={detailId}
+              />
+              {detailId && renderDetail ? (
+                <li id={detailId} className="list-none">
+                  {renderDetail(card)}
+                </li>
+              ) : null}
+            </Fragment>
+          );
+        })}
       </ul>
       {status === "ready" || status === "loading-more" ? (
         <Button

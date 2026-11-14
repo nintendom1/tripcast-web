@@ -22,6 +22,8 @@ export type TripListRowProps = {
   onHighlight: (card: TripCard) => void;
   /** Edit and lifecycle menu supplied by the caller; rendered beside the card, never inside its button. */
   menu?: ReactNode;
+  /** Id of the card's detail panel while it is shown: the card's button controls it. */
+  detailId?: string;
 };
 
 /**
@@ -83,7 +85,7 @@ function RetryDelete({ card }: { card: TripCard }) {
  * opened, switched to, edited or deleted) and shows "Deleting…" or "Upgrading…", or "Delete did not finish" with a
  * Retry when the server says the delete stopped.
  */
-export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: TripListRowProps) {
+export function TripListRow({ card, highlighted, viewing, onHighlight, menu, detailId }: TripListRowProps) {
   const inertLabel = inertCardLabel(card);
   const inert = inertLabel !== null;
   const deleteFailed = isDeleteFailed(card);
@@ -115,6 +117,7 @@ export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: T
           type="button"
           data-trip-row=""
           aria-pressed={highlighted}
+          aria-controls={detailId}
           onClick={() => onHighlight(card)}
           className="grid min-w-0 flex-1 gap-0.5 rounded-xl px-3 py-2 text-left"
         >

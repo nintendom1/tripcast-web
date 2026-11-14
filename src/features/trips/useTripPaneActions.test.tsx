@@ -6,7 +6,7 @@ import { LIVE_SHARING_PREFERENCE_KEY } from "@/lib/liveSharingPreference";
 import type { TripCard, TripSwitchImpact } from "../../convex/tripcastApi";
 import { ThemeProvider } from "../../providers/ThemeProvider";
 import { TripContextTestProvider } from "../../providers/TripContextProvider";
-import { TripChip, type TripChipProps } from "./TripChip";
+import { TripsPaneToggle, type TripsPaneToggleProps } from "./TripsPaneToggle";
 import { getSwitchPending, setSwitchPending, STILL_WAITING_MESSAGE, SWITCH_SLOW_MS } from "./tripSwitchState";
 
 const server = vi.hoisted(() => ({
@@ -56,7 +56,9 @@ const impact: TripSwitchImpact = {
   hasActiveActivity: false,
 };
 
-function setup(chipProps: TripChipProps = {}, userOptions: Parameters<typeof userEvent.setup>[0] = {}) {
+type PaneActionProps = Omit<TripsPaneToggleProps, "logoClassName" | "logo">;
+
+function setup(paneProps: PaneActionProps = {}, userOptions: Parameters<typeof userEvent.setup>[0] = {}) {
   const returnToCurrent = vi.fn();
   render(
     <ThemeProvider>
@@ -71,7 +73,7 @@ function setup(chipProps: TripChipProps = {}, userOptions: Parameters<typeof use
           openPrivately: vi.fn(),
         }}
       >
-        <TripChip {...chipProps} />
+        <TripsPaneToggle logoClassName="flex" logo="TripCast" {...paneProps} />
       </TripContextTestProvider>
     </ThemeProvider>,
   );
@@ -79,7 +81,7 @@ function setup(chipProps: TripChipProps = {}, userOptions: Parameters<typeof use
 }
 
 async function openPane(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /·/ }));
+  await user.click(screen.getByRole("button", { name: /^TripCast: Trips/ }));
   await screen.findByRole("dialog", { name: "Trips" });
 }
 
@@ -90,7 +92,7 @@ async function startSwitch(user: ReturnType<typeof userEvent.setup>) {
   await screen.findByRole("dialog", { name: "Show Summer 2026 to Followers?" });
 }
 
-// The chip loads the pane lazily; warm the module so a loaded CI machine does not time the first test out.
+// The toggle loads the pane lazily; warm the module so a loaded CI machine does not time the first test out.
 beforeEach(async () => {
   await import("./TripSwitcherSheet");
   server.cards = [makeCard("autumn", { title: "Autumn 2026", isCurrent: true }), makeCard("summer", { title: "Summer 2026" })];
@@ -106,16 +108,17 @@ afterEach(() => {
   Object.defineProperty(window.navigator, "onLine", { value: true, configurable: true });
 });
 
-describe("useTripPaneActions through TripChip", () => {
-  it("shows Switching… while a switch awaits the server, and the chip still opens the pane", async () => {
+describe("useTripPaneActions through TripsPaneToggle", () => {
+  it("shows Switching… while a switch awaits the server, and the logo still opens the pane", async () => {
     const { user } = setup();
-    expect(screen.getByRole("button", { name: "Current · Autumn 2026" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "TripCast: Trips" })).toBeEnabled();
     act(() => setSwitchPending(true));
-    const chip = screen.getByRole("button", { name: "Switching…" });
-    expect(chip).toBeEnabled();
-    expect(chip).toHaveTextContent("Switching…");
-    await user.click(chip);
-    await screen.findByRole("dialog", { name: "Trips" });
+    const logo = screen.getByRole("button", { name: "TripCast: Trips, switching…" });
+    expect(logo).toBeEnabled();
+    await user.click(logo);
+    const pane = await screen.findByRole("dialog", { name: "Trips" });
+    // The pane's "You are viewing" line says so.
+    expect(within(pane).getByRole("status")).toHaveTextContent("Switching…");
     // The pane is fully usable; only CONFIRMING another switch is disabled (in its dialog).
     await user.click(screen.getByRole("button", { name: /^Summer 2026/ }));
     expect(screen.getByRole("button", { name: "Set as shared current" })).toBeEnabled();
@@ -137,8 +140,8 @@ describe("useTripPaneActions through TripChip", () => {
     expect(server.calls).toEqual([
       { name: "trips:setCurrentTrip", args: { token: "tok", tripId: "summer", expectedRevision: 5 } },
     ]);
-    // The pane is modal, so the chip behind it is hidden from the accessibility tree.
-    expect(screen.getByRole("button", { name: "Switching…", hidden: true })).toBeEnabled();
+    // The confirmation is modal, so the logo behind it is hidden from the accessibility tree.
+    expect(screen.getByRole("button", { name: "TripCast: Trips, switching…", hidden: true })).toBeEnabled();
     expect(returnToCurrent).not.toHaveBeenCalled();
     expect(screen.queryByText("Followers now see Summer 2026.")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "Trips", hidden: true })).toBeInTheDocument();
@@ -148,7 +151,7 @@ describe("useTripPaneActions through TripChip", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     // Announcing is `useTripChangeAnnouncer`'s job (see web2Integration.test.tsx); the dialog says nothing.
     expect(screen.queryByText(/Followers now see/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /·/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "TripCast: Trips" })).toBeEnabled();
   });
 
   it("switch, live sharing on: the dialog posts no notice and leaves the preference alone", async () => {
@@ -162,7 +165,7 @@ describe("useTripPaneActions through TripChip", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("a failed switch keeps the pane open and the chip usable", async () => {
+  it("a failed switch keeps the pane open and the logo usable", async () => {
     server.impl["trips:setCurrentTrip"] = () => Promise.reject(new Error("offline blip"));
     const { user, returnToCurrent } = setup();
     await startSwitch(user);
@@ -257,7 +260,7 @@ describe("a switch the Traveler walked away from", () => {
     await slowCancel(user);
     expect(screen.getByText("This switch may still complete.")).toBeInTheDocument();
     expect(getSwitchPending()).toBe(true);
-    expect(screen.getByRole("button", { name: "Switching…", hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "TripCast: Trips, switching…", hidden: true })).toBeInTheDocument();
   });
 
   it("A's late answer after Cancel leaves trip C's dialog open, clears only A's pending state and tells the Traveler", async () => {
@@ -323,10 +326,11 @@ describe("a switch the Traveler walked away from", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: /Show Summer/ })).not.toBeInTheDocument());
 
-    // The pane still works: it says so, searches, and its create and card menus open.
+    // The pane still works: it says so, filters, and its create and card menus open.
     const pane = screen.getByRole("dialog", { name: "Trips" });
     expect(within(pane).getByText(STILL_WAITING_MESSAGE)).toBeInTheDocument();
-    await user.type(within(pane).getByRole("searchbox", { name: "Search trips" }), "x");
+    await user.click(within(pane).getByRole("button", { name: "In progress" }));
+    expect(within(pane).getByRole("button", { name: "In progress" })).toHaveAttribute("aria-pressed", "true");
     await user.click(within(pane).getByRole("button", { name: "Actions for Summer 2026" }));
     expect(screen.getByRole("menuitem", { name: "Edit" })).toBeEnabled();
     expect(getSwitchPending()).toBe(true);

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode, type RefObject } from "react";
+import { useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,12 +6,24 @@ import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetHeader, SheetTit
 import { useOnlineStatus } from "../../components/resilience/useOnlineStatus";
 import { tripcastApi, type TripCard, type TripDetailsPatch } from "../../convex/tripcastApi";
 import { useTripMutation } from "../../convex/useTrip";
+import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 import { useTripContext } from "../../providers/TripContextProvider";
 import { tripErrorInfo } from "./tripSwitchState";
 
 // Shared by the create and edit sheets. They live here, not in CreateTripSheet, because that sheet is a lazy chunk
 // (it lists trips) and this file must not pull its subscription into the header.
 export const TRIP_TITLE_MAX = 80;
+
+/**
+ * The create and edit sheets: full width from the bottom, over the Trips pane, below the status bar. (`cn` keeps the
+ * last `max-h`, so this replaces the bottom sheet's 85dvh.)
+ */
+export const TRIP_FORM_SHEET_CLASS = "max-h-[calc(100dvh-env(safe-area-inset-top)-1rem)]";
+
+/** The form body's bottom padding: clear of the home indicator, plus the keyboard so Save can scroll above it. */
+export function tripFormBodyStyle(keyboardInset: number): CSSProperties {
+  return { paddingBottom: `calc(max(1rem, env(safe-area-inset-bottom)) + ${keyboardInset}px)` };
+}
 
 export type TripDetailsValues = { title: string; destinations: string; start: string; end: string };
 export type TripDetailsErrors = { title?: string; dates?: string };
@@ -50,12 +62,11 @@ type TripDetailsFieldsProps = {
   values: TripDetailsValues;
   errors: TripDetailsErrors | null;
   onChange: (patch: Partial<TripDetailsValues>) => void;
-  titleRef?: RefObject<HTMLInputElement | null>;
   children?: ReactNode;
 };
 
 /** Title, destinations and planned dates, shared by the create and edit sheets. */
-export function TripDetailsFields({ idPrefix, values, errors, onChange, titleRef, children }: TripDetailsFieldsProps) {
+export function TripDetailsFields({ idPrefix, values, errors, onChange, children }: TripDetailsFieldsProps) {
   const label = "text-xs font-semibold text-[var(--ink-2)]";
   return (
     <div className="grid gap-3">
@@ -65,7 +76,6 @@ export function TripDetailsFields({ idPrefix, values, errors, onChange, titleRef
         </label>
         <Input
           id={`${idPrefix}-title`}
-          ref={titleRef}
           value={values.title}
           required
           aria-invalid={errors?.title ? true : undefined}
@@ -88,25 +98,28 @@ export function TripDetailsFields({ idPrefix, values, errors, onChange, titleRef
           onChange={(e) => onChange({ destinations: e.target.value })}
         />
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div className="grid gap-1">
+      {/* Stacked on a phone: two date fields side by side overflow a narrow screen. */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-2">
+        <div className="grid min-w-0 gap-1">
           <label htmlFor={`${idPrefix}-start`} className={label}>
             Planned start
           </label>
           <Input
             id={`${idPrefix}-start`}
             type="date"
+            className="block w-full min-w-0 max-w-full"
             value={values.start}
             onChange={(e) => onChange({ start: e.target.value })}
           />
         </div>
-        <div className="grid gap-1">
+        <div className="grid min-w-0 gap-1">
           <label htmlFor={`${idPrefix}-end`} className={label}>
             Planned end
           </label>
           <Input
             id={`${idPrefix}-end`}
             type="date"
+            className="block w-full min-w-0 max-w-full"
             value={values.end}
             aria-invalid={errors?.dates ? true : undefined}
             onChange={(e) => onChange({ end: e.target.value })}
@@ -146,7 +159,8 @@ export function EditTripSheet({ card, onClose, returnFocusRef }: EditTripSheetPr
   const { token } = useTripContext();
   const updateTrip = useTripMutation(tripcastApi.trips.updateTrip);
   const online = useOnlineStatus();
-  const titleRef = useRef<HTMLInputElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const keyboardInset = useKeyboardInset();
   const [values, setValues] = useState(() => valuesOf(card));
   // What the form started from (or was last reloaded to): only fields that differ from it are sent.
   const [baseline, setBaseline] = useState(() => valuesOf(card));
@@ -197,20 +211,22 @@ export function EditTripSheet({ card, onClose, returnFocusRef }: EditTripSheetPr
 
   return (
     <Sheet open onOpenChange={(open) => (open || saving ? undefined : onClose())}>
+      {/* Focus lands on the sheet, not a field, so no keyboard pops up on open. */}
       <SheetContent
-        side="right"
-        showBackdrop={false}
-        data-sheet-nested-dialog=""
-        initialFocus={titleRef}
+        ref={sheetRef}
+        side="bottom"
+        nestedDialog
+        initialFocus={sheetRef}
         finalFocus={returnFocusRef}
+        className={TRIP_FORM_SHEET_CLASS}
       >
         <SheetHeader className="flex-row items-center justify-between">
           <SheetTitle>Edit {card.title}</SheetTitle>
           <SheetCloseButton />
         </SheetHeader>
-        <SheetBody>
+        <SheetBody style={tripFormBodyStyle(keyboardInset)}>
           <form
-            className="grid gap-4"
+            className="mx-auto grid w-full max-w-md gap-4"
             noValidate
             onSubmit={(e) => {
               e.preventDefault();
@@ -221,7 +237,6 @@ export function EditTripSheet({ card, onClose, returnFocusRef }: EditTripSheetPr
               idPrefix={`edit-trip-${card.tripId}`}
               values={values}
               errors={errors}
-              titleRef={titleRef}
               onChange={(patch) => setValues((prev) => ({ ...prev, ...patch }))}
             />
             {!online ? <p className="text-xs text-[var(--ink-3)]">You're offline.</p> : null}

@@ -97,15 +97,34 @@ beforeEach(() => {
 });
 
 describe("EditTripSheet", () => {
-  it("opens prefilled with the card's values, titled with the trip", async () => {
+  it("opens prefilled with the card's values, titled with the trip, with the sheet focused (no keyboard)", async () => {
     await setup();
     expect(screen.getByRole("dialog")).toHaveAccessibleName("Edit Summer 2026");
-    await waitFor(() => expect(screen.getByRole("textbox", { name: "Title" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveFocus());
+    expect(screen.getByRole("textbox", { name: "Title" })).not.toHaveFocus();
     expect(screen.getByRole("textbox", { name: "Title" })).toHaveValue("Summer 2026");
     expect(screen.getByRole("textbox", { name: "Destinations" })).toHaveValue("Lisbon");
     expect(screen.getByLabelText("Planned start")).toHaveValue("2026-06-01");
     expect(screen.getByLabelText("Planned end")).toHaveValue("");
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("is a full-width bottom sheet below the status bar with the planned dates stacked on a phone", async () => {
+    await setup();
+    const sheet = screen.getByRole("dialog");
+    expect(sheet).toHaveClass("inset-x-0", "bottom-0", "max-h-[calc(100dvh-env(safe-area-inset-top)-1rem)]");
+    expect(sheet).toHaveAttribute("data-sheet-nested-dialog");
+    const start = screen.getByLabelText("Planned start");
+    const end = screen.getByLabelText("Planned end");
+    // One column below `sm`, two from `sm` up; neither cell nor input can push past the sheet's width.
+    const grid = start.parentElement?.parentElement;
+    expect(grid).toBe(end.parentElement?.parentElement);
+    expect(grid).toHaveClass("grid", "grid-cols-1", "sm:grid-cols-2");
+    for (const input of [start, end]) {
+      expect(input.parentElement).toHaveClass("min-w-0");
+      expect(input).toHaveClass("block", "w-full", "min-w-0", "max-w-full");
+      expect(input).not.toHaveClass("flex");
+    }
   });
 
   it("validates the title and the dates before calling", async () => {

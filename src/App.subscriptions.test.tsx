@@ -139,7 +139,7 @@ async function serverChanged() {
 
 
 async function openPrivatelyFromPane(trip: { title: string }) {
-  await userEvent.click(await screen.findByRole("button", { name: /^Current · / }));
+  await userEvent.click(await screen.findByRole("button", { name: /^TripCast: Trips/ }));
   await userEvent.click(await screen.findByRole("button", { name: new RegExp(`^${trip.title}`) }));
   await userEvent.click(await screen.findByRole("button", { name: "Open privately" }));
   await settle();
@@ -169,7 +169,7 @@ describe("trip pane subscriptions", { timeout: 20_000 }, () => {
   it("moving the highlight across 10 cards keeps the count; previews are one-shot; closing leaves no pane subscription", async () => {
     await startApp("traveler");
     const before = shapes();
-    await userEvent.click(screen.getByRole("button", { name: "Current · Autumn 2026" }));
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips" }));
     await settle();
     const open = shapes();
     // The pane holds one list subscription (the catalog), nothing per card.
@@ -200,7 +200,7 @@ describe("map subscriptions in a private view", { timeout: 20_000 }, () => {
   it("a private view holds the map's subscriptions one for one, and Return leaves none for the viewed trip", async () => {
     await startApp("traveler");
     const following = shapes();
-    await userEvent.click(screen.getByRole("button", { name: "Current · Autumn 2026" }));
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips" }));
     await userEvent.click(await screen.findByRole("button", { name: /^Summer 2026/ }));
     await userEvent.click(await screen.findByRole("button", { name: "Open privately" }));
     await settle();
