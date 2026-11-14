@@ -111,4 +111,17 @@ describe("useFollowerCutoffPreview 'Show all' override per trip", () => {
     act(() => hook.result.current.setShowAll(true));
     expect(sessionStorage.getItem("tripcast.followerCutoffShowAll")).toBe("true");
   });
+
+  it("a pinned Legacy Trip viewed privately (another trip shared) keeps today's key, from the viewed trip's isLegacy", () => {
+    const hook = renderHook(() => useFollowerCutoffPreview("traveler", "tok", "legacy"), {
+      wrapper: wrap({
+        ...viewing("legacy"),
+        viewingMode: "private",
+        viewingTrip: { tripId: "legacy", title: "My Trip", isLegacy: true },
+      }),
+    });
+    act(() => hook.result.current.setShowAll(true));
+    expect(sessionStorage.getItem("tripcast.followerCutoffShowAll")).toBe("true");
+    expect(sessionStorage.getItem("tripcast.followerCutoffShowAll.legacy")).toBeNull();
+  });
 });

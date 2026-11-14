@@ -11,7 +11,7 @@ import {
   type JournalEvent,
   type LiveTrailSample,
 } from "../../convex/tripcastApi";
-import { TripContextTestProvider } from "../../providers/TripContextProvider";
+import { TripContextProvider, TripContextTestProvider, useTripContext } from "../../providers/TripContextProvider";
 import type { TripContextValue } from "../trips/tripTypes";
 import { setNativePublishingTags } from "../../native/nativePublishingSignal";
 import { LivePublishingBridge } from "../../native/LivePublishingBridge";
@@ -852,6 +852,42 @@ describe("TripMap trip-keyed client state", () => {
     await waitFor(() => expect(ids(lastPath()[6])).toEqual(["legacy-trail"]));
     await userEvent.click(screen.getByRole("button", { name: "Replay" }));
     expect(await continueButton()).toBeEnabled();
+  });
+
+  it("the Legacy Trip viewed privately after another trip became shared keeps today's trail cache (real provider)", async () => {
+    cache(null).replaceReplay([sample("legacy-trail", 47.6, -122.3, 500)]);
+    cache(LEGACY.tripId).replaceReplay([sample("keyed-trail", 47.6, -122.3, 600)]);
+    cache(AUTUMN.tripId).replaceReplay([sample("autumn-trail", 47.6, -122.3, 700)]);
+    cache(SUMMER.tripId).replaceReplay([sample("summer-trail", 40.7, -74.0, 800)]);
+    let shared: CurrentTrip = LEGACY;
+    const answer = useQueryMock.getMockImplementation()!;
+    useQueryMock.mockImplementation((query, args) =>
+      query === tripcastApi.trips.getCurrentTrip && args !== "skip" ? shared : answer(query, args));
+    let context: ReturnType<typeof useTripContext> | null = null;
+    function Probe() {
+      context = useTripContext();
+      return null;
+    }
+    // A new element per render, so the provider re-renders and reads the new shared trip.
+    const ui = () => (
+      <TripContextProvider token={TOKEN} role="traveler">
+        <Probe />
+        <TripMap token={TOKEN} role="traveler" finaleReplayActive={false} />
+      </TripContextProvider>
+    );
+    const view = rtlRender(ui());
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["legacy-trail"]));
+    shared = AUTUMN;
+    view.rerender(ui());
+    await waitFor(() => expect(context?.viewingTripId).toBe(AUTUMN.tripId));
+    // Only the Legacy Trip keeps today's key: the new shared trip and another private trip use their own.
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["autumn-trail"]));
+    act(() => context!.openPrivately({ tripId: LEGACY.tripId, title: LEGACY.title }));
+    await waitFor(() => expect(lastPath()[1]).toEqual([]));
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["legacy-trail"]));
+    expect(ids(lastPath()[6])).not.toContain("keyed-trail");
+    act(() => context!.openPrivately(SUMMER));
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(["summer-trail"]));
   });
 
   it("keeps two trips' trail caches and replay resume points apart", async () => {

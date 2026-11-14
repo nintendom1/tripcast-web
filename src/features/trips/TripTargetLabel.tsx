@@ -1,4 +1,4 @@
-import { useTripContext } from "../../providers/TripContextProvider";
+import { PrivateTripTargetLabel } from "./privateTripView";
 import type { TripTarget } from "./tripTypes";
 
 /** Props of `TripTargetLabel`; final. */
@@ -10,18 +10,11 @@ export type TripTargetLabelProps = {
 
 /**
  * Names the trip an editing sheet writes to ("Summer 2026"), so a sheet opened before a switch still shows its
- * captured target. Renders the target's title only while `multiTripEnabled` and this device views privately;
- * nothing otherwise.
+ * captured target. Same rule and markup as `PrivateTripTargetLabel` (one implementation): shown for a Traveler with
+ * multi-trip on while the target is not the shared current trip, compared by trip id (a form opened in a private view
+ * still names its trip after Return to current; a viewed trip that became the shared one is no longer named). Nothing
+ * otherwise, including for Followers and with multi-trip off.
  */
 export function TripTargetLabel({ target, className }: TripTargetLabelProps) {
-  const { multiTripEnabled, viewingMode } = useTripContext();
-  if (!multiTripEnabled || viewingMode !== "private" || !target) return null;
-  return (
-    <p
-      data-testid="trip-target-label"
-      className={["text-xs text-[var(--meadow-ink-soft)]", className].filter(Boolean).join(" ")}
-    >
-      {target.title}
-    </p>
-  );
+  return <PrivateTripTargetLabel target={target} className={className} />;
 }

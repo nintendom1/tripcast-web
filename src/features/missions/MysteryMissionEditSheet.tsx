@@ -13,6 +13,7 @@ import {
 } from "../../components/ui/sheet";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import type { TripTarget } from "../trips/tripTypes";
 import type { MysteryMissionExportRow } from "../../convex/tripcastApi";
 import { useMusicSafe } from "../../providers/MusicProvider";
 
@@ -24,6 +25,12 @@ type Props = {
   mysteryMissionId: string | null;
   onOpenChange: (open: boolean) => void;
   onSaved?: () => void;
+  /**
+   * The trip the list this row came from was opened on (the Mystery Missions sheet's captured trip): when given, the
+   * read and the write name it, so a row listed from one trip is edited there even if the view moved meanwhile. When
+   * omitted, the trip viewed when this sheet opens. `null` (multi-trip off) sends today's requests.
+   */
+  tripTarget?: TripTarget | null;
 };
 
 type FormState = {
@@ -161,16 +168,19 @@ export default function MysteryMissionEditSheet({
   mysteryMissionId,
   onOpenChange,
   onSaved,
+  tripTarget,
 }: Props) {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState(false);
   const music = useMusicSafe();
+  const listTrip = tripTarget ? { tripId: tripTarget.tripId } : {};
   const mission = useTripQuery(
     tripcastApi.mysteryMissions.travelerGetMysteryMissionForEdit,
-    open && mysteryMissionId ? { token, mysteryMissionId } : "skip",
+    open && mysteryMissionId ? { token, mysteryMissionId, ...listTrip } : "skip",
   ) as MysteryMissionExportRow | null | undefined;
   const patchMission = useTripMutation(tripcastApi.mysteryMissions.travelerPatchMysteryMission);
+  const writeTarget = tripTarget ?? patchMission.target;
   // This sheet stays mounted while closed, so pin the write to the trip viewed when it opens (not when it mounted).
   const retargetPatch = patchMission.recapture;
   useEffect(() => {
@@ -220,6 +230,7 @@ export default function MysteryMissionEditSheet({
         transitFriendly: nullableBoolean(form.transitFriendly),
         requiresTicket: nullableBoolean(form.requiresTicket),
         timeSensitive: nullableBoolean(form.timeSensitive),
+        ...listTrip,
       });
       music.sfx("success");
       onSaved?.();
@@ -241,7 +252,7 @@ export default function MysteryMissionEditSheet({
           <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
             Edit Mystery Mission
           </SheetTitle>
-          <PrivateTripTargetLabel target={patchMission.target} />
+          <PrivateTripTargetLabel target={writeTarget} />
           <SheetCloseButton aria-label="Close Mystery Mission editor" />
         </div>
         <SheetBody className="grid gap-4 px-5 py-4 text-[var(--ink-1)]">

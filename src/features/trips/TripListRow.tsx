@@ -32,6 +32,16 @@ export function isDeleteFailed(card: TripCard): boolean {
   return card.deletingAt !== undefined && (card as TripCard & { deleteFailed?: boolean }).deleteFailed === true;
 }
 
+/**
+ * A card that cannot be opened, switched to, edited or deleted, with the word that says why: "Deleting…" while its
+ * delete runs, "Upgrading…" while an operator rewrites its rows (`upgradingAt`); `null` for a usable card.
+ */
+export function inertCardLabel(card: TripCard): string | null {
+  if (card.deletingAt !== undefined) return "Deleting…";
+  if (card.upgradingAt !== undefined) return "Upgrading…";
+  return null;
+}
+
 /** Calls `deleteTrip` again for `card`'s trip with the same arguments the delete dialog sends. */
 function RetryDelete({ card }: { card: TripCard }) {
   const deleteTripCall = useDeleteTripCall();
@@ -69,11 +79,13 @@ function RetryDelete({ card }: { card: TripCard }) {
 }
 
 /**
- * One thin catalog card. Tapping only highlights it; a deleting trip is inert (it cannot be highlighted, opened,
- * switched to or edited) and shows "Deleting…", or "Delete did not finish" with a Retry when the server says it stopped.
+ * One thin catalog card. Tapping only highlights it; a deleting or upgrading trip is inert (it cannot be highlighted,
+ * opened, switched to, edited or deleted) and shows "Deleting…" or "Upgrading…", or "Delete did not finish" with a
+ * Retry when the server says the delete stopped.
  */
 export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: TripListRowProps) {
-  const deleting = card.deletingAt !== undefined;
+  const inertLabel = inertCardLabel(card);
+  const inert = inertLabel !== null;
   const deleteFailed = isDeleteFailed(card);
   const body = (
     <>
@@ -83,7 +95,7 @@ export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: T
         {viewing ? <Tag>Viewing</Tag> : null}
       </span>
       <span className="flex items-center gap-2 text-xs text-[var(--ink-3)]">
-        <span>{deleteFailed ? "Delete did not finish" : deleting ? "Deleting…" : LIFECYCLE_LABELS[card.lifecycle]}</span>
+        <span>{deleteFailed ? "Delete did not finish" : (inertLabel ?? LIFECYCLE_LABELS[card.lifecycle])}</span>
         {card.destinationSummary ? <span className="truncate">{card.destinationSummary}</span> : null}
       </span>
     </>
@@ -96,7 +108,7 @@ export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: T
         highlighted && "border-[var(--ink-1)]",
       )}
     >
-      {deleting ? (
+      {inert ? (
         <div className="grid min-w-0 flex-1 gap-0.5 px-3 py-2 opacity-60">{body}</div>
       ) : (
         <button
@@ -110,7 +122,7 @@ export function TripListRow({ card, highlighted, viewing, onHighlight, menu }: T
         </button>
       )}
       {deleteFailed ? <RetryDelete card={card} /> : null}
-      {deleting ? null : menu}
+      {inert ? null : menu}
     </li>
   );
 }

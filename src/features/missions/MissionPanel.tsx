@@ -7,6 +7,7 @@ import { LocationPickerField } from "../map/MapPicker";
 import { tripcastApi } from "../../convex/tripcastApi";
 import { PrivateTripTargetLabel } from "../trips/privateTripView";
 import type { Mission, JournalEvent, Role } from "../../convex/tripcastApi";
+import type { TripTarget } from "../trips/tripTypes";
 import { getLocalDateKey } from "../achievements/dateUtils";
 import MissionCard from "./MissionCard";
 import MissionProposalForm from "./MissionProposalForm";
@@ -51,7 +52,8 @@ type Props = {
   onClearPendingMission?: () => void;
   onClearPendingMysteryMission?: () => void;
   onRequestNavigateToMission?: (coord: { lat: number; lon: number }) => void;
-  onCompleteAsStory?: (Mission: Mission) => void;
+  /** `tripTarget`: the trip the mission detail sheet captured, so the Story form saves to it (TripMap reads it). */
+  onCompleteAsStory?: (Mission: Mission & { tripTarget?: TripTarget }) => void;
   onMysteryMissionReveal?: () => void;
   /** When set + the panel is open, navigate straight to the matching mission's
    *  detail view rather than the list. Used by the Complete-as-Story → Back

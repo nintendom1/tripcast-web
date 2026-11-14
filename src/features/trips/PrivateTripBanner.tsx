@@ -1,6 +1,7 @@
 import { Eye } from "lucide-react";
 
 import { setLiveSharingEnabled, useLiveSharingEnabled } from "@/lib/liveSharingPreference";
+import { cn } from "@/lib/utils";
 import { useTripContext } from "../../providers/TripContextProvider";
 
 /**
@@ -8,7 +9,7 @@ import { useTripContext } from "../../providers/TripContextProvider";
  * offers Return to current, and (while live sharing is on) names the live trip with a Stop control. Stop turns the
  * live-sharing preference off and works from any view. Mounted by the app shell.
  */
-export function PrivateTripBanner() {
+export function PrivateTripBanner({ className }: { className?: string } = {}) {
   const {
     role,
     multiTripEnabled,
@@ -30,7 +31,10 @@ export function PrivateTripBanner() {
   return (
     <div
       role="status"
-      className="pointer-events-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-xs text-[var(--ink-1)] shadow-[var(--shadow-card)]"
+      className={cn(
+        "pointer-events-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 text-xs text-[var(--ink-1)] shadow-[var(--shadow-card)]",
+        className,
+      )}
     >
       <Eye className="h-4 w-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">

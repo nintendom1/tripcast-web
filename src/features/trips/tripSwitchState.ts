@@ -60,6 +60,15 @@ export function consumeOwnSwitch(tripId: string): boolean {
   return true;
 }
 
+/**
+ * Forgets the pending switch and the own-switch mark. Called when a session is left (every sign-out path), so the
+ * next account on this device never reads "Switching…" or takes the previous account's switch for its own.
+ */
+export function resetSwitchState(): void {
+  ownSwitchTripId = null;
+  if (request) emit(null);
+}
+
 /** Anonymous set/clear for callers that have no request of their own (tests, resets). */
 export function setSwitchPending(next: boolean): void {
   if (next) {

@@ -1,9 +1,10 @@
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { ErrorBoundary } from "react-error-boundary";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { tripcastApi } from "./convex/tripcastApi";
+import { useTripMutation, useTripQuery } from "./convex/useTrip";
 import {
   clearStoredSession,
   getStoredSession,
@@ -31,8 +32,14 @@ import { CrashOnDemand, disarmCrash } from "./debug/crashTrigger";
 import { log as debugLog } from "./debug/debugLogger";
 import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 import { BackgroundSaveProvider } from "./providers/BackgroundSaveProvider";
-import { TripContextProvider } from "./providers/TripContextProvider";
+import { TripContextProvider, useTripContext } from "./providers/TripContextProvider";
 import { LivePublishingBridge } from "./native/LivePublishingBridge";
+import { clearPublishingIdentity } from "./native/useNativePublishingConfig";
+import { FollowerTripNotice } from "./features/trips/FollowerTripNotice";
+import { PrivateTripBanner } from "./features/trips/PrivateTripBanner";
+import { resetSwitchState } from "./features/trips/tripSwitchState";
+import type { ViewingMode } from "./features/trips/tripTypes";
+import { TripUnavailableBoundary } from "./features/trips/TripUnavailableBoundary";
 import { clearLiveTrailCachesForToken } from "./features/map/liveTrailCache";
 import {
   isAdaptiveLocationAvailable,
@@ -114,6 +121,49 @@ function MapErrorFallback(props: React.ComponentProps<typeof FullScreenErrorFall
         : "Try again, or reload the app if the map keeps failing."}
     />
   );
+}
+
+/**
+ * Leaving a session (every sign-out path, a change of account): forget the publishing identity the bridge remembered
+ * for its token and any switch it had pending, before the token is dropped. The viewing state goes with the trip
+ * context, which unmounts with the session, so the next session starts following the current trip.
+ */
+function leaveSessionTrips(token: string) {
+  clearPublishingIdentity(token);
+  resetSwitchState();
+}
+
+/** What the shell's event handlers need from the trip context, which sits below the shell. */
+type ShellTrip = { viewingTripId: string | null; viewingMode: ViewingMode; returnToCurrent: () => void };
+
+/**
+ * Renders nothing. `ConnectedApp` sits above `TripContextProvider`, so this reports the shared current trip's id up to
+ * it (a Traveler with multi-trip on; otherwise `null`) and keeps `shellTripRef` on the viewed trip for its handlers.
+ */
+function ShellTripBridge({
+  onSharedTrip,
+  shellTripRef,
+}: {
+  onSharedTrip: (tripId: string | null) => void;
+  shellTripRef: React.MutableRefObject<ShellTrip | null>;
+}) {
+  const { role, currentTrip, viewingTripId, viewingMode, returnToCurrent } = useTripContext();
+  const sharedTripId = role === "traveler" ? (currentTrip?.tripId ?? null) : null;
+  useEffect(() => onSharedTrip(sharedTripId), [onSharedTrip, sharedTripId]);
+  useEffect(() => {
+    shellTripRef.current = { viewingTripId, viewingMode, returnToCurrent };
+  });
+  return null;
+}
+
+/**
+ * The ticker bar shows the VIEWED trip's ticker (the trip on the map, which the banner names in a private view): the
+ * same trip the ticker editor in Options reads and writes, so bar and editor always agree.
+ */
+function ConnectedTripTicker({ token, hidden }: { token: string; hidden: boolean }) {
+  const { currentMessage, isPriority, onFunFactComplete } = useTicker(token);
+  if (hidden) return null;
+  return <TripTicker message={currentMessage} isPriority={isPriority} onComplete={onFunFactComplete} />;
 }
 
 function readUsageToastKey(): string | null {
@@ -259,6 +309,19 @@ function ConnectedApp() {
   const lastUsageLevelRef = useRef<UsageLevel | null>(null);
   const resetToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const testToastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The shared current trip, reported by `ShellTripBridge` for this session only (null: Follower, multi-trip off, or
+  // not known yet), and the viewed trip for event handlers.
+  const [sharedTrip, setSharedTrip] = useState<{ token: string; tripId: string } | null>(null);
+  const sharedTripId = sharedTrip !== null && sharedTrip.token === session?.token ? sharedTrip.tripId : undefined;
+  const shellTripRef = useRef<ShellTrip | null>(null);
+  const sessionToken = session?.token;
+  const reportSharedTrip = useCallback(
+    (tripId: string | null) => setSharedTrip(tripId && sessionToken ? { token: sessionToken, tripId } : null),
+    [sessionToken],
+  );
+  // The trip the End Trip sheet ends (the trip on screen when it opened) and the trip the credits are about.
+  const endTripTripIdRef = useRef<string | undefined>(undefined);
+  const [creditsTripId, setCreditsTripId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (gpsSuppressedUntil === null) return;
@@ -369,16 +432,18 @@ function ConnectedApp() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usageReaderToken, uploadsPaused]);
-  const { currentMessage, isPriority, onFunFactComplete } = useTicker(verifiedSessionToken);
-
-  const finaleStatus = useQuery(
+  // The finale and the daily visit are about the SHARED trip (what Followers see), never a trip viewed privately, so
+  // they name it once it is known. Untagged before that, or for a Follower or with multi-trip off, exactly as before
+  // (the server resolves an untagged call to the shared trip). The shell has no trip context: nothing else is added.
+  const sharedTripArgs = sharedTripId ? { tripId: sharedTripId } : {};
+  const finaleStatus = useTripQuery(
     tripcastApi.endTrip.getTripFinaleStatus,
-    verifiedSessionToken ? { token: verifiedSessionToken } : "skip",
+    verifiedSessionToken ? { token: verifiedSessionToken, ...sharedTripArgs } : "skip",
   );
 
   const signOutMutation = useMutation(tripcastApi.auth.signOut);
   const followerSignOutMutation = useMutation(tripcastApi.followers.followerSignOut);
-  const recordDailyVisit = useMutation(tripcastApi.scoring.recordDailyVisit);
+  const recordDailyVisit = useTripMutation(tripcastApi.scoring.recordDailyVisit);
   const stopTravelerLocationSharing = useMutation(
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
@@ -397,6 +462,7 @@ function ConnectedApp() {
       // An expired or revoked session keeps queued points for the next Traveler sign-in.
       stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "preserve" });
       void clearLiveTrailCachesForToken(session.token);
+      leaveSessionTrips(session.token);
       clearStoredSession();
       setSession(null);
       setIsLoginModalOpen(false);
@@ -428,10 +494,12 @@ function ConnectedApp() {
       !isIntroReplayOpen &&
       !isCreateAccountIntroOpen
     ) {
+      setCreditsTripId(sharedTripId);
       setIsCreditsOpen(true);
       setHasAutoOpenedCredits(true);
     }
   }, [
+    sharedTripId,
     finaleStatus?.ended,
     mapLoaded,
     hasAutoOpenedCredits,
@@ -455,16 +523,19 @@ function ConnectedApp() {
           recordDailyVisit({
             token: session.token,
             localDateKey: getLocalDateKey(),
+            ...(sharedTripId ? { tripId: sharedTripId } : {}),
           }),
         )
         .catch(() => {});
     }
-  }, [session, activeSessionCheck, recordDailyVisit]);
+  }, [session, activeSessionCheck, recordDailyVisit, sharedTripId]);
 
   function handleSignIn(
     newSession: StoredSession,
     options?: { playCreateAccountIntro?: boolean },
   ) {
+    // Another account signing in over this one (an invite link) leaves this session's trip state behind.
+    if (session && session.token !== newSession.token) leaveSessionTrips(session.token);
     setStoredSession(newSession);
     setSession(newSession);
     setIsLoginModalOpen(false);
@@ -489,6 +560,7 @@ function ConnectedApp() {
       } catch {
         // best-effort server-side cleanup
       }
+      leaveSessionTrips(session.token);
     }
     clearStoredSession();
     setSession(null);
@@ -502,6 +574,7 @@ function ConnectedApp() {
     setLiveSharingEnabled(false);
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
+    if (session) leaveSessionTrips(session.token);
     clearStoredSession();
     setSession(null);
     setIsLoginModalOpen(false);
@@ -523,12 +596,21 @@ function ConnectedApp() {
     setLiveSharingEnabled(false);
     stopNativeLocationTracking({ clearCredentials: true, pendingSamples: "discard" });
     if (session) void clearLiveTrailCachesForToken(session.token);
+    if (session) leaveSessionTrips(session.token);
     clearStoredSession();
     setSession(null);
     setIsLoginModalOpen(false);
     setIsOptionsOpen(false);
     setIsCreateAccountIntroOpen(false);
     setIsIntroReplayOpen(false);
+  }
+
+  /** Opens the End Trip sheet. It ends the trip on screen when it opens, so the shared trip is shown first. */
+  function openEndTrip(target: "viewed" | "shared") {
+    const shell = shellTripRef.current;
+    if (target === "shared" && shell?.viewingMode === "private") shell.returnToCurrent();
+    endTripTripIdRef.current = (target === "shared" ? sharedTripId : shell?.viewingTripId) ?? undefined;
+    setIsEndTripOpen(true);
   }
 
   function showResetToast(message: string, durationMs = 3600) {
@@ -780,6 +862,7 @@ function ConnectedApp() {
   const signedIn = (screen: React.ReactNode) => (
     <TripContextProvider token={session.token} role={role}>
       <LivePublishingBridge token={session.token} role={role} gpsSuppressedUntil={gpsSuppressedUntil} />
+      <ShellTripBridge onSharedTrip={reportSharedTrip} shellTripRef={shellTripRef} />
       {screen}
     </TripContextProvider>
   );
@@ -810,6 +893,8 @@ function ConnectedApp() {
       <TravelerThemeBridge token={session.token} role={role} />
       <div className={isPickerActive ? "invisible pointer-events-none h-0 overflow-hidden" : undefined}>
         <TopBar
+          // One mount per session: the trip chip's switch announcer never carries one account's epoch to the next.
+          key={session.token}
           role={role}
           onOpenOptions={() => {
             music.sfx("open");
@@ -817,15 +902,11 @@ function ConnectedApp() {
             setOptionsDefaultView("options");
             setIsOptionsOpen(true);
           }}
+          onRequestEndCurrentTrip={role === "traveler" ? () => openEndTrip("shared") : undefined}
         />
+        <PrivateTripBanner className="tripcast-frame mx-4 mt-2" />
 
-        {!isCreditsOpen && (
-          <TripTicker
-            message={currentMessage}
-            isPriority={isPriority}
-            onComplete={onFunFactComplete}
-          />
-        )}
+        <ConnectedTripTicker token={session.token} hidden={isCreditsOpen} />
       </div>
 
         <OptionsSheet
@@ -866,8 +947,8 @@ function ConnectedApp() {
           onResetStarted={showResetToast}
           onTriggerTestToast={handleTriggerTestToast}
           onKillGpsServices={handleKillGpsServices}
-          onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); setIsEndTripOpen(true); } : undefined}
-          onViewCredits={() => { setIsOptionsOpen(false); setIsCreditsOpen(true); }}
+          onEndTrip={role === "traveler" ? () => { setIsOptionsOpen(false); openEndTrip("viewed"); } : undefined}
+          onViewCredits={() => { setIsOptionsOpen(false); setCreditsTripId(undefined); setIsCreditsOpen(true); }}
           usage={role === "traveler" ? usage : undefined}
           onUsageLedger={role === "traveler" ? handleUsageLedger : undefined}
         />
@@ -878,14 +959,24 @@ function ConnectedApp() {
             token={session.token}
             open={isEndTripOpen}
             onOpenChange={setIsEndTripOpen}
-            onViewCredits={() => { setIsEndTripOpen(false); setIsCreditsOpen(true); }}
+            onViewCredits={() => {
+              setIsEndTripOpen(false);
+              // The trip just ended, which may no longer be the trip on screen.
+              setCreditsTripId(endTripTripIdRef.current);
+              setIsCreditsOpen(true);
+            }}
           />
         </Suspense>
       )}
 
       {isCreditsOpen && (
         <Suspense fallback={null}>
-          <CreditsOverlay token={session.token} role={role} onClose={() => setIsCreditsOpen(false)} />
+          <CreditsOverlay
+            token={session.token}
+            role={role}
+            tripId={creditsTripId}
+            onClose={() => setIsCreditsOpen(false)}
+          />
         </Suspense>
       )}
 
@@ -909,6 +1000,7 @@ function ConnectedApp() {
         {/* Dev tool: lets the "Crash App" Option (or window.tripcast.crash()) trip
             this boundary's full-screen fallback. Retry recovers via resetKeys. */}
         <CrashOnDemand />
+        <TripUnavailableBoundary>
         <Suspense
           fallback={
             <div className="flex items-center justify-center h-full min-h-[200px]">
@@ -935,7 +1027,16 @@ function ConnectedApp() {
             }}
           />
         </Suspense>
+        </TripUnavailableBoundary>
       </ErrorBoundary>
+
+      <FollowerTripNotice
+        onSwitch={() => {
+          // The Follower's trip changed: sheets and the credits replay of the old trip close (the map resets itself).
+          setIsOptionsOpen(false);
+          setIsCreditsOpen(false);
+        }}
+      />
 
       {isCreateAccountIntroOpen ? (
         <CreateAccountIntroFlow

@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "convex/react";
 
 import {
   tripcastApi,
@@ -14,6 +13,8 @@ import {
   getPhaseAtMinute,
 } from "@/features/travelstate/autoStateCalc";
 import { log as debugLog } from "@/debug/debugLogger";
+import { useTripQuery } from "@/convex/useTrip";
+import { useOptionalTripContext } from "./TripContextProvider";
 
 export type ThemeMode = "meadow" | "constellation" | "auto";
 
@@ -595,20 +596,19 @@ function buildSnapshot(
  */
 export function TravelerThemeBridge({ token, role }: { token: string; role: Role }) {
   const bridge = useContext(ThemeBridgeContext);
+  // The theme is the Traveler's day and night where they are now: the SHARED trip's auto state and preferences, for
+  // Followers and for a Traveler in every view. A trip viewed privately does not repaint the app with another trip's
+  // time zone. A Traveler names the shared trip once known; a Follower and multi-trip off send exactly today's args.
+  const { currentTrip } = useOptionalTripContext();
+  const travelerArgs = role === "traveler" ? { token, ...(currentTrip ? { tripId: currentTrip.tripId } : {}) } : "skip";
 
-  const travelerAutoState = useQuery(
-    tripcastApi.travelerAutoState.travelerGetAutoState,
-    role === "traveler" ? { token } : "skip",
-  );
-  const followerAutoState = useQuery(
+  const travelerAutoState = useTripQuery(tripcastApi.travelerAutoState.travelerGetAutoState, travelerArgs);
+  const followerAutoState = useTripQuery(
     tripcastApi.travelerAutoState.followerGetAutoState,
     role === "follower" ? { token } : "skip",
   );
-  const travelerPreferences = useQuery(
-    tripcastApi.travelerPreferences.travelerGetPreferences,
-    role === "traveler" ? { token } : "skip",
-  );
-  const followerPreferences = useQuery(
+  const travelerPreferences = useTripQuery(tripcastApi.travelerPreferences.travelerGetPreferences, travelerArgs);
+  const followerPreferences = useTripQuery(
     tripcastApi.travelerPreferences.followerGetPreferences,
     role === "follower" ? { token } : "skip",
   );

@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { StrictMode, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,7 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { tripcastApi, type CurrentTrip, type EffectiveTrip } from "../convex/tripcastApi";
 import type { TripContextValue } from "../features/trips/tripTypes";
 import { useTripQuery } from "../convex/useTrip";
-import { TripContextProvider, TripContextTestProvider, useOptionalTripContext, useTripContext } from "./TripContextProvider";
+import {
+  sessionScope,
+  TripContextProvider,
+  TripContextTestProvider,
+  useOptionalTripContext,
+  useTripContext,
+} from "./TripContextProvider";
+import { useJournalUnread } from "../features/journal/useJournalUnread";
+import { useMessagingUnread } from "../features/messaging/useMessagingUnread";
+import VoteTimeSplash from "../features/routevote/VoteTimeSplash";
+import type { Doc, JournalEvent } from "../convex/tripcastApi";
 
 const server = vi.hoisted(() => ({
   current: undefined as unknown,
@@ -15,6 +25,7 @@ const server = vi.hoisted(() => ({
   fresh: false,
   calls: [] as Array<{ ref: unknown; args: unknown }>,
   other: 0,
+  votes: undefined as unknown,
 }));
 
 vi.mock("convex/react", () => ({
@@ -26,6 +37,7 @@ vi.mock("convex/react", () => ({
       return server.fresh && server.current ? { ...(server.current as object) } : server.current;
     }
     if (ref === tripcastApi.followers.getEffectiveTrip) return server.effective;
+    if (ref === tripcastApi.routeVotes.listVisibleRouteVotes) return server.votes;
     return undefined;
   },
   useMutation: () => {
@@ -390,5 +402,154 @@ describe("TripContextProvider", () => {
       </TripContextTestProvider>,
     );
     expect(outside).toMatchObject({ multiTripEnabled: true, viewingTripId: "trip-x", token: "test-token" });
+  });
+});
+
+describe("the Legacy flag of the viewed trip (rule 11)", () => {
+  const legacy = { ...trip("trip-legacy", "First trip"), isLegacy: true };
+  const autumn = trip("trip-autumn", "Autumn 2026");
+  const LEGACY_TARGET = { tripId: "trip-legacy", title: "First trip" };
+  const LEGACY_ID_KEY = `tripcast.legacyTripId.${sessionScope("session-token")}`;
+  const storedLegacyKeys = () =>
+    Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i) ?? "").filter((key) => key.startsWith("tripcast.legacyTripId"));
+
+  beforeEach(() => {
+    localStorage.clear();
+    server.votes = undefined;
+  });
+  afterEach(() => {
+    localStorage.clear();
+    vi.useRealTimers();
+  });
+
+  /** Legacy shared, then another device makes Autumn the shared trip; the Legacy Trip is then opened privately. */
+  function legacyViewedPrivatelyAfterSwitch(children: ReactNode = <Probe />) {
+    server.current = legacy;
+    const view = mount("traveler", children);
+    server.current = autumn;
+    view.refresh(children);
+    return view;
+  }
+
+  it("marks the shared Legacy Trip, then the Legacy Trip viewed privately after another trip became shared", () => {
+    server.current = legacy;
+    const view = mount("traveler");
+    expect(seen.viewingTrip).toEqual({ ...LEGACY_TARGET, isLegacy: true });
+    server.current = autumn;
+    view.refresh();
+    expect(seen.viewingTrip).toEqual({ tripId: "trip-autumn", title: "Autumn 2026" });
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    expect(seen.viewingTrip).toEqual({ ...LEGACY_TARGET, isLegacy: true });
+    act(() => seen.openPrivately({ tripId: "trip-summer", title: "Summer 2026" }));
+    expect(seen.viewingTrip).toEqual({ tripId: "trip-summer", title: "Summer 2026" });
+    expect(server.other).toBe(0);
+  });
+
+  it("remembers the Legacy Trip across a restart, and learns it from a catalog card passed to openPrivately", () => {
+    legacyViewedPrivatelyAfterSwitch().unmount();
+    expect(localStorage.getItem(LEGACY_ID_KEY)).toBe("trip-legacy");
+    // Restart after the switch: the trip query never names the Legacy Trip again.
+    server.current = autumn;
+    mount("traveler");
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    expect(seen.viewingTrip?.isLegacy).toBe(true);
+
+    localStorage.clear();
+    const fresh = mount("traveler");
+    fresh.unmount();
+    mount("traveler");
+    act(() => seen.openPrivately({ ...LEGACY_TARGET, isLegacy: true }));
+    expect(seen.viewingTrip?.isLegacy).toBe(true);
+    expect(localStorage.getItem(LEGACY_ID_KEY)).toBe("trip-legacy");
+  });
+
+  it("stores nothing for a Follower or with multi-trip off, and marks a Follower's Legacy trip from getEffectiveTrip", () => {
+    server.current = { ...legacy, multiTripEnabled: false };
+    const traveler = mount("traveler");
+    expect(seen.viewingTrip).toBeNull();
+    traveler.unmount();
+    server.effective = { ...effective("trip-legacy", "First trip"), isLegacy: true };
+    mount("follower");
+    expect(seen.viewingTrip).toEqual({ ...LEGACY_TARGET, isLegacy: true });
+    expect(storedLegacyKeys()).toEqual([]);
+  });
+
+  it("keeps each account's Legacy Trip apart: another account neither reads nor overwrites it", () => {
+    const signIn = (token: string) =>
+      render(
+        <TripContextProvider token={token} role="traveler">
+          <Probe />
+        </TripContextProvider>,
+      );
+    // Account A sees its Legacy Trip as the shared trip, then signs out.
+    server.current = legacy;
+    signIn("token-a").unmount();
+    // Account B: its own Legacy Trip is learned under its own key, and A's id means nothing to it.
+    server.current = { ...trip("trip-legacy-b", "B first trip"), isLegacy: true };
+    const b = signIn("token-b");
+    server.current = trip("trip-b-autumn", "B Autumn");
+    b.rerender(
+      <TripContextProvider token="token-b" role="traveler">
+        <Probe />
+      </TripContextProvider>,
+    );
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    expect(seen.viewingTrip).toEqual(LEGACY_TARGET);
+    b.unmount();
+    expect(localStorage.getItem(`tripcast.legacyTripId.${sessionScope("token-a")}`)).toBe("trip-legacy");
+    expect(localStorage.getItem(`tripcast.legacyTripId.${sessionScope("token-b")}`)).toBe("trip-legacy-b");
+    // Account A again, after its shared trip changed: its Legacy Trip is still known.
+    server.current = autumn;
+    signIn("token-a");
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    expect(seen.viewingTrip?.isLegacy).toBe(true);
+  });
+
+  // One consumer per feature, through the real provider: each must read today's key for the Legacy Trip viewed privately.
+  it("journal unread: the Legacy Trip viewed privately reads today's read marker", () => {
+    localStorage.setItem("tripcast.journalLastReadAt", "5000");
+    const events = [1_000, 6_000].map((occurredAt, i) => ({ _id: `e${i}`, narrativeLevel: "narrative", occurredAt }) as unknown as JournalEvent);
+    function Journal() {
+      seen = useTripContext();
+      return <p data-testid="journal-unread">{useJournalUnread(events).unreadCount}</p>;
+    }
+    legacyViewedPrivatelyAfterSwitch(<Journal />);
+    expect(screen.getByTestId("journal-unread")).toHaveTextContent("2");
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    expect(screen.getByTestId("journal-unread")).toHaveTextContent("1");
+  });
+
+  it("chat unread: the Legacy Trip viewed privately reads today's read marker", () => {
+    localStorage.setItem("tripcast.messagesLastReadAt", "5000");
+    const messages = [1_000, 6_000].map((at, i) => ({ _id: `m${i}`, _creationTime: at, role: "follower", authorId: "f1" }) as unknown as Doc<"messages">);
+    function Chat() {
+      seen = useTripContext();
+      return <p data-testid="chat-unread">{useMessagingUnread(messages, "t1", "traveler").unreadCount}</p>;
+    }
+    legacyViewedPrivatelyAfterSwitch(<Chat />);
+    expect(screen.getByTestId("chat-unread")).toHaveTextContent("2");
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    expect(screen.getByTestId("chat-unread")).toHaveTextContent("1");
+  });
+
+  it("vote splash: a splash dismissed on the shared Legacy Trip stays dismissed when it is viewed privately later", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    server.votes = [{ _id: "vote-1", title: "Lunch?", expiresAt: 1_000_000 + 3_600_000, effectiveStatus: "active" }];
+    const splash = () => screen.queryByRole("button", { name: "Cast your vote: Lunch?" });
+    function Splash() {
+      seen = useTripContext();
+      return <VoteTimeSplash token="session-token" enabled onOpenVotes={() => {}} />;
+    }
+    server.current = legacy;
+    const view = mount("traveler", <Splash />);
+    fireEvent.click(splash()!);
+    // The splash leaves through an exit animation.
+    await waitFor(() => expect(splash()).toBeNull());
+    server.current = autumn;
+    view.refresh(<Splash />);
+    expect(splash()).not.toBeNull();
+    act(() => seen.openPrivately(LEGACY_TARGET));
+    await waitFor(() => expect(splash()).toBeNull());
   });
 });

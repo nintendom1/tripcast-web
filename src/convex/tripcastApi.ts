@@ -1674,6 +1674,8 @@ export type TripCard = TripCounts & {
   deletingAt?: number;
   /** Present only while "Deleting…" stopped on an error; it does not resume on its own: call deleteTrip again with this tripId to retry. */
   deleteFailed?: true;
+  /** Set while the operator's Legacy stamping migration runs ("Upgrading…"): the trip cannot be opened, shown or edited until it is gone. */
+  upgradingAt?: number;
   revision: number;
   updatedAt: number;
   lastStoryAt?: number;

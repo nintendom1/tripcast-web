@@ -24,6 +24,8 @@ import { LoadingImage } from "../../components/ui/LoadingImage";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import { InfoTooltip } from "../../components/ui/info-tooltip";
 import { formatCoordinate, parseLocalDatetimeInputValue, toLocalDatetimeInputValue } from "@/lib/utils";
+import { PrivateTripTargetLabel } from "../trips/privateTripView";
+import type { TripTarget } from "../trips/tripTypes";
 
 export type SelectedCoordinate = {
   lat: number;
@@ -69,6 +71,11 @@ type AddCheckpointSheetProps = {
   onBack?: () => void;
   onUploadImage?: (file: File) => Promise<{ storageId: string; width?: number; height?: number }>;
   debugSource?: { source: string; sourceLabel: string };
+  /**
+   * The trip this Story is saved to (captured when the form opened). Named under the title while it is not the shared
+   * current trip (rule 4), so a form left open across Return to current still says where it saves.
+   */
+  tripTarget?: TripTarget | null;
 };
 
 
@@ -351,6 +358,7 @@ export default function AddCheckpointSheet(props: AddCheckpointSheetProps) {
             <SheetTitle className="font-[var(--font-display)] text-xl font-extrabold tracking-tight text-[var(--ink-1)]">
               {titleText}
             </SheetTitle>
+            <PrivateTripTargetLabel target={props.tripTarget ?? null} />
           </div>
           <SheetCloseButton aria-label="Close story form" />
         </div>

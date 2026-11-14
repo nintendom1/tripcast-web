@@ -1,8 +1,9 @@
 // Trip-scoped Convex hooks (contract package WC; behaviour by W1).
 //
-// Every web call on a `tripcastApi` ref whose args accept `tripId` goes through these hooks, so the client always
-// sends the trip it means (`scripts/agent/trip-audit.mjs` counts calls that bypass them). The types allow only such
-// refs. WC ships them as pass-throughs to `convex/react` that add nothing; W1 makes them inject the trip.
+// Every web call on a `tripcastApi` ref whose args accept `tripId` goes through these hooks (or `tripClientFor` for a
+// call that names its own trip), so the client always sends the trip it means (`scripts/agent/trip-audit.mjs` counts
+// calls that bypass them). The types allow only such refs. WC ships them as pass-throughs to `convex/react` that add
+// nothing; W1 makes them inject the trip.
 //
 // The hooks read the context through the non-throwing `useOptionalTripContext`: with no `TripContextProvider`
 // mounted they add no `tripId`, capture no target and pass calls straight through, exactly like plain
@@ -10,7 +11,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConvex, useMutation, useQuery } from "convex/react";
-import type { OptionalRestArgsOrSkip } from "convex/react";
+// Namespace import for `usePaginatedQuery` only: Storybook's `convex/react` stand-in (src/stories/convex-mock.tsx) has
+// no such export, and a named import would fail to load every story that imports this module.
+import * as convexReact from "convex/react";
+import type {
+  ConvexReactClient,
+  OptionalRestArgsOrSkip,
+  PaginatedQueryArgs,
+  PaginatedQueryReference,
+  UsePaginatedQueryReturnType,
+} from "convex/react";
 import type { TripTarget } from "../features/trips/tripTypes";
 import { useOptionalTripContext } from "../providers/TripContextProvider";
 import type { FunctionArgs, FunctionReference, FunctionReturnType, FunctionType, OptionalRestArgs } from "convex/server";
@@ -67,6 +77,24 @@ function withTrip<A extends { tripId?: string }>(args: A, tripId: string | null 
   return { ...args, tripId };
 }
 
+/** Imperative client whose calls add `tripId` (unless given) when one applies; a plain pass-through for `null`. */
+function clientWithTrip(client: ConvexReactClient, tripId: string | null): TripConvexClient {
+  return {
+    query: (ref, args) => client.query(ref, ...([withTrip(args, tripId)] as OptionalRestArgs<typeof ref>)),
+    mutation: (ref, args) => client.mutation(ref, ...([withTrip(args, tripId)] as OptionalRestArgs<typeof ref>)),
+    action: (ref, args) => client.action(ref, ...([withTrip(args, tripId)] as OptionalRestArgs<typeof ref>)),
+  };
+}
+
+/**
+ * Imperative trip-scoped client for ONE named trip, not the view: every call sends `tripId` (an explicit `args.tripId`
+ * still wins). For work that already knows its trip and outlives any view, such as a queued save sent to the trip its
+ * form was opened on. No capture, no context: the trip is the argument. The audit trusts its result.
+ */
+export function tripClientFor(client: ConvexReactClient, tripId: string): TripConvexClient {
+  return clientWithTrip(client, tripId);
+}
+
 type Captured = { target: TripTarget | null; sendTripId: string | null };
 
 /**
@@ -105,6 +133,25 @@ export function useTripQuery<Q extends AnyRef<"query">>(
   return useQuery(ref as Q, ...([tripArgs] as OptionalRestArgsOrSkip<Q>));
 }
 
+/** Args of a trip-scoped paginated query: the ref's args without `paginationOpts`, with `tripId` optional. */
+export type TripPaginatedArgs<Q extends PaginatedQueryReference> = Omit<PaginatedQueryArgs<Q>, "tripId"> & { tripId?: string };
+
+/**
+ * `usePaginatedQuery` for a trip-scoped ref, with the same trip rule as `useTripQuery`: sends `tripId` = the context's
+ * `viewingTripId` (a Traveler's viewed trip) unless `args.tripId` is given; none while no trip is known and never for a
+ * Follower. A trip change is a change of args, so Convex starts the pages over and never returns the old trip's pages.
+ * With no `TripContextProvider` mounted it is plain `usePaginatedQuery`.
+ */
+export function useTripPaginatedQuery<Q extends PaginatedQueryReference>(
+  ref: Q & TripScopedRef<Q>,
+  args: TripPaginatedArgs<Q> | "skip",
+  options: { initialNumItems: number },
+): UsePaginatedQueryReturnType<Q> {
+  const { role, viewingTripId } = useOptionalTripContext();
+  const tripArgs = args === "skip" ? "skip" : withTrip(args, role === "follower" ? null : viewingTripId);
+  return convexReact.usePaginatedQuery(ref as Q, tripArgs as PaginatedQueryArgs<Q> | "skip", options);
+}
+
 /**
  * `useMutation` for a trip-scoped ref: captures the viewed trip **once when the hook mounts**, not at call time and
  * not on later renders, so an open sheet keeps writing to its trip after a switch; `args.tripId` overrides it. The
@@ -133,13 +180,7 @@ export function useTripConvex(): CapturedTripConvexClient {
   const convex = useConvex();
   const { target, sendTripId, recapture } = useCapturedTrip();
   return useMemo<CapturedTripConvexClient>(
-    () => ({
-      target,
-      recapture,
-      query: (ref, args) => convex.query(ref, ...([withTrip(args, sendTripId)] as OptionalRestArgs<typeof ref>)),
-      mutation: (ref, args) => convex.mutation(ref, ...([withTrip(args, sendTripId)] as OptionalRestArgs<typeof ref>)),
-      action: (ref, args) => convex.action(ref, ...([withTrip(args, sendTripId)] as OptionalRestArgs<typeof ref>)),
-    }),
+    () => ({ ...clientWithTrip(convex, sendTripId), target, recapture }),
     [convex, target, sendTripId, recapture],
   );
 }

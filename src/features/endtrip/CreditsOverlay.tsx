@@ -13,6 +13,8 @@ type Props = {
   token: string;
   role: Role;
   onClose: () => void;
+  /** The trip the finale is about when the app knows it (the trip just ended, the shared trip at launch); otherwise the trip on screen when it opened. */
+  tripId?: string;
 };
 
 function CreditRow({ role, names }: { role: string; names: string[] }) {
@@ -32,12 +34,12 @@ function CreditRow({ role, names }: { role: string; names: string[] }) {
  * people, leaderboard, badges, and the Traveler's thank-you note. The app is
  * never locked — this is purely an overlay the user can dismiss any time.
  */
-export default function CreditsOverlay({ token, role, onClose }: Props) {
+export default function CreditsOverlay({ token, role, onClose, tripId }: Props) {
   // The finale is about the trip on screen when it opened (the one just ended): name it explicitly so the credits,
   // the events and the missions stay on that trip if the view changes while the overlay is up. A Follower, and
   // multi-trip disabled (no viewed trip), add nothing, exactly as before.
   const { role: contextRole, viewingTripId } = useOptionalTripContext();
-  const [openedTripId] = useState(viewingTripId);
+  const [openedTripId] = useState(tripId ?? viewingTripId);
   const tripArg = contextRole === "traveler" && openedTripId ? { tripId: openedTripId } : {};
   const credits = useTripQuery(tripcastApi.endTrip.getTripCredits, { token, ...tripArg });
   const queriedEvents = useTripQuery(tripcastApi.journalEvents.listJournalEvents, { token, ...tripArg });
