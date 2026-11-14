@@ -1,109 +1,12 @@
 # TripCast Web: Canonical Contract
 
-## Pre-flight Ritual (The Gatekeeper)
+## Worker Contract
 
-**The Deep Work Ritual**: Before taking any action or providing any code for "Big Work," you must remind the developer to perform a household chore.
-- **Trigger**: Use your intuition. "Big Work" includes: New features, complex logic, Anything that had back and forth planning, request for quiet-mode, etc.
-- **Exclusions**: Do NOT trigger for: Minor validation fixes, log additions, or simple query questions.
-
-## The Four Principles in Detail
-
-### 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-LLMs often pick an interpretation silently and run with it. This principle forces explicit reasoning:
-
-- **State assumptions explicitly** — If uncertain, ask rather than guess
-- **Present multiple interpretations** — Don't pick silently when ambiguity exists
-- **Push back when warranted** — If a simpler approach exists, say so
-- **Stop when confused** — Name what's unclear and ask for clarification
-
-### 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-Combat the tendency toward overengineering:
-
-- No features beyond what was asked
-- No abstractions for single-use code
-- No "flexibility" or "configurability" that wasn't requested
-- No error handling for impossible scenarios
-- If 200 lines could be 50, rewrite it
-
-**The test:** Would a senior engineer say this is overcomplicated? If yes, simplify.
-
-### 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-
-- Don't "improve" adjacent code, comments, or formatting
-- Don't refactor things that aren't broken
-- Match existing style, even if you'd do it differently
-- If you notice unrelated dead code, mention it — don't delete it
-
-When your changes create orphans:
-
-- Remove imports/variables/functions that YOUR changes made unused
-- Don't remove pre-existing dead code unless asked
-
-**The test:** Every changed line should trace directly to the user's request.
-
-### 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform imperative tasks into verifiable goals:
-
-| Instead of... | Transform to... |
-|--------------|-----------------|
-| "Add validation" | "Write tests for invalid inputs, then make them pass" |
-| "Fix the bug" | "Write a test that reproduces it, then make it pass" |
-| "Refactor X" | "Ensure tests pass before and after" |
-
-For multi-step tasks, state a brief plan (Use the todo tool if available):
-
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let the LLM loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-## Project Overview
-
-TripCast Web is the React/Vite frontend using MapLibre GL JS and Base UI.
-- **Roles**: Traveler (admin/write access) and Follower (read/vote access).
-- **Backend**: Convex functions are owned by `tripcast-backend`.
-
-## Setup & Validation
-
-- **Install**: `npm install`
-- **Run**: `npm run dev`
-- **Validation**: `npm run validate` (typecheck -> lint -> tests)
-- **Testing**: `npm run test` (Vitest with `jsdom`)
-
-`npm run dev` is available for local development but not available for agents.
-
-Do not claim a code task complete until `npm run validate` passes.
-
-## Read-On-Demand Agent Procedures
-
-Do not read these files by default. Read them only when relevant.
-
-- `docs/agents/commit-and-pr.md`: committing, writing commit messages, creating PRs, reviewing PR scope.
-- `docs/agents/quiet-mode.md`: Quiet Mode, silent mode, or reduced progress chatter.
-- `docs/agents/run-continuously.md`: autonomous or continuous work.
-- `docs/agents/validation.md`: before claiming frontend changes are complete.
-- `docs/agents/visual-testing.md`: Playwright or visual regression work.
-- `docs/agents/debug-log.md`: changing debug logging or using logs to reproduce UI bugs.
-- `docs/agents/terminology.md`: terminology, UI copy, or terminology lint changes.
-- `docs/agents/implementation-gotchas.md`: map, sheet, auth/API, travel funds, or other known frontend failure modes.
+When given a brief path, you are a worker:
+- Follow the brief and your role file (Claude: `~/.claude/agents/`); do not orchestrate, plan or ask the owner.
+- Own only the files the brief lists; report anything else under Requests.
+- Never commit, push, stash, reset, or deploy.
+- Finish with the report and one line: `DONE <path>` or `BLOCKED <path>`.
 
 ## Non-Negotiables
 
@@ -112,30 +15,47 @@ Do not read these files by default. Read them only when relevant.
 - Use `react-error-boundary` for React render, lazy import, and Convex `useQuery` thrown-error containment.
 - Consume Convex through `src/convex/tripcastApi.ts`; backend API changes belong in `tripcast-backend`.
 - Do not hand-write Convex function references. Regenerate in backend with `npm run export:web-api`, then copy the generated file.
-- Before changing native iOS behavior, a public backend API, or Traveler-produced data consumed by Followers, compare both repositories against `main`. Confirm the iOS code on `main` can still write to the candidate backend and the Follower web code on `main` can still query and render the resulting data. Treat removed arguments, newly required arguments, renamed functions, changed field types/nullability, and new unhandled enum values as breaking unless the user approves a coordinated rollout.
+- Before changing native iOS behavior, a public backend API, or Traveler-produced data consumed by Followers, compare both repos against `main`: the iOS code on `main` must still write to the candidate backend and the Follower web code on `main` must still query and render the data. Removed or newly required arguments, renamed functions, changed field types/nullability, and new unhandled enum values are breaking unless the user approves a coordinated rollout.
 - All Convex calls that require auth pass an explicit `token`; do not use `clientId`.
-- Do not commit secrets, `.env`, or `.env.local`; treat Gitleaks scanning as part of commit/PR work. CI scans full history, so before pushing run `gitleaks git --config .gitleaks.toml --redact --verbose .` (matches the GitHub workflow), not just a staged-diff scan. In docs, use placeholders the `tripcast-convex-url` rule won't match — e.g. `https://<your-slug>.convex.cloud`.
+- Do not commit secrets, `.env`, or `.env.local`. Gitleaks is part of commit/PR work: before pushing run `gitleaks git --config .gitleaks.toml --redact --verbose .` (CI scans full history). In docs use placeholders the `tripcast-convex-url` rule won't match, e.g. `https://<your-slug>.convex.cloud`.
 - Keep UI barebones for this phase and use MapLibre GL JS; do not add paid or token-based map providers.
-- If stuck after two failed attempts, stop, summarize what failed, and propose the next attempt.
+- After two failed attempts, stop, summarize what failed, and propose the next attempt.
 
-## Worktree Setup
+## Four Principles
 
-When creating a frontend git worktree:
+1. Think Before Coding: state assumptions, surface tradeoffs.
+2. Simplicity First: minimum code that solves the problem; nothing speculative.
+3. Surgical Changes: touch only what you must; clean up only your own mess.
+4. Goal-Driven Execution: define success criteria; loop until verified.
 
-1. Copy `.env.local` from the primary frontend checkout into the new worktree. This is to prevent VITE_CONVEX_URL= errors when the developer manually tests.
-2. Check whether `node_modules/.bin/tsc` exists.
-3. If missing, run `npm install`.
-4. Treat `tsc is not recognized` as missing dependencies, not as a TypeScript failure.
-5. Rerun `npm run validate` after installing dependencies.
+## Project
 
-Do not symlink or reuse `node_modules` across worktrees by default, especially on Windows.
+React/Vite frontend (MapLibre GL JS, Base UI). Roles: Traveler (admin/write), Follower (read/vote). Convex functions belong to `tripcast-backend`.
 
-## Planning Mode Behavior
-Write comprehensive implementation plans assuming the engineer has zero context for our codebase and questionable taste. Include file names.
-Have a section for UX flow to understand where/how the app user will interact with it.
-Ask clarifying questions — one at a time, understand purpose/constraints/success criteria
-Ambiguity check: Could any requirement be interpreted two different ways? If so, pick one and make it explicit.
+## Commands
+
+- `npm install`. `npm run dev` exists but is not available to agents.
+- `npm run -s v` validates quietly with one OK or FAIL line; `-- --fast` skips the Storybook project while iterating.
+- Before claiming a code task complete, `npm run validate` must pass (`lint:terms:report`, `tsc -b`, `eslint .`, `vitest run`).
+- `node scripts/agent/trip-audit.mjs` counts raw trip calls that bypass `useTripQuery`/`useTripMutation`; `scope.mjs <brief.md>` checks changes against OWNED.
+
+## Read On Demand
+
+| File | Read when |
+|---|---|
+| `commit-and-pr.md` | committing, PRs |
+| `quiet-mode.md` | Quiet Mode |
+| `run-continuously.md` | autonomous work |
+| `validation.md` | before claiming work complete |
+| `visual-testing.md` | Playwright or visual regression |
+| `debug-log.md` | debug logging, reproducing UI bugs |
+| `terminology.md` | UI copy, terminology lint |
+| `implementation-gotchas.md` | map, sheet, auth/API, travel funds, known failure modes |
+| `worktree.md` | creating a git worktree |
+
+All under `docs/agents/`.
 
 ## Developer Preferences
-* Defer Unit Tests until the Developer has manually verified the implementation unless instructed otherwise. (This preference excludes Storybook stories; do Storybook stories with implementation)
-* If work started on a branch not on main, stop and tell the user the current branch is different. It's usually cleaner if work branched from main cleanly.
+
+* Defer Unit Tests until the Developer has manually verified the implementation, unless instructed otherwise or a brief or role file says tests ship with the work. Storybook stories are written with the implementation unless a brief says otherwise.
+* If work started on a branch not on main, stop and tell the user, unless a brief names the branch.
