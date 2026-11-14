@@ -5,10 +5,14 @@ import { cn } from "@/lib/utils";
 import type { Role } from "@/convex/tripcastApi";
 import { TERMS } from "../../copy/terminology";
 import { useThemeMode } from "../../providers/ThemeProvider";
+import { TripChip } from "../trips/TripChip";
+import type { TripPaneActions } from "../trips/TripSwitcherSheet";
 
 export interface TopBarProps {
   role: Role;
   onOpenOptions: () => void;
+  /** Optional trip pane actions (shared switch, create, card menu); each renders only when supplied. */
+  tripPane?: TripPaneActions;
   className?: string;
 }
 
@@ -19,7 +23,7 @@ export interface TopBarProps {
  * sits above the map without dominating it. The role badge is informational
  * only — mode is determined by the session that signed in.
  */
-export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
+export function TopBar({ role, onOpenOptions, tripPane, className }: TopBarProps) {
   const isTraveler = role === "traveler";
   const roleLabel = isTraveler ? TERMS.traveler : TERMS.follower;
   const { mode, setMode } = useThemeMode();
@@ -64,6 +68,8 @@ export function TopBar({ role, onOpenOptions, className }: TopBarProps) {
         </span>
         TripCast
       </div>
+
+      {isTraveler ? <TripChip className="mx-2 min-w-0" {...tripPane} /> : null}
 
       <div className="flex items-center gap-2">
         <button

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { newDatabaseBaseline, newFileBaseline, type UsageResource } from "../../lib/usageResources";
 import { USAGE_GUARD, USAGE_STORAGE_MODEL, type UsageLedger } from "../../lib/usageWarning";
 import { ConvexUsageScreen, type ConvexUsageScreenProps } from "./ConvexUsageScreen";
+import { setNativePublishingTagsSent } from "../../native/nativePublishingSignal";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 10, 18, 15, 0);
@@ -100,6 +101,20 @@ describe("ConvexUsageScreen", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(container.querySelector('[role="meter"], [style*="width"]')).toBeNull();
+  });
+
+  it("estimates with the multi-trip bytes per upload while trip tags are sent", () => {
+    setNativePublishingTagsSent(true);
+    try {
+      const { container, unmount } = renderScreen("traveler");
+
+      // 200,000 uploads at 5,100 B instead of 4,500 B.
+      const estimate = container.querySelector<HTMLElement>("[data-usage-estimate]");
+      expect(within(estimate!).getByText("102%")).toBeInTheDocument();
+      unmount();
+    } finally {
+      setNativePublishingTagsSent(false);
+    }
   });
 
   it("shows a Traveler the estimated percent of the Free plan", () => {

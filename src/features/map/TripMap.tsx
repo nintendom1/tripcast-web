@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useIsDesktop } from "../../lib/useIsDesktop";
 import { DesktopMapFrame } from "../layout/DesktopMapFrame";
 import { useConvex, useMutation, useQuery } from "convex/react";
@@ -72,14 +72,12 @@ import {
   BackgroundSaveRetryToast,
 } from "../hud";
 import {
-  configureNativeLocationPublishing,
   foregroundNativeLocationTracking,
   getNativeLocalTrailSnapshot,
   isAdaptiveLocationAvailable,
   isAdaptiveNativeTrackingActive,
   isNativeLocationAvailable,
   openNativeLocationSettings,
-  retryNativeLocationTracking,
   syncNativeMysteryMissions,
   startNativeLocationWatch,
   stopNativeLocationTracking,
@@ -92,9 +90,17 @@ import {
   setLiveSharingEnabled,
   useLiveSharingEnabled,
 } from "../../lib/liveSharingPreference";
-import { useStaleBreadcrumbAlertSeconds } from "../../lib/staleBreadcrumbAlertPreference";
-import { useLiveGpsUploadIntervalSeconds } from "../../lib/liveGpsUploadIntervalPreference";
-import { USAGE_GUARD } from "../../lib/usageWarning";
+import {
+  clearLiveSharingStopNotice,
+  getLiveSharingStopNotice,
+  getNativePublishingTags,
+  isNativePublishingReady,
+  requestNativePublishingRetry,
+  subscribeLiveSharingStopped,
+  subscribeNativePublishingTags,
+} from "../../native/nativePublishingSignal";
+import { useTripContext } from "../../providers/TripContextProvider";
+import { useTripMutation } from "../../convex/useTrip";
 import { useNativeTrackingState } from "../../native/nativeTrackingState";
 import { useNativeReadinessState } from "../../native/nativeReadinessState";
 import { usePendingTrail, type LocalTrailPoint } from "./usePendingTrail";
@@ -1289,6 +1295,7 @@ export default function TripMap({
 }: TripMapProps) {
   const storedLiveSharing = useLiveSharingEnabled();
   const isLocationSharing = role === "traveler" && storedLiveSharing;
+  const { currentTrip, multiTripEnabled, viewingMode, returnToCurrent } = useTripContext();
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -1317,6 +1324,8 @@ export default function TripMap({
   const currentLocationPublishIdRef = useRef(0);
   const liveTrailPublishIdRef = useRef(0);
   const isLocationSharingRef = useRef(role === "traveler" && getLiveSharingEnabled());
+  const publishingTagsRef = useRef<{ tripId: string; publishingEpoch: number } | null>(null);
+  const lastPublishingEpochRef = useRef<number | null>(null);
   const liveTrailEnabledRef = useRef(false);
   const liveTrailCanRecordRef = useRef(false);
   const liveTrailPermissionLoggedRef = useRef(false);
@@ -1367,7 +1376,6 @@ export default function TripMap({
   const enteredCloakAtRef = useRef<number | null>(null);
   const cloakToastShownRef = useRef(false);
   const cloakAutoShutoffFiredRef = useRef(false);
-  const nativePublishingReadyRef = useRef(false);
   const nativeOffReconciledRef = useRef(false);
   const cardsWrapperRef = useRef<HTMLDivElement>(null);
   // Focus-observability: pendingFocusRef carries the in-flight focus so the next
@@ -1392,8 +1400,6 @@ export default function TripMap({
   const calibrationRef = useRef(calibration);
   calibrationRef.current = calibration;
   const adaptiveGpsEnabled = useAdaptiveGpsEnabled();
-  const staleBreadcrumbAlertSeconds = useStaleBreadcrumbAlertSeconds();
-  const liveGpsUploadIntervalSeconds = useLiveGpsUploadIntervalSeconds();
   const nativeTrackingState = useNativeTrackingState();
   const nativePublishingState = useNativePublishingState();
   const nativeReadinessState = useNativeReadinessState();
@@ -1419,9 +1425,15 @@ export default function TripMap({
     role === "traveler" ? readLiveSnooze() : null,
   );
   const [isSnoozeLiveOpen, setIsSnoozeLiveOpen] = useState(false);
+  const [liveStartGate, setLiveStartGate] = useState<"private" | "completed" | null>(null);
+  const [isStartTripLiveOpen, setIsStartTripLiveOpen] = useState(false);
+  const liveStopNotice = useSyncExternalStore(
+    subscribeLiveSharingStopped,
+    getLiveSharingStopNotice,
+    getLiveSharingStopNotice,
+  );
   const [localTrailPoints, setLocalTrailPoints] = useState<LocalTrailPoint[]>([]);
   const localTrailSnapshotRef = useRef<{ queueRevision: number; signature: string } | null>(null);
-  const [nativeRetryNonce, setNativeRetryNonce] = useState(0);
   // Mirrors document.visibilityState. Drives the foreground-only browser
   // watcher gate so it does not survive backgrounding (and to re-arm on
   // foreground without churning the native watcher when LIVE is on).
@@ -1549,6 +1561,7 @@ export default function TripMap({
     tripcastApi.travelerLocations.stopTravelerLocationSharing,
   );
   const recordLiveTrailSample = useMutation(tripcastApi.liveTrail.travelerRecordLiveTrailSample);
+  const setTripLifecycle = useTripMutation(tripcastApi.trips.setLifecycle);
   const movementPrefs = useQuery(
     tripcastApi.travelerPreferences.travelerGetPreferences,
     role === "traveler" ? { token } : "skip",
@@ -1931,10 +1944,6 @@ export default function TripMap({
   // Re-measure the map canvas when the desktop/mobile layout switches so
   // MapLibre doesn't show a blank canvas after the container changes size.
   useEffect(() => {
-    nativePublishingReadyRef.current = nativeReadinessState.captureReadiness === "ready";
-  }, [nativeReadinessState.captureReadiness]);
-
-  useEffect(() => {
     if (role !== "traveler" || !isAppActive || !isAdaptiveLocationAvailable()) {
       if (role !== "traveler") setLocalTrailPoints([]);
       return;
@@ -2034,6 +2043,15 @@ export default function TripMap({
       toastTimeoutRef.current = null;
     }, 3200);
   }, []);
+
+  // LivePublishingBridge ended live sharing because the shared trip changed: show its notice once. Never restarts.
+  useEffect(() => {
+    if (!liveStopNotice || role !== "traveler") return;
+    clearLiveSharingStopNotice(liveStopNotice.id);
+    isLocationSharingRef.current = false;
+    setSnoozedUntil(null);
+    showToast(liveStopNotice.message);
+  }, [liveStopNotice, role, showToast]);
 
   const previousTrailChoice = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -3440,10 +3458,36 @@ export default function TripMap({
     if (role === "traveler") setLiveSharingEnabled(isLocationSharing);
   }, [isLocationSharing, role]);
 
+  // The JS publisher sends the tags LivePublishingBridge configures: the shared current trip (never the viewed trip),
+  // or its last known identity while the trip state loads or fails; none while multi-trip is off. They are applied
+  // when the bridge publishes them, not at the next render, so no fix goes out under stale tags. A new epoch (a switch
+  // here, on another device or while closed) stops the publisher in the same step; the bridge turns the preference off.
+  useEffect(() => {
+    const apply = () => {
+      const next = role === "traveler" ? getNativePublishingTags() : null;
+      const previousEpoch = lastPublishingEpochRef.current;
+      if (next && previousEpoch !== null && previousEpoch !== next.publishingEpoch) {
+        isLocationSharingRef.current = false;
+        lastSentLocationRef.current = null;
+      }
+      if (next) lastPublishingEpochRef.current = next.publishingEpoch;
+      publishingTagsRef.current = next ? { tripId: next.tripId, publishingEpoch: next.publishingEpoch } : null;
+    };
+    apply();
+    return subscribeNativePublishingTags(apply);
+  }, [role]);
+
   useEffect(() => {
     if (role !== "traveler" || snoozedUntil === null || !isAppActive) return;
     const resumeIfExpired = () => {
-      if (Date.now() >= snoozedUntil) resumeLocationSharing("snooze-expired");
+      if (Date.now() < snoozedUntil) return;
+      // With multi-trip on, a trip change clears the stored snooze: never resume a session it ended. Untagged, the
+      // snooze resumes at expiry as before multi-trip.
+      if (publishingTagsRef.current !== null && readLiveSnooze() === null) {
+        setSnoozedUntil(null);
+        return;
+      }
+      resumeLocationSharing("snooze-expired");
     };
     resumeIfExpired();
     const timeout = setTimeout(resumeIfExpired, Math.max(0, snoozedUntil - Date.now()));
@@ -3582,80 +3626,6 @@ export default function TripMap({
       }
     }
   }, [cloakingPinsData]);
-
-  useEffect(() => {
-    if (
-      role !== "traveler" ||
-      !isAdaptiveLocationAvailable()
-    ) {
-      nativePublishingReadyRef.current = false;
-      return;
-    }
-    const endpoint = import.meta.env.VITE_CONVEX_URL as string | undefined;
-    if (!endpoint) {
-      nativePublishingReadyRef.current = false;
-      return;
-    }
-    let cancelled = false;
-    let cloakTimeoutSeconds = 300;
-    try {
-      const minutes = Number(
-        localStorage.getItem("tripcast.cloaking.autoDisableGpsTimeoutMinutes") ?? "5",
-      );
-      if (Number.isFinite(minutes) && minutes >= 0) cloakTimeoutSeconds = minutes * 60;
-    } catch {
-      // Keep the privacy-first default.
-    }
-    configureNativeLocationPublishing({
-      endpoint,
-      token,
-      liveTrailEnabled,
-      movementDetectionEnabled: movementPrefs?.movementDetectionEnabled === true,
-      emissionIntervalSeconds: liveGpsUploadIntervalSeconds,
-      alertThresholdSeconds: staleBreadcrumbAlertSeconds,
-      cloakTimeoutSeconds,
-      cloakZones: (cloakingPinsData ?? []).map((pin) => ({
-        lat: pin.lat,
-        lon: pin.lon,
-        radiusMeters: pin.radiusMeters,
-      })),
-      includeDebugMysteryMissions: debugShowAllMysteryPins,
-      // Always sent: a configuration without the guard lifts the phone's usage pause.
-      usageGuard: USAGE_GUARD,
-    })
-      .then(() => {
-        if (
-          !cancelled &&
-          adaptiveGpsEnabled &&
-          isLocationSharingRef.current &&
-          !gpsSuppressedRef.current
-        ) {
-          void retryNativeLocationTracking();
-        }
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        nativePublishingReadyRef.current = false;
-        log.error("gps:native-publish:configure-failure", "error", {
-          errorType: error instanceof Error ? error.name : typeof error,
-        });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    adaptiveGpsEnabled,
-    cloakingPinsData,
-    debugShowAllMysteryPins,
-    liveTrailEnabled,
-    liveGpsUploadIntervalSeconds,
-    log,
-    movementPrefs?.movementDetectionEnabled,
-    role,
-    staleBreadcrumbAlertSeconds,
-    token,
-    nativeRetryNonce,
-  ]);
 
   useEffect(() => {
     try {
@@ -4017,7 +3987,7 @@ export default function TripMap({
 
       if (
         isLocationSharingRef.current &&
-        !(isAdaptiveNativeTrackingActive() && nativePublishingReadyRef.current)
+        !(isAdaptiveNativeTrackingActive() && isNativePublishingReady())
       ) {
         publishTravelerLocation(nextPosition, accuracy);
         if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
@@ -4494,13 +4464,17 @@ export default function TripMap({
       moved,
       isAppActive: isAppActiveRef.current,
     });
+    const tags = publishingTagsRef.current;
     void updateTravelerLocation({
       token,
       lat: position.lat,
       lon: position.lon,
       accuracy,
+      ...(tags ? { tripId: tags.tripId, publishingEpoch: tags.publishingEpoch } : {}),
     })
       .then(() => {
+        // The result is always null; the server may have dropped the fix (stale epoch, untagged after a switch).
+        // That is "not published", never retried or reported as an error.
         log.logGps("gps:current-location:publish:ack", {
           publishId,
           latencyMs: Math.round(performance.now() - startedAt),
@@ -4579,12 +4553,14 @@ export default function TripMap({
       hasAccuracy: typeof accuracy === "number",
       isAppActive: isAppActiveRef.current,
     });
+    const trailTags = publishingTagsRef.current;
     void recordLiveTrailSample({
       token,
       lat: position.lat,
       lon: position.lon,
       accuracy,
       sampledAt: fix.sampledAt,
+      ...(trailTags ? { tripId: trailTags.tripId, publishingEpoch: trailTags.publishingEpoch } : {}),
     })
       .then(() => {
         log.logGps("gps:live-trail:publish:ack", {
@@ -4611,7 +4587,7 @@ export default function TripMap({
       liveTrailEnabledRef.current &&
       liveTrailCanRecordRef.current &&
       livePosition &&
-      !(isAdaptiveNativeTrackingActive() && nativePublishingReadyRef.current)
+      !(isAdaptiveNativeTrackingActive() && isNativePublishingReady())
     ) {
       publishLiveTrailSample(livePosition, livePosition.accuracy, true);
     }
@@ -4719,9 +4695,46 @@ export default function TripMap({
     }
   }
 
+  /**
+   * Going live with multi-trip enabled (07-going-live.md steps 1-2): only from the shared current trip, and only once
+   * it is in progress. True when the start is held back (gate notice or confirmation shown). Stopping is never gated.
+   */
+  function holdLiveStart(): boolean {
+    if (!multiTripEnabled || !currentTrip) return false;
+    if (viewingMode === "private") {
+      setLiveStartGate("private");
+      return true;
+    }
+    if (currentTrip.lifecycle === "completed") {
+      setLiveStartGate("completed");
+      return true;
+    }
+    if (currentTrip.lifecycle === "planned") {
+      setIsStartTripLiveOpen(true);
+      return true;
+    }
+    return false;
+  }
+
+  async function handleStartTripAndGoLive() {
+    if (!currentTrip) return;
+    const trip = currentTrip;
+    try {
+      await setTripLifecycle({ token, tripId: trip.tripId, lifecycle: "in_progress" });
+    } catch (error) {
+      log.error("gps:live:start-trip-failure", "error", {
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+      showToast(`Couldn't start ${trip.title}. Try again.`);
+      return;
+    }
+    resumeLocationSharing("manual");
+  }
+
   function handleToggleLocationSharing() {
     music.sfx("tap");
     if (snoozedUntil !== null) {
+      if (holdLiveStart()) return;
       resumeLocationSharing("manual");
       return;
     }
@@ -4750,6 +4763,7 @@ export default function TripMap({
       }
       stopLocationSharing("discard");
     } else {
+      if (holdLiveStart()) return;
       if (liveTrailEnabledRef.current) {
         liveTrailPermissionLoggedRef.current = false;
         log.logGps("gps:permission:request", {
@@ -6277,9 +6291,52 @@ export default function TripMap({
           />
         ) : null}
         {role === "traveler" && isLocationSharing && nativeReadinessState.captureReadiness === "degraded" ? (
-          <LiveSafetyNotice kind="capture" onRetry={() => setNativeRetryNonce((value) => value + 1)} onOpenSettings={openNativeLocationSettings} />
+          <LiveSafetyNotice kind="capture" onRetry={requestNativePublishingRetry} onOpenSettings={openNativeLocationSettings} />
         ) : role === "traveler" && isLocationSharing && nativeReadinessState.captureReadiness === "ready" && ["disabled", "unsupported", "failed", "ended", "dismissed"].includes(nativeReadinessState.activityStatus) ? (
-          <LiveSafetyNotice kind="activity" onRetry={() => setNativeRetryNonce((value) => value + 1)} onOpenSettings={openNativeLocationSettings} />
+          <LiveSafetyNotice kind="activity" onRetry={requestNativePublishingRetry} onOpenSettings={openNativeLocationSettings} />
+        ) : null}
+        {role === "traveler" &&
+        currentTrip &&
+        ((liveStartGate === "private" && viewingMode === "private") ||
+          (liveStartGate === "completed" && currentTrip.lifecycle === "completed")) ? (
+          <div
+            role="status"
+            className="pointer-events-auto flex items-center gap-2 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] px-3 py-2 shadow-[var(--shadow-card)]"
+          >
+            <p className="min-w-0 flex-1 text-xs font-semibold text-[var(--ink-1)]">
+              {liveStartGate === "private"
+                ? `Return to ${currentTrip.title} to go live`
+                : `Reopen ${currentTrip.title} to go live`}
+            </p>
+            {liveStartGate === "private" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setLiveStartGate(null);
+                  returnToCurrent();
+                }}
+                className="rounded-md bg-[var(--ink-1)] px-2 py-1 text-[10px] font-bold text-[var(--bg-card)]"
+              >
+                Return
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="rounded-md border border-[var(--line-soft)] px-2 py-1 text-[10px] font-bold text-[var(--ink-2)] opacity-50"
+              >
+                Reopen
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => setLiveStartGate(null)}
+              className="rounded-md p-1 text-[var(--ink-2)]"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          </div>
         ) : null}
         <FeatureBoundary
           resetKeys={[token, role, "hud-status-card"]}
@@ -6531,6 +6588,14 @@ export default function TripMap({
         cancelLabel="Keep"
         onConfirm={handleDeleteBreadcrumb}
         variant="danger"
+      />
+
+      <ConfirmModal
+        open={isStartTripLiveOpen && currentTrip?.lifecycle === "planned"}
+        onOpenChange={setIsStartTripLiveOpen}
+        title={`Start ${currentTrip?.title ?? "trip"} and go live?`}
+        confirmLabel="Start trip and go live"
+        onConfirm={() => void handleStartTripAndGoLive()}
       />
 
       <PendingBreadcrumbPauseDialog

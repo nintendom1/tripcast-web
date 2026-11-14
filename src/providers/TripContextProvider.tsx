@@ -3,7 +3,7 @@ import { useQuery } from "convex/react";
 import { ErrorBoundary } from "react-error-boundary";
 
 import { tripcastApi, type CurrentTrip, type EffectiveTrip, type Role } from "../convex/tripcastApi";
-import type { TripContextValue, TripTarget } from "../features/trips/tripTypes";
+import type { ServerTripStatus, TripContextValue, TripTarget } from "../features/trips/tripTypes";
 import { useTravelerViewingTrip } from "../features/trips/useTravelerViewingTrip";
 
 const TripContext = createContext<TripContextValue | null>(null);
@@ -33,6 +33,7 @@ function inertTripContext(token: string, role: Role): TripContextValue {
     returnToCurrent: noop,
     multiTripEnabled: false,
     reportTripUnavailable: noop,
+    serverTripStatus: "known",
   };
 }
 
@@ -67,7 +68,7 @@ function TripSubscription({ token, role, onResult, onHealthy }: SubscriptionProp
  * and exposes `openPrivately` and `returnToCurrent`.
  *
  * While multi-trip is disabled, before the query resolves, or while the subscription is failing, the value equals
- * the inert defaults. `children` keep one element type at one tree position in every case (no remount of the map or
+ * the inert defaults; `serverTripStatus` (`known`, `loading`, `unavailable`) tells these cases apart. `children` keep one element type at one tree position in every case (no remount of the map or
  * the publishing bridge); a failed subscription is retried on a timer, on `visibilitychange` and on `online`.
  */
 export function TripContextProvider({ token, role, children }: TripContextProviderProps) {
@@ -109,6 +110,8 @@ export function TripContextProvider({ token, role, children }: TripContextProvid
   const currentTrip = role === "traveler" && server.current?.multiTripEnabled === true ? server.current : null;
   const followerTrip = role === "follower" && server.effective ? server.effective : null;
   const multiTripEnabled = currentTrip !== null;
+  const serverResult = role === "traveler" ? server.current : server.effective;
+  const serverTripStatus: ServerTripStatus = failed ? "unavailable" : serverResult === undefined ? "loading" : "known";
 
   const serverTarget = useMemo<TripTarget | null>(() => {
     const source = currentTrip ?? followerTrip;
@@ -124,9 +127,10 @@ export function TripContextProvider({ token, role, children }: TripContextProvid
       // For the Traveler the Followers' trip mirrors the current trip (banner copy).
       followerTrip: role === "traveler" ? currentTrip : followerTrip,
       multiTripEnabled,
+      serverTripStatus,
       ...viewing,
     }),
-    [token, role, currentTrip, followerTrip, multiTripEnabled, viewing],
+    [token, role, currentTrip, followerTrip, multiTripEnabled, serverTripStatus, viewing],
   );
 
   return (
