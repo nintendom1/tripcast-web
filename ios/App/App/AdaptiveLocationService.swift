@@ -128,6 +128,31 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             NativeLocationPublisher.shared.stopRemoteSharing()
             self?.stopLive()
         }
+        // The shared trip changed, so the server already stopped sharing for this session and no
+        // remote stop is sent. stopLive keeps the queue for the server to classify and clears
+        // liveRequested and any snooze, so sharing never restarts by itself.
+        NativeLocationPublisher.shared.clearPersistedLiveRequest = { [defaults] in
+            defaults.removeObject(forKey: DefaultsKey.liveRequested)
+            defaults.removeObject(forKey: DefaultsKey.snoozeUntil)
+        }
+        // A "reconfigured" revoke always concerns an active session (the publisher checked), and
+        // its persisted snooze is already cleared, so it cannot be re-checked here.
+        NativeLocationPublisher.shared.onPublishingRevoked = { [weak self] details in
+            guard let self,
+                  details["capturing"] as? Bool == true || details["source"] as? String == "reconfigured" ||
+                    self.liveRequested || self.snoozeUntil != nil
+            else { return }
+            var event = self.currentState()
+            event["action"] = "gps:native-publish:revoked"
+            event["level"] = "warn"
+            event["details"] = details
+            self.emit(event)
+            let tagsIntroduced = details["reason"] as? String == "tags-introduced"
+            self.stopLive(
+                preserveSamples: true,
+                activityEndMessage: tagsIntroduced ? "Live stopped: tap to resume" : "Live stopped: trip changed"
+            )
+        }
         NativeLocationPublisher.shared.currentPublishingState { [weak self] state in
             self?.mergePublishingState(state)
         }
@@ -207,6 +232,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     func stopLive(
         clearCredentials: Bool = false,
         preserveSamples: Bool = false,
+        activityEndMessage: String? = nil,
         completion: ((JSObject) -> Void)? = nil
     ) {
         snoozeUntil = nil
@@ -242,7 +268,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         var stoppedPublishingState: JSObject?
         var activityStopResult: LiveActivityStopResult?
         stopGroup.enter()
-        LiveActivityController.shared.stop { result in
+        LiveActivityController.shared.stop(endMessage: activityEndMessage) { result in
             activityStopResult = result
             stopGroup.leave()
         }
@@ -443,6 +469,9 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         cloakZones: [NativeLocationPublisher.CloakZone],
         includeDebugMysteryMissions: Bool,
         usageGuard: NativeLocationPublisher.UsageGuard?,
+        captureTripId: String?,
+        publishingEpoch: Int?,
+        tripTitle: String?,
         completion: @escaping (Result<JSObject, Error>) -> Void
     ) {
         LiveActivityController.shared.configure(alertThresholdSeconds: alertThresholdSeconds)
@@ -456,7 +485,11 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             cloakTimeoutSeconds: cloakTimeoutSeconds,
             cloakZones: cloakZones,
             includeDebugMysteryMissions: includeDebugMysteryMissions,
-            usageGuard: usageGuard
+            usageGuard: usageGuard,
+            captureTripId: captureTripId,
+            publishingEpoch: publishingEpoch,
+            tripTitle: tripTitle,
+            liveSessionRequested: liveRequested || snoozeUntil != nil
         ) { [weak self] result in
             guard let self else { return }
             switch result {

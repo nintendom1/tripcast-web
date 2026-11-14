@@ -31,6 +31,8 @@ import { CrashOnDemand, disarmCrash } from "./debug/crashTrigger";
 import { log as debugLog } from "./debug/debugLogger";
 import { ThemeProvider, TravelerThemeBridge } from "./providers/ThemeProvider";
 import { BackgroundSaveProvider } from "./providers/BackgroundSaveProvider";
+import { TripContextProvider } from "./providers/TripContextProvider";
+import { LivePublishingBridge } from "./native/LivePublishingBridge";
 import { clearLiveTrailCachesForToken } from "./features/map/liveTrailCache";
 import {
   isAdaptiveLocationAvailable,
@@ -773,9 +775,17 @@ function ConnectedApp() {
   const role = activeSessionCheck.role;
   const followerHandle =
     session.sessionType === "follower" ? session.username : undefined;
+  // Every signed-in screen shares one trip context. The bridge is its first child, outside the map ErrorBoundary
+  // and at the same position on both screens, so a map crash, reset or view change never reconfigures publishing.
+  const signedIn = (screen: React.ReactNode) => (
+    <TripContextProvider token={session.token} role={role}>
+      <LivePublishingBridge token={session.token} role={role} gpsSuppressedUntil={gpsSuppressedUntil} />
+      {screen}
+    </TripContextProvider>
+  );
 
   if (view === "follower-management" && role === "traveler") {
-    return (
+    return signedIn(
       <>
         <TravelerThemeBridge token={session.token} role={role} />
         <FeatureBoundary
@@ -794,7 +804,7 @@ function ConnectedApp() {
     );
   }
 
-  return (
+  return signedIn(
     <BackgroundSaveProvider token={session.token}>
     <div className="relative flex flex-col h-dvh">
       <TravelerThemeBridge token={session.token} role={role} />

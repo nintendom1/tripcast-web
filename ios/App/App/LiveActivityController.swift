@@ -43,6 +43,7 @@ final class LiveActivityController {
     private var motionConfidence = "unknown"
     private var motionStartedAt: Date?
     private var snoozeUntil: Date?
+    private var tripTitle: String?
     private var activeFailureSources: Set<FailureSource> = []
     private var publishingHold: String?
     private var alertIncident: AlertIncident?
@@ -118,7 +119,9 @@ final class LiveActivityController {
         }
     }
 
-    func stop(completion: ((LiveActivityStopResult) -> Void)? = nil) {
+    /// Ends every activity. With `endMessage` the final state shows that message and stays on the
+    /// Lock Screen (system default dismissal) so the traveler can see why Live stopped.
+    func stop(endMessage: String? = nil, completion: ((LiveActivityStopResult) -> Void)? = nil) {
         stateQueue.async {
             self.mode = "off"
             self.queueDepth = 0
@@ -147,8 +150,15 @@ final class LiveActivityController {
             }
             self.stopInFlight = true
             if #available(iOS 16.1, *) {
-                let finalState = self.state()
-                let requestedCount = self.implementation().stop(finalState: finalState) { result in
+                var finalState = self.state()
+                if let endMessage {
+                    finalState.health = "neutral"
+                    finalState.message = endMessage
+                }
+                let requestedCount = self.implementation().stop(
+                    finalState: finalState,
+                    keepVisible: endMessage != nil
+                ) { result in
                     self.stateQueue.async {
                         self.finishStop(result)
                     }
@@ -232,6 +242,14 @@ final class LiveActivityController {
                 self.scheduleStaleNotificationIfNeeded(reason: "mode-\(mode)")
             }
             self.updateActivity()
+        }
+    }
+
+    func setTripTitle(_ title: String?) {
+        stateQueue.async {
+            guard self.tripTitle != title else { return }
+            self.tripTitle = title
+            if self.mode != "off" { self.updateActivity() }
         }
     }
 
@@ -649,7 +667,8 @@ final class LiveActivityController {
             state.health,
             state.message,
             state.motionState ?? "",
-            state.motionStartedAt.map { String($0.timeIntervalSince1970) } ?? ""
+            state.motionStartedAt.map { String($0.timeIntervalSince1970) } ?? "",
+            state.tripTitle ?? ""
         ].joined(separator: "|")
     }
 
@@ -720,7 +739,8 @@ final class LiveActivityController {
             message: message,
             motionState: motionState,
             motionStartedAt: motionStartedAt,
-            snoozeUntil: snoozeUntil
+            snoozeUntil: snoozeUntil,
+            tripTitle: tripTitle
         )
     }
 
@@ -794,6 +814,9 @@ private final class AvailableLiveActivityController: NSObject {
     private var observedActivityIDs: Set<String> = []
     private var requestContexts: [String: (operationID: String, trigger: String, requestedAt: TimeInterval)] = [:]
     private var appEndRequestedIDs: Set<String> = []
+    /// Ended activities cleared at a new start: their late lifecycle events must not overwrite the
+    /// status of the activity that replaced them.
+    private var retiredActivityIDs: Set<String> = []
     private let stateQueue: DispatchQueue
     private let eventHandler: EventHandler
 
@@ -823,7 +846,12 @@ private final class AvailableLiveActivityController: NSObject {
             )
             return "disabled"
         }
-        if let existing = Activity<TripCastLiveActivityAttributes>.activities.first {
+        // An activity ended with a visible final message cannot be updated: clear it, start fresh.
+        for ended in Activity<TripCastLiveActivityAttributes>.activities where ended.activityState == .ended {
+            retiredActivityIDs.insert(ended.id)
+            Task { await ended.end(using: nil, dismissalPolicy: .immediate) }
+        }
+        if let existing = Self.firstUpdatableActivity() {
             activity = existing
             recordRequest(existing, operationID: operationID, trigger: trigger, requestedAt: requestedAt, outcome: "reused")
             observe(existing)
@@ -917,16 +945,19 @@ private final class AvailableLiveActivityController: NSObject {
                         details["trigger"] = context.trigger
                         details["elapsedSinceRequestMs"] = max(0, (ProcessInfo.processInfo.systemUptime - context.requestedAt) * 1_000)
                     }
+                    let retired = self.retiredActivityIDs.contains(activity.id)
+                    if retired { details["retired"] = true }
                     self.eventHandler(
                         "gps:live-activity:lifecycle",
                         level,
                         details,
-                        activityStatus
+                        retired ? nil : activityStatus
                     )
                     if state == .dismissed {
                         self.requestContexts.removeValue(forKey: activity.id)
                         self.appEndRequestedIDs.remove(activity.id)
                         self.observedActivityIDs.remove(activity.id)
+                        self.retiredActivityIDs.remove(activity.id)
                     }
                 }
                 if state == .dismissed { break }
@@ -941,15 +972,22 @@ private final class AvailableLiveActivityController: NSObject {
     }
 
     func updateExisting(state: TripCastLiveActivityAttributes.ContentState) {
-        if activity == nil, let existing = Activity<TripCastLiveActivityAttributes>.activities.first {
+        if activity == nil, let existing = Self.firstUpdatableActivity() {
             activity = existing
             observe(existing)
         }
         update(state: state)
     }
 
+    private static func firstUpdatableActivity() -> Activity<TripCastLiveActivityAttributes>? {
+        Activity<TripCastLiveActivityAttributes>.activities.first {
+            $0.activityState != .ended && $0.activityState != .dismissed
+        }
+    }
+
     func stop(
         finalState: TripCastLiveActivityAttributes.ContentState,
+        keepVisible: Bool,
         completion: @escaping (LiveActivityStopResult) -> Void
     ) -> Int {
         let activities = Activity<TripCastLiveActivityAttributes>.activities
@@ -958,11 +996,12 @@ private final class AvailableLiveActivityController: NSObject {
         lastState = nil
         Task {
             for activity in activities {
-                await activity.end(using: finalState, dismissalPolicy: .immediate)
+                await activity.end(using: finalState, dismissalPolicy: keepVisible ? .default : .immediate)
             }
             let requestedIDs = Set(activities.map(\.id))
+            // An activity ended on purpose with a visible final message is not a leftover.
             let remainingCount = Activity<TripCastLiveActivityAttributes>.activities.reduce(0) {
-                $0 + (requestedIDs.contains($1.id) ? 1 : 0)
+                $0 + (requestedIDs.contains($1.id) && !(keepVisible && $1.activityState == .ended) ? 1 : 0)
             }
             completion(.init(
                 requestedCount: activities.count,

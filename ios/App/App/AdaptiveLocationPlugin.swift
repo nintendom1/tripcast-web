@@ -107,6 +107,12 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
                 pausePercent: pausePercent
             )
         }
+        let nonEmpty: (String?) -> String? = { value in
+            guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+                return nil
+            }
+            return trimmed
+        }
         DispatchQueue.main.async {
             AdaptiveLocationService.shared.configurePublishing(
                 endpoint: endpoint,
@@ -118,7 +124,10 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
                 cloakTimeoutSeconds: call.getDouble("cloakTimeoutSeconds") ?? 300,
                 cloakZones: zones,
                 includeDebugMysteryMissions: call.getBool("includeDebugMysteryMissions") ?? false,
-                usageGuard: usageGuard
+                usageGuard: usageGuard,
+                captureTripId: nonEmpty(call.getString("captureTripId")),
+                publishingEpoch: call.getInt("publishingEpoch"),
+                tripTitle: nonEmpty(call.getString("tripTitle"))
             ) { result in
                 switch result {
                 case .success(let state): call.resolve(state)

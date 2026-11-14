@@ -16,8 +16,9 @@ struct TripCastLiveActivityWidget: Widget {
                 brandedIcon(size: 36, health: context.state.health)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title(context.state.mode))
+                    Text(title(context.state))
                         .font(.headline)
+                        .lineLimit(context.state.tripTitle == nil ? nil : 1)
                     statusLines(context.state)
                 }
                 Spacer()
@@ -31,7 +32,8 @@ struct TripCastLiveActivityWidget: Widget {
                     HStack(spacing: 7) {
                         brandedIcon(size: 24, health: context.state.health)
                             .accessibilityHidden(true)
-                        Text(title(context.state.mode))
+                        Text(title(context.state))
+                            .lineLimit(context.state.tripTitle == nil ? nil : 1)
                     }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
@@ -87,13 +89,13 @@ struct TripCastLiveActivityWidget: Widget {
             .unredacted()
     }
 
-    private func title(_ mode: String) -> String {
-        switch mode {
+    private func title(_ state: TripCastLiveActivityAttributes.ContentState) -> String {
+        switch state.mode {
         case "snoozed": return "Live Snoozed"
         case "power-saving": return "Power Saving"
         case "privacy": return "Privacy pause"
         case "recovering": return "Recovering"
-        case "precise": return "TripCast Live"
+        case "precise": return state.tripTitle.map { "Live · \($0)" } ?? "TripCast Live"
         default: return "TripCast"
         }
     }
@@ -164,7 +166,7 @@ struct TripCastLiveActivityWidget: Widget {
     private func accessibilitySummary(
         _ state: TripCastLiveActivityAttributes.ContentState
     ) -> String {
-        "\(title(state.mode)), \(state.message)"
+        "\(title(state)), \(state.message)"
     }
 
     private func statusColor(_ health: String) -> Color {

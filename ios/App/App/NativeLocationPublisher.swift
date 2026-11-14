@@ -8,19 +8,19 @@ import UIKit
 final class NativeLocationPublisher {
     static let shared = NativeLocationPublisher()
 
-    struct CloakZone: Codable {
+    struct CloakZone: Codable, Equatable {
         let lat: Double
         let lon: Double
         let radiusMeters: Double
     }
 
-    struct UsageGuard: Codable {
+    struct UsageGuard: Codable, Equatable {
         let bytesPerUpload: Double
         let monthlyLimitBytes: Double
         let pausePercent: Double
     }
 
-    struct Configuration: Codable {
+    struct Configuration: Codable, Equatable {
         let endpoint: String
         let liveTrailEnabled: Bool
         let movementDetectionEnabled: Bool
@@ -30,6 +30,9 @@ final class NativeLocationPublisher {
         let cloakZones: [CloakZone]
         let includeDebugMysteryMissions: Bool
         let usageGuard: UsageGuard?
+        var captureTripId: String?
+        var publishingEpoch: Int?
+        var tripTitle: String?
 
         private enum CodingKeys: String, CodingKey {
             case endpoint
@@ -41,6 +44,9 @@ final class NativeLocationPublisher {
             case cloakZones
             case includeDebugMysteryMissions
             case usageGuard
+            case captureTripId
+            case publishingEpoch
+            case tripTitle
         }
 
         init(
@@ -52,7 +58,10 @@ final class NativeLocationPublisher {
             cloakTimeoutSeconds: TimeInterval,
             cloakZones: [CloakZone],
             includeDebugMysteryMissions: Bool,
-            usageGuard: UsageGuard?
+            usageGuard: UsageGuard?,
+            captureTripId: String?,
+            publishingEpoch: Int?,
+            tripTitle: String?
         ) {
             self.endpoint = endpoint
             self.liveTrailEnabled = liveTrailEnabled
@@ -63,6 +72,9 @@ final class NativeLocationPublisher {
             self.cloakZones = cloakZones
             self.includeDebugMysteryMissions = includeDebugMysteryMissions
             self.usageGuard = usageGuard
+            self.captureTripId = captureTripId
+            self.publishingEpoch = publishingEpoch
+            self.tripTitle = tripTitle
         }
 
         init(from decoder: Decoder) throws {
@@ -84,6 +96,21 @@ final class NativeLocationPublisher {
                 forKey: .includeDebugMysteryMissions
             ) ?? false
             usageGuard = try values.decodeIfPresent(UsageGuard.self, forKey: .usageGuard)
+            captureTripId = try values.decodeIfPresent(String.self, forKey: .captureTripId)
+            publishingEpoch = try values.decodeIfPresent(Int.self, forKey: .publishingEpoch)
+            tripTitle = try values.decodeIfPresent(String.self, forKey: .tripTitle)
+        }
+
+        /// True when `previous` differs from this configuration in the trip tags or title and nothing else.
+        func changesOnlyPublishingTags(from previous: Configuration) -> Bool {
+            guard captureTripId != previous.captureTripId ||
+                    publishingEpoch != previous.publishingEpoch ||
+                    tripTitle != previous.tripTitle else { return false }
+            var retagged = previous
+            retagged.captureTripId = captureTripId
+            retagged.publishingEpoch = publishingEpoch
+            retagged.tripTitle = tripTitle
+            return retagged == self
         }
 
         private static func normalizedInterval(_ value: Int) -> Int {
@@ -91,6 +118,8 @@ final class NativeLocationPublisher {
         }
     }
 
+    // Synthesized Codable decodes every optional with decodeIfPresent, so a queue.json written
+    // before the trip tags existed still loads (with nil tags).
     struct PendingSample: Codable {
         let clientSampleId: String
         let lat: Double
@@ -98,9 +127,70 @@ final class NativeLocationPublisher {
         let accuracy: Double?
         let sampledAt: Double
         let recordTrail: Bool
-        let publishCurrentLocation: Bool?
+        var publishCurrentLocation: Bool?
         let reason: String
         var parked: Bool? = nil
+        var captureTripId: String? = nil
+        var publishingEpoch: Int? = nil
+
+        /// The ingest sample payload; trip tags are sent only when the sample was captured with them.
+        var uploadPayload: [String: Any] {
+            var value: [String: Any] = [
+                "clientSampleId": clientSampleId,
+                "lat": lat,
+                "lon": lon,
+                "sampledAt": sampledAt,
+                "recordTrail": recordTrail,
+                "publishCurrentLocation": publishCurrentLocation ?? true,
+                "reason": reason
+            ]
+            if let accuracy { value["accuracy"] = accuracy }
+            if parked == true { value["parked"] = true }
+            if let captureTripId { value["tripId"] = captureTripId }
+            if let publishingEpoch { value["epoch"] = publishingEpoch }
+            return value
+        }
+    }
+
+    /// How the ingest response classified one batch. Every field is optional on the wire, so a
+    /// server that sends only accepted and duplicate ids yields today's behaviour.
+    struct IngestOutcome {
+        /// Ids that leave the queue: accepted and duplicates, plus any classified id.
+        let delivered: Set<String>
+        let historical: Set<String>
+        /// Discarded or quarantined: removed from the queue but never recorded in the trail.
+        let unrecorded: Set<String>
+        /// Delivered samples that may join the local acknowledged trail.
+        let trailAcknowledged: Set<String>
+        /// Delivered samples the server applied as the current location.
+        let appliedAsCurrent: Set<String>
+        let publishingState: String?
+        let currentTripId: String?
+        let currentEpoch: Int?
+
+        init(response value: [String: Any]) {
+            func ids(_ key: String) -> Set<String> { Set(value[key] as? [String] ?? []) }
+            historical = ids("historicalClientSampleIds")
+            unrecorded = ids("discardedClientSampleIds").union(ids("quarantinedClientSampleIds"))
+            delivered = ids("acceptedClientSampleIds")
+                .union(ids("duplicateClientSampleIds"))
+                .union(historical)
+                .union(unrecorded)
+            trailAcknowledged = delivered.subtracting(unrecorded)
+            appliedAsCurrent = trailAcknowledged.subtracting(historical)
+            let publishing = value["publishing"] as? [String: Any]
+            publishingState = publishing?["state"] as? String
+            currentTripId = publishing?["currentTripId"] as? String
+            currentEpoch = (publishing?["epoch"] as? NSNumber)?.intValue
+        }
+
+        /// The epoch is the authority: a session ends when the server's current epoch differs from the
+        /// one it started under, whatever the state says. A "revoked" state with a matching epoch only
+        /// concerns older queued samples from an earlier session. Without both epochs, the state decides.
+        func revokes(sessionEpoch: Int?) -> Bool {
+            if let currentEpoch, let sessionEpoch { return currentEpoch != sessionEpoch }
+            return publishingState == "revoked"
+        }
     }
 
     struct PendingMotion: Codable, Equatable {
@@ -258,12 +348,27 @@ final class NativeLocationPublisher {
     private var usageCurrent = UsageBucket(hourStart: 0)
     private var usageHistoryDirty = false
     private var usageModeSince: Date?
+    /// Set once a session is revoked; capture and motion stay held until the next session starts.
+    private var publishingRevocationHandled = false
+    /// Tags of the latest live session, fixed when it starts (seeded from the persisted configuration
+    /// at launch, so a snooze that outlives the process keeps its tags). Samples are stamped with these,
+    /// never with a newer configuration, so a session cannot drift onto another trip or gain an epoch.
+    private var sessionCaptureTripId: String?
+    private var sessionPublishingEpoch: Int?
 
     var eventHandler: ((JSObject) -> Void)?
     var onCloakTimeout: (() -> Void)?
+    /// Called on the main queue once per revocation with event details (`capturing`, `source`,
+    /// `reason` "trip-changed" or "tags-introduced", optional `currentTripId`/`epoch`). The service
+    /// decides whether a session needs stopping.
+    var onPublishingRevoked: ((JSObject) -> Void)?
+    /// Called synchronously on workQueue: clears the persisted Live request and snooze.
+    var clearPersistedLiveRequest: (() -> Void)?
 
     private init() {
         configuration = loadConfiguration()
+        sessionCaptureTripId = configuration?.captureTripId
+        sessionPublishingEpoch = configuration?.publishingEpoch
         samples = loadSamples()
         pendingMotion = loadPendingMotion()
         mysteryCompletions = loadMysteryCompletions()
@@ -282,6 +387,9 @@ final class NativeLocationPublisher {
         usageHistoryDirty = usageHistory.count != loadedHistory.count
         motionPublishStatus = pendingMotion == nil ? "idle" : "pending"
         recoveryActive = !samples.isEmpty
+        if let tripTitle = configuration?.tripTitle {
+            LiveActivityController.shared.setTripTitle(tripTitle)
+        }
         pathMonitor.pathUpdateHandler = { [weak self] path in
             self?.handleNetworkPath(path)
         }
@@ -317,8 +425,12 @@ final class NativeLocationPublisher {
     func localTrailSnapshot(completion: @escaping (JSObject) -> Void) {
         workQueue.async { [weak self] in
             guard let self else { return }
-            let pending = self.samples.filter(\.recordTrail).map { self.trailPoint($0, status: "pending") }
-            let acknowledged = self.acknowledgedTrail.map { self.trailPoint($0, status: "acknowledged") }
+            // Only the current trip's points: after a switch the old trip's trail is not drawn.
+            let tripId = self.configuration?.captureTripId
+            let pending = self.samples.filter { $0.recordTrail && $0.captureTripId == tripId }
+                .map { self.trailPoint($0, status: "pending") }
+            let acknowledged = self.acknowledgedTrail.filter { $0.captureTripId == tripId }
+                .map { self.trailPoint($0, status: "acknowledged") }
             let snapshot: JSObject = ["queueRevision": queueRevision, "points": acknowledged + pending]
             DispatchQueue.main.async { completion(snapshot) }
         }
@@ -335,6 +447,10 @@ final class NativeLocationPublisher {
         cloakZones: [CloakZone],
         includeDebugMysteryMissions: Bool,
         usageGuard: UsageGuard?,
+        captureTripId: String?,
+        publishingEpoch: Int?,
+        tripTitle: String?,
+        liveSessionRequested: Bool,
         completion: @escaping (Result<JSObject, Error>) -> Void
     ) {
         workQueue.async { [weak self] in
@@ -358,19 +474,48 @@ final class NativeLocationPublisher {
                 cloakTimeoutSeconds: max(0, cloakTimeoutSeconds),
                 cloakZones: cloakZones,
                 includeDebugMysteryMissions: includeDebugMysteryMissions,
-                usageGuard: usageGuard
+                usageGuard: usageGuard,
+                captureTripId: captureTripId,
+                publishingEpoch: publishingEpoch,
+                tripTitle: tripTitle
             )
-            generation += 1
-            isPublishing = false
-            activePublishTask?.cancel()
-            activePublishTask = nil
-            cancelScheduledPublishLocked()
-            activeMotionPublishTask?.cancel()
-            activeMotionPublishTask = nil
-            motionPublishInFlight = false
-            scheduledMotionPublishWorkItem?.cancel()
-            scheduledMotionPublishWorkItem = nil
+            let previous = configuration
+            // A trip switch only retags future samples: queued samples keep their tags and the
+            // in-flight upload stays valid, so it is not cancelled.
+            let tagsOnly = !identityChanged && !signInExpired &&
+                previous.map { next.changesOnlyPublishingTags(from: $0) } == true
+            if !tagsOnly {
+                generation += 1
+                isPublishing = false
+                activePublishTask?.cancel()
+                activePublishTask = nil
+                cancelScheduledPublishLocked()
+                activeMotionPublishTask?.cancel()
+                activeMotionPublishTask = nil
+                motionPublishInFlight = false
+                scheduledMotionPublishWorkItem?.cancel()
+                scheduledMotionPublishWorkItem = nil
+            }
+            // An epoch other than the session's ends a live, requested or snoozed session before the
+            // tags are adopted; they apply to future sessions only. A session started without an epoch
+            // never adopts one (native cannot tell whether a switch happened meanwhile). A nil epoch
+            // is no information, so a 5 -> nil -> 6 flicker still stops at 6.
+            if let nextEpoch = next.publishingEpoch,
+               nextEpoch != sessionPublishingEpoch,
+               currentMode != "off" || liveSessionRequested {
+                // Before the new tags are assigned and persisted: a process death in between must not
+                // let a relaunch restore Live under the new epoch.
+                clearPersistedLiveRequest?()
+                handlePublishingRevokedLocked(
+                    source: "reconfigured",
+                    reason: sessionPublishingEpoch == nil ? "tags-introduced" : "trip-changed",
+                    currentTripId: next.captureTripId,
+                    currentEpoch: nextEpoch
+                )
+            }
+            if previous?.captureTripId != next.captureTripId { queueRevision += 1 }
             configuration = next
+            LiveActivityController.shared.setTripTitle(next.tripTitle)
             do {
                 try persist(next, to: configurationURL)
                 storageHealthy = true
@@ -380,6 +525,22 @@ final class NativeLocationPublisher {
                 failureReason = "configuration-persistence-failed"
                 publishingPhase = "storage-error"
                 throw error
+            }
+            if tagsOnly {
+                if publishingPhase == "storage-error" {
+                    publishingPhase = samples.isEmpty
+                        ? "healthy"
+                        : (networkAvailable == false ? "offline" : "syncing")
+                }
+                emit("gps:native-publish:configured", details: [
+                    "emissionIntervalSeconds": next.emissionIntervalSeconds,
+                    "movementDetectionEnabled": next.movementDetectionEnabled,
+                    "queueDepth": samples.count,
+                    "publishingTagsOnly": true
+                ])
+                let state = currentPublishingStateLocked()
+                DispatchQueue.main.async { completion(.success(state)) }
+                return
             }
             if identityChanged {
                 acknowledgedTrail.removeAll()
@@ -422,6 +583,9 @@ final class NativeLocationPublisher {
         workQueue.async { [weak self] in
             guard let self else { return }
             if self.currentMode == "off" {
+                self.publishingRevocationHandled = false
+                self.sessionCaptureTripId = self.configuration?.captureTripId
+                self.sessionPublishingEpoch = self.configuration?.publishingEpoch
                 self.sessionStartedAt = Date()
                 self.sessionCapturedCount = 0
                 self.sessionDurableCount = 0
@@ -513,17 +677,9 @@ final class NativeLocationPublisher {
                 silentStopDrainActive = !clearCredentials &&
                     !recoveryActive && networkAvailable != false && storageHealthy
                 samples = samples.map { sample in
-                    PendingSample(
-                        clientSampleId: sample.clientSampleId,
-                        lat: sample.lat,
-                        lon: sample.lon,
-                        accuracy: sample.accuracy,
-                        sampledAt: sample.sampledAt,
-                        recordTrail: sample.recordTrail,
-                        publishCurrentLocation: false,
-                        reason: sample.reason,
-                        parked: sample.parked
-                    )
+                    var copy = sample
+                    copy.publishCurrentLocation = false
+                    return copy
                 }
                 recoveryActive = !samples.isEmpty
                 recoveryBreadcrumbsDelivered = 0
@@ -558,6 +714,7 @@ final class NativeLocationPublisher {
             }
             if clearCredentials {
                 configuration = nil
+                LiveActivityController.shared.setTripTitle(nil)
                 try? fileManager.removeItem(at: configurationURL)
                 if !preserveSamples { try? fileManager.removeItem(at: setAsideSamplesURL) }
                 signInExpired = false
@@ -590,7 +747,8 @@ final class NativeLocationPublisher {
 
     func accept(_ location: CLLocation, forcedReason: String? = nil, parked: Bool = false) {
         workQueue.async { [weak self] in
-            guard let self, self.configuration != nil, self.currentMode != "off" else { return }
+            guard let self, self.configuration != nil, self.currentMode != "off",
+                  !self.publishingRevocationHandled else { return }
             if self.shouldSuppress(location) {
                 LiveActivityController.shared.setPrivacyPaused(lastAcknowledgedAt: nil)
                 return
@@ -632,7 +790,9 @@ final class NativeLocationPublisher {
                 recordTrail: !parked && self.configuration?.liveTrailEnabled == true,
                 publishCurrentLocation: true,
                 reason: acceptedReason,
-                parked: parked ? true : nil
+                parked: parked ? true : nil,
+                captureTripId: self.sessionCaptureTripId,
+                publishingEpoch: self.sessionPublishingEpoch
             )
             if self.samples.isEmpty || (self.isPublishing && self.batchStartedAt == nil) {
                 self.batchStartedAt = Date()
@@ -753,6 +913,7 @@ final class NativeLocationPublisher {
     private func publishMotionIfPossibleLocked(reason: String) {
         guard !motionPublishInFlight,
               !signInExpired,
+              !publishingRevocationHandled,
               currentMode != "off",
               configuration?.movementDetectionEnabled == true,
               networkAvailable != false,
@@ -768,13 +929,15 @@ final class NativeLocationPublisher {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 15
+        var motionArgs: [String: Any] = [
+            "token": token,
+            "classification": motion.classification,
+            "sampledAt": motion.sampledAt
+        ]
+        if let sessionPublishingEpoch { motionArgs["publishingEpoch"] = sessionPublishingEpoch }
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
             "path": "currentActivity:travelerApplyMovementDetection",
-            "args": [
-                "token": token,
-                "classification": motion.classification,
-                "sampledAt": motion.sampledAt
-            ],
+            "args": motionArgs,
             "format": "json"
         ])
         let backgroundTask = beginBackgroundTask()
@@ -919,20 +1082,7 @@ final class NativeLocationPublisher {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let encodedSamples: [[String: Any]] = batch.map { sample in
-            var value: [String: Any] = [
-                "clientSampleId": sample.clientSampleId,
-                "lat": sample.lat,
-                "lon": sample.lon,
-                "sampledAt": sample.sampledAt,
-                "recordTrail": sample.recordTrail,
-                "publishCurrentLocation": sample.publishCurrentLocation ?? true,
-                "reason": sample.reason
-            ]
-            if let accuracy = sample.accuracy { value["accuracy"] = accuracy }
-            if sample.parked == true { value["parked"] = true }
-            return value
-        }
+        let encodedSamples: [[String: Any]] = batch.map(\.uploadPayload)
         var mutationArgs: [String: Any] = [
             "token": token,
             "samples": encodedSamples,
@@ -998,9 +1148,8 @@ final class NativeLocationPublisher {
                     return
                 }
 
-                let accepted = value["acceptedClientSampleIds"] as? [String] ?? []
-                let duplicates = value["duplicateClientSampleIds"] as? [String] ?? []
-                let delivered = Set(accepted + duplicates)
+                let outcome = IngestOutcome(response: value)
+                let delivered = outcome.delivered
                 self.failureAttempts.removeAll()
                 self.consecutiveFailures = 0
                 let deliveredBatchCount = batch.filter { delivered.contains($0.clientSampleId) }.count
@@ -1013,15 +1162,13 @@ final class NativeLocationPublisher {
                     MysteryProximityService.shared.apply(syncObject: mysterySync)
                 }
                 let acknowledged = batch.filter {
-                    delivered.contains($0.clientSampleId) && $0.recordTrail
+                    outcome.trailAcknowledged.contains($0.clientSampleId) && $0.recordTrail
                 }
                 self.acknowledgedTrail.append(contentsOf: acknowledged)
                 if self.acknowledgedTrail.count > self.recentTrailLimit {
                     self.acknowledgedTrail.removeFirst(self.acknowledgedTrail.count - self.recentTrailLimit)
                 }
-                let deliveredBreadcrumbs = batch.filter {
-                    delivered.contains($0.clientSampleId) && $0.recordTrail
-                }.count
+                let deliveredBreadcrumbs = acknowledged.count
                 self.samples.removeAll { delivered.contains($0.clientSampleId) }
                 if !delivered.isEmpty { self.queueRevision += 1 }
                 self.persistSamples()
@@ -1044,12 +1191,23 @@ final class NativeLocationPublisher {
                 } else {
                     LiveActivityController.shared.setQueueDepth(self.samples.count)
                 }
-                self.emit("gps:native-publish:ack", details: [
+                var ackDetails: JSObject = [
                     "acknowledgementLatencyMs": Int(acknowledgementLatencyMs.rounded()),
                     "remainingQueueDepth": self.samples.count
-                ])
+                ]
+                if !outcome.historical.isEmpty { ackDetails["historicalCount"] = outcome.historical.count }
+                if !outcome.unrecorded.isEmpty { ackDetails["unrecordedCount"] = outcome.unrecorded.count }
+                self.emit("gps:native-publish:ack", details: ackDetails)
+                if outcome.revokes(sessionEpoch: self.sessionPublishingEpoch) {
+                    self.handlePublishingRevokedLocked(
+                        source: "server",
+                        reason: "trip-changed",
+                        currentTripId: outcome.currentTripId,
+                        currentEpoch: outcome.currentEpoch
+                    )
+                }
                 if let latest = batch.last(where: {
-                    delivered.contains($0.clientSampleId) && $0.publishCurrentLocation != false
+                    outcome.appliedAsCurrent.contains($0.clientSampleId) && $0.publishCurrentLocation != false
                 }), (latest.parked == true) != self.parkedMarkerDelivered {
                     self.parkedMarkerDelivered = latest.parked == true
                     self.emit("gps:native-publish:parked", details: [
@@ -1096,6 +1254,27 @@ final class NativeLocationPublisher {
         }
         activePublishTask = task
         task.resume()
+    }
+
+    /// The shared trip changed (another device, or this one): hold capture at once and let the
+    /// service stop the session. The queue is kept so the server can classify what is left.
+    private func handlePublishingRevokedLocked(
+        source: String,
+        reason: String,
+        currentTripId: String?,
+        currentEpoch: Int?
+    ) {
+        guard !publishingRevocationHandled else { return }
+        publishingRevocationHandled = true
+        var details: JSObject = [
+            "source": source,
+            "reason": reason,
+            "queueDepth": samples.count,
+            "capturing": currentMode != "off"
+        ]
+        if let currentTripId { details["currentTripId"] = currentTripId }
+        if let currentEpoch { details["epoch"] = currentEpoch }
+        DispatchQueue.main.async { [weak self] in self?.onPublishingRevoked?(details) }
     }
 
     private func publishMysteryCompletionIfPossibleLocked(reason: String) {
