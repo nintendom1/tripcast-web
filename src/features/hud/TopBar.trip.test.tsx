@@ -5,16 +5,16 @@ import { ThemeProvider } from "../../providers/ThemeProvider";
 import { TripContextTestProvider } from "../../providers/TripContextProvider";
 import { TopBar } from "./TopBar";
 
-const chip = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
-vi.mock("../trips/TripChip", () => ({
-  TripChip: (props: Record<string, unknown>) => {
-    chip.props.push(props);
+const toggle = vi.hoisted(() => ({ props: [] as Array<Record<string, unknown>> }));
+vi.mock("../trips/TripsPaneToggle", () => ({
+  TripsPaneToggle: (props: Record<string, unknown>) => {
+    toggle.props.push(props);
     return null;
   },
 }));
 
 beforeEach(() => {
-  chip.props = [];
+  toggle.props = [];
   localStorage.clear();
 });
 
@@ -28,15 +28,16 @@ function renderBar(role: "traveler" | "follower", onRequestEndCurrentTrip?: () =
   );
 }
 
-describe("TopBar trip chip", () => {
-  it("hands the End Trip request for the shared trip to the chip (the card menu's Complete trip)", () => {
+describe("TopBar Trips pane toggle", () => {
+  it("hands the End Trip request for the shared trip to the logo toggle (the card menu's Complete trip)", () => {
     const end = vi.fn();
     renderBar("traveler", end);
-    expect(chip.props.at(-1)?.onRequestEndCurrentTrip).toBe(end);
+    expect(toggle.props.at(-1)?.onRequestEndCurrentTrip).toBe(end);
+    expect(toggle.props.at(-1)?.logoClassName).toEqual(expect.stringContaining("font-extrabold"));
   });
 
-  it("mounts no chip for a Follower", () => {
+  it("mounts no toggle for a Follower", () => {
     renderBar("follower", vi.fn());
-    expect(chip.props).toEqual([]);
+    expect(toggle.props).toEqual([]);
   });
 });

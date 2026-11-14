@@ -1,6 +1,6 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setLiveSharingEnabled } from "@/lib/liveSharingPreference";
@@ -8,7 +8,7 @@ import type { TripCard, TripPreview } from "../../convex/tripcastApi";
 import { ThemeProvider } from "../../providers/ThemeProvider";
 import { TripContextTestProvider } from "../../providers/TripContextProvider";
 import type { TripContextValue } from "./tripTypes";
-import { TripChip, type TripChipProps } from "./TripChip";
+import { TripsPaneToggle, type TripsPaneToggleProps } from "./TripsPaneToggle";
 
 const server = vi.hoisted(() => ({
   cards: [] as unknown[],
@@ -45,6 +45,7 @@ vi.mock("convex/react", () => ({
         server.oneShot.push({ tripId: args.tripId, resolve });
       }),
   }),
+  useMutation: () => () => new Promise(() => {}),
 }));
 
 const makeCard = (id: string, over: Partial<TripCard> = {}): TripCard => ({
@@ -85,7 +86,9 @@ const previewOf = (tripId: string): TripPreview => ({
 
 const autumn = { tripId: "autumn", title: "Autumn 2026" };
 
-function setup(value: Partial<TripContextValue> = {}, chipProps: TripChipProps = {}) {
+type PaneActionProps = Omit<TripsPaneToggleProps, "logoClassName" | "logo">;
+
+function setup(value: Partial<TripContextValue> = {}, paneProps: PaneActionProps = {}) {
   const ctx: Partial<TripContextValue> = {
     multiTripEnabled: true,
     viewingTripId: autumn.tripId,
@@ -98,7 +101,7 @@ function setup(value: Partial<TripContextValue> = {}, chipProps: TripChipProps =
   const tree = (
     <ThemeProvider>
       <TripContextTestProvider value={ctx}>
-        <TripChip {...chipProps} />
+        <TripsPaneToggle logoClassName="flex" logo="TripCast" {...paneProps} />
       </TripContextTestProvider>
     </ThemeProvider>
   );
@@ -106,15 +109,25 @@ function setup(value: Partial<TripContextValue> = {}, chipProps: TripChipProps =
   return ctx;
 }
 
+/** Opens the pane the one way the app does: the logo button. */
 async function openPane() {
   const user = userEvent.setup();
-  const chip = screen.getByRole("button", { name: /·/ });
-  await user.click(chip);
-  await screen.findByRole("dialog");
-  return { user, chip };
+  const logo = screen.getByRole("button", { name: /^TripCast: Trips/ });
+  await user.click(logo);
+  await screen.findByRole("dialog", { name: "Trips" });
+  return { user, logo };
 }
 
-// The chip loads the pane lazily; warm the module so a loaded CI machine does not time the first test out.
+/** The backdrop of the dialog open over the pane (the popup is the element with the dialog role). */
+function nestedBackdrop(): Element {
+  const backdrop = [...document.querySelectorAll("[data-sheet-nested-dialog]")].find(
+    (element) => element.getAttribute("role") !== "dialog",
+  );
+  if (!backdrop) throw new Error("no backdrop");
+  return backdrop;
+}
+
+// The toggle loads the pane lazily; warm the module so a loaded CI machine does not time the first test out.
 beforeAll(async () => {
   await import("./TripSwitcherSheet");
 }, 60_000);
@@ -132,14 +145,19 @@ beforeEach(() => {
 });
 
 describe("TripSwitcherSheet: shell", () => {
-  it("focuses search on open, shows the pinned cards, and closes with Escape returning focus to the chip", async () => {
+  it("focuses no field on open (no keyboard), shows the pinned cards, and closes with Escape returning focus to the logo", async () => {
     server.cards = [makeCard("autumn", { isCurrent: true })];
     setup({ viewingTrip: { tripId: "summer", title: "Summer 2026" }, viewingTripId: "summer", viewingMode: "private" });
-    const { user, chip } = await openPane();
+    const { user, logo } = await openPane();
 
-    const search = screen.getByRole("searchbox", { name: "Search trips" });
-    await waitFor(() => expect(search).toHaveFocus());
-    expect(screen.getByRole("dialog", { name: "Trips" })).toBeInTheDocument();
+    const pane = screen.getByRole("dialog", { name: "Trips" });
+    // No search box, and focus is not on anything that would raise the on-screen keyboard.
+    expect(within(pane).queryByRole("searchbox")).not.toBeInTheDocument();
+    expect(within(pane).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(document.activeElement?.matches("input, textarea, select, [contenteditable]")).toBe(false);
+    // A bottom pane beside the map, not a modal: no backdrop, the logo stays reachable.
+    expect(pane).not.toHaveAttribute("aria-modal", "true");
+    expect(logo).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText(/Followers currently see:/).parentElement).toHaveTextContent(
       "Followers currently see: Autumn 2026",
     );
@@ -150,15 +168,31 @@ describe("TripSwitcherSheet: shell", () => {
 
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(chip).toHaveFocus();
+    expect(logo).toHaveFocus();
   });
 
-  it("closes with the close button and returns focus to the chip", async () => {
+  it("closes with the close button and returns focus to the logo", async () => {
     setup();
-    const { user, chip } = await openPane();
+    const { user, logo } = await openPane();
     await user.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(chip).toHaveFocus();
+    expect(logo).toHaveFocus();
+  });
+
+  it("slides up from the bottom beside the map, clear of the Dock and the home indicator", async () => {
+    setup();
+    await openPane();
+    const pane = screen.getByRole("dialog", { name: "Trips" });
+    expect(pane).toHaveClass("bottom-0", "inset-x-0", "max-h-[85dvh]", "z-[10]", "pb-[100px]");
+    // The scroll area the card menu measures against. (jsdom drops the `env()` bottom padding it carries.)
+    expect(pane.querySelector("[data-trip-pane-scroll]")).toContainElement(screen.getByRole("group", { name: "Filter by status" }));
+  });
+
+  it("puts Create trip in the header beside the close button", async () => {
+    setup();
+    await openPane();
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close.parentElement).toContainElement(screen.getByRole("button", { name: "Create trip" }));
   });
 
   it("renders Return to current only in private view, and it returns and closes", async () => {
@@ -253,15 +287,36 @@ describe("TripSwitcherSheet: subscriptions", () => {
     expect(screen.getByText("No route preview yet")).toBeInTheDocument();
   });
 
-  it("debounces the search into the one list subscription's arguments", async () => {
+  it("the status filter (no typed search) is the one list subscription's argument", async () => {
     setup();
     const { user } = await openPane();
-    await user.type(screen.getByRole("searchbox", { name: "Search trips" }), "sum");
-    expect(server.listArgs.some((a) => (a as { search?: string }).search)).toBe(false);
-    await waitFor(() => expect(server.listArgs.at(-1)).toMatchObject({ search: "sum" }));
+    expect(server.listArgs.at(-1)).toEqual({ token: "test-token" });
     await user.click(screen.getByRole("button", { name: "Completed" }));
-    expect(server.listArgs.at(-1)).toMatchObject({ search: "sum", lifecycle: "completed" });
+    expect(server.listArgs.at(-1)).toEqual({ token: "test-token", lifecycle: "completed" });
+    expect(server.listArgs.some((args) => "search" in (args as object))).toBe(false);
     expect(server.totalSubscriptions).toBe(1);
+  });
+
+  it("a second tap on the highlighted trip collapses its detail; tapping it again reuses the preview", async () => {
+    server.cards = [makeCard("a"), makeCard("b")];
+    setup();
+    const { user } = await openPane();
+    const row = screen.getByRole("button", { name: /^Trip a/ });
+
+    await user.click(row);
+    await act(async () => server.oneShot[0].resolve(previewOf("a")));
+    const detail = screen.getByRole("region", { name: "Preview of Trip a" });
+    expect(row).toHaveAttribute("aria-pressed", "true");
+    expect(row).toHaveAttribute("aria-controls", detail.parentElement?.id);
+
+    await user.click(row);
+    expect(screen.queryByRole("region", { name: "Preview of Trip a" })).not.toBeInTheDocument();
+    expect(row).toHaveAttribute("aria-pressed", "false");
+    expect(row).not.toHaveAttribute("aria-controls");
+
+    await user.click(row);
+    expect(screen.getByRole("region", { name: "Preview of Trip a" })).toBeInTheDocument();
+    expect(server.oneShot).toHaveLength(1);
   });
 });
 
@@ -306,7 +361,7 @@ describe("TripSwitcherSheet: candidate actions", () => {
 
   it("renders nothing for optional actions that are not supplied", async () => {
     server.cards = [makeCard("summer", { title: "Summer 2026" })];
-    // The pane on its own (the chip always supplies the actions through `useTripPaneActions`).
+    // The pane on its own (the logo always supplies the actions through `useTripPaneActions`).
     const { TripSwitcherSheet } = await import("./TripSwitcherSheet");
     render(
       <ThemeProvider>
@@ -398,7 +453,7 @@ describe("TripSwitcherSheet: keyboard", () => {
     expect(screen.getByRole("button", { name: /^Trip b/ })).toHaveFocus();
   });
 
-  it("keeps the preview panel while a search change reloads the list", async () => {
+  it("keeps the preview panel while a filter change reloads the list", async () => {
     server.cards = [makeCard("a")];
     setup();
     const { user } = await openPane();
@@ -408,7 +463,7 @@ describe("TripSwitcherSheet: keyboard", () => {
 
     server.cards = [];
     server.status = "LoadingFirstPage";
-    await user.type(screen.getByRole("searchbox", { name: "Search trips" }), "x");
+    await user.click(screen.getByRole("button", { name: "In progress" }));
     expect(screen.getByRole("status", { name: "Loading trips" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Preview of Trip a" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open privately" })).toBeInTheDocument();
@@ -423,11 +478,12 @@ describe("TripSwitcherSheet: states", () => {
     expect(screen.getByRole("status", { name: "Loading trips" })).toBeInTheDocument();
   });
 
-  it("shows the empty state for a search with no matches", async () => {
+  it("shows the empty state for a status with no trips", async () => {
     setup();
     const { user } = await openPane();
-    await user.type(screen.getByRole("searchbox", { name: "Search trips" }), "zzz");
-    expect(await screen.findByText("No trips match your search.")).toBeInTheDocument();
+    expect(screen.getByText("No trips yet.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Archived" }));
+    expect(await screen.findByText("No trips with this status.")).toBeInTheDocument();
   });
 
   it("offers Load more while more pages exist", async () => {
@@ -443,11 +499,11 @@ describe("TripSwitcherSheet: states", () => {
     server.fail = true;
     vi.spyOn(console, "error").mockImplementation(() => {});
     setup();
-    const { user, chip } = await openPane();
+    const { user, logo } = await openPane();
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByText("Trips could not load.")).toBeInTheDocument();
-    expect(chip).toBeInTheDocument();
-    expect(screen.getByRole("searchbox", { name: "Search trips" })).toBeInTheDocument();
+    expect(logo).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Filter by status" })).toBeInTheDocument();
 
     server.fail = false;
     server.cards = [makeCard("a")];
@@ -468,8 +524,8 @@ describe("TripSwitcherSheet: change flows", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 
     setLiveSharingEnabled(false);
-    await user.click(screen.getByRole("button", { name: /·/ }));
-    await screen.findByRole("dialog");
+    await user.click(screen.getByRole("button", { name: /^TripCast: Trips/ }));
+    await screen.findByRole("dialog", { name: "Trips" });
     expect(within(screen.getByText(/Followers currently see:/).parentElement as HTMLElement).queryByText("Live")).toBeNull();
   });
 
@@ -507,5 +563,72 @@ describe("TripSwitcherSheet: shared trip not yet known", () => {
     setup({ followerTrip: null, serverTripStatus: "unavailable" });
     await openPane();
     expect(screen.getByText("What Followers see is unavailable right now.")).toBeInTheDocument();
+  });
+});
+
+describe("TripSwitcherSheet: dialogs over the pane", () => {
+  it("Escape inside Create trip closes the form and leaves the pane open", async () => {
+    setup();
+    const { user } = await openPane();
+    await user.click(screen.getByRole("button", { name: "Create trip" }));
+    const form = await screen.findByRole("dialog", { name: "Create trip" });
+    expect(form).toHaveFocus();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Create trip" })).not.toBeInTheDocument());
+    expect(screen.getByRole("dialog", { name: "Trips" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create trip" })).toHaveFocus();
+  });
+
+  it("a tap on the form's backdrop closes the form only", async () => {
+    setup();
+    const { user } = await openPane();
+    await user.click(screen.getByRole("button", { name: "Create trip" }));
+    await screen.findByRole("dialog", { name: "Create trip" });
+
+    const backdrop = nestedBackdrop();
+    fireEvent.pointerDown(backdrop, { pointerType: "mouse", button: 0 });
+    fireEvent.mouseDown(backdrop, { button: 0 });
+    fireEvent.pointerUp(backdrop, { pointerType: "mouse", button: 0 });
+    fireEvent.mouseUp(backdrop, { button: 0 });
+    fireEvent.click(backdrop, { button: 0 });
+
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Create trip" })).not.toBeInTheDocument());
+    expect(screen.getByRole("dialog", { name: "Trips" })).toBeInTheDocument();
+  });
+
+  it("a tap or Escape inside a marked element beside the pane (the Create load-failure alert) leaves it open", async () => {
+    const { TripSwitcherSheet } = await import("./TripSwitcherSheet");
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <TripSwitcherSheet open={open} onOpenChange={setOpen} />
+          <div role="alert" data-sheet-nested-dialog="">
+            <button type="button">Retry</button>
+          </div>
+        </>
+      );
+    }
+    render(
+      <ThemeProvider>
+        <TripContextTestProvider value={{ multiTripEnabled: true, viewingTripId: autumn.tripId, viewingTrip: autumn }}>
+          <Harness />
+        </TripContextTestProvider>
+      </ThemeProvider>,
+    );
+    const user = userEvent.setup();
+    await screen.findByRole("dialog", { name: "Trips" });
+    const retry = screen.getByRole("button", { name: "Retry" });
+
+    await user.click(retry);
+    expect(retry).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "Trips" })).toBeInTheDocument();
+
+    // Escape from anywhere else still closes it.
+    act(() => retry.blur());
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Trips" })).not.toBeInTheDocument());
   });
 });

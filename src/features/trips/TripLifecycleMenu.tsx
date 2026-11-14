@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MoreHorizontal } from "lucide-react";
 
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { cn } from "@/lib/utils";
 import { tripcastApi, type TripCard, type TripLifecycle } from "../../convex/tripcastApi";
 import { useTripMutation } from "../../convex/useTrip";
 import { useTripContext } from "../../providers/TripContextProvider";
@@ -64,10 +65,32 @@ export function TripLifecycleMenu({
   onRequestEndCurrentTrip,
 }: TripLifecycleMenuProps) {
   const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(false);
   const [action, setAction] = useState<MenuAction | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const items = menuItemsFor(card);
+
+  // The menu opens downward unless the pane's scroll area has no room for it below the ⋯ and more room above; then
+  // it is scrolled fully into view. Measured before paint, so it never shows clipped first.
+  useLayoutEffect(() => {
+    const trigger = triggerRef.current;
+    const menu = menuRef.current;
+    if (!open || !trigger || !menu) return;
+    const area = trigger.closest("[data-trip-pane-scroll]")?.getBoundingClientRect() ?? {
+      top: 0,
+      bottom: window.innerHeight,
+    };
+    const anchor = trigger.getBoundingClientRect();
+    const below = area.bottom - anchor.bottom;
+    const above = anchor.top - area.top;
+    const up = below < menu.getBoundingClientRect().height + 8 && above > below;
+    if (up !== dropUp) {
+      setDropUp(up);
+      return;
+    }
+    menu.scrollIntoView?.({ block: "nearest" });
+  }, [open, dropUp]);
 
   useEffect(() => {
     if (!open) return;
@@ -140,7 +163,10 @@ export function TripLifecycleMenu({
           role="menu"
           aria-label={`Actions for ${card.title}`}
           onKeyDown={onMenuKeyDown}
-          className="absolute right-0 top-full z-20 mt-1 grid min-w-40 gap-0.5 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1 shadow-xl"
+          className={cn(
+            "absolute right-0 z-20 grid min-w-40 gap-0.5 rounded-xl border border-[var(--line-soft)] bg-[var(--bg-card)] p-1 shadow-xl",
+            dropUp ? "bottom-full mb-1" : "top-full mt-1",
+          )}
         >
           {items.map((item) => (
             <button

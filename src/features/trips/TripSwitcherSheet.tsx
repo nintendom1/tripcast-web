@@ -1,7 +1,7 @@
-import { useRef, useState, type ReactNode, type RefObject } from "react";
+import { useState, type ComponentProps, type ReactNode, type RefObject } from "react";
+import { Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useLiveSharingEnabled } from "@/lib/liveSharingPreference";
 import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetGradientHeader, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,7 @@ import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import type { TripCard, TripLifecycle } from "../../convex/tripcastApi";
 import { useTripContext } from "../../providers/TripContextProvider";
 import { useTripsPersonality } from "../redesign/sheetPersonality";
-import { STILL_WAITING_MESSAGE, useSwitchStalled } from "./tripSwitchState";
+import { STILL_WAITING_MESSAGE, useSwitchPending, useSwitchStalled } from "./tripSwitchState";
 import { TripList } from "./TripList";
 import { inertCardLabel, LIFECYCLE_LABELS } from "./TripListRow";
 import { TripPreview } from "./TripPreview";
@@ -38,7 +38,10 @@ export type TripCardMenuInfo = {
 export type TripSwitcherSheetProps = TripPaneActions & {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Receives focus when the pane closes (the chip). */
+  /**
+   * The logo that toggles the pane: it receives focus when the pane closes, and a press on it is left to its own
+   * click (it is not an outside press).
+   */
   returnFocusRef?: RefObject<HTMLElement | null>;
   /** Highlights this card (a trip just created); the pane keeps its own highlight otherwise. */
   highlightTripId?: string | null;
@@ -46,9 +49,32 @@ export type TripSwitcherSheetProps = TripPaneActions & {
 
 const LIFECYCLES: TripLifecycle[] = ["planned", "in_progress", "completed", "archived"];
 
+type ChangeDetails = Parameters<NonNullable<ComponentProps<typeof Sheet>["onOpenChange"]>>[1];
+
+function eventWithin(event: Event, matches: (element: Element) => boolean): boolean {
+  const related = event instanceof FocusEvent ? event.relatedTarget : null;
+  return [event.target, related].some((node) => node instanceof Element && matches(node));
+}
+
 /**
- * Left slide-out (full height on mobile) to browse, search and preview the Traveler's trips and open one privately.
- * The list subscription and preview cache live in `TripCatalog`, which exists only while the pane is open.
+ * A close the pane refuses: a press on (or focus moving to) the logo, whose click toggles the pane itself, and an
+ * Escape from inside something marked `data-sheet-nested-dialog` beside the pane (Create trip sits beside it, not
+ * inside it). Base UI popups already keep their own Escape; this covers the rest, such as Create's load-failure alert.
+ */
+function keepsPaneOpen(details: ChangeDetails, toggle: HTMLElement | null): boolean {
+  if (details.reason === "outside-press" || details.reason === "focus-out") {
+    return toggle !== null && eventWithin(details.event, (element) => toggle.contains(element));
+  }
+  if (details.reason === "escape-key") {
+    return eventWithin(details.event, (element) => element.closest("[data-sheet-nested-dialog]") !== null);
+  }
+  return false;
+}
+
+/**
+ * Bottom pane, like the Awards pane: not modal, so the map stays usable and touching it closes the pane. Browses,
+ * filters and previews the Traveler's trips and opens one privately. Nothing is focused on open, so no keyboard
+ * pops up. The list subscription and preview cache live in `TripCatalog`, which exists only while the pane is open.
  */
 export function TripSwitcherSheet({
   open,
@@ -60,25 +86,42 @@ export function TripSwitcherSheet({
   highlightTripId,
 }: TripSwitcherSheetProps) {
   const personality = useTripsPersonality();
-  const searchRef = useRef<HTMLInputElement>(null);
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      modal={false}
+      onOpenChange={(next, details) => {
+        if (!next && keepsPaneOpen(details, returnFocusRef?.current ?? null)) {
+          details.cancel();
+          return;
+        }
+        onOpenChange(next);
+      }}
+    >
+      {/* No pb-* or pt-* here: `cn` would drop `mapAdjacent`'s Dock clearance. The body carries the safe area. */}
       <SheetContent
-        side="left"
-        initialFocus={searchRef}
+        side="bottom"
+        showBackdrop={false}
+        mapAdjacent
         finalFocus={returnFocusRef}
-        className="w-full max-w-none pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] sm:w-3/4 sm:max-w-sm"
+        className="z-[10] max-h-[85dvh] rounded-t-[var(--radius-sheet)] border-0 bg-[var(--bg-paper)] shadow-[var(--shadow-card)]"
       >
         <SheetGradientHeader color={personality.color} bg={personality.bg}>
           <SheetTitle>Trips</SheetTitle>
-          <SheetCloseButton />
+          <div className="flex items-center gap-2">
+            {onRequestCreate ? (
+              <Button type="button" size="sm" className="rounded-full" onClick={onRequestCreate}>
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Create trip
+              </Button>
+            ) : null}
+            <SheetCloseButton />
+          </div>
         </SheetGradientHeader>
         <TripPaneBody
-          searchRef={searchRef}
           onClose={() => onOpenChange(false)}
           onRequestSwitch={onRequestSwitch}
-          onRequestCreate={onRequestCreate}
           renderCardMenu={renderCardMenu}
           highlightTripId={highlightTripId}
         />
@@ -87,28 +130,24 @@ export function TripSwitcherSheet({
   );
 }
 
-type TripPaneBodyProps = TripPaneActions & {
+type TripPaneBodyProps = Pick<TripPaneActions, "onRequestSwitch" | "renderCardMenu"> & {
   highlightTripId?: string | null;
-  searchRef: RefObject<HTMLInputElement | null>;
   onClose: () => void;
 };
 
-function TripPaneBody({
-  searchRef,
-  onClose,
-  onRequestSwitch,
-  onRequestCreate,
-  renderCardMenu,
-  highlightTripId,
-}: TripPaneBodyProps) {
+function TripPaneBody({ onClose, onRequestSwitch, renderCardMenu, highlightTripId }: TripPaneBodyProps) {
   const { followerTrip, viewingTrip, viewingMode, returnToCurrent, serverTripStatus = "known" } = useTripContext();
   const liveSharing = useLiveSharingEnabled();
+  const switching = useSwitchPending();
   const stalled = useSwitchStalled();
-  const [search, setSearch] = useState("");
   const [lifecycle, setLifecycle] = useState<TripLifecycle | null>(null);
 
   return (
-    <SheetBody className="flex flex-col gap-3">
+    <SheetBody
+      data-trip-pane-scroll=""
+      className="flex flex-col gap-3"
+      style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+    >
       {stalled ? (
         <p role="status" className="rounded-xl border border-[var(--line-soft)] bg-[var(--bg-paper)] px-3 py-2 text-xs text-[var(--ink-2)]">
           {STILL_WAITING_MESSAGE}
@@ -133,6 +172,11 @@ function TripPaneBody({
       <div className="flex items-center justify-between gap-2 text-sm">
         <p className="min-w-0 truncate text-[var(--ink-2)]">
           You are viewing: <span className="font-semibold text-[var(--ink-1)]">{viewingTrip?.title ?? "—"}</span>
+          {switching ? (
+            <span role="status" className="ml-2 text-xs text-[var(--ink-3)]">
+              Switching…
+            </span>
+          ) : null}
         </p>
         {viewingMode === "private" ? (
           <Button
@@ -145,22 +189,6 @@ function TripPaneBody({
             }}
           >
             Return to current
-          </Button>
-        ) : null}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Input
-          ref={searchRef}
-          type="search"
-          aria-label="Search trips"
-          placeholder="Search trips"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        {onRequestCreate ? (
-          <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={onRequestCreate}>
-            Create trip
           </Button>
         ) : null}
       </div>
@@ -193,7 +221,6 @@ function TripPaneBody({
         fallbackClassName="grid gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm"
       >
         <TripCatalog
-          search={search}
           lifecycle={lifecycle}
           onClose={onClose}
           onRequestSwitch={onRequestSwitch}
@@ -207,14 +234,12 @@ function TripPaneBody({
 
 type TripCatalogProps = Pick<TripPaneActions, "onRequestSwitch" | "renderCardMenu"> & {
   highlightTripId?: string | null;
-  search: string;
   lifecycle: TripLifecycle | null;
   onClose: () => void;
 };
 
 /** Owns the ONE list subscription, the highlighted card and the one-shot preview. Mounted only while open. */
 function TripCatalog({
-  search,
   lifecycle,
   onClose,
   onRequestSwitch,
@@ -222,7 +247,7 @@ function TripCatalog({
   highlightTripId = null,
 }: TripCatalogProps) {
   const { viewingTripId } = useTripContext();
-  const { cards, status, loadMore } = useTravelerTrips(search, lifecycle);
+  const { cards, status, loadMore } = useTravelerTrips(lifecycle);
   const [previewTripId, setPreviewTripId] = useState<string | null>(null);
   // A trip created while the pane is open becomes the highlighted card (it is not opened or shared).
   const [seenHighlight, setSeenHighlight] = useState(highlightTripId);
@@ -230,11 +255,11 @@ function TripCatalog({
     setSeenHighlight(highlightTripId);
     if (highlightTripId) setPreviewTripId(highlightTripId);
   }
-  const unfiltered = search.trim() === "" && lifecycle === null;
+  const unfiltered = lifecycle === null;
   const onlyTrip = unfiltered && status === "exhausted" && cards.length === 1;
 
   const found = cards.find((card) => card.tripId === previewTripId) ?? null;
-  // While a search or filter change reloads the first page `cards` is briefly empty: keep the last card seen so the
+  // While a filter change reloads the first page `cards` is briefly empty: keep the last card seen so the
   // panel does not flash away.
   const [lastFound, setLastFound] = useState<TripCard | null>(null);
   if (found && found !== lastFound) setLastFound(found);
@@ -271,10 +296,11 @@ function TripCatalog({
       <TripList
         cards={cards}
         status={status}
-        filtered={search.trim() !== "" || lifecycle !== null}
+        filtered={lifecycle !== null}
         highlightedId={previewTripId}
         viewingTripId={viewingTripId}
-        onHighlight={(card) => setPreviewTripId(card.tripId)}
+        // A second tap on the highlighted card collapses its detail (its preview stays cached).
+        onHighlight={(card) => setPreviewTripId((id) => (id === card.tripId ? null : card.tripId))}
         onLoadMore={loadMore}
         renderCardMenu={renderCardMenu ? (card) => renderCardMenu(card, { onlyTrip }) : undefined}
         renderDetail={panel}

@@ -254,16 +254,19 @@ describe("a second Traveler device when the shared trip changes elsewhere (UX 8)
 
   it("a device following current rebinds and says the change came from another device", async () => {
     await startApp("traveler", "traveler-token");
-    expect(screen.getByRole("button", { name: "Current · Autumn 2026" })).toBeInTheDocument();
+    // The Trips pane names the trip this device follows (the logo no longer does).
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips" }));
+    expect(await screen.findByText(/You are viewing:/)).toHaveTextContent("You are viewing: Autumn 2026");
     server.current = current(SUMMER, 2);
     await serverChanged();
-    expect(screen.getByRole("button", { name: "Current · Summer 2026" })).toBeInTheDocument();
+    expect(screen.getByText(/You are viewing:/)).toHaveTextContent("You are viewing: Summer 2026");
+    expect(screen.getByRole("button", { name: "TripCast: Trips" })).toBeInTheDocument();
     expect(await screen.findByText("Followers now see Summer 2026 (changed on another device).")).toBeInTheDocument();
   });
 
   it("a device in a private view stays on its trip; only the banner's Followers trip changes", async () => {
     await startApp("traveler", "traveler-token");
-    await userEvent.click(screen.getByRole("button", { name: "Current · Autumn 2026" }));
+    await userEvent.click(screen.getByRole("button", { name: "TripCast: Trips" }));
     await userEvent.click(await screen.findByRole("button", { name: /^Winter 2027/ }));
     await userEvent.click(await screen.findByRole("button", { name: "Open privately" }));
     await settle();
@@ -271,7 +274,7 @@ describe("a second Traveler device when the shared trip changes elsewhere (UX 8)
 
     server.current = current(SUMMER, 2);
     await serverChanged();
-    expect(screen.getByRole("button", { name: "Viewing privately · Winter 2027" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "TripCast: Trips, viewing privately" })).toBeInTheDocument();
     expect(screen.getByText("Viewing Winter 2027 privately. Followers are viewing Summer 2026.")).toBeInTheDocument();
     expect(screen.queryByText(/changed on another device/)).toBeNull();
   });

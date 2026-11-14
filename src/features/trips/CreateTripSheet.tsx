@@ -3,14 +3,16 @@ import { useMutation } from "convex/react";
 import { ErrorBoundary } from "react-error-boundary";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Sheet, SheetBody, SheetCloseButton, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useOnlineStatus } from "../../components/resilience/useOnlineStatus";
 import { tripcastApi } from "../../convex/tripcastApi";
+import { useKeyboardInset } from "../../hooks/useKeyboardInset";
 import { useTripContext } from "../../providers/TripContextProvider";
 import {
   dateInputToMs,
+  TRIP_FORM_SHEET_CLASS,
   TripDetailsFields,
+  tripFormBodyStyle,
   validateTripDetails,
   type TripDetailsErrors,
   type TripDetailsValues,
@@ -29,17 +31,14 @@ type CopyFromSelectProps = {
   onChange: (source: CopySource) => void;
 };
 
-/** The settings-source picker with the catalog behind it: search and "Load more" reach beyond the first page. */
+/** The settings-source picker with the catalog behind it: "Load more" reaches beyond the first page. */
 function CopyFromOptions({ value, onChange }: CopyFromSelectProps) {
-  const [search, setSearch] = useState("");
-  const { cards, status, loadMore } = useTravelerTrips(search, null);
+  const { cards, status, loadMore } = useTravelerTrips(null);
   return (
     <CopyFromSelect
       value={value}
       onChange={onChange}
       trips={cards.filter((c) => c.deletingAt === undefined)}
-      search={search}
-      onSearch={setSearch}
       canLoadMore={status === "ready" || status === "loading-more"}
       loadingMore={status === "loading-more"}
       onLoadMore={loadMore}
@@ -49,8 +48,6 @@ function CopyFromOptions({ value, onChange }: CopyFromSelectProps) {
 
 type CopyFromSelectViewProps = CopyFromSelectProps & {
   trips: Array<{ tripId: string; title: string }>;
-  search?: string;
-  onSearch?: (search: string) => void;
   canLoadMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
@@ -60,13 +57,11 @@ function CopyFromSelect({
   value,
   onChange,
   trips,
-  search,
-  onSearch,
   canLoadMore,
   loadingMore,
   onLoadMore,
 }: CopyFromSelectViewProps) {
-  // The chosen source stays selectable even when a search or page no longer lists it.
+  // The chosen source stays selectable even when the loaded pages no longer list it.
   const listed = trips.some((trip) => trip.tripId === value.id);
   const extra = value.id !== DEFAULTS_SOURCE.id && !listed ? [{ tripId: value.id, title: value.title }] : [];
   const options = [...extra, ...trips];
@@ -75,15 +70,6 @@ function CopyFromSelect({
       <label htmlFor="create-trip-copy-from" className="text-xs font-semibold text-[var(--ink-2)]">
         Copy settings from
       </label>
-      {onSearch ? (
-        <Input
-          type="search"
-          aria-label="Search trips to copy from"
-          placeholder="Search trips"
-          value={search ?? ""}
-          onChange={(e) => onSearch(e.target.value)}
-        />
-      ) : null}
       <select
         id="create-trip-copy-from"
         className={SELECT_CLASS}
@@ -130,7 +116,8 @@ export function CreateTripSheet({ onClose, onCreated, returnFocusRef }: CreateTr
   const { token } = useTripContext();
   const createTrip = useMutation(tripcastApi.trips.createTrip);
   const online = useOnlineStatus();
-  const titleRef = useRef<HTMLInputElement>(null);
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const keyboardInset = useKeyboardInset();
   const [values, setValues] = useState<TripDetailsValues>({ title: "", destinations: "", start: "", end: "" });
   const [copyFrom, setCopyFrom] = useState<CopySource>(DEFAULTS_SOURCE);
   const [errors, setErrors] = useState<TripDetailsErrors | null>(null);
@@ -165,20 +152,22 @@ export function CreateTripSheet({ onClose, onCreated, returnFocusRef }: CreateTr
 
   return (
     <Sheet open onOpenChange={(open) => (open || saving ? undefined : onClose())}>
+      {/* Focus lands on the sheet, not a field, so no keyboard pops up on open. */}
       <SheetContent
-        side="right"
-        showBackdrop={false}
-        data-sheet-nested-dialog=""
-        initialFocus={titleRef}
+        ref={sheetRef}
+        side="bottom"
+        nestedDialog
+        initialFocus={sheetRef}
         finalFocus={returnFocusRef}
+        className={TRIP_FORM_SHEET_CLASS}
       >
         <SheetHeader className="flex-row items-center justify-between">
           <SheetTitle>Create trip</SheetTitle>
           <SheetCloseButton />
         </SheetHeader>
-        <SheetBody>
+        <SheetBody style={tripFormBodyStyle(keyboardInset)}>
           <form
-            className="grid gap-4"
+            className="mx-auto grid w-full max-w-md gap-4"
             noValidate
             onSubmit={(e) => {
               e.preventDefault();
@@ -189,7 +178,6 @@ export function CreateTripSheet({ onClose, onCreated, returnFocusRef }: CreateTr
               idPrefix="create-trip"
               values={values}
               errors={errors}
-              titleRef={titleRef}
               onChange={(patch) => setValues((prev) => ({ ...prev, ...patch }))}
             >
               <ErrorBoundary
