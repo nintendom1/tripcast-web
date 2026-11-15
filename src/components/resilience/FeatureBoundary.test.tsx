@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { useState, type ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import * as debugLogger from "../../debug/debugLogger";
 import { clearLogs, getLogs, setEnabled } from "../../debug/debugLogger";
 import { FeatureBoundary } from "./FeatureBoundary";
 
@@ -83,6 +84,29 @@ describe("FeatureBoundary", () => {
     await userEvent.click(screen.getByRole("button", { name: /retry/i }));
 
     expect(getLogs().some((entry) => entry.action === "feature:fallback:retry")).toBe(false);
+  });
+
+  it("keeps the fallback and Retry working when the logger throws", async () => {
+    const spy = vi.spyOn(debugLogger, "log").mockImplementation(() => {
+      throw new Error("storage full");
+    });
+    let shouldThrow = true;
+    function Flaky(): ReactElement {
+      if (shouldThrow) throw new Error("flaky");
+      return <p>recovered</p>;
+    }
+
+    render(
+      <FeatureBoundary title="Votes hit a problem.">
+        <Flaky />
+      </FeatureBoundary>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Votes hit a problem.");
+    shouldThrow = false;
+    await userEvent.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(spy).toHaveBeenCalled();
+    expect(screen.getByText("recovered")).toBeInTheDocument();
   });
 
   it("contains a failing Funds sheet child in a card with Close while siblings keep working", async () => {

@@ -42,7 +42,7 @@ describe("DebugPanel", () => {
     expect(screen.getByRole("button", { name: /minimal/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /normal/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /refresh/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /clear logs/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /clear logs/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /download diagnostic json/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /^copy json$/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /copy llm summary/i })).not.toBeDisabled();
@@ -66,6 +66,18 @@ describe("DebugPanel", () => {
       fireEvent.click(screen.getByRole("button", { name: /copy llm summary/i }));
     });
     expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining("react:feature-boundary-error"));
+  });
+
+  it("clears an error recorded while logging was off", () => {
+    setEnabled(false);
+    log("error", "FeatureBoundary", "react:feature-boundary-error", "error", { message: "funds exploded" });
+    render(<DebugPanel />);
+    expect(screen.getByRole("list", { name: /recent debug log entries/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /clear logs/i }));
+
+    expect(getLogs()).toHaveLength(0);
+    expect(screen.queryByRole("list", { name: /recent debug log entries/i })).not.toBeInTheDocument();
   });
 
   it("enables debug options when logging is on", () => {

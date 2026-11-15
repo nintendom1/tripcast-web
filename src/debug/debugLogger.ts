@@ -178,6 +178,8 @@ export function isEnabled(): boolean {
 
 export function setEnabled(on: boolean): void {
   localStorage.setItem(LS_ENABLED, on ? "true" : "false");
+  // A `suppressed` count must never carry into a later session of logging.
+  alwaysOnState.clear();
   notifySubscribers();
 }
 
@@ -312,9 +314,13 @@ function appendEntry(entry: DebugEntry): void {
   notifySubscribers();
 }
 
-// While Debug Logging is off, always-on errors are limited to one per src + action per window.
-// A `title` in the details (a FeatureBoundary's) joins the key, so two different cards failing together are both kept.
+// With Debug Logging off, only crash-type errors (error/error with one of these action prefixes) are recorded,
+// limited to one per src + action + discriminator per window. The discriminator is `details.title` (a
+// FeatureBoundary's), else the start of `details.message`/`details.reason`, so two different errors are both kept.
+const ALWAYS_ON_ACTION_PREFIXES = ["react:", "global:"];
 const ALWAYS_ON_WINDOW_MS = 30_000;
+const ALWAYS_ON_MAX_KEYS = 200;
+const ALWAYS_ON_DISCRIMINATOR_CHARS = 80;
 const alwaysOnState = new Map<string, { lastAt: number; suppressed: number }>();
 
 export function log(
@@ -325,8 +331,9 @@ export function log(
   details?: Record<string, unknown>,
   state?: Record<string, unknown>,
 ): void {
-  // Caught errors are always recorded, even with Debug Logging off.
-  const alwaysRecord = level === "error" && category === "error";
+  // Crash-type errors are recorded even with Debug Logging off.
+  const alwaysRecord = level === "error" && category === "error"
+    && ALWAYS_ON_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
   const enabled = isEnabled();
   if (!alwaysRecord && !enabled) return;
   if (!isCategoryEnabled(category)) return;
@@ -334,13 +341,15 @@ export function log(
   if (category === "query" && getPreset() === "normal" && level !== "error") return;
 
   if (!enabled) {
-    const key = `${src}\u0000${action}\u0000${typeof details?.title === "string" ? details.title : ""}`;
+    const discriminator = [details?.title, details?.message, details?.reason].find((v) => typeof v === "string");
+    const key = `${src}\u0000${action}\u0000${typeof discriminator === "string" ? discriminator.slice(0, ALWAYS_ON_DISCRIMINATOR_CHARS) : ""}`;
     const now = Date.now();
     const seen = alwaysOnState.get(key);
     if (seen && now - seen.lastAt < ALWAYS_ON_WINDOW_MS) {
       seen.suppressed += 1;
       return;
     }
+    if (alwaysOnState.size > ALWAYS_ON_MAX_KEYS) alwaysOnState.clear();
     alwaysOnState.set(key, { lastAt: now, suppressed: 0 });
     if (seen && seen.suppressed > 0) details = { ...details, suppressed: seen.suppressed };
   }

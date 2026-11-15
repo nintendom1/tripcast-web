@@ -2,7 +2,7 @@
 
 Read when changing debug UI/logging or reproducing a UI bug with logs.
 
-Local-only logger: Options -> Developer -> Dev Tools. Off by default; persists in `localStorage`. Level `error` + category `error` is always recorded, even off (then one per src+action+title per 30 s, with a `suppressed` count); all else needs it on.
+Local logger: Options -> Developer -> Dev Tools. Off by default; persists in `localStorage`. Off: only `error`/`error` with action `react:*`/`global:*` is recorded, one per src, action and title/message per 30 s (`suppressed` count). All else, Retry too, needs it on.
 
 ## Rules
 
@@ -13,7 +13,7 @@ Local-only logger: Options -> Developer -> Dev Tools. Off by default; persists i
 
 ## Expected Coverage
 
-Capture sheet/panel open/close, Dock and FanMenu actions, panel view and filter changes, form submit attempts/results, global errors, unhandled rejections, and React render errors (App boundaries and every `FeatureBoundary`: `react:feature-boundary-error`, Retry as `feature:fallback:retry`). Plan logging for new features.
+Capture sheet/panel open/close, Dock and FanMenu actions, panel view and filter changes, form submits, global errors, unhandled rejections, and React render errors (App boundaries and every `FeatureBoundary`: `react:feature-boundary-error`, Retry `feature:fallback:retry`). Plan logging for new features.
 
 Convex usage: `usage:status:changed` (`from`, `to`, `metric`, `percent`) and `usage:warning:shown` (`level`, `metric`). Copy LLM Summary adds a 24 h digest of the phone's hourly counters.
 

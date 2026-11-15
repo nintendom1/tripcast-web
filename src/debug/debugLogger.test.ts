@@ -32,6 +32,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -156,43 +157,36 @@ describe("log() filtering", () => {
     expect(getLogs()).toHaveLength(0);
   });
 
-  it("stores an error/error entry while logging is off, and still drops everything else", () => {
+  it("while off, records only crash-type errors (react:* and global:*), not map:error or gps:* errors", () => {
     setEnabled(false);
     log("info", "Test", "action", "ui");
     log("error", "Test", "map:failed", "map");
-    log("warn", "Test", "warned", "error");
+    log("warn", "Test", "global:warned", "error");
+    log("error", "MapLibre", "map:error", "error", { url: "/tile/1/2/3.pbf" });
+    log("error", "Native", "gps:native:sync:error", "error");
     expect(getLogs()).toHaveLength(0);
 
-    log("error", "Test", "something:failed", "error", { message: "boom", token: "secret" });
-    expect(getLogs()).toHaveLength(1);
-    expect(getLogs()[0]).toMatchObject({
-      level: "error",
-      category: "error",
-      details: { message: "boom", token: "[redacted]" },
-    });
+    log("error", "FeatureBoundary", "react:feature-boundary-error", "error", { message: "boom", token: "secret" });
+    log("error", "window", "global:error", "error", { message: "oops" });
+    expect(getLogs().map((entry) => entry.action)).toEqual(["react:feature-boundary-error", "global:error"]);
+    expect(getLogs()[0].details).toMatchObject({ message: "boom", token: "[redacted]" });
   });
 
-  it("while off, limits an always-on error to one per source and action per 30 s and counts the rest", () => {
+  it("while off, limits one error to one per 30 s, keeps different messages, and counts the rest", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
     setEnabled(false);
-    for (let i = 0; i < 5; i += 1) log("error", "MapLibre", "map:error", "error", { n: i });
-    expect(getLogs()).toHaveLength(1);
-    expect(getLogs()[0].details).toEqual({ n: 0 });
-
-    log("error", "MapLibre", "map:other", "error");
-    expect(getLogs()).toHaveLength(2);
+    for (let i = 0; i < 5; i += 1) log("error", "window", "global:error", "error", { message: "same" });
+    log("error", "window", "global:error", "error", { message: "different" });
+    expect(getLogs().map((entry) => entry.details)).toEqual([{ message: "same" }, { message: "different" }]);
 
     vi.advanceTimersByTime(30_000);
-    log("error", "MapLibre", "map:error", "error", { n: 5 });
-    const entries = getLogs().filter((entry) => entry.action === "map:error");
-    expect(entries).toHaveLength(2);
-    expect(entries[1].details).toEqual({ n: 5, suppressed: 4 });
+    log("error", "window", "global:error", "error", { message: "same" });
+    expect(getLogs()[2].details).toEqual({ message: "same", suppressed: 4 });
 
     vi.advanceTimersByTime(30_000);
-    log("error", "MapLibre", "map:error", "error");
-    expect(getLogs().filter((entry) => entry.action === "map:error")[2].details).toBeUndefined();
-    vi.useRealTimers();
+    log("error", "window", "global:error", "error", { message: "same" });
+    expect(getLogs()[3].details).toEqual({ message: "same" });
   });
 
   it("while off, keeps errors from two different feature boundaries in the same second", () => {
@@ -206,7 +200,33 @@ describe("log() filtering", () => {
       "Funds chip hit a problem.",
       "Travel Funds hit a problem.",
     ]);
-    vi.useRealTimers();
+  });
+
+  it("while off, bounds the limiter: past 200 keys it restarts, so an old key is stored again inside its window", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-04-01T00:00:00Z"));
+    setEnabled(false);
+    log("error", "window", "global:error", "error", { message: "first" });
+    for (let i = 0; i < 201; i += 1) log("error", "window", "global:error", "error", { message: `distinct ${i}` });
+    const before = getLogs().length;
+    log("error", "window", "global:error", "error", { message: "first" });
+    expect(getLogs()).toHaveLength(before + 1);
+    expect(getLogs()[before].details).toEqual({ message: "first" });
+  });
+
+  it("setEnabled resets the limiter, so a dropped entry is stored again with no suppressed count", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-05-01T00:00:00Z"));
+    setEnabled(false);
+    log("error", "window", "global:error", "error", { message: "same" });
+    log("error", "window", "global:error", "error", { message: "same" });
+    expect(getLogs()).toHaveLength(1);
+
+    setEnabled(true);
+    setEnabled(false);
+    log("error", "window", "global:error", "error", { message: "same" });
+    expect(getLogs()).toHaveLength(2);
+    expect(getLogs()[1].details).toEqual({ message: "same" });
   });
 
   it("with logging on, does not limit errors and adds no suppressed count", () => {
@@ -215,7 +235,6 @@ describe("log() filtering", () => {
     for (let i = 0; i < 5; i += 1) log("error", "MapLibre", "map:error:on", "error");
     expect(getLogs()).toHaveLength(5);
     expect(getLogs().every((entry) => entry.details === undefined)).toBe(true);
-    vi.useRealTimers();
   });
 
   it("logs when enabled and category is active", () => {

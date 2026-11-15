@@ -438,7 +438,6 @@ export default function DebugPanel({ token, role }: { token?: string; role?: "tr
   }
 
   function handleClear() {
-    if (!enabled) return;
     clearLogs();
     setLogs([]);
     clearCopyStatusTimer();
@@ -690,7 +689,6 @@ export default function DebugPanel({ token, role }: { token?: string; role?: "tr
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
-          disabled={!enabled}
           onClick={handleClear}
           className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >

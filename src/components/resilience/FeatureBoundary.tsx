@@ -27,20 +27,24 @@ export function FeatureBoundary({
     <ErrorBoundary
       resetKeys={resetKeys}
       onError={(error, info) => {
-        const err = error instanceof Error ? error : null;
-        debugLog("error", "FeatureBoundary", "react:feature-boundary-error", "error", {
-          title,
-          message: err?.message ?? String(error),
-          name: err?.name ?? typeof error,
-          stack: err?.stack?.slice(0, 400),
-          componentStack: info.componentStack?.slice(0, 400),
-        });
+        try {
+          const err = error instanceof Error ? error : null;
+          debugLog("error", "FeatureBoundary", "react:feature-boundary-error", "error", {
+            title,
+            message: err?.message ?? String(error),
+            name: err?.name ?? typeof error,
+            stack: err?.stack?.slice(0, 400),
+            componentStack: info.componentStack?.slice(0, 400),
+          });
+        } catch { /* logging must not break the fallback */ }
       }}
       fallbackRender={(props) => (
         <FeatureErrorFallback
           {...props}
           resetErrorBoundary={() => {
-            debugLog("info", "FeatureBoundary", "feature:fallback:retry", "error", { title });
+            try {
+              debugLog("info", "FeatureBoundary", "feature:fallback:retry", "error", { title });
+            } catch { /* logging must not break the fallback */ }
             props.resetErrorBoundary();
           }}
           title={title}
