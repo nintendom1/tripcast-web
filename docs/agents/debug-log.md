@@ -1,25 +1,23 @@
 # Debug Logging
 
-Read when changing debug UI/logging or when using logs to reproduce a UI bug.
+Read when changing debug UI/logging or reproducing a UI bug with logs.
 
-TripCast includes a local-only debug logger surfaced through Options -> Developer -> Dev Tools. Logging is off by default and persists in `localStorage` when enabled.
+Local-only logger: Options -> Developer -> Dev Tools. Off by default; persists in `localStorage`. Level `error` + category `error` is always recorded, even off (then one per src+action+title per 30 s, with a `suppressed` count); all else needs it on.
 
 ## Rules
 
-- Never log auth tokens, passwords, secrets, API keys, email addresses, phone numbers, raw typed titles, notes, captions, Convex payloads, or backend responses.
-- Keep redaction and caps intact: depth 4, arrays 10 items, strings 200 chars,
-  buffer 1,500 entries, and serialized storage 256 KiB. The byte cap may evict
-  older entries before the entry cap and is the primary storage safety bound.
-- Logs stay local unless the user explicitly copies or downloads them.
-- Preserve "Copy LLM Summary" as the compact debugging artifact for agent conversations.
+- Never log tokens, passwords, secrets, API keys, emails, phone numbers, raw typed titles, notes, captions, Convex payloads, or backend responses.
+- Keep redaction and caps: depth 4, arrays 10, strings 200 chars, 1,500 entries, 256 KiB storage (the byte cap may evict first and is the primary bound).
+- Logs stay local unless the user copies or downloads them.
+- Keep "Copy LLM Summary" as the compact artifact for agent conversations.
 
 ## Expected Coverage
 
-The logger should capture sheet/panel open and close events, Dock and FanMenu actions, panel view changes, filter changes, form submit attempts/results, global errors, unhandled rejections, and React render errors. Plan logging for new features.
+Capture sheet/panel open/close, Dock and FanMenu actions, panel view and filter changes, form submit attempts/results, global errors, unhandled rejections, and React render errors (App boundaries and every `FeatureBoundary`: `react:feature-boundary-error`, Retry as `feature:fallback:retry`). Plan logging for new features.
 
 Convex usage: `usage:status:changed` (`from`, `to`, `metric`, `percent`) and `usage:warning:shown` (`level`, `metric`). Copy LLM Summary adds a 24 h digest of the phone's hourly counters.
 
-For FanMenu and Dock panel-open actions, pair each `log.logInteraction` with a `performance.mark("tripcast:debug:<action>")`; without it the timing is silently lost.
+Pair each FanMenu/Dock panel-open `log.logInteraction` with `performance.mark("tripcast:debug:<action>")`, or the timing is lost.
 
 ## Map Focus Centering (observability + "teach by dragging")
 

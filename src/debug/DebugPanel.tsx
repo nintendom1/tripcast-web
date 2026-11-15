@@ -446,7 +446,6 @@ export default function DebugPanel({ token, role }: { token?: string; role?: "tr
   }
 
   async function handleCopyJson() {
-    if (!enabled) return;
     const all = getLogs();
     try {
       await copyToClipboard(JSON.stringify(all, null, 2));
@@ -458,12 +457,10 @@ export default function DebugPanel({ token, role }: { token?: string; role?: "tr
   }
 
   function handleDownloadJson() {
-    if (!enabled) return;
     downloadJson(`tripcast-debug-${getSessionId()}.json`, getLogs());
   }
 
   async function handleCopyDebugSummary() {
-    if (!enabled) return;
     const summary = buildLlmSummary(usageCounterDigest);
     try {
       await copyToClipboard(summary);
@@ -701,7 +698,6 @@ export default function DebugPanel({ token, role }: { token?: string; role?: "tr
         </button>
         <button
           type="button"
-          disabled={!enabled}
           onClick={handleDownloadJson}
           className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -709,7 +705,6 @@ export default function DebugPanel({ token, role }: { token?: string; role?: "tr
         </button>
         <button
           type="button"
-          disabled={!enabled}
           onClick={handleCopyJson}
           className="rounded-xl bg-[var(--bg-card)] py-2.5 text-xs font-semibold text-[var(--ink-2)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -725,7 +720,6 @@ export default function DebugPanel({ token, role }: { token?: string; role?: "tr
         </button>
         <button
           type="button"
-          disabled={!enabled}
           onClick={handleCopyDebugSummary}
           className="rounded-xl bg-[var(--flag)] py-2.5 text-xs font-semibold text-[var(--ink-on-dark)] shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >

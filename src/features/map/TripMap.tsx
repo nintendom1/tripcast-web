@@ -6700,16 +6700,25 @@ export default function TripMap({
           </div>
           <div className="flex flex-1 min-h-0 flex-col overflow-y-auto px-4 pb-4 pt-3">
             {role === "traveler" && isTravelFundsSheetOpen && (
-              <Suspense fallback={null}>
-                <TravelFundsSheet
-                  token={token}
-                  onClose={() => {
-                    music.sfx("close");
-                    setIsTravelFundsSheetOpen(false);
-                  }}
-                  debugSource={fundsDebugSource}
-                />
-              </Suspense>
+              <FeatureBoundary
+                resetKeys={[token, role, "travel-funds-sheet"]}
+                title={`${TERMS.travelFunds} hit a problem.`}
+                onClose={() => {
+                  music.sfx("close");
+                  setIsTravelFundsSheetOpen(false);
+                }}
+              >
+                <Suspense fallback={null}>
+                  <TravelFundsSheet
+                    token={token}
+                    onClose={() => {
+                      music.sfx("close");
+                      setIsTravelFundsSheetOpen(false);
+                    }}
+                    debugSource={fundsDebugSource}
+                  />
+                </Suspense>
+              </FeatureBoundary>
             )}
           </div>
         </SheetContent>

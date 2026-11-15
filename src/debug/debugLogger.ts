@@ -312,6 +312,11 @@ function appendEntry(entry: DebugEntry): void {
   notifySubscribers();
 }
 
+// While Debug Logging is off, always-on errors are limited to one per src + action per window.
+// A `title` in the details (a FeatureBoundary's) joins the key, so two different cards failing together are both kept.
+const ALWAYS_ON_WINDOW_MS = 30_000;
+const alwaysOnState = new Map<string, { lastAt: number; suppressed: number }>();
+
 export function log(
   level: DebugLevel,
   src: string,
@@ -320,10 +325,25 @@ export function log(
   details?: Record<string, unknown>,
   state?: Record<string, unknown>,
 ): void {
-  if (!isEnabled()) return;
+  // Caught errors are always recorded, even with Debug Logging off.
+  const alwaysRecord = level === "error" && category === "error";
+  const enabled = isEnabled();
+  if (!alwaysRecord && !enabled) return;
   if (!isCategoryEnabled(category)) return;
   // In "normal" preset, query category only logs errors
   if (category === "query" && getPreset() === "normal" && level !== "error") return;
+
+  if (!enabled) {
+    const key = `${src}\u0000${action}\u0000${typeof details?.title === "string" ? details.title : ""}`;
+    const now = Date.now();
+    const seen = alwaysOnState.get(key);
+    if (seen && now - seen.lastAt < ALWAYS_ON_WINDOW_MS) {
+      seen.suppressed += 1;
+      return;
+    }
+    alwaysOnState.set(key, { lastAt: now, suppressed: 0 });
+    if (seen && seen.suppressed > 0) details = { ...details, suppressed: seen.suppressed };
+  }
 
   appendEntry(createEntry(level, src, action, category, details, state));
 }
@@ -392,6 +412,7 @@ export function getLogs(): DebugEntry[] {
 
 export function clearLogs(): void {
   buffer = [];
+  alwaysOnState.clear();
   localStorage.removeItem(LS_LOG_KEY);
   notifySubscribers();
 }

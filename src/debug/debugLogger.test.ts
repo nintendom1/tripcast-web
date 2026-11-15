@@ -156,6 +156,68 @@ describe("log() filtering", () => {
     expect(getLogs()).toHaveLength(0);
   });
 
+  it("stores an error/error entry while logging is off, and still drops everything else", () => {
+    setEnabled(false);
+    log("info", "Test", "action", "ui");
+    log("error", "Test", "map:failed", "map");
+    log("warn", "Test", "warned", "error");
+    expect(getLogs()).toHaveLength(0);
+
+    log("error", "Test", "something:failed", "error", { message: "boom", token: "secret" });
+    expect(getLogs()).toHaveLength(1);
+    expect(getLogs()[0]).toMatchObject({
+      level: "error",
+      category: "error",
+      details: { message: "boom", token: "[redacted]" },
+    });
+  });
+
+  it("while off, limits an always-on error to one per source and action per 30 s and counts the rest", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+    setEnabled(false);
+    for (let i = 0; i < 5; i += 1) log("error", "MapLibre", "map:error", "error", { n: i });
+    expect(getLogs()).toHaveLength(1);
+    expect(getLogs()[0].details).toEqual({ n: 0 });
+
+    log("error", "MapLibre", "map:other", "error");
+    expect(getLogs()).toHaveLength(2);
+
+    vi.advanceTimersByTime(30_000);
+    log("error", "MapLibre", "map:error", "error", { n: 5 });
+    const entries = getLogs().filter((entry) => entry.action === "map:error");
+    expect(entries).toHaveLength(2);
+    expect(entries[1].details).toEqual({ n: 5, suppressed: 4 });
+
+    vi.advanceTimersByTime(30_000);
+    log("error", "MapLibre", "map:error", "error");
+    expect(getLogs().filter((entry) => entry.action === "map:error")[2].details).toBeUndefined();
+    vi.useRealTimers();
+  });
+
+  it("while off, keeps errors from two different feature boundaries in the same second", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-03-01T00:00:00Z"));
+    setEnabled(false);
+    log("error", "FeatureBoundary", "react:feature-boundary-error", "error", { title: "Funds chip hit a problem." });
+    log("error", "FeatureBoundary", "react:feature-boundary-error", "error", { title: "Travel Funds hit a problem." });
+    log("error", "FeatureBoundary", "react:feature-boundary-error", "error", { title: "Funds chip hit a problem." });
+    expect(getLogs().map((entry) => entry.details?.title)).toEqual([
+      "Funds chip hit a problem.",
+      "Travel Funds hit a problem.",
+    ]);
+    vi.useRealTimers();
+  });
+
+  it("with logging on, does not limit errors and adds no suppressed count", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2030-02-01T00:00:00Z"));
+    for (let i = 0; i < 5; i += 1) log("error", "MapLibre", "map:error:on", "error");
+    expect(getLogs()).toHaveLength(5);
+    expect(getLogs().every((entry) => entry.details === undefined)).toBe(true);
+    vi.useRealTimers();
+  });
+
   it("logs when enabled and category is active", () => {
     setPreset("normal");
     log("info", "Test", "action", "ui");

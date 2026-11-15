@@ -1,5 +1,5 @@
 import React from "react";
-import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import * as convexReact from "convex/react";
@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   isAdaptiveLocationAvailable: vi.fn(() => false),
   configure: vi.fn(() => Promise.resolve()),
   snapshot: vi.fn(() => Promise.resolve({ queueRevision: 0, points: [] as unknown[] })),
+  fundsSheetThrows: false,
 }));
 const markerElements: HTMLElement[] = [];
 type MockMapInstance = {
@@ -157,7 +158,12 @@ vi.mock("../routevote/RouteVotePanel", () => ({
   },
 }));
 vi.mock("../journal/JournalSheet", () => ({ default: () => <div data-testid="journal-sheet" /> }));
-vi.mock("../travelfunds/TravelFundsSheet", () => ({ default: () => <div data-testid="funds-sheet" /> }));
+vi.mock("../travelfunds/TravelFundsSheet", () => ({
+  default: () => {
+    if (mocks.fundsSheetThrows) throw new Error("fundsStartAt must be a non-negative timestamp.");
+    return <div data-testid="funds-sheet" />;
+  },
+}));
 
 const TOKEN = "test-token";
 const AUTUMN: CurrentTrip = {
@@ -428,6 +434,7 @@ beforeEach(async () => {
   nativeMysteryRevision = null;
   followerPreferencesValue = null;
   breadcrumbPageFor = null;
+  mocks.fundsSheetThrows = false;
   mocks.isNativeLocationAvailable.mockReturnValue(false);
   mocks.isAdaptiveLocationAvailable.mockReturnValue(false);
   mocks.configure.mockResolvedValue(undefined);
@@ -655,6 +662,29 @@ describe("TripMap follows the viewed trip", () => {
     await userEvent.click(await screen.findByRole("button", { name: /Start from beginning/i }));
 
     await waitFor(() => expect(reportTripUnavailable).toHaveBeenCalledWith(SUMMER.tripId));
+  });
+});
+
+describe("TripMap Funds sheet containment", () => {
+  it("a failing Funds sheet shows an error card with Close inside the sheet and keeps the screen", async () => {
+    mocks.fundsSheetThrows = true;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    renderMap(following());
+
+    await userEvent.click(await screen.findByRole("button", { name: /^Funds\./ }));
+
+    const sheet = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>("[data-role=travel-funds-sheet]");
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    const card = await within(sheet).findByRole("alert");
+    expect(card).toHaveTextContent("Travel Funds hit a problem.");
+    expect(screen.queryByText("TripCast hit a problem.")).not.toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: /^close$/i }));
+    await waitFor(() => expect(document.querySelector("[data-role=travel-funds-sheet]")).toBeNull());
+    expect(screen.getByRole("button", { name: "Replay" })).toBeInTheDocument();
+    consoleError.mockRestore();
   });
 });
 
