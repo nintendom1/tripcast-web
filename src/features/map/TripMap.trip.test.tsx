@@ -817,6 +817,38 @@ describe("TripMap private view and the live Traveler", () => {
     expect(mocks.easeTo).not.toHaveBeenCalledWith(expect.objectContaining({ center: [LIVE.lon, LIVE.lat] }));
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
   });
+
+  it("fills the shared trip's live trail with the stored samples it missed, never in Replay or a private view", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const now = Date.now();
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    // One upload batch: the latest-sample subscription carries only its newest point.
+    const stored = [4, 3, 2, 1].map((ago) => sample(`autumn-live-${ago}`, 47.6 + ago / 1_000, -122.3, now - ago * 10_000));
+    latestByTrip[AUTUMN.tripId] = stored[3];
+    breadcrumbsByTrip[AUTUMN.tripId] = stored;
+    const backfills = () => argsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)
+      .filter((args) => (args as { paginationOpts: { numItems: number } }).paginationOpts.numItems === 100);
+    const map = renderMap(following());
+
+    await waitFor(() => expect(ids(lastPath()[6])).toEqual(ids(stored)));
+    expect(backfills()).toEqual([{
+      token: TOKEN,
+      tripId: AUTUMN.tripId,
+      paginationOpts: { numItems: 100, cursor: null },
+      startAt: now - 6 * 3_600_000,
+      direction: "desc",
+    }]);
+
+    // A minute later (past the 60 s limit): a return to the foreground in Replay, then a private view, read nothing.
+    vi.setSystemTime(now + 60_000);
+    await startReplay();
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    map.view(viewingSummer());
+    await waitFor(() => expect(lastPath()[1]).toEqual([SUMMER_PIN]));
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(backfills()).toHaveLength(1);
+    expect(ids(cache(SUMMER.tripId).snapshot().samples)).toEqual([]);
+  });
 });
 
 describe("TripMap publishing across a view change", () => {

@@ -112,6 +112,41 @@ describe("LiveTrailCacheStore", () => {
     expect(records.size).toBe(0);
   });
 
+  it("merges stored samples it lacks by ID in time order, keeps cached rows, holds the pool limits and counts clears", async () => {
+    const persistence: LiveTrailCachePersistence = { read: async () => undefined, write: async () => {}, remove: async () => {} };
+    const store = new LiveTrailCacheStore(Promise.resolve("merge"), persistence, 1);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.addRecent(sample(1));
+    store.addRecent(sample(5, { accuracy: 4 }));
+    store.replaceReplay([sample(0)]);
+    listener.mockClear();
+
+    // A batch gap: the server returns 0..5 newest first, with a corrupt row; only 2, 3 and 4 are new.
+    const added = store.mergeRecent([5, 4, 3, 2, 1, 0].map((index) => sample(index)).concat([{ _id: "bad" } as never]));
+    expect(added).toBe(3);
+    expect(store.snapshot().samples.map((row) => row._id)).toEqual([0, 1, 2, 3, 4, 5].map((index) => `sample-${index}`));
+    expect(store.snapshot().samples.at(-1)?.accuracy).toBe(4);
+    expect(store.snapshot().replay.map((row) => row._id)).toEqual(["sample-0"]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.mergeRecent([sample(3), sample(5)])).toBe(0);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    // A full recent pool keeps its newest 100: older rows drop off (accepted), and the replay pool is left as it is.
+    store.mergeRecent(Array.from({ length: 150 }, (_, index) => sample(index + 10)));
+    expect(store.snapshot().recent).toHaveLength(LIVE_TRAIL_CACHE_RECENT_LIMIT);
+    expect(store.snapshot().recent[0]._id).toBe("sample-60");
+    expect(store.mergeRecent([sample(6)])).toBe(0);
+    const range = (from: number, to: number) => Array.from({ length: to - from }, (_, index) => `sample-${from + index}`);
+    expect(store.snapshot().replay.map((row) => row._id)).toEqual(["sample-0"]);
+    expect(store.snapshot().samples.map((row) => row._id)).toEqual(["sample-0", ...range(60, 160)]);
+    expect(store.snapshot().samples.length).toBeLessThanOrEqual(LIVE_TRAIL_CACHE_TOTAL_LIMIT);
+
+    const revision = store.clearRevision;
+    await store.clear();
+    expect(store.clearRevision).not.toBe(revision);
+  });
+
   it("uses a SHA-256 role-scoped fingerprint without returning the token", async () => {
     const traveler = await fingerprintLiveTrailCacheIdentity("secret-session-token", "traveler");
     const follower = await fingerprintLiveTrailCacheIdentity("secret-session-token", "follower");

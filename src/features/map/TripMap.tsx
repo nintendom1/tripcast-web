@@ -54,6 +54,7 @@ import {
   getLiveTrailCache,
   type LiveTrailCacheSnapshot,
 } from "./liveTrailCache";
+import { useLiveTrailBackfill } from "./useLiveTrailBackfill";
 import {
   Dock,
   type DockTab,
@@ -1875,6 +1876,16 @@ export default function TripMap({
     ? (finaleReplayActive || showTripPathLocal)
     : travelerAllowsFollowerPath && (finaleReplayActive || showTripPathLocal);
   const canAttemptReplay = showPath;
+  // Stored samples the cache missed (it adds one per server update): the shared trip's, like the latest sample above.
+  useLiveTrailBackfill({
+    token,
+    cache: liveTrailCache,
+    tripId: role === "traveler" ? (currentTrip?.tripId ?? null) : null,
+    latestSample: latestLiveTrailSample,
+    cutoffAt: followerCacheCutoffAt,
+    active: cacheUsable && showsLiveTraveler && !replayActive && !finaleReplayActive && showPath
+      && (role === "follower" || liveTrailEnabled),
+  });
 
   useEffect(() => {
     setReplayCacheIdentity(token, role, cutoffPreview.cutoffAt ?? null, `${replayManifest?.authorization}:${replayManifest?.revision}:${replayManifest?.contentRevision}:${replayManifest?.ready}:${replayManifest?.originalOnly}`, tripCacheKey);
