@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useOnlineStatus } from "../../components/resilience/useOnlineStatus";
 import { tripcastApi, type TripCard } from "../../convex/tripcastApi";
 import { useTripMutation } from "../../convex/useTrip";
+import { clearNativeRouteRecord } from "../../native/locationWatcher";
 import { useOptionalTripContext } from "../../providers/TripContextProvider";
 import { tripErrorInfo } from "./tripSwitchState";
 
@@ -21,12 +22,16 @@ export function deleteBlockedReason(card: TripCard, onlyTrip: boolean): string |
 /**
  * The one call that starts deleting a card's trip: `deleteTrip({token, tripId})` with the CARD's id (an explicit
  * `tripId` always beats the captured view). The dialog's confirm and the Retry on a failed delete both use it, so they
- * send the same arguments.
+ * send the same arguments. Once it succeeds the trip's points leave the phone's route record (an older iOS build
+ * rejects that, ignored).
  */
 export function useDeleteTripCall(): (card: Pick<TripCard, "tripId">) => Promise<null> {
   const { token } = useOptionalTripContext();
   const deleteTrip = useTripMutation(tripcastApi.trips.deleteTrip);
-  return useCallback((card) => deleteTrip({ token, tripId: card.tripId }), [deleteTrip, token]);
+  return useCallback((card) => deleteTrip({ token, tripId: card.tripId }).then((result) => {
+    void clearNativeRouteRecord({ tripId: card.tripId }).catch(() => {});
+    return result;
+  }), [deleteTrip, token]);
 }
 
 export type DeleteTripDialogProps = {

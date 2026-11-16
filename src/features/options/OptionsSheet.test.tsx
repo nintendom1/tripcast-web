@@ -7,6 +7,9 @@ import { tripcastApi } from "../../convex/tripcastApi";
 import type { StoredSession } from "../../lib/auth";
 import { clearUsageBaselines, recordUploadedFileBytes } from "../../lib/usageBaselines";
 import { ThemeProvider } from "../../providers/ThemeProvider";
+import { TripContextTestProvider } from "../../providers/TripContextProvider";
+import { travelerViewingPrivately } from "../../test/renderWithTrip";
+import type { TripContextValue } from "../trips/tripTypes";
 import * as mapService from "../map/mapService";
 import { getLiveTrailCache, resetLiveTrailCachesForTests } from "../map/liveTrailCache";
 import OptionsSheet from "./OptionsSheet";
@@ -17,6 +20,12 @@ vi.mock("convex/react", () => ({
 }));
 
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
+
+const routeRecordMocks = vi.hoisted(() => ({ clear: vi.fn(() => Promise.resolve({ removed: 0 })) }));
+vi.mock("../../native/locationWatcher", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../native/locationWatcher")>()),
+  clearNativeRouteRecord: routeRecordMocks.clear,
+}));
 
 const capacitorMocks = {
   isNativePlatform: vi.fn().mockReturnValue(false),
@@ -283,7 +292,10 @@ function setupMocks({
   };
 }
 
-function renderOptions(overrides?: Partial<React.ComponentProps<typeof OptionsSheet>>) {
+function renderOptions(overrides?: Partial<React.ComponentProps<typeof OptionsSheet>>, trip?: Partial<TripContextValue>) {
+  const wrapper = trip
+    ? ({ children }: { children: React.ReactNode }) => <TripContextTestProvider value={trip}>{children}</TripContextTestProvider>
+    : undefined;
   render(
     <ThemeProvider>
       <OptionsSheet
@@ -301,6 +313,7 @@ function renderOptions(overrides?: Partial<React.ComponentProps<typeof OptionsSh
         {...overrides}
       />
     </ThemeProvider>,
+    { wrapper },
   );
 }
 
@@ -626,6 +639,78 @@ describe("OptionsSheet Live Trail settings", () => {
     expect(cache.snapshot().samples.map((sample) => sample._id)).toEqual([
       "sample-1", "sample-3", "sample-5",
     ]);
+  });
+
+  it("removes deleted breadcrumbs from the phone's route record too, ignoring a build without one", async () => {
+    routeRecordMocks.clear.mockRejectedValueOnce(new Error("UNIMPLEMENTED")).mockRejectedValueOnce(new Error("UNIMPLEMENTED"));
+    const samples = [16, 17, 18, 19, 20].map((hour, index) => ({
+      _id: `sample-${index + 1}`,
+      lat: 47.61 + index / 100,
+      lon: -122.31,
+      sampledAt: Date.UTC(2026, 4, 1, hour),
+    }));
+    setupMocks({
+      travelerTimeZone: "America/Los_Angeles",
+      liveTrailPreview: {
+        startMs: Date.UTC(2026, 4, 1, 7),
+        endExclusiveMs: Date.UTC(2026, 4, 2, 7),
+        timeZone: "America/Los_Angeles",
+        count: 5,
+        samples,
+      },
+    });
+    renderOptions({ defaultView: "live-trail" });
+
+    await userEvent.click(screen.getByRole("button", { name: /Delete 5 breadcrumbs/i }));
+    await waitFor(() => expect(routeRecordMocks.clear).toHaveBeenCalledWith({
+      tripId: null,
+      startMs: Date.UTC(2026, 4, 1, 7),
+      endExclusiveMs: Date.UTC(2026, 4, 2, 7),
+    }));
+
+    await userEvent.selectOptions(screen.getByLabelText(/Delete mode/i), "every_other");
+    await userEvent.click(screen.getByRole("button", { name: /Delete 2 breadcrumbs/i }));
+    await waitFor(() => expect(routeRecordMocks.clear).toHaveBeenLastCalledWith({
+      tripId: null,
+      sampledAt: [samples[1].sampledAt, samples[3].sampledAt],
+    }));
+    expect(screen.queryByText(/UNIMPLEMENTED/)).not.toBeInTheDocument();
+  });
+
+  it("clears the route record of the trip the delete went to, by the selected rows' times", async () => {
+    const samples = [16, 17, 18].map((hour, index) => ({
+      _id: `sample-${index + 1}`,
+      lat: 47.61 + index / 100,
+      lon: -122.31,
+      sampledAt: Date.UTC(2026, 4, 1, hour),
+    }));
+    const { deleteLiveTrailSamplesFn } = setupMocks({
+      travelerTimeZone: "America/Los_Angeles",
+      liveTrailPreview: {
+        startMs: Date.UTC(2026, 4, 1, 7),
+        endExclusiveMs: Date.UTC(2026, 4, 2, 7),
+        timeZone: "America/Los_Angeles",
+        count: 3,
+        samples,
+      },
+    });
+    // Viewing another trip than the shared current one.
+    renderOptions({ defaultView: "live-trail" }, travelerViewingPrivately);
+
+    await userEvent.selectOptions(screen.getByLabelText(/Delete mode/i), "individual");
+    await userEvent.click(screen.getByLabelText(/#1/i));
+    await userEvent.click(screen.getByLabelText(/#3/i));
+    await userEvent.click(screen.getByRole("button", { name: /Delete 2 breadcrumbs/i }));
+
+    await waitFor(() => expect(routeRecordMocks.clear).toHaveBeenCalledWith({
+      tripId: "trip-other",
+      sampledAt: [samples[0].sampledAt, samples[2].sampledAt],
+    }));
+    expect(deleteLiveTrailSamplesFn).toHaveBeenCalledWith({
+      token: "test-token",
+      sampleIds: ["sample-1", "sample-3"],
+      tripId: "trip-other",
+    });
   });
 
   it("lets the traveler select individual breadcrumbs before deleting", async () => {

@@ -42,6 +42,7 @@ import type { ViewingMode } from "./features/trips/tripTypes";
 import { TripUnavailableBoundary } from "./features/trips/TripUnavailableBoundary";
 import { clearLiveTrailCachesForToken } from "./features/map/liveTrailCache";
 import {
+  clearNativeRouteRecord,
   isAdaptiveLocationAvailable,
   stopNativeLocationTracking,
 } from "./native/locationWatcher";
@@ -937,6 +938,8 @@ function ConnectedApp() {
           onLoggedOut={handleLoggedOut}
           onLocationDataCleared={() => {
             clearLiveSnooze();
+            // Wipes the phone's route record (an older iOS build rejects, ignored).
+            void clearNativeRouteRecord({}).catch(() => {});
             setLocationResetNonce((value) => value + 1);
           }}
           onTripDataDeleted={() => {

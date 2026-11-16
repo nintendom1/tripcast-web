@@ -71,6 +71,30 @@ type AdaptiveLocationEvent = {
 
 type NativeTrailSnapshot = { queueRevision: number; points: LocalTrailPoint[] };
 
+/**
+ * The phone's route record (bridge contract shared with the native side). The map asks for the viewed current trip's
+ * entries it does not hold yet; an older native build ignores the request and returns no `route`.
+ */
+export type RouteRequest = { tripId: string | null; sinceSeq: number | null; generation: string | null };
+export type NativeRoutePoint = { clientSampleId: string; lat: number; lon: number; sampledAt: number; seq: number };
+export type NativeRouteBlock = {
+  tripId: string | null;  // echo of the request; the web drops a block for a trip it no longer shows
+  generation: string;     // new on load and on every removal except age/cap pruning
+  replace: boolean;       // points = the trip's whole record (generation differs, or sinceSeq null)
+  firstSeq: number;       // drop held points below this (pruned by age or cap)
+  lastSeq: number;        // send back as sinceSeq
+  points: NativeRoutePoint[]; // the trip's entries with seq > sinceSeq, oldest first
+  recordSize: number; totalSize: number; bytesOnDisk: number; prunedSinceLastRead: number;
+};
+export type NativeLocalTrailSnapshot = NativeTrailSnapshot & { route?: NativeRouteBlock };
+/** `{}` wipes all; `{tripId}` that trip; `{tripId, startMs, endExclusiveMs}` or `{tripId, sampledAt}` those entries. */
+export type ClearRouteRecordOptions = {
+  tripId?: string | null;
+  startMs?: number;
+  endExclusiveMs?: number;
+  sampledAt?: number[];
+};
+
 export type NativeUsageBucket = {
   hourStart: number;
   requests: number;
@@ -201,7 +225,9 @@ interface AdaptiveLocationPlugin {
   foreground(): Promise<AdaptiveLocationEvent>;
   setHighFrequencyActive(options: { active: boolean }): Promise<AdaptiveLocationEvent>;
   getState(): Promise<AdaptiveLocationEvent>;
-  getLocalTrailSnapshot(): Promise<NativeTrailSnapshot>;
+  getLocalTrailSnapshot(o?: { route?: RouteRequest }): Promise<NativeTrailSnapshot & { route?: NativeRouteBlock }>;
+  // {} wipes all; {tripId} that trip; {tripId, startMs, endExclusiveMs} or {tripId, sampledAt} those entries
+  clearRouteRecord(o: { tripId?: string | null; startMs?: number; endExclusiveMs?: number; sampledAt?: number[] }): Promise<{ removed: number }>;
   getUsageLedger(): Promise<NativeUsageLedger>;
   resetUsageLedger(): Promise<NativeUsageLedger>;
   syncMysteryMissions(options: { payload: NativeMysteryMissionSync }): Promise<NativeMysteryProximityState>;
@@ -431,8 +457,13 @@ class NativeLocationManager {
     return operation;
   }
 
-  public async getLocalTrailSnapshot(): Promise<NativeTrailSnapshot> {
-    return AdaptiveLocation.getLocalTrailSnapshot();
+  public async getLocalTrailSnapshot(options?: { route?: RouteRequest }): Promise<NativeLocalTrailSnapshot> {
+    return options ? AdaptiveLocation.getLocalTrailSnapshot(options) : AdaptiveLocation.getLocalTrailSnapshot();
+  }
+
+  /** Rejects (UNIMPLEMENTED) on a native build without the route record. */
+  public clearRouteRecord(options: ClearRouteRecordOptions): Promise<{ removed: number }> {
+    return AdaptiveLocation.clearRouteRecord(options);
   }
 
   public getUsageLedger(): Promise<NativeUsageLedger> {

@@ -13,6 +13,12 @@ const server = vi.hoisted(() => ({
   deleteImpl: (() => Promise.resolve(null)) as (args: Record<string, unknown>) => Promise<unknown>,
 }));
 
+const routeRecord = vi.hoisted(() => ({ clear: vi.fn(() => Promise.resolve({ removed: 0 })) }));
+vi.mock("../../native/locationWatcher", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../native/locationWatcher")>()),
+  clearNativeRouteRecord: routeRecord.clear,
+}));
+
 vi.mock("convex/react", async () => {
   const { getFunctionName } = await import("convex/server");
   return {
@@ -115,6 +121,15 @@ describe("DeleteTripDialog", () => {
     await user.click(deleteButton());
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(server.calls).toEqual([{ name: "trips:deleteTrip", args: { token: "tok", tripId: "summer" } }]);
+  });
+
+  it("then removes the trip from the phone's route record, ignoring a build without one", async () => {
+    routeRecord.clear.mockClear().mockRejectedValueOnce(new Error("UNIMPLEMENTED"));
+    const { user, onClose } = await setup(card());
+    await user.type(screen.getByRole("textbox"), "Summer 2026");
+    await user.click(deleteButton());
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+    expect(routeRecord.clear).toHaveBeenCalledExactlyOnceWith({ tripId: "summer" });
   });
 
   it.each([

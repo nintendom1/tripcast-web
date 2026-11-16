@@ -106,7 +106,7 @@ import { getMapStyleResolution } from "../map/mapService";
 import { computeAutoState } from "../travelstate/autoStateCalc";
 import { IosSideloadProfileCountdown } from "./SideloadProfileCountdownRow";
 import { LiveGpsSettings } from "./LiveGpsSettings";
-import { isAdaptiveLocationAvailable } from "../../native/locationWatcher";
+import { clearNativeRouteRecord, isAdaptiveLocationAvailable } from "../../native/locationWatcher";
 import { nativeLocationManager } from "../../native/nativeLocationManager";
 import { useNativePublishingState } from "../../native/nativePublishingState";
 import { ConvexUsageScreen } from "./ConvexUsageScreen";
@@ -1497,6 +1497,14 @@ function LiveTrailSettingsSheet({
       } else {
         liveTrailCache.removeIds(selectedSampleIds);
       }
+      // The phone's own route record keeps every trip's points (untagged ones under `null`). An older iOS build rejects.
+      const recordTripId = deleteRange.target?.tripId ?? null;
+      void clearNativeRouteRecord(deleteMode === "range" && preview
+        ? { tripId: recordTripId, startMs: preview.startMs, endExclusiveMs: preview.endExclusiveMs }
+        : {
+          tripId: recordTripId,
+          sampledAt: previewSamples.filter((sample) => selectedSampleIdSet.has(sample._id)).map((sample) => sample.sampledAt),
+        }).catch(() => {});
       setIndividualSelection({});
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

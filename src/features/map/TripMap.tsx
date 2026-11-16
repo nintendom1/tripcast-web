@@ -56,6 +56,14 @@ import {
 } from "./liveTrailCache";
 import { useLiveTrailBackfill } from "./useLiveTrailBackfill";
 import {
+  applyRouteBlock,
+  buildFallbackTravelerPathSamples,
+  buildTravelerPathSamples,
+  emptyRouteRecord,
+  routeRequestOf,
+  type RouteRecordState,
+} from "./routeRecord";
+import {
   Dock,
   type DockTab,
   FanMenu,
@@ -73,6 +81,7 @@ import {
   BackgroundSaveRetryToast,
 } from "../hud";
 import {
+  clearNativeRouteRecord,
   foregroundNativeLocationTracking,
   getNativeLocalTrailSnapshot,
   isAdaptiveLocationAvailable,
@@ -219,6 +228,8 @@ const FOLLOW_RESTORE_GRACE_MS = 2000;
 
 /** Map pins requested per page of `listTripMapPins` (the backend's page ceiling). */
 const PIN_PAGE_SIZE = 200;
+/** How long a Traveler's server backfill waits for the phone's first route answer: the phone answers in about a second, and a silent one must not leave the map with neither source. */
+const ROUTE_RECORD_WAIT_MS = 5000;
 
 /**
  * Pins once each, in the order `listCheckpointMapPins` returns them (`happenedAt`, else `createdAt`; ties by
@@ -1496,6 +1507,18 @@ export default function TripMap({
   );
   const [localTrailPoints, setLocalTrailPoints] = useState<LocalTrailPoint[]>([]);
   const localTrailSnapshotRef = useRef<{ queueRevision: number; signature: string } | null>(null);
+  // The phone's route record of the viewed current trip (Traveler, iOS): the ref is what the next snapshot asks from,
+  // the state what the path draws (set once a block was applied), when it was last synced (the day window's "now", so a
+  // return to the foreground moves the window) and the trip's entry count native reported (`recordSize`).
+  const routeRecordRef = useRef<RouteRecordState | null>(null);
+  const [routeRecord, setRouteRecord] = useState<{ record: RouteRecordState; syncedAt: number; recordSize: number } | null>(null);
+  // The trip the phone has answered the route request for since the map became active (`undefined`: not yet): any answer.
+  const [routeAnsweredTripId, setRouteAnsweredTripId] = useState<string | null | undefined>(undefined);
+  const [routeWaitExpired, setRouteWaitExpired] = useState(false);
+  const routeUnsupportedLoggedRef = useRef(false);
+  // Debug Log volume (a snapshot follows every fix): the first `applied` after a load, a replace or a trip change only.
+  const routeAppliedLoggedRef = useRef(false);
+  const routeRenderLogRef = useRef<string | null>(null);
   // Mirrors document.visibilityState. Drives the foreground-only browser
   // watcher gate so it does not survive backgrounding (and to re-arm on
   // foreground without churning the native watcher when LIVE is on).
@@ -1824,18 +1847,39 @@ export default function TripMap({
   const replaySourceTrailSamples = replaySessionState.breadcrumbs.length > 0
     ? replaySessionState.breadcrumbs
     : liveTrailSamples;
+  // The trip whose route record the snapshot asks for: the viewed current trip of a Traveler (`undefined`: none).
+  const routeTripId = role === "traveler" && showsLiveTraveler && !tripStatusUnknown ? (currentTrip?.tripId ?? null) : undefined;
+  const travelerRecordPath = useMemo(() => {
+    if (replayActive || routeTripId === undefined || routeRecord?.record.tripId !== routeTripId) return null;
+    const pendingIds = new Set(localTrailPoints.filter((point) => point.status === "pending").map((point) => point.clientSampleId));
+    return buildTravelerPathSamples({
+      cacheRows: liveTrailSamples,
+      record: routeRecord.record.points,
+      pendingIds,
+      cutoffAt: cutoffPreview.cutoffAt ?? null,
+      now: routeRecord.syncedAt,
+    });
+  }, [cutoffPreview.cutoffAt, liveTrailSamples, localTrailPoints, replayActive, routeRecord, routeTripId]);
   const pathTrailSamples = useMemo(() => {
     const base = replayActive ? replaySessionState.breadcrumbs : liveTrailSamples;
     // The device's own trail (native queue) is today's, so it belongs to the shared trip only.
     if (replayActive || role !== "traveler" || !showsLiveTraveler) return base.filter((s) => inReplayWindow(s.sampledAt));
+    if (travelerRecordPath) return travelerRecordPath.samples;
     const acknowledged = localTrailPoints.filter((point) => point.status === "acknowledged");
-    return [...base, ...acknowledged]
-      .filter((sample, index, rows) => inReplayWindow(sample.sampledAt) && rows.findIndex((candidate) =>
-        candidate.sampledAt === sample.sampledAt && candidate.lat === sample.lat && candidate.lon === sample.lon,
-      ) === index)
-      .sort((a, b) => a.sampledAt - b.sampledAt)
-      .slice(-100);
-  }, [replayActive, replaySessionState.breadcrumbs, liveTrailSamples, localTrailPoints, role, inReplayWindow, showsLiveTraveler]);
+    return buildFallbackTravelerPathSamples(base, acknowledged, inReplayWindow);
+  }, [replayActive, replaySessionState.breadcrumbs, liveTrailSamples, localTrailPoints, role, inReplayWindow, showsLiveTraveler, travelerRecordPath]);
+  useEffect(() => {
+    const stats = travelerRecordPath?.stats;
+    if (!stats) {
+      routeRenderLogRef.current = null;
+      return;
+    }
+    // Not on every fix: only when the cut, the window or the hundreds of drawn points change.
+    const signature = `${stats.cut}:${stats.windowHours}:${Math.floor(stats.drawnCount / 100)}`;
+    if (signature === routeRenderLogRef.current) return;
+    routeRenderLogRef.current = signature;
+    log.logMap("map:route-record:render", { ...stats });
+  }, [log, travelerRecordPath]);
   const pathTrailVisible = pathTrailSamples.length >= 1;
   const pendingTrailPoints = useMemo(
     () => role === "traveler" && showsLiveTraveler ? localTrailPoints.filter((point) => point.status === "pending") : [],
@@ -1876,6 +1920,25 @@ export default function TripMap({
     ? (finaleReplayActive || showTripPathLocal)
     : travelerAllowsFollowerPath && (finaleReplayActive || showTripPathLocal);
   const canAttemptReplay = showPath;
+  // The phone's route record is asked first because it costs no Convex reads (about 100 rows, 34 KB, saved per load and per
+  // return to the app); the server backfill is the fallback. Once the record holds entries for the viewed trip the
+  // Traveler skips the backfill. An empty record (the first day on a build with it, or a trip tracked from another phone
+  // or a browser), no `route` in the answer or a failed snapshot must not leave the map with neither, so then the
+  // backfill runs.
+  const routeRecordCoversTrip = routeTripId !== undefined && routeRecord?.record.tripId === routeTripId && routeRecord.recordSize > 0;
+  const routeNative = routeTripId !== undefined && isAdaptiveLocationAvailable();
+  // Until the phone has answered the first route request for the trip the backfill holds, or its answer might not be needed.
+  const routeWaiting = routeNative && !routeRecordCoversTrip && routeAnsweredTripId !== routeTripId && !routeWaitExpired;
+  // Each trip, and each return to the foreground, asks the phone again: the wait starts over (hidden: waiting, so a
+  // foreground return that comes first is held). The timer bounds it, so a phone that never answers cannot leave the map
+  // without either source.
+  useEffect(() => {
+    setRouteAnsweredTripId(undefined);
+    setRouteWaitExpired(false);
+    if (!routeNative || !isAppActive) return;
+    const timer = setTimeout(() => setRouteWaitExpired(true), ROUTE_RECORD_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [isAppActive, routeNative, routeTripId]);
   // Stored samples the cache missed (it adds one per server update): the shared trip's, like the latest sample above.
   useLiveTrailBackfill({
     token,
@@ -1884,7 +1947,8 @@ export default function TripMap({
     latestSample: latestLiveTrailSample,
     cutoffAt: followerCacheCutoffAt,
     active: cacheUsable && showsLiveTraveler && !replayActive && !finaleReplayActive && showPath
-      && (role === "follower" || liveTrailEnabled),
+      && (role === "follower" || (liveTrailEnabled && !routeRecordCoversTrip)),
+    hold: routeWaiting,
   });
 
   useEffect(() => {
@@ -2085,9 +2149,43 @@ export default function TripMap({
       return;
     }
     let cancelled = false;
-    void getNativeLocalTrailSnapshot()
+    // The route record: ask only for what the map does not hold yet of the viewed current trip.
+    if (routeTripId !== undefined && routeRecordRef.current?.tripId !== routeTripId) {
+      routeRecordRef.current = emptyRouteRecord(routeTripId);
+    }
+    const routeRequest = routeTripId !== undefined && routeRecordRef.current ? routeRequestOf(routeRecordRef.current) : null;
+    void getNativeLocalTrailSnapshot(routeRequest ? { route: routeRequest } : undefined)
       .then((snapshot) => {
         if (cancelled) return;
+        if (routeRequest) setRouteAnsweredTripId(routeRequest.tripId);
+        if (routeRequest && !snapshot.route) {
+          if (!routeUnsupportedLoggedRef.current) log.logMap("map:route-record:sync", { result: "unsupported" });
+          routeUnsupportedLoggedRef.current = true;
+        } else if (routeRequest && snapshot.route) {
+          const block = snapshot.route;
+          // A reset since the request (Stop with discard, a data reset) left nothing: only a whole record applies.
+          const held = routeRecordRef.current ?? emptyRouteRecord(routeRequest.tripId);
+          const { state, result } = applyRouteBlock(held, block);
+          routeRecordRef.current = state;
+          if (result === "applied" || result === "replaced" || result === "unchanged") {
+            setRouteRecord({ record: state, syncedAt: Date.now(), recordSize: block.recordSize });
+          }
+          // A snapshot follows every fix: log all but the routine results, and the first `applied` after a load or a
+          // replace (a trip change always starts with a replace).
+          const routine = result === "unchanged" || (result === "applied" && routeAppliedLoggedRef.current);
+          if (result === "applied") routeAppliedLoggedRef.current = true;
+          if (result === "replaced") routeAppliedLoggedRef.current = false;
+          if (!routine) {
+            log.logMap("map:route-record:sync", {
+              result,
+              received: block.points.length,
+              recordSize: block.recordSize,
+              totalSize: block.totalSize,
+              bytesOnDisk: block.bytesOnDisk,
+              prunedSinceLastRead: block.prunedSinceLastRead,
+            });
+          }
+        }
         const signature = JSON.stringify(snapshot.points.map((point) => [
           point.clientSampleId,
           point.sampledAt,
@@ -2113,6 +2211,7 @@ export default function TripMap({
         });
       })
       .catch((error) => {
+        if (!cancelled && routeRequest) setRouteAnsweredTripId(routeRequest.tripId);
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("Local trail snapshots are foreground-only")) {
           log.logMap("map:pending-trail:native-sync", {
@@ -2126,7 +2225,7 @@ export default function TripMap({
         });
       });
     return () => { cancelled = true; };
-  }, [isAppActive, log, nativeReadinessState.queueRevision, role, token]);
+  }, [isAppActive, log, nativeReadinessState.queueRevision, role, routeTripId, token]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -4610,6 +4709,8 @@ export default function TripMap({
     if (dataReset) {
       localTrailSnapshotRef.current = null;
       setLocalTrailPoints([]);
+      routeRecordRef.current = null;
+      setRouteRecord(null);
       void liveTrailCache.clear();
     }
     setIsVotePanelOpen(false);
@@ -4828,6 +4929,9 @@ export default function TripMap({
     if (pendingSamples === "discard") {
       localTrailSnapshotRef.current = null;
       setLocalTrailPoints([]);
+      // Native drops the discarded points from the record too; the next snapshot reads it whole.
+      routeRecordRef.current = null;
+      setRouteRecord(null);
     }
     lastSentLocationRef.current = null;
     breadcrumbSamplerStateRef.current = {};
@@ -5447,7 +5551,13 @@ export default function TripMap({
       };
     });
 
-    void deleteBreadcrumb({ token, sampleIds: [sampleId] })
+    const recordTripId = deleteBreadcrumb.target?.tripId ?? null;
+    const sampledAt = currentReplayPin.occurredAt;
+    const deletion = deleteBreadcrumb({ token, sampleIds: [sampleId] });
+    // After success the phone's route record drops it too, or the live map draws it again (an older iOS build rejects,
+    // ignored). A separate chain: its failure never rolls the Replay back.
+    void deletion.then(() => clearNativeRouteRecord({ tripId: recordTripId, sampledAt: [sampledAt] })).catch(() => {});
+    void deletion
       .then(() => {
         liveTrailCache.removeIds([sampleId]);
       })

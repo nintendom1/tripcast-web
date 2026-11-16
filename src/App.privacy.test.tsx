@@ -19,6 +19,12 @@ vi.mock("./lib/auth", () => ({
   setStoredSession: vi.fn(),
 }));
 
+const routeRecord = vi.hoisted(() => ({ clear: vi.fn(() => Promise.resolve({ removed: 0 })) }));
+vi.mock("./native/locationWatcher", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./native/locationWatcher")>()),
+  clearNativeRouteRecord: routeRecord.clear,
+}));
+
 // TripMap is lazy-loaded; mock it to avoid MapLibre GL dependency in jsdom.
 vi.mock("./features/map/TripMap", () => ({
   default: () => <div data-testid="trip-map" />,
@@ -79,5 +85,19 @@ describe("App: Options button and Emergency Reset location", () => {
     expect(await screen.findByTestId("trip-map")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Shared trip data deletion started.");
     expect(cache.snapshot().samples).toEqual([]);
+  });
+
+  it("wipes the phone's route record on an Emergency Reset that stays signed in, ignoring a build without one", async () => {
+    routeRecord.clear.mockRejectedValueOnce(new Error("UNIMPLEMENTED"));
+    setupSessionMocks("traveler");
+    render(<App convexReady={true} />);
+
+    await userEvent.click(screen.getByRole("button", { name: /options/i }));
+    await userEvent.click(screen.getByRole("button", { name: /emergency reset/i }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete Shared Trip Data" }));
+    await userEvent.click(screen.getByRole("button", { name: "Confirm shared data deletion" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Shared trip data deletion started.");
+    expect(routeRecord.clear).toHaveBeenCalledExactlyOnceWith({});
   });
 });

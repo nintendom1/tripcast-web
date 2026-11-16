@@ -5,10 +5,13 @@ const mocks = vi.hoisted(() => ({
   removeWatcher: vi.fn(),
   openSettings: vi.fn(),
   isNativePlatform: vi.fn(),
+  getPlatform: vi.fn(() => "ios"),
+  getLocalTrailSnapshot: vi.fn(),
+  clearRouteRecord: vi.fn(),
 }));
 
 vi.mock("@capacitor/core", () => ({
-  Capacitor: { isNativePlatform: mocks.isNativePlatform },
+  Capacitor: { isNativePlatform: mocks.isNativePlatform, getPlatform: mocks.getPlatform },
 }));
 
 vi.mock("./nativeLocationManager", () => ({
@@ -16,10 +19,14 @@ vi.mock("./nativeLocationManager", () => ({
     addWatcher: mocks.addWatcher,
     removeWatcher: mocks.removeWatcher,
     openSettings: mocks.openSettings,
+    getLocalTrailSnapshot: mocks.getLocalTrailSnapshot,
+    clearRouteRecord: mocks.clearRouteRecord,
   },
 }));
 
 import {
+  clearNativeRouteRecord,
+  getNativeLocalTrailSnapshot,
   isNativeLocationAvailable,
   openNativeLocationSettings,
   startNativeLocationWatch,
@@ -56,5 +63,24 @@ describe("locationWatcher", () => {
   it("opens the native settings page", () => {
     openNativeLocationSettings();
     expect(mocks.openSettings).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks the iPhone for its route record and clears it; a browser has none", async () => {
+    const route = { tripId: "trip-a", sinceSeq: 4, generation: "g1" };
+    mocks.isNativePlatform.mockReturnValue(true);
+    mocks.getLocalTrailSnapshot.mockResolvedValue({ queueRevision: 1, points: [] });
+    mocks.clearRouteRecord.mockResolvedValue({ removed: 2 });
+
+    await expect(getNativeLocalTrailSnapshot({ route })).resolves.toEqual({ queueRevision: 1, points: [] });
+    expect(mocks.getLocalTrailSnapshot).toHaveBeenCalledWith({ route });
+    await expect(clearNativeRouteRecord({ tripId: "trip-a", sampledAt: [5] })).resolves.toEqual({ removed: 2 });
+    expect(mocks.clearRouteRecord).toHaveBeenCalledWith({ tripId: "trip-a", sampledAt: [5] });
+
+    vi.clearAllMocks();
+    mocks.isNativePlatform.mockReturnValue(false);
+    await expect(getNativeLocalTrailSnapshot({ route })).resolves.toEqual({ queueRevision: 0, points: [] });
+    await expect(clearNativeRouteRecord({})).resolves.toEqual({ removed: 0 });
+    expect(mocks.getLocalTrailSnapshot).not.toHaveBeenCalled();
+    expect(mocks.clearRouteRecord).not.toHaveBeenCalled();
   });
 });

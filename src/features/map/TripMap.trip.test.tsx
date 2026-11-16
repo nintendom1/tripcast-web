@@ -13,7 +13,9 @@ import {
 } from "../../convex/tripcastApi";
 import { TripContextProvider, TripContextTestProvider, useTripContext } from "../../providers/TripContextProvider";
 import type { TripContextValue } from "../trips/tripTypes";
+import { clearLogs, getLogs, setEnabled as setDebugLogging } from "../../debug/debugLogger";
 import { setNativePublishingTags } from "../../native/nativePublishingSignal";
+import { resetNativeReadinessState, setNativeReadinessState } from "../../native/nativeReadinessState";
 import { LivePublishingBridge } from "../../native/LivePublishingBridge";
 import TripMap from "./TripMap";
 import ReplayDateRangeSheet, { lastCustomRangeKey } from "./ReplayDateRangeSheet";
@@ -33,7 +35,9 @@ const mocks = vi.hoisted(() => ({
   isNativeLocationAvailable: vi.fn(() => false),
   isAdaptiveLocationAvailable: vi.fn(() => false),
   configure: vi.fn(() => Promise.resolve()),
-  snapshot: vi.fn(() => Promise.resolve({ queueRevision: 0, points: [] as unknown[] })),
+  snapshot: vi.fn((_options?: unknown) =>
+    Promise.resolve<{ queueRevision: number; points: unknown[]; route?: unknown }>({ queueRevision: 0, points: [] })),
+  clearRouteRecord: vi.fn((_options: unknown) => Promise.resolve({ removed: 0 })),
   fundsSheetThrows: false,
 }));
 const markerElements: HTMLElement[] = [];
@@ -72,6 +76,7 @@ vi.mock("../../native/locationWatcher", () => ({
   syncNativeMysteryMissions: vi.fn(() => Promise.resolve()),
   configureNativeLocationPublishing: mocks.configure,
   getNativeLocalTrailSnapshot: mocks.snapshot,
+  clearNativeRouteRecord: mocks.clearRouteRecord,
   getNativeMysteryNarrationPlaybackState: () => Promise.resolve(null),
   foregroundNativeLocationTracking: vi.fn(),
   retryNativeLocationTracking: vi.fn(() => Promise.resolve()),
@@ -570,6 +575,26 @@ describe("TripMap follows the viewed trip", () => {
       sampleIds: ["summer-crumb-1"],
       tripId: SUMMER.tripId,
     }));
+  });
+
+  it("a breadcrumb deleted in Replay leaves the phone's route record of its trip, only after the server delete succeeded", async () => {
+    let resolveDelete: (value: unknown) => void = () => {};
+    deleteBreadcrumb.mockImplementationOnce(() => new Promise((resolve) => { resolveDelete = resolve; }));
+    mocks.clearRouteRecord.mockRejectedValueOnce(new Error("UNIMPLEMENTED"));
+    renderMap(viewingSummer());
+    await startReplay();
+    fireEvent.click(screen.getByRole("button", { name: /pause replay/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
+    await waitFor(() => expect(deleteBreadcrumb).toHaveBeenCalledWith(expect.objectContaining({ sampleIds: ["summer-crumb-1"] })));
+    expect(mocks.clearRouteRecord).not.toHaveBeenCalled();
+
+    await act(async () => resolveDelete({ deleted: 1 }));
+
+    expect(mocks.clearRouteRecord).toHaveBeenCalledExactlyOnceWith({ tripId: SUMMER.tripId, sampledAt: [2_000] });
+    // The ignored rejection rolls nothing back.
+    expect(screen.getByRole("group", { name: "Trip Replay" })).toBeInTheDocument();
+    expect(screen.queryByText(/Delete trail sample/)).not.toBeInTheDocument();
   });
 
   it("ignores a story pin answer that arrives after the view changed, then opens the new trip's pins", async () => {
@@ -1078,6 +1103,7 @@ describe("TripMap late answers and edge cases across a view change", () => {
     await act(async () => rejectDelete(new Error("offline")));
     await act(async () => {});
 
+    expect(mocks.clearRouteRecord).not.toHaveBeenCalled();
     expect(summerIdsIn(cache(AUTUMN.tripId).snapshot().samples)).toEqual([]);
     for (const call of pathCalls().slice(callsBefore)) expect(summerIdsIn(call[6])).toEqual([]);
   });
@@ -1394,3 +1420,357 @@ describe("TripMap pages a trip's map pins", () => {
   });
 });
 
+describe("TripMap and the phone's route record", () => {
+  const MINUTE = 60_000;
+  const routePoint = (seq: number, sampledAt: number) =>
+    ({ clientSampleId: `route-${seq}`, lat: 47 + seq / 10_000, lon: -122.3, sampledAt, seq });
+  const routeBlock = (overrides: Record<string, unknown>) => ({
+    tripId: AUTUMN.tripId,
+    generation: "g1",
+    replace: false,
+    firstSeq: 1,
+    lastSeq: 0,
+    points: [],
+    recordSize: 0,
+    totalSize: 0,
+    bytesOnDisk: 0,
+    prunedSinceLastRead: 0,
+    ...overrides,
+  });
+  const backfills = () => argsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)
+    .filter((args) => (args as { paginationOpts: { numItems: number } }).paginationOpts.numItems === 100);
+  const firstRequest = { route: { tripId: AUTUMN.tripId, sinceSeq: null, generation: null } };
+  let start = 0;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 15, 14, 0));
+    start = new Date(2026, 10, 15, 8, 0).getTime();
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    mocks.isAdaptiveLocationAvailable.mockReturnValue(true);
+  });
+  afterEach(() => {
+    resetNativeReadinessState();
+  });
+
+  it("draws the whole day from the record, asks only for what it lacks, and reads nothing from the server", async () => {
+    const day = Array.from({ length: 300 }, (_, i) => routePoint(i + 1, start + i * MINUTE));
+    const unsent = routePoint(301, start + 300 * MINUTE);
+    mocks.snapshot.mockResolvedValueOnce({
+      queueRevision: 1,
+      points: [{ ...unsent, status: "pending" }],
+      route: routeBlock({ replace: true, lastSeq: 301, points: [...day, unsent], recordSize: 301, totalSize: 301 }),
+    });
+    const map = renderMap(following());
+
+    await waitFor(() => expect(lastPath()[6]).toEqual(day));
+    expect(mocks.snapshot).toHaveBeenCalledWith(firstRequest);
+    expect(vi.mocked(usePendingTrail).mock.calls.at(-1)![1]).toEqual([expect.objectContaining({ clientSampleId: "route-301" })]);
+
+    // The unsent point uploads: the next snapshot asks from the held sequence and generation.
+    mocks.snapshot.mockResolvedValue({
+      queueRevision: 2,
+      points: [{ ...unsent, status: "acknowledged" }],
+      route: routeBlock({ lastSeq: 301, recordSize: 301 }),
+    });
+    act(() => setNativeReadinessState({ queueRevision: 2 }));
+    await waitFor(() => expect(lastPath()[6]).toEqual([...day, unsent]));
+    expect(mocks.snapshot).toHaveBeenLastCalledWith({ route: { tripId: AUTUMN.tripId, sinceSeq: 301, generation: "g1" } });
+
+    // The server backfill is off: a newer stored sample joins the path, a return to the foreground reads nothing.
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest", 47.5, -122.2, start + 301 * MINUTE);
+    map.view(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(302));
+    vi.setSystemTime(Date.now() + 61_000);
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(backfills()).toEqual([]);
+  });
+
+  it("moves the day window on a return to the foreground even when the record is unchanged", async () => {
+    vi.setSystemTime(new Date(2026, 10, 15, 3, 0));
+    let visibility: DocumentVisibilityState = "visible";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    const evening = new Date(2026, 10, 14, 20, 0).getTime();
+    const night = new Date(2026, 10, 15, 0, 10).getTime();
+    const yesterday = Array.from({ length: 150 }, (_, i) => routePoint(i + 1, evening + i * MINUTE));
+    const today = Array.from({ length: 150 }, (_, i) => routePoint(i + 151, night + i * MINUTE));
+    mocks.snapshot.mockResolvedValueOnce({
+      queueRevision: 1,
+      points: [],
+      route: routeBlock({ replace: true, lastSeq: 300, points: [...yesterday, ...today] }),
+    });
+    renderMap(following());
+
+    // At 03:00 the window starts at 21:00 yesterday.
+    await waitFor(() => expect(lastPath()[6]).toEqual([...yesterday.slice(60), ...today]));
+
+    mocks.snapshot.mockResolvedValue({ queueRevision: 1, points: [], route: routeBlock({ lastSeq: 300 }) });
+    vi.setSystemTime(new Date(2026, 10, 15, 10, 0));
+    visibility = "hidden";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    visibility = "visible";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+
+    // At 10:00 it starts at midnight.
+    await waitFor(() => expect(lastPath()[6]).toEqual(today));
+  });
+
+  it("keeps the server backfill while the record has nothing for the trip, and stops it once it has entries", async () => {
+    const now = Date.now();
+    mocks.snapshot.mockResolvedValue({ queueRevision: 1, points: [], route: routeBlock({ replace: true, lastSeq: 0 }) });
+    const map = renderMap(following());
+    await waitFor(() => expect(mocks.snapshot).toHaveBeenCalledWith(firstRequest));
+    await act(async () => {});
+
+    // Stored by an older build or another device: the empty record leaves it to the server backfill.
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest-1", 47.5, -122.2, now - 10 * MINUTE);
+    map.view(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(1));
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await waitFor(() => expect(backfills()).toHaveLength(1));
+
+    mocks.snapshot.mockResolvedValue({
+      queueRevision: 2,
+      points: [],
+      route: routeBlock({ lastSeq: 1, points: [routePoint(1, now - 5 * MINUTE)], recordSize: 1 }),
+    });
+    act(() => setNativeReadinessState({ queueRevision: 2 }));
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(2));
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest-2", 47.6, -122.2, now - 2 * MINUTE);
+    map.view(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(3));
+    vi.setSystemTime(now + 61_000);
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(backfills()).toHaveLength(1);
+  });
+
+  it("logs the record's sync and render lines on changes, not on every fix", async () => {
+    setDebugLogging(true);
+    clearLogs();
+    const entries = (action: string) => getLogs().filter((entry) => entry.action === action).map((entry) => entry.details);
+    const point = (seq: number) => routePoint(seq, start + seq * MINUTE);
+    const fix = async (route: Record<string, unknown>, revision: number, drawn: number | null) => {
+      mocks.snapshot.mockResolvedValue({ queueRevision: revision, points: [], route: routeBlock(route) });
+      act(() => setNativeReadinessState({ queueRevision: revision }));
+      await waitFor(() => expect(mocks.snapshot).toHaveBeenCalledWith(expect.objectContaining({ route: expect.anything() })));
+      if (drawn === null) await act(async () => {});
+      else await waitFor(() => expect(lastPath()[6]).toHaveLength(drawn));
+    };
+    const day = Array.from({ length: 150 }, (_, i) => point(i + 1));
+    mocks.snapshot.mockResolvedValue({ queueRevision: 1, points: [], route: routeBlock({ replace: true, lastSeq: 150, points: day, recordSize: 150 }) });
+    renderMap(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(150));
+
+    for (const seq of [151, 152, 153]) await fix({ lastSeq: seq, points: [point(seq)], recordSize: seq }, seq, seq);
+    await fix({ lastSeq: 153, recordSize: 153 }, 154, null);
+    const fifty = Array.from({ length: 50 }, (_, i) => point(154 + i));
+    await fix({ lastSeq: 203, points: fifty, recordSize: 203 }, 155, 203);
+    // A removal elsewhere: a new generation, read whole, then the next fix.
+    await fix({ generation: "g2", replace: true, lastSeq: 203, points: [...day, point(151), point(152), point(153), ...fifty], recordSize: 203 }, 156, null);
+    await fix({ generation: "g2", lastSeq: 204, points: [point(204)], recordSize: 204 }, 157, 204);
+
+    expect(entries("map:route-record:sync").map((details) => details?.result)).toEqual(["replaced", "applied", "replaced", "applied"]);
+    const renders = entries("map:route-record:render");
+    expect(renders.map((details) => details?.drawnCount)).toEqual([150, 203]);
+    expect(Object.keys(renders[0] ?? {}).sort()).toEqual(
+      ["cacheInWindow", "cut", "drawnCount", "duplicates", "pendingExcluded", "recordInWindow", "windowHours"],
+    );
+  });
+
+  it("without a record (an older iOS build) keeps today's path and the server backfill", async () => {
+    const acknowledged = [1, 2, 3].map((i) => ({
+      clientSampleId: `ack-${i}`,
+      lat: 47.1,
+      lon: -122.1 - i / 1_000,
+      sampledAt: start + i * MINUTE,
+      status: "acknowledged" as const,
+    }));
+    mocks.snapshot.mockResolvedValue({ queueRevision: 1, points: acknowledged });
+    const map = renderMap(following());
+
+    await waitFor(() => expect(lastPath()[6]).toEqual(acknowledged));
+    expect(mocks.snapshot).toHaveBeenCalledWith(firstRequest);
+
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest", 47.5, -122.2, start + 4 * MINUTE);
+    map.view(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(4));
+    vi.setSystemTime(Date.now() + 61_000);
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await waitFor(() => expect(backfills()).toHaveLength(1));
+  });
+});
+
+describe("TripMap holds the server backfill until the phone has answered the route request", () => {
+  const MINUTE = 60_000;
+  const SUMMER_CURRENT: CurrentTrip = { ...AUTUMN, tripId: SUMMER.tripId, title: SUMMER.title };
+  const block = (tripId: string, overrides: Record<string, unknown> = {}) => ({
+    tripId,
+    generation: "g1",
+    replace: true,
+    firstSeq: 1,
+    lastSeq: 0,
+    points: [],
+    recordSize: 0,
+    totalSize: 0,
+    bytesOnDisk: 0,
+    prunedSinceLastRead: 0,
+    ...overrides,
+  });
+  const withEntries = (tripId: string) => block(tripId, {
+    lastSeq: 1,
+    recordSize: 1,
+    points: [{ clientSampleId: "route-1", lat: 47.1, lon: -122.3, sampledAt: Date.now() - 20 * MINUTE, seq: 1 }],
+  });
+  const answer = (route?: unknown) => ({ queueRevision: 1, points: [], ...(route ? { route } : {}) });
+  const backfillsFor = (tripId: string) => argsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)
+    .filter((args) => (args as { paginationOpts: { numItems: number } }).paginationOpts.numItems === 100)
+    .filter((args) => tripOf(args) === tripId);
+  const backfills = () => backfillsFor(AUTUMN.tripId);
+  type Answer = ReturnType<typeof answer>;
+  const pending = () => {
+    let resolve!: (value: Answer) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<Answer>((onResolve, onReject) => { resolve = onResolve; reject = onReject; });
+    return { promise, resolve, reject };
+  };
+  const settle = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  let visibility: DocumentVisibilityState = "visible";
+  const toForeground = async () => {
+    visibility = "hidden";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    vi.setSystemTime(Date.now() + 61_000);
+    visibility = "visible";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await settle();
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(new Date(2026, 10, 15, 14, 0));
+    visibility = "visible";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    mocks.isAdaptiveLocationAvailable.mockReturnValue(true);
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest", 47.5, -122.2, Date.now() - 10 * MINUTE);
+    latestByTrip[SUMMER.tripId] = sample("summer-latest", 40.5, -74.2, Date.now() - 10 * MINUTE);
+  });
+  afterEach(() => {
+    resetNativeReadinessState();
+    vi.useRealTimers();
+  });
+
+  it("a record with entries: no backfill on load and none on a return to the foreground", async () => {
+    const first = pending();
+    mocks.snapshot.mockReturnValueOnce(first.promise);
+    renderMap(following());
+    await settle();
+    expect(mocks.snapshot).toHaveBeenCalledTimes(1);
+    expect(backfills()).toEqual([]);
+
+    first.resolve(answer(withEntries(AUTUMN.tripId)));
+    await settle();
+    mocks.snapshot.mockResolvedValue(answer(block(AUTUMN.tripId, { replace: false, lastSeq: 1, recordSize: 1 })));
+    await toForeground();
+    await advance(10_000);
+    expect(backfills()).toEqual([]);
+  });
+
+  it("an empty record: one backfill, once the phone has answered", async () => {
+    const first = pending();
+    mocks.snapshot.mockReturnValueOnce(first.promise);
+    renderMap(following());
+    await settle();
+    await advance(4_000);
+    expect(backfills()).toEqual([]);
+
+    first.resolve(answer(block(AUTUMN.tripId)));
+    await settle();
+    expect(backfills()).toHaveLength(1);
+    await advance(10_000);
+    expect(backfills()).toHaveLength(1);
+  });
+
+  it("an answer without a route block (an older native build), or a failed snapshot: the backfill runs", async () => {
+    const first = pending();
+    mocks.snapshot.mockReturnValueOnce(first.promise);
+    const older = renderMap(following());
+    await settle();
+    expect(backfills()).toEqual([]);
+    first.resolve(answer());
+    await settle();
+    expect(backfills()).toHaveLength(1);
+    older.unmount();
+    await resetLiveTrailCachesForTests();
+    mocks.query.mockClear();
+
+    const failing = pending();
+    mocks.snapshot.mockReturnValueOnce(failing.promise);
+    renderMap(following());
+    await settle();
+    expect(backfills()).toEqual([]);
+    failing.reject(new Error("native unavailable"));
+    await settle();
+    expect(backfills()).toHaveLength(1);
+  });
+
+  it("no answer within 5 s: the backfill runs", async () => {
+    mocks.snapshot.mockReturnValueOnce(pending().promise);
+    renderMap(following());
+    await settle();
+    await advance(4_999);
+    expect(backfills()).toEqual([]);
+    await advance(1);
+    expect(backfills()).toHaveLength(1);
+  });
+
+  it("a return to the foreground while waiting: one backfill if the answer is empty, none if it has entries", async () => {
+    for (const entries of [false, true]) {
+      await resetLiveTrailCachesForTests();
+      mocks.query.mockClear();
+      mocks.snapshot.mockReset();
+      visibility = "visible";
+      // The first answer is empty: the load backfill runs.
+      mocks.snapshot.mockResolvedValueOnce(answer(block(AUTUMN.tripId)));
+      const view = renderMap(following());
+      await settle();
+      expect(backfills()).toHaveLength(1);
+
+      const next = pending();
+      mocks.snapshot.mockReturnValue(next.promise);
+      await toForeground();
+      expect(backfills()).toHaveLength(1);
+
+      next.resolve(answer(entries
+        ? block(AUTUMN.tripId, { replace: false, lastSeq: 1, recordSize: 1, points: [{ clientSampleId: "route-1", lat: 47.1, lon: -122.3, sampledAt: Date.now() - 5 * MINUTE, seq: 1 }] })
+        : block(AUTUMN.tripId, { replace: false })));
+      await settle();
+      await advance(10_000);
+      expect(backfills()).toHaveLength(entries ? 1 : 2);
+      view.unmount();
+    }
+  });
+
+  it("a trip switch starts the wait again for the new trip", async () => {
+    mocks.snapshot.mockResolvedValueOnce(answer(block(AUTUMN.tripId)));
+    const map = renderMap(following());
+    await settle();
+    expect(backfills()).toHaveLength(1);
+
+    await advance(3_000);
+    mocks.snapshot.mockReturnValue(pending().promise);
+    map.view(following(SUMMER_CURRENT));
+    await settle();
+    await advance(4_999);
+    expect(backfillsFor(SUMMER.tripId)).toEqual([]);
+    await advance(1);
+    expect(backfillsFor(SUMMER.tripId)).toHaveLength(1);
+  });
+
+  it("a Follower and a browser Traveler wait for nothing", async () => {
+    mocks.snapshot.mockReturnValue(pending().promise);
+    mocks.isAdaptiveLocationAvailable.mockReturnValue(false);
+    renderMap(following());
+    await settle();
+    expect(backfills()).toHaveLength(1);
+  });
+});
