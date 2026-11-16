@@ -416,6 +416,18 @@ npm run ios:run
 git add assets/ ios/App/App/Assets.xcassets   # commit sources + generated icons
 ```
 
+## Reading device logs from the Mac
+
+```bash
+npm run ios:logs                          # the app's Debug Log, newest origin, one line per entry
+npm run ios:logs -- --errors --since 60   # warn/error from the last hour; also --grep <text>, --json
+npm run ios:logs -- --console             # RESTARTS the app and streams its console until Ctrl-C
+```
+
+Needs a development-signed build (`npm run ios:run`) and a paired iPhone on cable or the same network;
+use `--device <id>` when several are connected. It only reads `tripcast.debug.*` keys. Server errors
+are read with `npx convex logs --prod` in `tripcast-backend` (owner approval needed).
+
 ## Notes
 
 - Web deploy is unaffected: a plain `npm run build` uses the `/tripcast-web/` GitHub Pages base;
