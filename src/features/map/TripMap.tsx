@@ -1882,6 +1882,7 @@ export default function TripMap({
     cache: liveTrailCache,
     tripId: role === "traveler" ? (currentTrip?.tripId ?? null) : null,
     latestSample: latestLiveTrailSample,
+    cutoffAt: followerCacheCutoffAt,
     active: cacheUsable && showsLiveTraveler && !replayActive && !finaleReplayActive && showPath
       && (role === "follower" || liveTrailEnabled),
   });

@@ -239,8 +239,9 @@ export class LiveTrailCacheStore {
 
   /**
    * Adds stored samples the cache lacks to the recent pool, by `_id` and in time order. A sample already cached (either
-   * pool) is skipped, so nothing drawn is replaced or reordered, and the pool limits hold (the recent pool keeps its
-   * newest 100). Returns how many samples the cache gained.
+   * pool) is skipped, so no cached row is replaced and the order stays by time. The replay pool is left as it is. The
+   * recent pool keeps its newest 100, so after a dense merge its older (sparser) rows, and merged rows older than those
+   * 100, drop off: the drawn span gets shorter, which is accepted. Returns how many samples the cache gained.
    */
   mergeRecent(samples: readonly unknown[]) {
     const known = new Set(this.pools.samples.map((sample) => sample._id));

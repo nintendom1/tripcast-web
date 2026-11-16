@@ -132,11 +132,14 @@ describe("LiveTrailCacheStore", () => {
     expect(store.mergeRecent([sample(3), sample(5)])).toBe(0);
     expect(listener).toHaveBeenCalledTimes(1);
 
-    // A full recent pool keeps its newest 100: older stored samples are not added, newer ones push the oldest out.
+    // A full recent pool keeps its newest 100: older rows drop off (accepted), and the replay pool is left as it is.
     store.mergeRecent(Array.from({ length: 150 }, (_, index) => sample(index + 10)));
     expect(store.snapshot().recent).toHaveLength(LIVE_TRAIL_CACHE_RECENT_LIMIT);
-    expect(store.mergeRecent([sample(6)])).toBe(0);
     expect(store.snapshot().recent[0]._id).toBe("sample-60");
+    expect(store.mergeRecent([sample(6)])).toBe(0);
+    const range = (from: number, to: number) => Array.from({ length: to - from }, (_, index) => `sample-${from + index}`);
+    expect(store.snapshot().replay.map((row) => row._id)).toEqual(["sample-0"]);
+    expect(store.snapshot().samples.map((row) => row._id)).toEqual(["sample-0", ...range(60, 160)]);
     expect(store.snapshot().samples.length).toBeLessThanOrEqual(LIVE_TRAIL_CACHE_TOTAL_LIMIT);
 
     const revision = store.clearRevision;
