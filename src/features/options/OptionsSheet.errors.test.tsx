@@ -141,6 +141,20 @@ describe("Options page error containment", () => {
     expect(boundaryErrors()[0]).toMatchObject({ details: { title: "Trip Ticker hit a problem." } });
   });
 
+  it("a failing read on the Options home page shows a card whose Close closes Options", async () => {
+    server.throwOnQuery = "scoring:travelerGetScoringSettings";
+    const { onOpenChange } = renderOptions();
+
+    const card = await screen.findByRole("alert");
+    expect(card).toHaveTextContent("Options hit a problem.");
+    expect(screen.queryByText("TripCast hit a problem.")).not.toBeInTheDocument();
+
+    await userEvent.click(within(card).getByRole("button", { name: "Close" }));
+
+    // Going "back to home" would leave the card in place: on home, Close closes Options.
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("Back still works from the card", async () => {
     server.fundsThrows = true;
     renderOptions();

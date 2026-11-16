@@ -2070,6 +2070,7 @@ export default function OptionsSheet({
             <FeatureBoundary
               title={`${optionsPageTitle(view)} hit a problem.`}
               resetKeys={[view, session.token]}
+              fallbackClassName={PAGE_ERROR_CARD_CLASS}
               onClose={handleEmergencyResetClose}
             >
               <EmergencyResetContent
