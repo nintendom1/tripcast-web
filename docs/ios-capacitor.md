@@ -425,8 +425,10 @@ npm run ios:logs -- --console             # RESTARTS the app and streams its con
 ```
 
 Needs a development-signed build (`npm run ios:run`) and a paired iPhone on cable or the same network;
-use `--device <id>` when several are connected. It only reads `tripcast.debug.*` keys. Server errors
-are read with `npx convex logs --prod` in `tripcast-backend` (owner approval needed).
+use `--device <id>` when several are connected. The whole local-storage database (including the
+sign-in token) is copied to a temp directory during the run and deleted on exit; only `tripcast.debug.*`
+keys are read from it. Server errors are read with `npx convex logs --prod` in `tripcast-backend`
+(owner approval needed).
 
 ## Notes
 

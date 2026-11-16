@@ -1,9 +1,10 @@
 // @vitest-environment node
 
+import { EventEmitter } from "events";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEBUG_KEY_PREFIX,
   LOG_KEY,
@@ -11,6 +12,7 @@ import {
   decodeHexUtf16le,
   filterEntries,
   formatLine,
+  installCleanupHooks,
   main,
   parseArgs,
   parseFileListing,
@@ -54,8 +56,7 @@ describe("ios-logs parsing", () => {
     expect(origins[0].files).toEqual([
       `Library/WebKit/WebsiteData/Default/${ORIGIN_A}/localstorage.sqlite3`,
       `Library/WebKit/WebsiteData/Default/${ORIGIN_A}/localstorage.sqlite3-wal`,
-      `Library/WebKit/WebsiteData/Default/${ORIGIN_A}/localstorage.sqlite3-shm`,
-    ]);
+    ]); // -shm is listed on the phone but never copied: sqlite rebuilds it
     expect(origins[1].files).toHaveLength(2);
   });
 
@@ -141,22 +142,30 @@ describe("ios-logs main", () => {
   });
 
   /** Fake devicectl and sqlite3; `logs` maps origin dir -> entries. */
-  function fakeRunner({ devices, logs = {} }) {
+  function fakeRunner({ devices, logs = {}, copyFails = [], sqliteResults = {}, listings }) {
     const calls = [];
-    const runner = async (file, args) => {
+    let listCalls = 0;
+    const runner = async (file, args, opts) => {
       calls.push([file, ...args]);
+      calls.at(-1).opts = opts;
       if (args[0] === "devicectl" && args[1] === "list") {
         writeFileSync(args[args.indexOf("--json-output") + 1], JSON.stringify({ result: { devices } }));
         return { status: 0, stdout: "", stderr: "" };
       }
-      if (args[1] === "device" && args[2] === "info") return { status: 0, stdout: LISTING, stderr: "" };
+      if (args[1] === "device" && args[2] === "info") {
+        listCalls += 1;
+        return { status: 0, stdout: listings ? listings[Math.min(listCalls, listings.length) - 1] : LISTING, stderr: "" };
+      }
       if (args[1] === "device" && args[2] === "copy") {
         const source = args[args.indexOf("--source") + 1];
+        if (copyFails.some(dir => source.includes(dir))) return { status: 1, stdout: "", stderr: "copy failed" };
         writeFileSync(args[args.indexOf("--destination") + 1], source);
         return { status: 0, stdout: "", stderr: "" };
       }
       if (file === "/usr/bin/sqlite3") {
         const source = readFileSync(args[0], "utf8"); // the fake copy writes its source path
+        const forced = Object.entries(sqliteResults).find(([dir]) => source.includes(dir))?.[1];
+        if (forced) return forced;
         const entries = Object.entries(logs).find(([dir]) => source.includes(dir))?.[1];
         return { status: 0, stdout: entries ? `${hexOf(JSON.stringify(entries))}\n` : "\n", stderr: "" };
       }
@@ -170,7 +179,7 @@ describe("ios-logs main", () => {
     return { result, deps: { out: t => { result.out += t; }, err: t => { result.err += t; }, tempRoot, nowMs: NOW, ...extra } };
   }
 
-  it("prints the newest origin's entries and copies db, -wal and -shm", async () => {
+  it("prints the newest origin's entries and copies the db and -wal, not -shm", async () => {
     const { runner, calls } = fakeRunner({
       devices: [device("D1", "Phone")],
       logs: {
@@ -183,9 +192,12 @@ describe("ios-logs main", () => {
     expect(result.out).toContain("fresh:one");
     expect(result.out).not.toContain("stale:one");
     const copied = calls.filter(c => c[2] === "device" && c[3] === "copy").map(c => c[c.indexOf("--source") + 1]);
-    for (const suffix of ["localstorage.sqlite3", "localstorage.sqlite3-wal", "localstorage.sqlite3-shm"]) {
+    for (const suffix of ["localstorage.sqlite3", "localstorage.sqlite3-wal"]) {
       expect(copied).toContain(`Library/WebKit/WebsiteData/Default/${ORIGIN_A}/${suffix}`);
     }
+    expect(copied.some(path => path.endsWith("-shm"))).toBe(false);
+    const walCopy = calls.find(c => c.includes("--source") && c[c.indexOf("--source") + 1].endsWith("-wal"));
+    expect(walCopy.opts.timeoutMs).toBe(120_000);
     expect(readdirSync(tempRoot)).toEqual([]);
   });
 
@@ -266,5 +278,103 @@ describe("ios-logs main", () => {
     expect(launched).toEqual([
       "devicectl", "device", "process", "launch", "--console", "--terminate-existing", "--device", "D1", "com.tripcast.app",
     ]);
+  });
+
+  const GOOD = [entry({ action: "good:one" })];
+
+  it("a failing, a sqlite-failing and a malformed origin do not hide a good origin", async () => {
+    const { runner } = fakeRunner({
+      devices: [device("D1", "Phone")],
+      copyFails: [ORIGIN_A],
+      sqliteResults: {
+        [ORIGIN_B]: { status: 11, stdout: "", stderr: "database disk image is malformed" },
+        [ORIGIN_C]: { status: 0, stdout: `${hexOf("{not json")}\n`, stderr: "" },
+      },
+    });
+    // origin A fails to copy, B exits 11, C is malformed: all fail, so reasons are printed.
+    const failing = capture({ runner });
+    expect(await main([], failing.deps)).toBe(1);
+    expect(failing.result.err).toMatch(/Could not read the Debug Log from any/);
+    expect(failing.result.err).toContain(`${ORIGIN_A}: copy of localstorage.sqlite3 failed`);
+    expect(failing.result.err).toContain("sqlite3 exited 11: database disk image is malformed");
+    expect(failing.result.err).toContain("unreadable tripcast.debug.logs value");
+    expect(failing.result.err).not.toMatch(/recorded nothing/);
+
+    const mixed = fakeRunner({
+      devices: [device("D1", "Phone")],
+      copyFails: [ORIGIN_A],
+      logs: { [ORIGIN_B]: GOOD },
+      sqliteResults: { [ORIGIN_C]: { status: 0, stdout: `${hexOf("{not json")}\n`, stderr: "" } },
+    });
+    const ok = capture({ runner: mixed.runner });
+    expect(await main([], ok.deps)).toBe(0);
+    expect(ok.result.out).toContain("good:one");
+  });
+
+  it("retries an empty listing once without sleeping, then shows the listing lines", async () => {
+    const delays = [];
+    const progress = "Acquired tunnel connection to device.\nEnabling developer disk image services.\nAcquired usage assertion.\n0 files:\nName\nsixth line";
+    const empty = fakeRunner({ devices: [device("D1", "Phone")], listings: [progress, progress] });
+    const failed = capture({ runner: empty.runner, delay: async ms => { delays.push(ms); } });
+    expect(await main([], failed.deps)).toBe(1);
+    expect(delays).toEqual([2000]);
+    expect(empty.calls.filter(c => c[2] === "device" && c[3] === "info")).toHaveLength(2);
+    expect(failed.result.err).toContain("Acquired tunnel connection to device.");
+    expect(failed.result.err).toContain("Name");
+    expect(failed.result.err).not.toContain("sixth line");
+
+    const recovers = fakeRunner({ devices: [device("D1", "Phone")], listings: [progress, LISTING], logs: { [ORIGIN_A]: GOOD } });
+    const ok = capture({ runner: recovers.runner, delay: async () => {} });
+    expect(await main([], ok.deps)).toBe(0);
+    expect(ok.result.out).toContain("good:one");
+  });
+
+  it("names the step when a call times out", async () => {
+    const base = fakeRunner({ devices: [device("D1", "Phone")], logs: { [ORIGIN_A]: GOOD } }).runner;
+    const runner = async (file, args, opts) => {
+      if (args[2] === "copy") throw Object.assign(new Error("slow"), { code: "ETIMEDOUT" });
+      return base(file, args, opts);
+    };
+    const { result, deps } = capture({ runner });
+    expect(await main([], deps)).toBe(1);
+    expect(result.err).toMatch(/Copying localstorage\.sqlite3 timed out after 60 s: locked phone or stalled connection/);
+    expect(readdirSync(tempRoot)).toEqual([]);
+  });
+
+  it("writes a stderr line when the filters leave nothing; --json still prints []", async () => {
+    const { runner } = fakeRunner({ devices: [device("D1", "Phone")], logs: { [ORIGIN_A]: [entry({ ts: minutesAgo(4) }), entry({ ts: minutesAgo(9) })] } });
+    const text = capture({ runner });
+    expect(await main(["--grep", "nomatch"], text.deps)).toBe(0);
+    expect(text.result.out).toBe("");
+    expect(text.result.err).toMatch(/No entries match the filters\. The log holds 2 entries; the newest is at \d{4}-/);
+    const json = capture({ runner });
+    expect(await main(["--json", "--grep", "nomatch"], json.deps)).toBe(0);
+    expect(JSON.parse(json.result.out)).toEqual([]);
+  });
+
+  it("SIGTERM, SIGHUP, SIGINT and exit remove the temp directory with the conventional code", async () => {
+    const observed = [];
+    for (const [signal, code] of [["SIGTERM", 143], ["SIGHUP", 129], ["SIGINT", 130], ["exit", undefined]]) {
+      const proc = Object.assign(new EventEmitter(), { exit: vi.fn() });
+      const { runner } = fakeRunner({ devices: [device("D1", "Phone")] });
+      const { deps } = capture({ runner });
+      const seen = { signal };
+      // Assertions here would be swallowed by main's catch, so record and assert afterwards.
+      await main(["--console"], {
+        ...deps,
+        onInterrupt: cleanup => installCleanupHooks(cleanup, proc),
+        runConsole: async () => {
+          seen.before = readdirSync(tempRoot).length;
+          proc.emit(signal);
+          seen.after = readdirSync(tempRoot).length;
+          seen.exitCode = proc.exit.mock.calls[0]?.[0];
+          return 0;
+        },
+      });
+      observed.push({ ...seen, expectedCode: code });
+    }
+    for (const seen of observed) {
+      expect(seen, seen.signal).toMatchObject({ before: 1, after: 0, exitCode: seen.expectedCode });
+    }
   });
 });

@@ -72,22 +72,22 @@ export function parseDeviceList(json) {
 
 /**
  * Candidate web view databases from `devicectl device info files` output. Rows start with the path
- * (relative to WEB_STORAGE_DIR); only `.../localstorage.sqlite3` and its `-wal`/`-shm` are kept.
- * Returns [{ id, files: [path relative to the app container] }], db first.
+ * (relative to WEB_STORAGE_DIR); only `.../localstorage.sqlite3` and its `-wal` are kept (sqlite
+ * rebuilds `-shm`). Returns [{ id, files: [path relative to the app container] }], db first.
  */
 export function parseFileListing(text) {
   const origins = new Map();
   for (const line of text.split("\n")) {
     const path = line.trim().split(/\s+/)[0];
-    const match = /^(.+)\/localstorage\.sqlite3(-wal|-shm)?$/.exec(path ?? "");
+    const match = /^(.+)\/localstorage\.sqlite3(-wal)?$/.exec(path ?? "");
     if (!match) continue;
-    const origin = origins.get(match[1]) ?? { id: match[1], db: undefined, wal: undefined, shm: undefined };
-    origin[match[2] === "-wal" ? "wal" : match[2] === "-shm" ? "shm" : "db"] = `${WEB_STORAGE_DIR}/${path}`;
+    const origin = origins.get(match[1]) ?? { id: match[1], db: undefined, wal: undefined };
+    origin[match[2] ? "wal" : "db"] = `${WEB_STORAGE_DIR}/${path}`;
     origins.set(match[1], origin);
   }
   return [...origins.values()]
     .filter(origin => origin.db)
-    .map(origin => ({ id: origin.id, files: [origin.db, origin.wal, origin.shm].filter(Boolean) }));
+    .map(origin => ({ id: origin.id, files: [origin.db, origin.wal].filter(Boolean) }));
 }
 
 /** SQL for the debug keys only. Refuses any key outside DEBUG_KEY_PREFIX. */
@@ -169,11 +169,22 @@ export function formatLine(entry) {
 
 // ---------------------------------------------------------------- process calls
 
-/** The one place child processes start: `(file, args) => { status, stdout, stderr }`. Never a shell. */
-export function defaultRunner(file, args) {
+const TIMEOUT_MS = 60_000;
+const WAL_COPY_TIMEOUT_MS = 120_000;
+const LISTING_RETRY_DELAY_MS = 2_000;
+
+/** A step that ran out of time; aborts the whole run (a locked phone would stall every origin). */
+export class TimeoutError extends LogsError {}
+
+/**
+ * The one place child processes start: `(file, args, { timeoutMs }) => { status, stdout, stderr }`.
+ * Never a shell. A timeout rejects with `code: "ETIMEDOUT"`.
+ */
+export function defaultRunner(file, args, { timeoutMs = TIMEOUT_MS } = {}) {
   return new Promise((resolve, reject) => {
-    execFile(file, args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error && typeof error.code !== "number") reject(error);
+    execFile(file, args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: timeoutMs, killSignal: "SIGKILL" }, (error, stdout, stderr) => {
+      if (error?.killed) reject(Object.assign(new Error(`${file} timed out`), { code: "ETIMEDOUT" }));
+      else if (error && typeof error.code !== "number") reject(error);
       else resolve({ status: error ? error.code : 0, stdout, stderr });
     });
   });
@@ -187,17 +198,32 @@ function defaultConsole(args) {
   });
 }
 
-async function run(runner, file, args) {
+/** Runs one named step with a timeout; turns missing tools and timeouts into actionable errors. */
+async function run(runner, file, args, { step, timeoutMs = TIMEOUT_MS } = {}) {
   try {
-    return await runner(file, args);
+    return await runner(file, args, { timeoutMs });
   } catch (error) {
     if (error?.code === "ENOENT") {
       throw new LogsError(file === "xcrun"
         ? "xcrun not found. Install Xcode and its command line tools."
         : `${file} not found.`);
     }
+    if (error?.code === "ETIMEDOUT") {
+      throw new TimeoutError(`${step ?? file} timed out after ${timeoutMs / 1000} s: locked phone or stalled connection. Unlock the iPhone and retry.`);
+    }
     throw error;
   }
+}
+
+/** Removes the temp dir on SIGINT/SIGTERM/SIGHUP (exit 130/143/129) and on process exit. */
+export function installCleanupHooks(cleanup, proc = process) {
+  for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143], ["SIGHUP", 129]]) {
+    proc.once(signal, () => {
+      cleanup();
+      proc.exit(code);
+    });
+  }
+  proc.on("exit", cleanup);
 }
 
 function describeDevices(devices) {
@@ -206,7 +232,7 @@ function describeDevices(devices) {
 
 export async function chooseDevice(runner, tempDir, deviceFlag) {
   const jsonPath = join(tempDir, "devices.json");
-  const listed = await run(runner, "xcrun", ["devicectl", "list", "devices", "--json-output", jsonPath]);
+  const listed = await run(runner, "xcrun", ["devicectl", "list", "devices", "--json-output", jsonPath], { step: "Listing devices" });
   let devices;
   try {
     devices = parseDeviceList(JSON.parse(readFileSync(jsonPath, "utf8")));
@@ -230,36 +256,67 @@ export async function chooseDevice(runner, tempDir, deviceFlag) {
   return connected[0];
 }
 
-async function readDebugLogs(runner, tempDir, device, bundle) {
-  const containerArgs = ["--device", device.id, "--domain-type", "appDataContainer", "--domain-identifier", bundle];
-  const listing = await run(runner, "xcrun", [
-    "devicectl", "device", "info", "files", ...containerArgs, "--subdirectory", WEB_STORAGE_DIR,
-  ]);
+async function listOrigins(runner, device, bundle, containerArgs, delay) {
   const hint = `Cannot read the ${bundle} container on ${device.name || device.id}: a development-signed build installed on this device is required (npm run ios:run).`;
-  if (listing.status !== 0) throw new LogsError(`${hint}\n${(listing.stderr || listing.stdout || "").trim().split("\n").slice(-3).join("\n")}`);
-  const origins = parseFileListing(listing.stdout);
-  if (origins.length === 0) throw new LogsError(`${hint} No web view storage was found; open the app once first.`);
+  let listing;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    listing = await run(runner, "xcrun", [
+      "devicectl", "device", "info", "files", ...containerArgs, "--subdirectory", WEB_STORAGE_DIR,
+    ], { step: "Listing the app's web view storage" });
+    if (listing.status !== 0) throw new LogsError(`${hint}\n${(listing.stderr || listing.stdout || "").trim().split("\n").slice(-3).join("\n")}`);
+    const origins = parseFileListing(listing.stdout);
+    if (origins.length > 0) return origins;
+    if (attempt === 0) await delay(LISTING_RETRY_DELAY_MS); // a cold tunnel can return an empty listing once
+  }
+  // devicectl prints progress lines on stdout before the rows, so these are mostly progress.
+  const head = listing.stdout.split("\n").slice(0, 5).join("\n");
+  throw new LogsError(`${hint} No web view storage was found after a retry; open the app once first.\nFirst lines of the listing:\n${head}`);
+}
 
+async function readDebugLogs(runner, tempDir, device, bundle, delay) {
+  const containerArgs = ["--device", device.id, "--domain-type", "appDataContainer", "--domain-identifier", bundle];
+  const origins = await listOrigins(runner, device, bundle, containerArgs, delay);
+
+  // Each origin stands alone: one bad origin must not hide a good one.
   const candidates = [];
+  const reasons = [];
+  let withoutRow = 0;
   for (const [index, origin] of origins.entries()) {
     const dir = join(tempDir, `origin-${index}`);
     mkdirSync(dir);
-    // The app rewrites the log on every entry, so recent entries live in -wal: copy all three files.
+    let reason;
+    // The app rewrites the log on every entry, so recent entries live in -wal: copy it too.
     for (const source of origin.files) {
       const name = source.split("/").pop();
       const copied = await run(runner, "xcrun", [
         "devicectl", "device", "copy", "from", ...containerArgs, "--source", source, "--destination", join(dir, name),
-      ]);
-      if (copied.status !== 0) throw new LogsError(`${hint}\nCopy of ${name} failed.`);
+      ], { step: `Copying ${name}`, timeoutMs: name.endsWith("-wal") ? WAL_COPY_TIMEOUT_MS : TIMEOUT_MS });
+      if (copied.status !== 0) {
+        reason = `copy of ${name} failed (exit ${copied.status})`;
+        break;
+      }
     }
-    const queried = await run(runner, SQLITE3, [join(dir, "localstorage.sqlite3"), debugLogsSql()]);
-    if (queried.status !== 0) continue;
-    const entries = parseLogHex(queried.stdout);
-    if (entries) candidates.push({ id: origin.id, entries });
+    if (!reason) {
+      const queried = await run(runner, SQLITE3, [join(dir, "localstorage.sqlite3"), debugLogsSql()], { step: "Reading the database" });
+      if (queried.status !== 0) {
+        reason = `sqlite3 exited ${queried.status}: ${(queried.stderr ?? "").trim().split("\n")[0]}`;
+      } else {
+        try {
+          const entries = parseLogHex(queried.stdout);
+          if (entries) candidates.push({ id: origin.id, entries });
+          else withoutRow += 1;
+        } catch (error) {
+          reason = `unreadable ${LOG_KEY} value (${error.message})`;
+        }
+      }
+    }
+    if (reason) reasons.push(`  ${origin.id}: ${reason}`);
   }
   const best = pickNewestOrigin(candidates);
-  if (!best) throw new LogsError(`No ${LOG_KEY} key on the device: Debug Logging has recorded nothing yet.`);
-  return best.entries;
+  if (best) return best.entries;
+  if (reasons.length === 0) throw new LogsError(`No ${LOG_KEY} key on the device: Debug Logging has recorded nothing yet.`);
+  const noRow = withoutRow > 0 ? `\n  ${withoutRow} other origin(s) had no ${LOG_KEY} row.` : "";
+  throw new LogsError(`Could not read the Debug Log from any web view storage:\n${reasons.join("\n")}${noRow}`);
 }
 
 // ---------------------------------------------------------------- entry point
@@ -274,6 +331,7 @@ export async function main(argv, deps = {}) {
     tempRoot = tmpdir(),
     nowMs = Date.now(),
     onInterrupt = () => {},
+    delay = ms => new Promise(resolve => setTimeout(resolve, ms)),
   } = deps;
   let tempDir;
   const cleanup = () => {
@@ -294,9 +352,14 @@ export async function main(argv, deps = {}) {
         "devicectl", "device", "process", "launch", "--console", "--terminate-existing", "--device", device.id, options.bundle,
       ]);
     }
-    const entries = filterEntries(await readDebugLogs(runner, tempDir, device, options.bundle), { ...options, nowMs });
+    const all = await readDebugLogs(runner, tempDir, device, options.bundle, delay);
+    const entries = filterEntries(all, { ...options, nowMs });
     if (options.json) out(`${JSON.stringify(entries, null, 2)}\n`);
     else for (const entry of entries) out(`${formatLine(entry)}\n`);
+    if (entries.length === 0) {
+      const newest = newestTs(all);
+      err(`No entries match the filters. The log holds ${all.length} entries; ${Number.isFinite(newest) ? `the newest is at ${formatTime(newest)}` : "none has a valid time"}.\n`);
+    }
     return 0;
   } catch (error) {
     if (error instanceof LogsError) err(`${error.message}\n`);
@@ -313,9 +376,6 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     if (error.code === "EPIPE") process.exit(0);
   });
   process.exitCode = await main(process.argv.slice(2), {
-    onInterrupt: cleanup => process.once("SIGINT", () => {
-      cleanup();
-      process.exit(130);
-    }),
+    onInterrupt: installCleanupHooks,
   });
 }
