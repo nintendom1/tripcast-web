@@ -219,12 +219,33 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
 
     /// `{}` wipes the route record; `{ tripId }` removes that trip (null: untagged entries);
     /// `{ tripId, startMs, endExclusiveMs }` or `{ tripId, sampledAt: [...] }` removes those entries.
+    /// Never removes more than asked: a malformed key rejects the call instead of widening the scope.
     @objc func clearRouteRecord(_ call: CAPPluginCall) {
         // A null tripId names the untagged entries, so presence matters here, not only the value.
-        let trip: RouteRecord.TripMatch = call.options["tripId"] == nil ? .any : .trip(call.getString("tripId"))
+        let trip: RouteRecord.TripMatch
+        if let rawTripId = call.options["tripId"] {
+            if rawTripId is NSNull {
+                trip = .trip(nil)
+            } else if let tripId = rawTripId as? String {
+                trip = .trip(tripId)
+            } else {
+                call.reject("tripId must be a string or null")
+                return
+            }
+        } else {
+            trip = .any
+        }
         let removal: RouteRecord.Removal
-        if let times = call.getArray("sampledAt") {
-            removal = .sampledAt(trip, Set(times.compactMap { ($0 as? NSNumber)?.doubleValue }))
+        if let rawTimes = call.options["sampledAt"] {
+            // Booleans arrive as NSNumber too; they are not timestamps. An empty list removes nothing.
+            let values = rawTimes as? [Any]
+            let numbers = values?.compactMap { $0 as? NSNumber }
+                .filter { CFGetTypeID($0) != CFBooleanGetTypeID() } ?? []
+            guard let values, numbers.count == values.count else {
+                call.reject("sampledAt must be an array of numbers")
+                return
+            }
+            removal = .sampledAt(trip, Set(numbers.map(\.doubleValue)))
         } else if call.options["startMs"] != nil || call.options["endExclusiveMs"] != nil {
             guard let startMs = call.getDouble("startMs"), let endExclusiveMs = call.getDouble("endExclusiveMs") else {
                 call.reject("startMs and endExclusiveMs must both be numbers")

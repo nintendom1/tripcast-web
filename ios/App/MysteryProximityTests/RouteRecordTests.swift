@@ -43,6 +43,12 @@ final class RouteRecordTests: XCTestCase {
 
     private func ids(_ delta: RouteDelta) -> [String] { delta.points.map(\.clientSampleId) }
 
+    /// A fresh URL each time, so no cached resource value hides an atomic write that dropped the flag.
+    private func isExcludedFromBackup() throws -> Bool? {
+        try URL(fileURLWithPath: fileURL.path).resourceValues(forKeys: [.isExcludedFromBackupKey])
+            .isExcludedFromBackup
+    }
+
     private func fileLines() throws -> [Data] {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
         return try Data(contentsOf: fileURL).split(separator: 0x0A).map { Data($0) }
@@ -160,6 +166,7 @@ final class RouteRecordTests: XCTestCase {
         clock = base.addingTimeInterval(RouteRecord.maxAge + 60)
         try append(atThreshold, "fresh")
         XCTAssertEqual(try fileLines().count, 1, "1,000 dead lines rewrite the file")
+        XCTAssertEqual(try isExcludedFromBackup(), true, "a compaction rewrite keeps the file out of backups")
         XCTAssertEqual(ids(try makeRecord().delta(tripId: "t1", sinceSeq: nil, generation: nil)), ["fresh"])
     }
 
@@ -249,6 +256,7 @@ final class RouteRecordTests: XCTestCase {
         }
 
         try check(.clientSampleIds(["c", "zzz"]), removes: 1, leaving: ["a", "b", "d", "e", "f", "g"])
+        XCTAssertEqual(try isExcludedFromBackup(), true, "a removal rewrite keeps the file out of backups")
         try check(.range(.trip("t1"), startMs: baseMs + 1_000, endExclusiveMs: baseMs + 3_000),
                   removes: 1, leaving: ["a", "d", "e", "f", "g"])
         try check(.sampledAt(.any, [baseMs, baseMs + 1_000]), removes: 2, leaving: ["e", "f", "g"])
@@ -261,6 +269,17 @@ final class RouteRecordTests: XCTestCase {
         let generation = record.generation
         XCTAssertEqual(record.remove(.trip("other")), 0)
         XCTAssertEqual(record.generation, generation, "a removal that matches nothing keeps the generation")
+    }
+
+    func testSampledAtMatchesWithinHalfAMillisecond() throws {
+        clock = Date(timeIntervalSince1970: 1_794_792_100)
+        let record = makeRecord()
+        try append(record, "a", atMs: 1_794_792_091_500.201)
+        XCTAssertEqual(record.remove(.sampledAt(.any, [])), 0, "an empty list removes nothing")
+        XCTAssertEqual(record.remove(.sampledAt(.any, [1_794_792_091_501.3])), 0)
+        XCTAssertEqual(record.count, 1)
+        XCTAssertEqual(record.remove(.sampledAt(.trip("t1"), [1_794_792_091_500.2012])), 1)
+        XCTAssertEqual(record.count, 0)
     }
 
     // MARK: - Failures
@@ -284,6 +303,30 @@ final class RouteRecordTests: XCTestCase {
         XCTAssertEqual(record.writeFailures, 1)
         XCTAssertEqual(ids(try makeRecord().delta(tripId: "t1", sinceSeq: nil, generation: nil)), ["a", "b", "c"],
                        "the next write rewrites the whole file from memory")
+    }
+
+    func testFailingRewriteIsRetriedAtMostOnceAMinute() throws {
+        let record = makeRecord()
+        try append(record, "a")
+        try FileManager.default.removeItem(at: directory)
+        XCTAssertTrue(FileManager.default.createFile(atPath: directory.path, contents: Data()))
+        try append(record, "b") // the append fails
+        try append(record, "c") // the rewrite fails: retries now wait a minute
+        XCTAssertEqual(record.writeFailures, 2)
+
+        try FileManager.default.removeItem(at: directory)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        clock = clock.addingTimeInterval(RouteRecord.rewriteRetryInterval - 1)
+        try append(record, "d")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path), "no rewrite within the minute")
+        XCTAssertEqual(record.writeFailures, 3, "a skipped write still counts")
+        XCTAssertEqual(ids(try record.delta(tripId: "t1", sinceSeq: nil, generation: nil)), ["a", "b", "c", "d"])
+
+        clock = clock.addingTimeInterval(2)
+        try append(record, "e")
+        XCTAssertEqual(record.writeFailures, 3)
+        XCTAssertEqual(ids(try makeRecord().delta(tripId: "t1", sinceSeq: nil, generation: nil)),
+                       ["a", "b", "c", "d", "e"], "the retry after a minute writes memory")
     }
 
     func testUnreadableRecordThrowsOnReadAndARemovalDeletesIt() throws {

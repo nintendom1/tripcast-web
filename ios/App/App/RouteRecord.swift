@@ -43,7 +43,8 @@ struct RouteDelta {
 ///
 /// Not thread-safe: the publisher calls it only on its serial work queue. Loaded lazily at first use.
 /// After a failed write memory stays the truth (`writeFailures` counts it) and the next write rewrites the
-/// whole file. Only a failed load throws, and it changes nothing.
+/// whole file, at most once a minute while rewrites keep failing. Only a failed load throws, and it
+/// changes nothing.
 final class RouteRecord {
     /// Why 5,000: the busiest measured day had 2,300 points (owner's trail data, 2026-11-15), so this is
     /// 2.2 times that. A line is about 195 bytes, so the file stays near 1 MB. The record exists so the
@@ -54,6 +55,10 @@ final class RouteRecord {
     static let maxAge: TimeInterval = 26 * 3_600
     /// Dead lines (pruned or unreadable) the file may hold before it is rewritten from memory.
     static let compactionThreshold = 1_000
+    /// While rewrites keep failing (a full disk), retry at most this often instead of on every fix.
+    static let rewriteRetryInterval: TimeInterval = 60
+    /// Fractional-ms timestamps cross JSON phone -> server -> web -> bridge; fixes are seconds apart.
+    static let sampledAtTolerance = 0.5
 
     enum TripMatch: Equatable {
         case any
@@ -86,6 +91,7 @@ final class RouteRecord {
     private var nextSeq = 1
     private var deadLines = 0
     private var needsRewrite = false
+    private var lastFailedRewriteAt: Date?
 
     init(fileURL: URL, now: @escaping () -> Date = Date.init, fileManager: FileManager = .default) {
         self.fileURL = fileURL
@@ -207,7 +213,7 @@ final class RouteRecord {
             return 0
         }
         let before = entries.count
-        entries.removeAll { Self.matches(removal, $0) }
+        entries.removeAll(where: Self.matcher(for: removal))
         let removed = before - entries.count
         guard removed > 0 || removal == .all else { return 0 }
         generation = UUID().uuidString.lowercased()
@@ -243,19 +249,31 @@ final class RouteRecord {
         return removed
     }
 
-    private static func matches(_ removal: Removal, _ entry: RouteEntry) -> Bool {
+    private static func matcher(for removal: Removal) -> (RouteEntry) -> Bool {
         switch removal {
         case .all:
-            return true
+            return { _ in true }
         case .trip(let tripId):
-            return entry.tripId == tripId
+            return { $0.tripId == tripId }
         case let .range(trip, startMs, endExclusiveMs):
-            return matches(trip, entry) && entry.sampledAt >= startMs && entry.sampledAt < endExclusiveMs
+            return { matches(trip, $0) && $0.sampledAt >= startMs && $0.sampledAt < endExclusiveMs }
         case let .sampledAt(trip, times):
-            return matches(trip, entry) && times.contains(entry.sampledAt)
+            let sorted = times.sorted()
+            return { matches(trip, $0) && containsNear(sorted, $0.sampledAt) }
         case .clientSampleIds(let ids):
-            return ids.contains(entry.clientSampleId)
+            return { ids.contains($0.clientSampleId) }
         }
+    }
+
+    /// Whether `sorted` holds a value within `sampledAtTolerance` of `value` (binary search).
+    private static func containsNear(_ sorted: [Double], _ value: Double) -> Bool {
+        var low = 0
+        var high = sorted.count
+        while low < high {
+            let mid = (low + high) / 2
+            if sorted[mid] < value - sampledAtTolerance { low = mid + 1 } else { high = mid }
+        }
+        return low < sorted.count && sorted[low] <= value + sampledAtTolerance
     }
 
     private static func matches(_ trip: TripMatch, _ entry: RouteEntry) -> Bool {
@@ -296,8 +314,17 @@ final class RouteRecord {
         }
     }
 
-    /// Writes memory to the file (or deletes it when empty). On failure the next write tries again.
+    /// Writes memory to the file (or deletes it when empty). After a failed rewrite the next one waits
+    /// `rewriteRetryInterval`; a write skipped meanwhile counts as a failure, and memory stays the truth.
     private func rewrite() {
+        if let lastFailedRewriteAt {
+            let elapsed = now().timeIntervalSince(lastFailedRewriteAt)
+            if elapsed >= 0, elapsed < Self.rewriteRetryInterval {
+                writeFailures += 1
+                needsRewrite = true
+                return
+            }
+        }
         do {
             if entries.isEmpty {
                 if fileManager.fileExists(atPath: fileURL.path) { try fileManager.removeItem(at: fileURL) }
@@ -312,9 +339,11 @@ final class RouteRecord {
             }
             deadLines = 0
             needsRewrite = false
+            lastFailedRewriteAt = nil
         } catch {
             writeFailures += 1
             needsRewrite = true
+            lastFailedRewriteAt = now()
         }
     }
 
