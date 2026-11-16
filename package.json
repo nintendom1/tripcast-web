@@ -12,6 +12,7 @@
     "build:cap": "tsc -b && vite build --mode capacitor",
     "ios:sync": "npm run build:cap && cap sync ios",
     "ios:run": "node scripts/ios-run.mjs",
+    "ios:logs": "node scripts/ios-logs.mjs",
     "ios:assets": "npx --yes @capacitor/assets@latest generate --ios",
     "validate": "npm run lint:terms:report && tsc -b && eslint . && vitest run",
     "v": "node scripts/agent/quiet.mjs",
