@@ -178,6 +178,8 @@ export function isEnabled(): boolean {
 
 export function setEnabled(on: boolean): void {
   localStorage.setItem(LS_ENABLED, on ? "true" : "false");
+  // A `suppressed` count must never carry into a later session of logging.
+  alwaysOnState.clear();
   notifySubscribers();
 }
 
@@ -312,6 +314,15 @@ function appendEntry(entry: DebugEntry): void {
   notifySubscribers();
 }
 
+// With Debug Logging off, only crash-type errors (error/error with one of these action prefixes) are recorded,
+// limited to one per src + action + discriminator per window. The discriminator is `details.title` (a
+// FeatureBoundary's), else the start of `details.message`/`details.reason`, so two different errors are both kept.
+const ALWAYS_ON_ACTION_PREFIXES = ["react:", "global:"];
+const ALWAYS_ON_WINDOW_MS = 30_000;
+const ALWAYS_ON_MAX_KEYS = 200;
+const ALWAYS_ON_DISCRIMINATOR_CHARS = 80;
+const alwaysOnState = new Map<string, { lastAt: number; suppressed: number }>();
+
 export function log(
   level: DebugLevel,
   src: string,
@@ -320,10 +331,28 @@ export function log(
   details?: Record<string, unknown>,
   state?: Record<string, unknown>,
 ): void {
-  if (!isEnabled()) return;
+  // Crash-type errors are recorded even with Debug Logging off.
+  const alwaysRecord = level === "error" && category === "error"
+    && ALWAYS_ON_ACTION_PREFIXES.some((prefix) => action.startsWith(prefix));
+  const enabled = isEnabled();
+  if (!alwaysRecord && !enabled) return;
   if (!isCategoryEnabled(category)) return;
   // In "normal" preset, query category only logs errors
   if (category === "query" && getPreset() === "normal" && level !== "error") return;
+
+  if (!enabled) {
+    const discriminator = [details?.title, details?.message, details?.reason].find((v) => typeof v === "string");
+    const key = `${src}\u0000${action}\u0000${typeof discriminator === "string" ? discriminator.slice(0, ALWAYS_ON_DISCRIMINATOR_CHARS) : ""}`;
+    const now = Date.now();
+    const seen = alwaysOnState.get(key);
+    if (seen && now - seen.lastAt < ALWAYS_ON_WINDOW_MS) {
+      seen.suppressed += 1;
+      return;
+    }
+    if (alwaysOnState.size > ALWAYS_ON_MAX_KEYS) alwaysOnState.clear();
+    alwaysOnState.set(key, { lastAt: now, suppressed: 0 });
+    if (seen && seen.suppressed > 0) details = { ...details, suppressed: seen.suppressed };
+  }
 
   appendEntry(createEntry(level, src, action, category, details, state));
 }
@@ -392,6 +421,7 @@ export function getLogs(): DebugEntry[] {
 
 export function clearLogs(): void {
   buffer = [];
+  alwaysOnState.clear();
   localStorage.removeItem(LS_LOG_KEY);
   notifySubscribers();
 }

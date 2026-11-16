@@ -5,6 +5,7 @@ import DebugPanel from "./DebugPanel";
 import {
   clearLogs,
   getLogs,
+  log,
   setConsoleMirror,
   setEnabled,
   setPreset,
@@ -41,12 +42,42 @@ describe("DebugPanel", () => {
     expect(screen.getByRole("button", { name: /minimal/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /normal/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /refresh/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /clear logs/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /download diagnostic json/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /^copy json$/i })).toBeDisabled();
-    expect(screen.getByRole("button", { name: /copy llm summary/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /clear logs/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /download diagnostic json/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /^copy json$/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /copy llm summary/i })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: /copy current context/i })).toBeDisabled();
     expect(screen.getByLabelText(/ui/i)).toBeDisabled();
+  });
+
+  it("shows an error recorded while logging was off and lets it be copied", async () => {
+    setEnabled(false);
+    log("error", "FeatureBoundary", "react:feature-boundary-error", "error", { message: "funds exploded" });
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<DebugPanel />);
+
+    expect(screen.getByRole("list", { name: /recent debug log entries/i })).toHaveTextContent(/react:feature-boundary-error/);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^copy json$/i }));
+    });
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("funds exploded"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /copy llm summary/i }));
+    });
+    expect(writeText).toHaveBeenLastCalledWith(expect.stringContaining("react:feature-boundary-error"));
+  });
+
+  it("clears an error recorded while logging was off", () => {
+    setEnabled(false);
+    log("error", "FeatureBoundary", "react:feature-boundary-error", "error", { message: "funds exploded" });
+    render(<DebugPanel />);
+    expect(screen.getByRole("list", { name: /recent debug log entries/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /clear logs/i }));
+
+    expect(getLogs()).toHaveLength(0);
+    expect(screen.queryByRole("list", { name: /recent debug log entries/i })).not.toBeInTheDocument();
   });
 
   it("enables debug options when logging is on", () => {

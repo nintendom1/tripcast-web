@@ -53,7 +53,7 @@ function makeLogger(src: string): DebugLogger {
 /**
  * Returns stable log helpers scoped to a component name.
  * filePath is registered once for the LLM summary component map.
- * All helpers are no-ops when debug logging is disabled.
+ * Helpers are no-ops when debug logging is disabled, except crash-type errors (`react:*`/`global:*`, see debugLogger).
  */
 export function useDebugLogger(componentName: string, filePath: string): DebugLogger {
   registerComponent(componentName, filePath);
