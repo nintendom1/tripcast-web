@@ -232,6 +232,30 @@ export class LiveTrailCacheStore {
     this.scheduleWrite();
   }
 
+  /** Bumped by `clear()`: work started before a clear compares it and drops its result. */
+  get clearRevision() {
+    return this.revision;
+  }
+
+  /**
+   * Adds stored samples the cache lacks to the recent pool, by `_id` and in time order. A sample already cached (either
+   * pool) is skipped, so nothing drawn is replaced or reordered, and the pool limits hold (the recent pool keeps its
+   * newest 100). Returns how many samples the cache gained.
+   */
+  mergeRecent(samples: readonly unknown[]) {
+    const known = new Set(this.pools.samples.map((sample) => sample._id));
+    const missing = samples.filter((sample): sample is LiveTrailSample =>
+      validLiveTrailSample(sample) && !known.has(sample._id));
+    if (missing.length === 0) return 0;
+    const pools = selectLiveTrailCachePools([...this.pools.recent, ...missing], this.pools.replay);
+    const added = pools.samples.filter((sample) => !known.has(sample._id)).length;
+    if (added === 0) return 0;
+    this.pools = pools;
+    this.emit();
+    this.scheduleWrite();
+    return added;
+  }
+
   replaceReplay(samples: readonly unknown[]) {
     this.pools = selectLiveTrailCachePools(this.pools.recent, samples);
     this.emit();
