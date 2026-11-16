@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   adaptiveGetMysteryProximityState: vi.fn(),
   adaptiveSetMysteryAudioMuted: vi.fn(),
   adaptiveTestMysterySpeech: vi.fn(),
+  adaptiveGetLocalTrailSnapshot: vi.fn(),
+  adaptiveClearRouteRecord: vi.fn(),
 }));
 
 vi.mock("@capacitor/core", () => ({
@@ -31,6 +33,8 @@ vi.mock("@capacitor/core", () => ({
         getMysteryProximityState: mocks.adaptiveGetMysteryProximityState,
         setMysteryAudioMuted: mocks.adaptiveSetMysteryAudioMuted,
         testMysterySpeech: mocks.adaptiveTestMysterySpeech,
+        getLocalTrailSnapshot: mocks.adaptiveGetLocalTrailSnapshot,
+        clearRouteRecord: mocks.adaptiveClearRouteRecord,
       }
     : {
         start: mocks.start,
@@ -350,5 +354,19 @@ describe("nativeLocationManager", () => {
     resolveStop({ mode: "off", liveRequested: false, changedAt: 2 });
     await stopPromise;
     expect(acknowledged).toBe(true);
+  });
+
+  it("passes the route request to the snapshot only when asked, and forwards a route record clear", async () => {
+    mocks.adaptiveGetLocalTrailSnapshot.mockResolvedValue({ queueRevision: 3, points: [] });
+    mocks.adaptiveClearRouteRecord.mockRejectedValue(new Error("UNIMPLEMENTED"));
+    const route = { tripId: null, sinceSeq: null, generation: null };
+
+    await nativeLocationManager.getLocalTrailSnapshot();
+    await nativeLocationManager.getLocalTrailSnapshot({ route });
+
+    expect(mocks.adaptiveGetLocalTrailSnapshot.mock.calls).toEqual([[], [{ route }]]);
+    await expect(nativeLocationManager.clearRouteRecord({ tripId: "trip-a", startMs: 1, endExclusiveMs: 2 }))
+      .rejects.toThrow("UNIMPLEMENTED");
+    expect(mocks.adaptiveClearRouteRecord).toHaveBeenCalledWith({ tripId: "trip-a", startMs: 1, endExclusiveMs: 2 });
   });
 });

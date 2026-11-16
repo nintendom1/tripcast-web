@@ -14,6 +14,7 @@ import {
 import { TripContextProvider, TripContextTestProvider, useTripContext } from "../../providers/TripContextProvider";
 import type { TripContextValue } from "../trips/tripTypes";
 import { setNativePublishingTags } from "../../native/nativePublishingSignal";
+import { resetNativeReadinessState, setNativeReadinessState } from "../../native/nativeReadinessState";
 import { LivePublishingBridge } from "../../native/LivePublishingBridge";
 import TripMap from "./TripMap";
 import ReplayDateRangeSheet, { lastCustomRangeKey } from "./ReplayDateRangeSheet";
@@ -33,7 +34,8 @@ const mocks = vi.hoisted(() => ({
   isNativeLocationAvailable: vi.fn(() => false),
   isAdaptiveLocationAvailable: vi.fn(() => false),
   configure: vi.fn(() => Promise.resolve()),
-  snapshot: vi.fn(() => Promise.resolve({ queueRevision: 0, points: [] as unknown[] })),
+  snapshot: vi.fn((_options?: unknown) =>
+    Promise.resolve<{ queueRevision: number; points: unknown[]; route?: unknown }>({ queueRevision: 0, points: [] })),
   fundsSheetThrows: false,
 }));
 const markerElements: HTMLElement[] = [];
@@ -1394,3 +1396,120 @@ describe("TripMap pages a trip's map pins", () => {
   });
 });
 
+describe("TripMap and the phone's route record", () => {
+  const MINUTE = 60_000;
+  const routePoint = (seq: number, sampledAt: number) =>
+    ({ clientSampleId: `route-${seq}`, lat: 47 + seq / 10_000, lon: -122.3, sampledAt, seq });
+  const routeBlock = (overrides: Record<string, unknown>) => ({
+    tripId: AUTUMN.tripId,
+    generation: "g1",
+    replace: false,
+    firstSeq: 1,
+    lastSeq: 0,
+    points: [],
+    recordSize: 0,
+    totalSize: 0,
+    bytesOnDisk: 0,
+    prunedSinceLastRead: 0,
+    ...overrides,
+  });
+  const backfills = () => argsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)
+    .filter((args) => (args as { paginationOpts: { numItems: number } }).paginationOpts.numItems === 100);
+  const firstRequest = { route: { tripId: AUTUMN.tripId, sinceSeq: null, generation: null } };
+  let start = 0;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 15, 14, 0));
+    start = new Date(2026, 10, 15, 8, 0).getTime();
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    mocks.isAdaptiveLocationAvailable.mockReturnValue(true);
+  });
+  afterEach(() => {
+    resetNativeReadinessState();
+  });
+
+  it("draws the whole day from the record, asks only for what it lacks, and reads nothing from the server", async () => {
+    const day = Array.from({ length: 300 }, (_, i) => routePoint(i + 1, start + i * MINUTE));
+    const unsent = routePoint(301, start + 300 * MINUTE);
+    mocks.snapshot.mockResolvedValueOnce({
+      queueRevision: 1,
+      points: [{ ...unsent, status: "pending" }],
+      route: routeBlock({ replace: true, lastSeq: 301, points: [...day, unsent], recordSize: 301, totalSize: 301 }),
+    });
+    const map = renderMap(following());
+
+    await waitFor(() => expect(lastPath()[6]).toEqual(day));
+    expect(mocks.snapshot).toHaveBeenCalledWith(firstRequest);
+    expect(vi.mocked(usePendingTrail).mock.calls.at(-1)![1]).toEqual([expect.objectContaining({ clientSampleId: "route-301" })]);
+
+    // The unsent point uploads: the next snapshot asks from the held sequence and generation.
+    mocks.snapshot.mockResolvedValue({
+      queueRevision: 2,
+      points: [{ ...unsent, status: "acknowledged" }],
+      route: routeBlock({ lastSeq: 301 }),
+    });
+    act(() => setNativeReadinessState({ queueRevision: 2 }));
+    await waitFor(() => expect(lastPath()[6]).toEqual([...day, unsent]));
+    expect(mocks.snapshot).toHaveBeenLastCalledWith({ route: { tripId: AUTUMN.tripId, sinceSeq: 301, generation: "g1" } });
+
+    // The server backfill is off: a newer stored sample joins the path, a return to the foreground reads nothing.
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest", 47.5, -122.2, start + 301 * MINUTE);
+    map.view(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(302));
+    vi.setSystemTime(Date.now() + 61_000);
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(backfills()).toEqual([]);
+  });
+
+  it("moves the day window on a return to the foreground even when the record is unchanged", async () => {
+    vi.setSystemTime(new Date(2026, 10, 15, 3, 0));
+    let visibility: DocumentVisibilityState = "visible";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    const evening = new Date(2026, 10, 14, 20, 0).getTime();
+    const night = new Date(2026, 10, 15, 0, 10).getTime();
+    const yesterday = Array.from({ length: 150 }, (_, i) => routePoint(i + 1, evening + i * MINUTE));
+    const today = Array.from({ length: 150 }, (_, i) => routePoint(i + 151, night + i * MINUTE));
+    mocks.snapshot.mockResolvedValueOnce({
+      queueRevision: 1,
+      points: [],
+      route: routeBlock({ replace: true, lastSeq: 300, points: [...yesterday, ...today] }),
+    });
+    renderMap(following());
+
+    // At 03:00 the window starts at 21:00 yesterday.
+    await waitFor(() => expect(lastPath()[6]).toEqual([...yesterday.slice(60), ...today]));
+
+    mocks.snapshot.mockResolvedValue({ queueRevision: 1, points: [], route: routeBlock({ lastSeq: 300 }) });
+    vi.setSystemTime(new Date(2026, 10, 15, 10, 0));
+    visibility = "hidden";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    visibility = "visible";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+
+    // At 10:00 it starts at midnight.
+    await waitFor(() => expect(lastPath()[6]).toEqual(today));
+  });
+
+  it("without a record (an older iOS build) keeps today's path and the server backfill", async () => {
+    const acknowledged = [1, 2, 3].map((i) => ({
+      clientSampleId: `ack-${i}`,
+      lat: 47.1,
+      lon: -122.1 - i / 1_000,
+      sampledAt: start + i * MINUTE,
+      status: "acknowledged" as const,
+    }));
+    mocks.snapshot.mockResolvedValue({ queueRevision: 1, points: acknowledged });
+    const map = renderMap(following());
+
+    await waitFor(() => expect(lastPath()[6]).toEqual(acknowledged));
+    expect(mocks.snapshot).toHaveBeenCalledWith(firstRequest);
+
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest", 47.5, -122.2, start + 4 * MINUTE);
+    map.view(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(4));
+    vi.setSystemTime(Date.now() + 61_000);
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await waitFor(() => expect(backfills()).toHaveLength(1));
+  });
+});

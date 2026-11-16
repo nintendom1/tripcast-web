@@ -7,6 +7,11 @@ import type { NativePublishingConfiguration } from "./nativeLocationManager";
 import type { NativeStopOptions } from "./nativeLocationManager";
 import type { NativeMysteryMissionSync } from "./nativeLocationManager";
 import type { NativeMysteryNarrationPlaybackState } from "./nativeLocationManager";
+import type {
+  ClearRouteRecordOptions,
+  NativeLocalTrailSnapshot,
+  RouteRequest,
+} from "./nativeLocationManager";
 
 /**
  * Native (Capacitor) location source. iOS browsers / PWAs cannot emit GPS while
@@ -117,11 +122,21 @@ export function retryNativeLocationTracking(): Promise<void> {
   return nativeLocationManager.retryAdaptiveStart();
 }
 
-export function getNativeLocalTrailSnapshot() {
+/** `route` also asks for the phone's route record; a build without it answers without `route`. */
+export function getNativeLocalTrailSnapshot(options?: { route?: RouteRequest }): Promise<NativeLocalTrailSnapshot> {
   if (!isAdaptiveLocationAvailable()) {
     return Promise.resolve({ queueRevision: 0, points: [] });
   }
-  return nativeLocationManager.getLocalTrailSnapshot();
+  return nativeLocationManager.getLocalTrailSnapshot(options);
+}
+
+/**
+ * Removes entries from the phone's route record after a deletion succeeded. Rejects on a native build without the
+ * record; callers ignore that. Off iOS there is no record.
+ */
+export function clearNativeRouteRecord(options: ClearRouteRecordOptions): Promise<{ removed: number }> {
+  if (!isAdaptiveLocationAvailable()) return Promise.resolve({ removed: 0 });
+  return nativeLocationManager.clearRouteRecord(options);
 }
 
 export function syncNativeMysteryMissions(payload: NativeMysteryMissionSync) {

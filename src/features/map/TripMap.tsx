@@ -56,6 +56,14 @@ import {
 } from "./liveTrailCache";
 import { useLiveTrailBackfill } from "./useLiveTrailBackfill";
 import {
+  applyRouteBlock,
+  buildFallbackTravelerPathSamples,
+  buildTravelerPathSamples,
+  emptyRouteRecord,
+  routeRequestOf,
+  type RouteRecordState,
+} from "./routeRecord";
+import {
   Dock,
   type DockTab,
   FanMenu,
@@ -1496,6 +1504,14 @@ export default function TripMap({
   );
   const [localTrailPoints, setLocalTrailPoints] = useState<LocalTrailPoint[]>([]);
   const localTrailSnapshotRef = useRef<{ queueRevision: number; signature: string } | null>(null);
+  // The phone's route record of the viewed current trip (Traveler, iOS): the ref is what the next snapshot asks from,
+  // the state what the path draws (set once a block was applied) and when it was last synced (the day window's "now",
+  // so a return to the foreground moves the window). `routeRecordAvailable`: the phone answered with one.
+  const routeRecordRef = useRef<RouteRecordState | null>(null);
+  const [routeRecord, setRouteRecord] = useState<{ record: RouteRecordState; syncedAt: number } | null>(null);
+  const [routeRecordAvailable, setRouteRecordAvailable] = useState(false);
+  const routeUnsupportedLoggedRef = useRef(false);
+  const routeRenderLogRef = useRef<string | null>(null);
   // Mirrors document.visibilityState. Drives the foreground-only browser
   // watcher gate so it does not survive backgrounding (and to re-arm on
   // foreground without churning the native watcher when LIVE is on).
@@ -1824,18 +1840,39 @@ export default function TripMap({
   const replaySourceTrailSamples = replaySessionState.breadcrumbs.length > 0
     ? replaySessionState.breadcrumbs
     : liveTrailSamples;
+  // The trip whose route record the snapshot asks for: the viewed current trip of a Traveler (`undefined`: none).
+  const routeTripId = role === "traveler" && showsLiveTraveler && !tripStatusUnknown ? (currentTrip?.tripId ?? null) : undefined;
+  const travelerRecordPath = useMemo(() => {
+    if (replayActive || routeTripId === undefined || routeRecord?.record.tripId !== routeTripId) return null;
+    const pendingIds = new Set(localTrailPoints.filter((point) => point.status === "pending").map((point) => point.clientSampleId));
+    return buildTravelerPathSamples({
+      cacheRows: liveTrailSamples,
+      record: routeRecord.record.points,
+      pendingIds,
+      cutoffAt: cutoffPreview.cutoffAt ?? null,
+      now: routeRecord.syncedAt,
+    });
+  }, [cutoffPreview.cutoffAt, liveTrailSamples, localTrailPoints, replayActive, routeRecord, routeTripId]);
   const pathTrailSamples = useMemo(() => {
     const base = replayActive ? replaySessionState.breadcrumbs : liveTrailSamples;
     // The device's own trail (native queue) is today's, so it belongs to the shared trip only.
     if (replayActive || role !== "traveler" || !showsLiveTraveler) return base.filter((s) => inReplayWindow(s.sampledAt));
+    if (travelerRecordPath) return travelerRecordPath.samples;
     const acknowledged = localTrailPoints.filter((point) => point.status === "acknowledged");
-    return [...base, ...acknowledged]
-      .filter((sample, index, rows) => inReplayWindow(sample.sampledAt) && rows.findIndex((candidate) =>
-        candidate.sampledAt === sample.sampledAt && candidate.lat === sample.lat && candidate.lon === sample.lon,
-      ) === index)
-      .sort((a, b) => a.sampledAt - b.sampledAt)
-      .slice(-100);
-  }, [replayActive, replaySessionState.breadcrumbs, liveTrailSamples, localTrailPoints, role, inReplayWindow, showsLiveTraveler]);
+    return buildFallbackTravelerPathSamples(base, acknowledged, inReplayWindow);
+  }, [replayActive, replaySessionState.breadcrumbs, liveTrailSamples, localTrailPoints, role, inReplayWindow, showsLiveTraveler, travelerRecordPath]);
+  useEffect(() => {
+    const stats = travelerRecordPath?.stats;
+    if (!stats) {
+      routeRenderLogRef.current = null;
+      return;
+    }
+    // Logged when the drawn counts change, not as the window hours move on.
+    const signature = JSON.stringify({ ...stats, windowHours: undefined });
+    if (signature === routeRenderLogRef.current) return;
+    routeRenderLogRef.current = signature;
+    log.logMap("map:route-record:render", { ...stats });
+  }, [log, travelerRecordPath]);
   const pathTrailVisible = pathTrailSamples.length >= 1;
   const pendingTrailPoints = useMemo(
     () => role === "traveler" && showsLiveTraveler ? localTrailPoints.filter((point) => point.status === "pending") : [],
@@ -1883,8 +1920,9 @@ export default function TripMap({
     tripId: role === "traveler" ? (currentTrip?.tripId ?? null) : null,
     latestSample: latestLiveTrailSample,
     cutoffAt: followerCacheCutoffAt,
+    // A Traveler whose phone keeps the route record reads the day from it, not the server.
     active: cacheUsable && showsLiveTraveler && !replayActive && !finaleReplayActive && showPath
-      && (role === "follower" || liveTrailEnabled),
+      && (role === "follower" || (liveTrailEnabled && !routeRecordAvailable)),
   });
 
   useEffect(() => {
@@ -2085,9 +2123,36 @@ export default function TripMap({
       return;
     }
     let cancelled = false;
-    void getNativeLocalTrailSnapshot()
+    // The route record: ask only for what the map does not hold yet of the viewed current trip.
+    if (routeTripId !== undefined && routeRecordRef.current?.tripId !== routeTripId) {
+      routeRecordRef.current = emptyRouteRecord(routeTripId);
+    }
+    const routeRequest = routeTripId !== undefined && routeRecordRef.current ? routeRequestOf(routeRecordRef.current) : null;
+    void getNativeLocalTrailSnapshot(routeRequest ? { route: routeRequest } : undefined)
       .then((snapshot) => {
         if (cancelled) return;
+        if (routeRequest && !snapshot.route) {
+          if (!routeUnsupportedLoggedRef.current) log.logMap("map:route-record:sync", { result: "unsupported" });
+          routeUnsupportedLoggedRef.current = true;
+        } else if (routeRequest && snapshot.route) {
+          const block = snapshot.route;
+          // A reset since the request (Stop with discard, a data reset) left nothing: only a whole record applies.
+          const held = routeRecordRef.current ?? emptyRouteRecord(routeRequest.tripId);
+          const { state, result } = applyRouteBlock(held, block);
+          routeRecordRef.current = state;
+          if (result === "applied" || result === "replaced" || result === "unchanged") {
+            setRouteRecord({ record: state, syncedAt: Date.now() });
+          }
+          setRouteRecordAvailable(true);
+          log.logMap("map:route-record:sync", {
+            result,
+            received: block.points.length,
+            recordSize: block.recordSize,
+            totalSize: block.totalSize,
+            bytesOnDisk: block.bytesOnDisk,
+            prunedSinceLastRead: block.prunedSinceLastRead,
+          });
+        }
         const signature = JSON.stringify(snapshot.points.map((point) => [
           point.clientSampleId,
           point.sampledAt,
@@ -2126,7 +2191,7 @@ export default function TripMap({
         });
       });
     return () => { cancelled = true; };
-  }, [isAppActive, log, nativeReadinessState.queueRevision, role, token]);
+  }, [isAppActive, log, nativeReadinessState.queueRevision, role, routeTripId, token]);
 
   useEffect(() => {
     if (!mapRef.current) return;
@@ -4610,6 +4675,8 @@ export default function TripMap({
     if (dataReset) {
       localTrailSnapshotRef.current = null;
       setLocalTrailPoints([]);
+      routeRecordRef.current = null;
+      setRouteRecord(null);
       void liveTrailCache.clear();
     }
     setIsVotePanelOpen(false);
@@ -4828,6 +4895,9 @@ export default function TripMap({
     if (pendingSamples === "discard") {
       localTrailSnapshotRef.current = null;
       setLocalTrailPoints([]);
+      // Native drops the discarded points from the record too; the next snapshot reads it whole.
+      routeRecordRef.current = null;
+      setRouteRecord(null);
     }
     lastSentLocationRef.current = null;
     breadcrumbSamplerStateRef.current = {};
