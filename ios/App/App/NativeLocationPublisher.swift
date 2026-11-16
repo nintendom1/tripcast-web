@@ -193,6 +193,24 @@ final class NativeLocationPublisher {
         }
     }
 
+    /// What a Live start does to the session. Pure, so the session rules read in one place and do not
+    /// depend on whether the service's `setMode` reached the queue before `startLive`.
+    enum LiveStartDecision: String {
+        /// A new session: tags, epoch, counters and start time are reset and a revoke is cleared.
+        case openSession = "opened"
+        /// The session runs on (foreground return, mode change, relaunch restoring a running session):
+        /// tags, epoch, counters, start time and any revoke are kept.
+        case continueSession = "continued"
+        /// An automatic start after a revoke the Traveler has not answered: nothing is reset, capture
+        /// stays held, and the revoke is announced again so the service stops Live.
+        case holdRevoked = "held-revoked"
+
+        static func decide(sessionOpen: Bool, travelerRequested: Bool, revokePending: Bool) -> LiveStartDecision {
+            if sessionOpen { return .continueSession }
+            return revokePending && !travelerRequested ? .holdRevoked : .openSession
+        }
+    }
+
     struct PendingMotion: Codable, Equatable {
         let classification: String
         let sampledAt: Double
@@ -333,6 +351,11 @@ final class NativeLocationPublisher {
     private var sessionBatchSampleCount = 0
     private var sessionAcknowledgementCount = 0
     private var sessionAcknowledgementLatencyMs = 0.0
+    /// Fixes `accept` discarded this session, by reason; reported only on the session summaries.
+    private var sessionDroppedByReason: [String: Int] = [:]
+    /// A Live session started in this process and not stopped yet. A session persisted by an earlier
+    /// process is reported by the service (`continuesSession`).
+    private var liveSessionOpen = false
     private var failureReason: String?
     private var queueRevision = 0
     private var acknowledgedTrail: [PendingSample] = []
@@ -348,8 +371,11 @@ final class NativeLocationPublisher {
     private var usageCurrent = UsageBucket(hourStart: 0)
     private var usageHistoryDirty = false
     private var usageModeSince: Date?
-    /// Set once a session is revoked; capture and motion stay held until the next session starts.
+    /// Set once a session is revoked; capture and motion stay held until a Traveler start opens the next
+    /// session (`LiveStartDecision`).
     private var publishingRevocationHandled = false
+    /// The details of the unanswered revoke, announced again when an automatic start meets it.
+    private var revocationDetails: JSObject?
     /// Tags of the latest live session, fixed when it starts (seeded from the persisted configuration
     /// at launch, so a snooze that outlives the process keeps its tags). Samples are stamped with these,
     /// never with a newer configuration, so a session cannot drift onto another trip or gain an epoch.
@@ -579,21 +605,28 @@ final class NativeLocationPublisher {
         }
     }
 
-    func startLive(mode: String, completion: @escaping (JSObject) -> Void) {
+    /// `continuesSession`: the service already runs Live or restores a session persisted by an earlier
+    /// process. `travelerRequested`: the Traveler asked for this start (only such a start clears a revoke).
+    func startLive(
+        mode: String,
+        continuesSession: Bool,
+        travelerRequested: Bool,
+        completion: @escaping (JSObject) -> Void
+    ) {
         workQueue.async { [weak self] in
             guard let self else { return }
-            if self.currentMode == "off" {
-                self.publishingRevocationHandled = false
-                self.sessionCaptureTripId = self.configuration?.captureTripId
-                self.sessionPublishingEpoch = self.configuration?.publishingEpoch
-                self.sessionStartedAt = Date()
-                self.sessionCapturedCount = 0
-                self.sessionDurableCount = 0
-                self.sessionRequestCount = 0
-                self.sessionBatchSampleCount = 0
-                self.sessionAcknowledgementCount = 0
-                self.sessionAcknowledgementLatencyMs = 0
+            // Not `currentMode`: the service's setMode reaches this queue before startLive.
+            let decision = LiveStartDecision.decide(
+                sessionOpen: self.liveSessionOpen || continuesSession,
+                travelerRequested: travelerRequested,
+                revokePending: self.publishingRevocationHandled
+            )
+            switch decision {
+            case .openSession: self.openSessionLocked()
+            case .continueSession: break
+            case .holdRevoked: self.announceHeldStartLocked()
             }
+            self.liveSessionOpen = true
             self.setCurrentModeLocked(mode)
             self.publishingPhase = self.networkAvailable == false
                 ? "offline"
@@ -605,12 +638,40 @@ final class NativeLocationPublisher {
             }
             self.emit("gps:native-publish:live-started", details: [
                 "queueDepth": self.samples.count,
-                "breadcrumbQueueDepth": self.breadcrumbQueueDepth
+                "breadcrumbQueueDepth": self.breadcrumbQueueDepth,
+                "session": decision.rawValue
             ])
             self.publishIfPossibleLocked(reason: "live-start", force: self.recoveryActive)
             let state = self.currentPublishingStateLocked()
             DispatchQueue.main.async { completion(state) }
         }
+    }
+
+    /// A new session takes the configuration's tags; queued samples keep the tags they were captured with.
+    private func openSessionLocked() {
+        publishingRevocationHandled = false
+        revocationDetails = nil
+        sessionCaptureTripId = configuration?.captureTripId
+        sessionPublishingEpoch = configuration?.publishingEpoch
+        sessionStartedAt = Date()
+        sessionCapturedCount = 0
+        sessionDurableCount = 0
+        sessionRequestCount = 0
+        sessionBatchSampleCount = 0
+        sessionAcknowledgementCount = 0
+        sessionAcknowledgementLatencyMs = 0
+        sessionDroppedByReason = [:]
+    }
+
+    /// An automatic start met an unanswered revoke: clear the persisted request first (a relaunch must
+    /// not restore Live), then let the service stop the session as it did for the revoke itself.
+    private func announceHeldStartLocked() {
+        clearPersistedLiveRequest?()
+        var details = revocationDetails ?? ["reason": "trip-changed"]
+        details["source"] = "held-start"
+        details["capturing"] = true
+        details["queueDepth"] = samples.count
+        DispatchQueue.main.async { [weak self] in self?.onPublishingRevoked?(details) }
     }
 
     func setMode(_ mode: String) {
@@ -665,6 +726,7 @@ final class NativeLocationPublisher {
             clearPendingMotionLocked()
             lastAcknowledgedMotionClassification = nil
             setCurrentModeLocked("off")
+            liveSessionOpen = false
             lastEmissionLocation = nil
             lastEmissionAt = nil
             lastBearing = nil
@@ -747,9 +809,13 @@ final class NativeLocationPublisher {
 
     func accept(_ location: CLLocation, forcedReason: String? = nil, parked: Bool = false) {
         workQueue.async { [weak self] in
-            guard let self, self.configuration != nil, self.currentMode != "off",
-                  !self.publishingRevocationHandled else { return }
+            guard let self else { return }
+            if let held = self.captureHoldReason {
+                self.sessionDroppedByReason[held, default: 0] += 1
+                return
+            }
             if self.shouldSuppress(location) {
+                self.sessionDroppedByReason["cloaked", default: 0] += 1
                 LiveActivityController.shared.setPrivacyPaused(lastAcknowledgedAt: nil)
                 return
             }
@@ -826,6 +892,14 @@ final class NativeLocationPublisher {
                 force: parked || queueLimitReached
             )
         }
+    }
+
+    /// Why `accept` discards every fix right now, or nil while capture is open.
+    private var captureHoldReason: String? {
+        if configuration == nil { return "no-configuration" }
+        if currentMode == "off" { return "mode-off" }
+        if publishingRevocationHandled { return "revoked" }
+        return nil
     }
 
     private func thinOldestSamplesLocked() {
@@ -1274,6 +1348,7 @@ final class NativeLocationPublisher {
         ]
         if let currentTripId { details["currentTripId"] = currentTripId }
         if let currentEpoch { details["epoch"] = currentEpoch }
+        revocationDetails = details
         DispatchQueue.main.async { [weak self] in self?.onPublishingRevoked?(details) }
     }
 
@@ -1550,6 +1625,12 @@ final class NativeLocationPublisher {
             "breadcrumbQueueDepth": breadcrumbQueueDepth,
             "suppressedBridgeEventCount": suppressedBridgeEvents,
             "sessionDurationMs": Int(Date().timeIntervalSince(sessionStartedAt ?? Date()) * 1_000),
+            // Null after a relaunch that restored a running session: its start is not persisted.
+            "sessionStartedAtMs": sessionStartedAt.map { Int($0.timeIntervalSince1970 * 1_000) } ?? NSNull(),
+            "sessionTripIdPresent": sessionCaptureTripId != nil,
+            "revoked": publishingRevocationHandled,
+            // A reason appears once it has dropped a fix, so every entry is non-zero.
+            "droppedByReason": sessionDroppedByReason.reduce(into: JSObject()) { $0[$1.key] = $1.value },
             "thermalState": Self.thermalStateDescription(ProcessInfo.processInfo.thermalState)
         ])
     }

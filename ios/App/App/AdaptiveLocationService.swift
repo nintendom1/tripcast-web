@@ -53,6 +53,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     private let walkingSpeed: CLLocationSpeed = 0.9
     private let wakeRegionRadius: CLLocationDistance = 100
     private let wakeRegionIdentifier = "tripcast-adaptive-stationary"
+    /// Start triggers sent for a Traveler's own Live start (JavaScript `start`); every other trigger is automatic.
+    private static let travelerStartTriggers: Set<String> = ["javascript", "explicit"]
     private let mainThreadHeartbeat = MainThreadHeartbeat()
 
     private(set) var mode: Mode = .off
@@ -190,7 +192,11 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             completion?(currentState())
             return
         }
+        // Also tells the publisher whether this start continues a session (Live running, or persisted by a
+        // process that died with Live on). Read here, before enterPreciseMode queues setMode ahead of startLive.
         let wasAlreadyRequested = liveRequested || defaults.bool(forKey: DefaultsKey.liveRequested)
+        // Only the Traveler's start clears an unanswered revoke; restored, foreground and retry are automatic.
+        let travelerRequested = Self.travelerStartTriggers.contains(trigger)
         if wasAlreadyRequested { startRetryCount += 1 } else { startRetryCount = 0 }
         let operation = StartOperation(trigger: trigger, retryCount: startRetryCount, completion: completion)
         startOperation = operation
@@ -206,7 +212,11 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
             enterPreciseMode(resetIdleWindow: trigger != "restored", reason: trigger)
         }
 
-        NativeLocationPublisher.shared.startLive(mode: mode.rawValue) { [weak self] state in
+        NativeLocationPublisher.shared.startLive(
+            mode: mode.rawValue,
+            continuesSession: wasAlreadyRequested,
+            travelerRequested: travelerRequested
+        ) { [weak self] state in
             guard let self else { return }
             self.mergePublishingState(state)
             self.publishCurrentMotion()
@@ -514,7 +524,12 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     }
 
     func beginLegacyBootstrapPublishing(completion: @escaping (JSObject) -> Void) {
-        NativeLocationPublisher.shared.startLive(mode: "legacy") { [weak self] state in
+        // Nothing sets the mode before this start, so the publisher's own session flag decides.
+        NativeLocationPublisher.shared.startLive(
+            mode: "legacy",
+            continuesSession: false,
+            travelerRequested: true
+        ) { [weak self] state in
             guard let self else { return }
             self.mergePublishingState(state)
             completion(self.currentState())
