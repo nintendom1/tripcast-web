@@ -13,6 +13,7 @@ import {
 } from "../../convex/tripcastApi";
 import { TripContextProvider, TripContextTestProvider, useTripContext } from "../../providers/TripContextProvider";
 import type { TripContextValue } from "../trips/tripTypes";
+import { clearLogs, getLogs, setEnabled as setDebugLogging } from "../../debug/debugLogger";
 import { setNativePublishingTags } from "../../native/nativePublishingSignal";
 import { resetNativeReadinessState, setNativeReadinessState } from "../../native/nativeReadinessState";
 import { LivePublishingBridge } from "../../native/LivePublishingBridge";
@@ -36,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   configure: vi.fn(() => Promise.resolve()),
   snapshot: vi.fn((_options?: unknown) =>
     Promise.resolve<{ queueRevision: number; points: unknown[]; route?: unknown }>({ queueRevision: 0, points: [] })),
+  clearRouteRecord: vi.fn((_options: unknown) => Promise.resolve({ removed: 0 })),
   fundsSheetThrows: false,
 }));
 const markerElements: HTMLElement[] = [];
@@ -74,6 +76,7 @@ vi.mock("../../native/locationWatcher", () => ({
   syncNativeMysteryMissions: vi.fn(() => Promise.resolve()),
   configureNativeLocationPublishing: mocks.configure,
   getNativeLocalTrailSnapshot: mocks.snapshot,
+  clearNativeRouteRecord: mocks.clearRouteRecord,
   getNativeMysteryNarrationPlaybackState: () => Promise.resolve(null),
   foregroundNativeLocationTracking: vi.fn(),
   retryNativeLocationTracking: vi.fn(() => Promise.resolve()),
@@ -572,6 +575,26 @@ describe("TripMap follows the viewed trip", () => {
       sampleIds: ["summer-crumb-1"],
       tripId: SUMMER.tripId,
     }));
+  });
+
+  it("a breadcrumb deleted in Replay leaves the phone's route record of its trip, only after the server delete succeeded", async () => {
+    let resolveDelete: (value: unknown) => void = () => {};
+    deleteBreadcrumb.mockImplementationOnce(() => new Promise((resolve) => { resolveDelete = resolve; }));
+    mocks.clearRouteRecord.mockRejectedValueOnce(new Error("UNIMPLEMENTED"));
+    renderMap(viewingSummer());
+    await startReplay();
+    fireEvent.click(screen.getByRole("button", { name: /pause replay/i }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await userEvent.click(screen.getAllByRole("button", { name: "Delete" }).at(-1)!);
+    await waitFor(() => expect(deleteBreadcrumb).toHaveBeenCalledWith(expect.objectContaining({ sampleIds: ["summer-crumb-1"] })));
+    expect(mocks.clearRouteRecord).not.toHaveBeenCalled();
+
+    await act(async () => resolveDelete({ deleted: 1 }));
+
+    expect(mocks.clearRouteRecord).toHaveBeenCalledExactlyOnceWith({ tripId: SUMMER.tripId, sampledAt: [2_000] });
+    // The ignored rejection rolls nothing back.
+    expect(screen.getByRole("group", { name: "Trip Replay" })).toBeInTheDocument();
+    expect(screen.queryByText(/Delete trail sample/)).not.toBeInTheDocument();
   });
 
   it("ignores a story pin answer that arrives after the view changed, then opens the new trip's pins", async () => {
@@ -1080,6 +1103,7 @@ describe("TripMap late answers and edge cases across a view change", () => {
     await act(async () => rejectDelete(new Error("offline")));
     await act(async () => {});
 
+    expect(mocks.clearRouteRecord).not.toHaveBeenCalled();
     expect(summerIdsIn(cache(AUTUMN.tripId).snapshot().samples)).toEqual([]);
     for (const call of pathCalls().slice(callsBefore)) expect(summerIdsIn(call[6])).toEqual([]);
   });
@@ -1447,7 +1471,7 @@ describe("TripMap and the phone's route record", () => {
     mocks.snapshot.mockResolvedValue({
       queueRevision: 2,
       points: [{ ...unsent, status: "acknowledged" }],
-      route: routeBlock({ lastSeq: 301 }),
+      route: routeBlock({ lastSeq: 301, recordSize: 301 }),
     });
     act(() => setNativeReadinessState({ queueRevision: 2 }));
     await waitFor(() => expect(lastPath()[6]).toEqual([...day, unsent]));
@@ -1489,6 +1513,68 @@ describe("TripMap and the phone's route record", () => {
 
     // At 10:00 it starts at midnight.
     await waitFor(() => expect(lastPath()[6]).toEqual(today));
+  });
+
+  it("keeps the server backfill while the record has nothing for the trip, and stops it once it has entries", async () => {
+    const now = Date.now();
+    mocks.snapshot.mockResolvedValue({ queueRevision: 1, points: [], route: routeBlock({ replace: true, lastSeq: 0 }) });
+    const map = renderMap(following());
+    await waitFor(() => expect(mocks.snapshot).toHaveBeenCalledWith(firstRequest));
+    await act(async () => {});
+
+    // Stored by an older build or another device: the empty record leaves it to the server backfill.
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest-1", 47.5, -122.2, now - 10 * MINUTE);
+    map.view(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(1));
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await waitFor(() => expect(backfills()).toHaveLength(1));
+
+    mocks.snapshot.mockResolvedValue({
+      queueRevision: 2,
+      points: [],
+      route: routeBlock({ lastSeq: 1, points: [routePoint(1, now - 5 * MINUTE)], recordSize: 1 }),
+    });
+    act(() => setNativeReadinessState({ queueRevision: 2 }));
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(2));
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest-2", 47.6, -122.2, now - 2 * MINUTE);
+    map.view(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(3));
+    vi.setSystemTime(now + 61_000);
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    expect(backfills()).toHaveLength(1);
+  });
+
+  it("logs the record's sync and render lines on changes, not on every fix", async () => {
+    setDebugLogging(true);
+    clearLogs();
+    const entries = (action: string) => getLogs().filter((entry) => entry.action === action).map((entry) => entry.details);
+    const point = (seq: number) => routePoint(seq, start + seq * MINUTE);
+    const fix = async (route: Record<string, unknown>, revision: number, drawn: number | null) => {
+      mocks.snapshot.mockResolvedValue({ queueRevision: revision, points: [], route: routeBlock(route) });
+      act(() => setNativeReadinessState({ queueRevision: revision }));
+      await waitFor(() => expect(mocks.snapshot).toHaveBeenCalledWith(expect.objectContaining({ route: expect.anything() })));
+      if (drawn === null) await act(async () => {});
+      else await waitFor(() => expect(lastPath()[6]).toHaveLength(drawn));
+    };
+    const day = Array.from({ length: 150 }, (_, i) => point(i + 1));
+    mocks.snapshot.mockResolvedValue({ queueRevision: 1, points: [], route: routeBlock({ replace: true, lastSeq: 150, points: day, recordSize: 150 }) });
+    renderMap(following());
+    await waitFor(() => expect(lastPath()[6]).toHaveLength(150));
+
+    for (const seq of [151, 152, 153]) await fix({ lastSeq: seq, points: [point(seq)], recordSize: seq }, seq, seq);
+    await fix({ lastSeq: 153, recordSize: 153 }, 154, null);
+    const fifty = Array.from({ length: 50 }, (_, i) => point(154 + i));
+    await fix({ lastSeq: 203, points: fifty, recordSize: 203 }, 155, 203);
+    // A removal elsewhere: a new generation, read whole, then the next fix.
+    await fix({ generation: "g2", replace: true, lastSeq: 203, points: [...day, point(151), point(152), point(153), ...fifty], recordSize: 203 }, 156, null);
+    await fix({ generation: "g2", lastSeq: 204, points: [point(204)], recordSize: 204 }, 157, 204);
+
+    expect(entries("map:route-record:sync").map((details) => details?.result)).toEqual(["replaced", "applied", "replaced", "applied"]);
+    const renders = entries("map:route-record:render");
+    expect(renders.map((details) => details?.drawnCount)).toEqual([150, 203]);
+    expect(Object.keys(renders[0] ?? {}).sort()).toEqual(
+      ["cacheInWindow", "cut", "drawnCount", "duplicates", "pendingExcluded", "recordInWindow", "windowHours"],
+    );
   });
 
   it("without a record (an older iOS build) keeps today's path and the server backfill", async () => {
