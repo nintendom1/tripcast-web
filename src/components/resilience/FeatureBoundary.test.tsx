@@ -53,6 +53,28 @@ describe("FeatureBoundary", () => {
     });
   });
 
+  it("records the server's reason from a ConvexError-style `data` field", () => {
+    function ThrowsServerError(): ReactElement {
+      throw Object.assign(new Error("[CONVEX Q(travelFunds:travelerGetConfig)] Server Error"), {
+        name: "ConvexError",
+        data: "fundsStartAt must be a non-negative timestamp.",
+      });
+    }
+
+    render(
+      <FeatureBoundary title="Funds chip hit a problem.">
+        <ThrowsServerError />
+      </FeatureBoundary>,
+    );
+
+    const entries = getLogs().filter((entry) => entry.action === "react:feature-boundary-error");
+    expect(entries).toHaveLength(1);
+    expect(entries[0].details).toMatchObject({
+      name: "ConvexError",
+      data: "fundsStartAt must be a non-negative timestamp.",
+    });
+  });
+
   it("logs a Retry press when logging is on and re-renders the child", async () => {
     setEnabled(true);
     let shouldThrow = true;

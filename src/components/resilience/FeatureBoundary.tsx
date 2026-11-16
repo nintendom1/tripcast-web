@@ -29,10 +29,13 @@ export function FeatureBoundary({
       onError={(error, info) => {
         try {
           const err = error instanceof Error ? error : null;
+          const errorData = (error as { data?: unknown } | null)?.data;
           debugLog("error", "FeatureBoundary", "react:feature-boundary-error", "error", {
             title,
             message: err?.message ?? String(error),
             name: err?.name ?? typeof error,
+            // A ConvexError carries the server's reason in `data`; its `message` only names the function.
+            data: typeof errorData === "string" ? errorData.slice(0, 400) : errorData,
             stack: err?.stack?.slice(0, 400),
             componentStack: info.componentStack?.slice(0, 400),
           });
