@@ -360,6 +360,19 @@ final class NativeLocationPublisher {
     private var queueRevision = 0
     private var acknowledgedTrail: [PendingSample] = []
     private let recentTrailLimit = 100
+    /// The day's route kept on the phone (`route.jsonl`), so the Traveler's map needs no Convex reads.
+    /// Created on first use and loaded by its first call; every call goes through `withRouteRecordLocked`.
+    private lazy var routeRecord: RouteRecord = {
+        let record = RouteRecord(fileURL: applicationSupportURL.appendingPathComponent("route.jsonl"))
+        record.onPrune = { [weak self] reason, removed, remaining in
+            self?.reportRouteRemovalLocked(reason: reason, removed: removed, remaining: remaining)
+        }
+        return record
+    }()
+    private var routeRecordFailing = false
+    /// Route-record removals are emitted only in the foreground; in the background they are only
+    /// counted and reach the map as `prunedSinceLastRead`.
+    private var applicationActive = false
     private var failureAttempts: [FailureClass: Int] = [:]
     private var consecutiveFailures = 0
     private var signInExpired = false
@@ -448,7 +461,8 @@ final class NativeLocationPublisher {
         return state
     }
 
-    func localTrailSnapshot(completion: @escaping (JSObject) -> Void) {
+    /// `route`: the map's optional request for the route record. Without it the answer is unchanged.
+    func localTrailSnapshot(route request: RouteRequest? = nil, completion: @escaping (JSObject) -> Void) {
         workQueue.async { [weak self] in
             guard let self else { return }
             // Only the current trip's points: after a switch the old trip's trail is not drawn.
@@ -457,7 +471,8 @@ final class NativeLocationPublisher {
                 .map { self.trailPoint($0, status: "pending") }
             let acknowledged = self.acknowledgedTrail.filter { $0.captureTripId == tripId }
                 .map { self.trailPoint($0, status: "acknowledged") }
-            let snapshot: JSObject = ["queueRevision": queueRevision, "points": acknowledged + pending]
+            var snapshot: JSObject = ["queueRevision": queueRevision, "points": acknowledged + pending]
+            if let request, let route = self.routeBlockLocked(request) { snapshot["route"] = route }
             DispatchQueue.main.async { completion(snapshot) }
         }
     }
@@ -570,6 +585,7 @@ final class NativeLocationPublisher {
             }
             if identityChanged {
                 acknowledgedTrail.removeAll()
+                removeFromRouteRecordLocked(.all, reason: "wipe")
                 queueRevision += 1
                 clearPendingMotionLocked()
                 lastAcknowledgedMotionClassification = nil
@@ -685,6 +701,7 @@ final class NativeLocationPublisher {
     func applicationDidBecomeActive() {
         workQueue.async { [weak self] in
             guard let self else { return }
+            self.applicationActive = true
             self.evaluateUsageGuardLocked(trigger: "foreground")
             guard self.signInExpired else { return }
             self.signInExpired = false
@@ -692,6 +709,10 @@ final class NativeLocationPublisher {
             self.publishMotionIfPossibleLocked(reason: "foreground")
             self.publishMysteryCompletionIfPossibleLocked(reason: "foreground")
         }
+    }
+
+    func applicationDidEnterBackground() {
+        workQueue.async { [weak self] in self?.applicationActive = false }
     }
 
     private func setCurrentModeLocked(_ mode: String) {
@@ -760,6 +781,11 @@ final class NativeLocationPublisher {
                     publishIfPossibleLocked(reason: "healthy-live-stop", force: true)
                 }
             } else {
+                // The Traveler threw these away: they leave the route record too (a wipe follows below).
+                let discarded = Set(samples.filter { $0.recordTrail }.map(\.clientSampleId))
+                if !clearCredentials, !discarded.isEmpty {
+                    removeFromRouteRecordLocked(.clientSampleIds(discarded), reason: "discard")
+                }
                 samples.removeAll()
                 acknowledgedTrail.removeAll()
                 queueRevision += 1
@@ -785,6 +811,7 @@ final class NativeLocationPublisher {
                 consecutiveFailures = 0
                 deleteToken()
                 acknowledgedTrail.removeAll()
+                removeFromRouteRecordLocked(.all, reason: "wipe")
                 queueRevision += 1
                 clearMysteryCompletionsLocked()
                 MysteryProximityService.shared.clearIdentity()
@@ -865,6 +892,9 @@ final class NativeLocationPublisher {
             }
             self.samples.append(sample)
             self.queueRevision += 1
+            // The record keeps only the recorded trail (no parked marker, no fix with Live Trail off).
+            // Cloaked and held fixes returned above, before any sample existed.
+            self.appendToRouteRecordLocked(sample)
             self.sessionCapturedCount += 1
             if self.samples.count > self.maxQueueDepth {
                 self.thinOldestSamplesLocked()
@@ -1243,6 +1273,9 @@ final class NativeLocationPublisher {
                     self.acknowledgedTrail.removeFirst(self.acknowledgedTrail.count - self.recentTrailLimit)
                 }
                 let deliveredBreadcrumbs = acknowledged.count
+                if !outcome.unrecorded.isEmpty {
+                    self.removeFromRouteRecordLocked(.clientSampleIds(outcome.unrecorded), reason: "unrecorded")
+                }
                 self.samples.removeAll { delivered.contains($0.clientSampleId) }
                 if !delivered.isEmpty { self.queueRevision += 1 }
                 self.persistSamples()
@@ -1553,6 +1586,7 @@ final class NativeLocationPublisher {
             samples.removeAll { rejectedIds.contains($0.clientSampleId) }
             queueRevision += 1
             persistSamples()
+            removeFromRouteRecordLocked(.clientSampleIds(Set(setAside.map(\.clientSampleId))), reason: "unrecorded")
             let setAsideCount = appendSetAsideSamplesLocked(setAside)
             recordUsageLocked { $0.samplesSetAside += setAsideCount }
             if samples.isEmpty {
@@ -1614,6 +1648,7 @@ final class NativeLocationPublisher {
         let averageAcknowledgementLatencyMs = sessionAcknowledgementCount > 0
             ? sessionAcknowledgementLatencyMs / Double(sessionAcknowledgementCount)
             : 0
+        withRouteRecordLocked("load") { try $0.load() }
         emit("gps:native-publish:session-summary", details: [
             "reason": reason,
             "capturedPointCount": sessionCapturedCount,
@@ -1631,8 +1666,108 @@ final class NativeLocationPublisher {
             "revoked": publishingRevocationHandled,
             // A reason appears once it has dropped a fix, so every entry is non-zero.
             "droppedByReason": sessionDroppedByReason.reduce(into: JSObject()) { $0[$1.key] = $1.value },
+            // Entries on the phone (every trip), and record I/O failures since the process started.
+            "routeRecordSize": routeRecord.count,
+            "routeRecordWriteFailures": routeRecord.writeFailures,
             "thermalState": Self.thermalStateDescription(ProcessInfo.processInfo.thermalState)
         ])
+    }
+
+    // MARK: - Route record
+
+    /// The map's deletions: `.all` (Emergency Reset), a deleted trip, or Options Live Trail deletes.
+    func clearRouteRecord(_ removal: RouteRecord.Removal, completion: @escaping (Int) -> Void) {
+        workQueue.async { [weak self] in
+            guard let self else { return }
+            let reason: String
+            switch removal {
+            case .all: reason = "wipe"
+            case .trip: reason = "trip"
+            default: reason = "options"
+            }
+            let removed = self.removeFromRouteRecordLocked(removal, reason: reason)
+            DispatchQueue.main.async { completion(removed) }
+        }
+    }
+
+    /// Every route-record call runs here, on workQueue. The record counts its own failures; the first of
+    /// a failing run is logged. Nothing it throws reaches capture, queueing or upload.
+    @discardableResult
+    private func withRouteRecordLocked<T>(_ operation: String, _ body: (RouteRecord) throws -> T) -> T? {
+        let record = routeRecord
+        let failuresBefore = record.writeFailures
+        var result: T?
+        var threw = false
+        do { result = try body(record) } catch { threw = true }
+        let failed = threw || record.writeFailures > failuresBefore
+        if failed, !routeRecordFailing {
+            emit("gps:route-record:write-failure", level: "warn", details: [
+                "operation": operation,
+                "writeFailures": record.writeFailures
+            ])
+        }
+        routeRecordFailing = failed
+        return result
+    }
+
+    private func appendToRouteRecordLocked(_ sample: PendingSample) {
+        withRouteRecordLocked("append") {
+            try $0.append(
+                clientSampleId: sample.clientSampleId,
+                tripId: sample.captureTripId,
+                sampledAt: sample.sampledAt,
+                lat: sample.lat,
+                lon: sample.lon,
+                recordTrail: sample.recordTrail
+            )
+        }
+    }
+
+    @discardableResult
+    private func removeFromRouteRecordLocked(_ removal: RouteRecord.Removal, reason: String) -> Int {
+        let removed = withRouteRecordLocked("remove") { $0.remove(removal) } ?? 0
+        if removed > 0 { queueRevision += 1 }
+        reportRouteRemovalLocked(reason: reason, removed: removed, remaining: routeRecord.count)
+        return removed
+    }
+
+    /// Counts only, no coordinates. In the background the removal is only counted (`prunedSinceLastRead`).
+    private func reportRouteRemovalLocked(reason: String, removed: Int, remaining: Int) {
+        guard removed > 0, applicationActive else { return }
+        emit("gps:route-record:pruned", details: [
+            "reason": reason,
+            "removed": removed,
+            "remaining": remaining
+        ])
+    }
+
+    /// The `route` answer of `getLocalTrailSnapshot` (bridge contract, ROUTE.md section 4). Nil when the
+    /// record cannot be read: the map then keeps today's path.
+    private func routeBlockLocked(_ request: RouteRequest) -> JSObject? {
+        guard let delta = withRouteRecordLocked("read", {
+            try $0.delta(tripId: request.tripId, sinceSeq: request.sinceSeq, generation: request.generation)
+        }) else { return nil }
+        let points: [JSObject] = delta.points.map { entry in
+            [
+                "clientSampleId": entry.clientSampleId,
+                "lat": entry.lat,
+                "lon": entry.lon,
+                "sampledAt": entry.sampledAt,
+                "seq": entry.seq
+            ]
+        }
+        return [
+            "tripId": delta.tripId ?? NSNull(),
+            "generation": delta.generation,
+            "replace": delta.replace,
+            "firstSeq": delta.firstSeq,
+            "lastSeq": delta.lastSeq,
+            "points": points,
+            "recordSize": delta.recordSize,
+            "totalSize": delta.totalSize,
+            "bytesOnDisk": delta.bytesOnDisk,
+            "prunedSinceLastRead": delta.prunedSinceLastRead
+        ]
     }
 
     private var breadcrumbQueueDepth: Int {

@@ -457,6 +457,7 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
     func applicationDidEnterBackground() {
         isApplicationForeground = false
         mainThreadHeartbeat.setActive(false)
+        NativeLocationPublisher.shared.applicationDidEnterBackground()
     }
 
     private func restorePersistedState() {
@@ -540,8 +541,8 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         NativeLocationPublisher.shared.accept(location)
     }
 
-    func localTrailSnapshot(completion: @escaping (JSObject) -> Void) {
-        NativeLocationPublisher.shared.localTrailSnapshot(completion: completion)
+    func localTrailSnapshot(route: RouteRequest? = nil, completion: @escaping (JSObject) -> Void) {
+        NativeLocationPublisher.shared.localTrailSnapshot(route: route, completion: completion)
     }
 
     private var cachedQueueDepth: Int {

@@ -20,6 +20,7 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setHighFrequencyActive", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getState", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getLocalTrailSnapshot", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearRouteRecord", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getUsageLedger", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "resetUsageLedger", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "syncMysteryMissions", returnType: CAPPluginReturnPromise),
@@ -205,7 +206,37 @@ public final class AdaptiveLocationPlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Local trail snapshots are foreground-only")
             return
         }
-        AdaptiveLocationService.shared.localTrailSnapshot { snapshot in call.resolve(snapshot) }
+        // Optional `route: { tripId, sinceSeq, generation }`; without it the answer is unchanged.
+        let route = call.getObject("route").map { request in
+            RouteRequest(
+                tripId: request["tripId"] as? String,
+                sinceSeq: (request["sinceSeq"] as? NSNumber)?.intValue,
+                generation: request["generation"] as? String
+            )
+        }
+        AdaptiveLocationService.shared.localTrailSnapshot(route: route) { snapshot in call.resolve(snapshot) }
+    }
+
+    /// `{}` wipes the route record; `{ tripId }` removes that trip (null: untagged entries);
+    /// `{ tripId, startMs, endExclusiveMs }` or `{ tripId, sampledAt: [...] }` removes those entries.
+    @objc func clearRouteRecord(_ call: CAPPluginCall) {
+        // A null tripId names the untagged entries, so presence matters here, not only the value.
+        let trip: RouteRecord.TripMatch = call.options["tripId"] == nil ? .any : .trip(call.getString("tripId"))
+        let removal: RouteRecord.Removal
+        if let times = call.getArray("sampledAt") {
+            removal = .sampledAt(trip, Set(times.compactMap { ($0 as? NSNumber)?.doubleValue }))
+        } else if call.options["startMs"] != nil || call.options["endExclusiveMs"] != nil {
+            guard let startMs = call.getDouble("startMs"), let endExclusiveMs = call.getDouble("endExclusiveMs") else {
+                call.reject("startMs and endExclusiveMs must both be numbers")
+                return
+            }
+            removal = .range(trip, startMs: startMs, endExclusiveMs: endExclusiveMs)
+        } else if case .trip(let tripId) = trip {
+            removal = .trip(tripId)
+        } else {
+            removal = .all
+        }
+        NativeLocationPublisher.shared.clearRouteRecord(removal) { removed in call.resolve(["removed": removed]) }
     }
 
     @objc func getUsageLedger(_ call: CAPPluginCall) {
