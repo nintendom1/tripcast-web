@@ -228,6 +228,8 @@ const FOLLOW_RESTORE_GRACE_MS = 2000;
 
 /** Map pins requested per page of `listTripMapPins` (the backend's page ceiling). */
 const PIN_PAGE_SIZE = 200;
+/** How long a Traveler's server backfill waits for the phone's first route answer: the phone answers in about a second, and a silent one must not leave the map with neither source. */
+const ROUTE_RECORD_WAIT_MS = 5000;
 
 /**
  * Pins once each, in the order `listCheckpointMapPins` returns them (`happenedAt`, else `createdAt`; ties by
@@ -1510,6 +1512,9 @@ export default function TripMap({
   // return to the foreground moves the window) and the trip's entry count native reported (`recordSize`).
   const routeRecordRef = useRef<RouteRecordState | null>(null);
   const [routeRecord, setRouteRecord] = useState<{ record: RouteRecordState; syncedAt: number; recordSize: number } | null>(null);
+  // The trip the phone has answered the route request for since the map became active (`undefined`: not yet): any answer.
+  const [routeAnsweredTripId, setRouteAnsweredTripId] = useState<string | null | undefined>(undefined);
+  const [routeWaitExpired, setRouteWaitExpired] = useState(false);
   const routeUnsupportedLoggedRef = useRef(false);
   // Debug Log volume (a snapshot follows every fix): the first `applied` after a load, a replace or a trip change only.
   const routeAppliedLoggedRef = useRef(false);
@@ -1915,10 +1920,25 @@ export default function TripMap({
     ? (finaleReplayActive || showTripPathLocal)
     : travelerAllowsFollowerPath && (finaleReplayActive || showTripPathLocal);
   const canAttemptReplay = showPath;
-  // The phone's route record is the cheaper source (no Convex reads): once it holds entries for the viewed trip the
-  // Traveler skips the server backfill. An empty record (the first day on a build with it, or a trip tracked from another
-  // phone or a browser) must not leave the map with neither, so until then the backfill stays on.
+  // The phone's route record is asked first because it costs no Convex reads (about 100 rows, 34 KB, saved per load and per
+  // return to the app); the server backfill is the fallback. Once the record holds entries for the viewed trip the
+  // Traveler skips the backfill. An empty record (the first day on a build with it, or a trip tracked from another phone
+  // or a browser), no `route` in the answer or a failed snapshot must not leave the map with neither, so then the
+  // backfill runs.
   const routeRecordCoversTrip = routeTripId !== undefined && routeRecord?.record.tripId === routeTripId && routeRecord.recordSize > 0;
+  const routeNative = routeTripId !== undefined && isAdaptiveLocationAvailable();
+  // Until the phone has answered the first route request for the trip the backfill holds, or its answer might not be needed.
+  const routeWaiting = routeNative && !routeRecordCoversTrip && routeAnsweredTripId !== routeTripId && !routeWaitExpired;
+  // Each trip, and each return to the foreground, asks the phone again: the wait starts over (hidden: waiting, so a
+  // foreground return that comes first is held). The timer bounds it, so a phone that never answers cannot leave the map
+  // without either source.
+  useEffect(() => {
+    setRouteAnsweredTripId(undefined);
+    setRouteWaitExpired(false);
+    if (!routeNative || !isAppActive) return;
+    const timer = setTimeout(() => setRouteWaitExpired(true), ROUTE_RECORD_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [isAppActive, routeNative, routeTripId]);
   // Stored samples the cache missed (it adds one per server update): the shared trip's, like the latest sample above.
   useLiveTrailBackfill({
     token,
@@ -1928,6 +1948,7 @@ export default function TripMap({
     cutoffAt: followerCacheCutoffAt,
     active: cacheUsable && showsLiveTraveler && !replayActive && !finaleReplayActive && showPath
       && (role === "follower" || (liveTrailEnabled && !routeRecordCoversTrip)),
+    hold: routeWaiting,
   });
 
   useEffect(() => {
@@ -2136,6 +2157,7 @@ export default function TripMap({
     void getNativeLocalTrailSnapshot(routeRequest ? { route: routeRequest } : undefined)
       .then((snapshot) => {
         if (cancelled) return;
+        if (routeRequest) setRouteAnsweredTripId(routeRequest.tripId);
         if (routeRequest && !snapshot.route) {
           if (!routeUnsupportedLoggedRef.current) log.logMap("map:route-record:sync", { result: "unsupported" });
           routeUnsupportedLoggedRef.current = true;
@@ -2189,6 +2211,7 @@ export default function TripMap({
         });
       })
       .catch((error) => {
+        if (!cancelled && routeRequest) setRouteAnsweredTripId(routeRequest.tripId);
         const message = error instanceof Error ? error.message : String(error);
         if (message.includes("Local trail snapshots are foreground-only")) {
           log.logMap("map:pending-trail:native-sync", {

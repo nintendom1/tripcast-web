@@ -1599,3 +1599,178 @@ describe("TripMap and the phone's route record", () => {
     await waitFor(() => expect(backfills()).toHaveLength(1));
   });
 });
+
+describe("TripMap holds the server backfill until the phone has answered the route request", () => {
+  const MINUTE = 60_000;
+  const SUMMER_CURRENT: CurrentTrip = { ...AUTUMN, tripId: SUMMER.tripId, title: SUMMER.title };
+  const block = (tripId: string, overrides: Record<string, unknown> = {}) => ({
+    tripId,
+    generation: "g1",
+    replace: true,
+    firstSeq: 1,
+    lastSeq: 0,
+    points: [],
+    recordSize: 0,
+    totalSize: 0,
+    bytesOnDisk: 0,
+    prunedSinceLastRead: 0,
+    ...overrides,
+  });
+  const withEntries = (tripId: string) => block(tripId, {
+    lastSeq: 1,
+    recordSize: 1,
+    points: [{ clientSampleId: "route-1", lat: 47.1, lon: -122.3, sampledAt: Date.now() - 20 * MINUTE, seq: 1 }],
+  });
+  const answer = (route?: unknown) => ({ queueRevision: 1, points: [], ...(route ? { route } : {}) });
+  const backfillsFor = (tripId: string) => argsOf(mocks.query, tripcastApi.liveTrail.listReplayLiveTrailSamples)
+    .filter((args) => (args as { paginationOpts: { numItems: number } }).paginationOpts.numItems === 100)
+    .filter((args) => tripOf(args) === tripId);
+  const backfills = () => backfillsFor(AUTUMN.tripId);
+  type Answer = ReturnType<typeof answer>;
+  const pending = () => {
+    let resolve!: (value: Answer) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<Answer>((onResolve, onReject) => { resolve = onResolve; reject = onReject; });
+    return { promise, resolve, reject };
+  };
+  const settle = () => act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  const advance = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  let visibility: DocumentVisibilityState = "visible";
+  const toForeground = async () => {
+    visibility = "hidden";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    vi.setSystemTime(Date.now() + 61_000);
+    visibility = "visible";
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await settle();
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(new Date(2026, 10, 15, 14, 0));
+    visibility = "visible";
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+    mocks.isAdaptiveLocationAvailable.mockReturnValue(true);
+    latestByTrip[AUTUMN.tripId] = sample("autumn-latest", 47.5, -122.2, Date.now() - 10 * MINUTE);
+    latestByTrip[SUMMER.tripId] = sample("summer-latest", 40.5, -74.2, Date.now() - 10 * MINUTE);
+  });
+  afterEach(() => {
+    resetNativeReadinessState();
+    vi.useRealTimers();
+  });
+
+  it("a record with entries: no backfill on load and none on a return to the foreground", async () => {
+    const first = pending();
+    mocks.snapshot.mockReturnValueOnce(first.promise);
+    renderMap(following());
+    await settle();
+    expect(mocks.snapshot).toHaveBeenCalledTimes(1);
+    expect(backfills()).toEqual([]);
+
+    first.resolve(answer(withEntries(AUTUMN.tripId)));
+    await settle();
+    mocks.snapshot.mockResolvedValue(answer(block(AUTUMN.tripId, { replace: false, lastSeq: 1, recordSize: 1 })));
+    await toForeground();
+    await advance(10_000);
+    expect(backfills()).toEqual([]);
+  });
+
+  it("an empty record: one backfill, once the phone has answered", async () => {
+    const first = pending();
+    mocks.snapshot.mockReturnValueOnce(first.promise);
+    renderMap(following());
+    await settle();
+    await advance(4_000);
+    expect(backfills()).toEqual([]);
+
+    first.resolve(answer(block(AUTUMN.tripId)));
+    await settle();
+    expect(backfills()).toHaveLength(1);
+    await advance(10_000);
+    expect(backfills()).toHaveLength(1);
+  });
+
+  it("an answer without a route block (an older native build), or a failed snapshot: the backfill runs", async () => {
+    const first = pending();
+    mocks.snapshot.mockReturnValueOnce(first.promise);
+    const older = renderMap(following());
+    await settle();
+    expect(backfills()).toEqual([]);
+    first.resolve(answer());
+    await settle();
+    expect(backfills()).toHaveLength(1);
+    older.unmount();
+    await resetLiveTrailCachesForTests();
+    mocks.query.mockClear();
+
+    const failing = pending();
+    mocks.snapshot.mockReturnValueOnce(failing.promise);
+    renderMap(following());
+    await settle();
+    expect(backfills()).toEqual([]);
+    failing.reject(new Error("native unavailable"));
+    await settle();
+    expect(backfills()).toHaveLength(1);
+  });
+
+  it("no answer within 5 s: the backfill runs", async () => {
+    mocks.snapshot.mockReturnValueOnce(pending().promise);
+    renderMap(following());
+    await settle();
+    await advance(4_999);
+    expect(backfills()).toEqual([]);
+    await advance(1);
+    expect(backfills()).toHaveLength(1);
+  });
+
+  it("a return to the foreground while waiting: one backfill if the answer is empty, none if it has entries", async () => {
+    for (const entries of [false, true]) {
+      await resetLiveTrailCachesForTests();
+      mocks.query.mockClear();
+      mocks.snapshot.mockReset();
+      visibility = "visible";
+      // The first answer is empty: the load backfill runs.
+      mocks.snapshot.mockResolvedValueOnce(answer(block(AUTUMN.tripId)));
+      const view = renderMap(following());
+      await settle();
+      expect(backfills()).toHaveLength(1);
+
+      const next = pending();
+      mocks.snapshot.mockReturnValue(next.promise);
+      await toForeground();
+      expect(backfills()).toHaveLength(1);
+
+      next.resolve(answer(entries
+        ? block(AUTUMN.tripId, { replace: false, lastSeq: 1, recordSize: 1, points: [{ clientSampleId: "route-1", lat: 47.1, lon: -122.3, sampledAt: Date.now() - 5 * MINUTE, seq: 1 }] })
+        : block(AUTUMN.tripId, { replace: false })));
+      await settle();
+      await advance(10_000);
+      expect(backfills()).toHaveLength(entries ? 1 : 2);
+      view.unmount();
+    }
+  });
+
+  it("a trip switch starts the wait again for the new trip", async () => {
+    mocks.snapshot.mockResolvedValueOnce(answer(block(AUTUMN.tripId)));
+    const map = renderMap(following());
+    await settle();
+    expect(backfills()).toHaveLength(1);
+
+    await advance(3_000);
+    mocks.snapshot.mockReturnValue(pending().promise);
+    map.view(following(SUMMER_CURRENT));
+    await settle();
+    await advance(4_999);
+    expect(backfillsFor(SUMMER.tripId)).toEqual([]);
+    await advance(1);
+    expect(backfillsFor(SUMMER.tripId)).toHaveLength(1);
+  });
+
+  it("a Follower and a browser Traveler wait for nothing", async () => {
+    mocks.snapshot.mockReturnValue(pending().promise);
+    mocks.isAdaptiveLocationAvailable.mockReturnValue(false);
+    renderMap(following());
+    await settle();
+    expect(backfills()).toHaveLength(1);
+  });
+});

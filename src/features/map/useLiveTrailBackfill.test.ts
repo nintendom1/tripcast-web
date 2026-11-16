@@ -169,6 +169,43 @@ describe("useLiveTrailBackfill", () => {
     expect(ids(cache)).toEqual(["sample-1", "sample-2", "sample-3"]);
   });
 
+  it("a hold keeps the load and a foreground return until it ends: they run if the hook is then active, are dropped if not", async () => {
+    const props = (cache: LiveTrailCacheStore, active: boolean, hold: boolean): LiveTrailBackfillOptions =>
+      ({ token: "token", cache, tripId: "trip-autumn", latestSample: sample(9), active, hold });
+    query.mockResolvedValue(page([sample(1), sample(2)]));
+
+    // The load waits for the hold.
+    const fresh = await hydratedCache(sample(1));
+    const loading = renderBackfill({ cache: fresh, hold: true });
+    await act(async () => {});
+    expect(query).not.toHaveBeenCalled();
+    loading.rerender(props(fresh, true, false));
+    await act(async () => {});
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(backfillLogs().at(-1)?.[4]).toMatchObject({ reason: "load" });
+
+    // Two returns during a hold: one foreground fetch once it ends.
+    loading.rerender(props(fresh, true, true));
+    vi.setSystemTime(NOW + 61_000);
+    await returnToForeground();
+    await returnToForeground();
+    expect(query).toHaveBeenCalledTimes(1);
+    loading.rerender(props(fresh, true, false));
+    await act(async () => {});
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(backfillLogs().at(-1)?.[4]).toMatchObject({ reason: "foreground" });
+
+    // Inactive when the hold ends (the phone's record covers the trip): nothing, and nothing later either.
+    loading.rerender(props(fresh, true, true));
+    vi.setSystemTime(NOW + 130_000);
+    await returnToForeground();
+    loading.rerender(props(fresh, false, false));
+    await act(async () => {});
+    loading.rerender(props(fresh, true, false));
+    await act(async () => {});
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
   it("does not fetch offline, while inactive (Replay, live trail off or hidden), or with nothing stored in the window", async () => {
     const cache = await hydratedCache(sample(1));
     query.mockResolvedValue(page([sample(1), sample(2)]));

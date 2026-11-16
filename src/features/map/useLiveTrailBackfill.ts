@@ -42,6 +42,12 @@ export type LiveTrailBackfillOptions = {
   cutoffAt?: number | null;
   /** The live map draws the live trail for this role: not in Replay, live trail on and visible. */
   active: boolean;
+  /**
+   * A cheaper source is still being asked (the Traveler's phone record): no backfill starts, and the load and a foreground
+   * return that arrive meanwhile are kept. When `hold` ends with `active` still true they run (the foreground one once);
+   * when `active` is false by then they are dropped.
+   */
+  hold?: boolean;
 };
 
 /** Backfill state of one trip cache, kept outside any component so a remount neither fetches again at once nor reloads. */
@@ -74,13 +80,15 @@ function stateOf(cache: LiveTrailCacheStore) {
  * dropped if the trip, the cache, the Follower cutoff or `active` changed, or the cache was cleared, while it was in
  * flight; a failure is logged only.
  */
-export function useLiveTrailBackfill({ token, cache, tripId, latestSample, cutoffAt, active }: LiveTrailBackfillOptions) {
+export function useLiveTrailBackfill({ token, cache, tripId, latestSample, cutoffAt, active, hold = false }: LiveTrailBackfillOptions) {
   const client = useTripConvex();
-  const latest = useRef({ token, cache, tripId, latestSample, cutoffAt, active, client });
+  const latest = useRef({ token, cache, tripId, latestSample, cutoffAt, active, client, hold });
   const mountedRef = useRef(false);
+  /** A foreground return arrived during the hold. */
+  const foregroundHeldRef = useRef(false);
 
   useEffect(() => {
-    latest.current = { token, cache, tripId, latestSample, cutoffAt, active, client };
+    latest.current = { token, cache, tripId, latestSample, cutoffAt, active, client, hold };
   });
   useEffect(() => {
     mountedRef.current = true;
@@ -160,7 +168,7 @@ export function useLiveTrailBackfill({ token, cache, tripId, latestSample, cutof
   const latestLoaded = latestSample !== undefined;
   useEffect(() => {
     const state = stateOf(cache);
-    if (!active || !latestLoaded || state.loaded) return;
+    if (!active || hold || !latestLoaded || state.loaded) return;
     const attempt = () => {
       if (state.loaded || !cache.snapshot().hydrated) return;
       state.loaded = true;
@@ -168,14 +176,23 @@ export function useLiveTrailBackfill({ token, cache, tripId, latestSample, cutof
     };
     attempt();
     return cache.subscribe(attempt);
-  }, [active, backfill, cache, latestLoaded]);
+  }, [active, backfill, cache, hold, latestLoaded]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
     const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") void backfill("foreground");
+      if (document.visibilityState !== "visible") return;
+      if (latest.current.hold) foregroundHeldRef.current = true;
+      else void backfill("foreground");
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
   }, [backfill]);
+
+  // The hold ended: run the foreground return it kept (`backfill` itself drops it when `active` is false).
+  useEffect(() => {
+    if (hold || !foregroundHeldRef.current) return;
+    foregroundHeldRef.current = false;
+    void backfill("foreground");
+  }, [backfill, hold]);
 }
