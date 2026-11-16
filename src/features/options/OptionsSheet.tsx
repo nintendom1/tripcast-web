@@ -80,6 +80,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Button } from "../../components/ui/button";
+import { FeatureBoundary } from "../../components/resilience/FeatureBoundary";
 import { ConfirmModal } from "../../components/ui/ConfirmModal";
 import type { StoredSession } from "../../lib/auth";
 import { cn } from "@/lib/utils";
@@ -145,6 +146,30 @@ type OptionsSheetProps = {
 };
 
 export type OptionsView = "options" | "emergency-reset" | "travel-funds" | "live-trail" | "live-gps" | "bulk-import" | "bulk-export" | "mystery-missions" | "debug-logs" | "cloaking-pins" | "follower-cutoff" | "trip-ticker" | "quick-activities" | "convex-usage";
+/** The card on an Options page sits below the header with the page's side gutter. */
+const PAGE_ERROR_CARD_CLASS = "m-4 grid gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm shadow-lg";
+/** Bulk Import/Export are separate sheets, so their card floats over the screen instead of sitting in a page. */
+const BULK_ERROR_CARD_CLASS = "fixed inset-x-4 bottom-[calc(1rem+env(safe-area-inset-bottom))] z-50 grid gap-3 rounded-md border border-[var(--line-soft)] bg-[var(--bg-card)] p-3 text-sm shadow-lg";
+
+/** The page name shown on an Options error card; the same names the page headers use. */
+function optionsPageTitle(view: OptionsView): string {
+  switch (view) {
+    case "travel-funds": return TERMS.travelFunds;
+    case "trip-ticker": return "Trip Ticker";
+    case "live-trail": return "Live Trail";
+    case "live-gps": return "Adaptive Background GPS";
+    case "cloaking-pins": return "Cloaking Zones";
+    case "follower-cutoff": return "Follower content cutoff";
+    case "quick-activities": return "Quick Activities";
+    case "debug-logs": return TERMS.debugLog;
+    case "convex-usage": return "Convex Usage";
+    case "emergency-reset": return TERMS.emergencyReset;
+    case "bulk-import": return "Bulk Import";
+    case "bulk-export": return "Bulk Export";
+    default: return TERMS.options;
+  }
+}
+
 type LiveTrailDeleteMode = "range" | "every_other" | "individual";
 
 const TICKER_PREVIEW_MESSAGE = {
@@ -2042,15 +2067,21 @@ export default function OptionsSheet({
               onBack={() => { music.sfx("page"); navigateTo("options"); }}
             />
           ) : view === "emergency-reset" ? (
-            <EmergencyResetContent
-              token={session.token}
+            <FeatureBoundary
+              title={`${optionsPageTitle(view)} hit a problem.`}
+              resetKeys={[view, session.token]}
               onClose={handleEmergencyResetClose}
-              onLoggedOut={onLoggedOut}
-              onLocationDataCleared={onLocationDataCleared}
-              onTripDataDeleted={onTripDataDeleted}
-              onResetStarted={onResetStarted}
-              onPendingChange={setIsEmergencyResetPending}
-            />
+            >
+              <EmergencyResetContent
+                token={session.token}
+                onClose={handleEmergencyResetClose}
+                onLoggedOut={onLoggedOut}
+                onLocationDataCleared={onLocationDataCleared}
+                onTripDataDeleted={onTripDataDeleted}
+                onResetStarted={onResetStarted}
+                onPendingChange={setIsEmergencyResetPending}
+              />
+            </FeatureBoundary>
           ) : view === "debug-logs" ? (
             <SubViewHeader
               title={TERMS.debugLog}
@@ -2068,96 +2099,108 @@ export default function OptionsSheet({
             </div>
           )}
 
-          {view === "travel-funds" ? (
-            <SheetBody className="p-0">
-              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <TravelFundsSheet
-                  token={session.token}
-                  onClose={() => { music.sfx("page"); navigateTo("options"); }}
-                  debugSource={{ source: "options:travel-funds", sourceLabel: "Options -> Travel Funds" }}
-                />
-              </OptionsContentFrame>
-            </SheetBody>
-          ) : view === "trip-ticker" ? (
-            <SheetBody className="p-0">
-              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <TripTickerSettings token={session.token} />
-              </OptionsContentFrame>
-            </SheetBody>
+          {/* One card per page: the header above and Back keep working. On the home page Close closes Options (going back would loop). */}
+          <FeatureBoundary
+            title={`${optionsPageTitle(view)} hit a problem.`}
+            resetKeys={[view, session.token]}
+            fallbackClassName={PAGE_ERROR_CARD_CLASS}
+            onClose={() => {
+              music.sfx("page");
+              if (view === "options") handleOpenChange(false);
+              else navigateTo("options");
+            }}
+          >
+            {view === "travel-funds" ? (
+              <SheetBody className="p-0">
+                <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                  <TravelFundsSheet
+                    token={session.token}
+                    onClose={() => { music.sfx("page"); navigateTo("options"); }}
+                    debugSource={{ source: "options:travel-funds", sourceLabel: "Options -> Travel Funds" }}
+                  />
+                </OptionsContentFrame>
+              </SheetBody>
+            ) : view === "trip-ticker" ? (
+              <SheetBody className="p-0">
+                <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                  <TripTickerSettings token={session.token} />
+                </OptionsContentFrame>
+              </SheetBody>
 
-          ) : view === "live-trail" ? (
-            <SheetBody className="p-0">
-              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <LiveTrailSettingsSheet
-                  token={session.token}
-                  log={log}
-                  onLiveGps={() => { music.sfx("page"); navigateTo("live-gps"); }}
-                />
-              </OptionsContentFrame>
-            </SheetBody>
-          ) : view === "live-gps" ? (
-            <SheetBody className="p-0">
-              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <LiveGpsSettings />
-              </OptionsContentFrame>
-            </SheetBody>
-          ) : view === "cloaking-pins" ? (
-            <SheetBody className="p-0">
-              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <CloakingPinsSheet token={session.token} log={log} />
-              </OptionsContentFrame>
-            </SheetBody>
-          ) : view === "follower-cutoff" ? (
-            <SheetBody className="p-0">
-              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <FollowerCutoffSection token={session.token} log={log} />
-              </OptionsContentFrame>
-            </SheetBody>
-          ) : view === "quick-activities" ? (
-            <SheetBody className="p-0">
-              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <QuickActivitySettingsView token={session.token} />
-              </OptionsContentFrame>
-            </SheetBody>
-          ) : view === "convex-usage" ? (
-            <SheetBody className="p-0">
-              <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-                <ConvexUsageView role={role} usage={usage} onUsageLedger={onUsageLedger} log={log} />
-              </OptionsContentFrame>
-            </SheetBody>
-          ) : view === "options" ? (
-            <OptionsHome
-              role={role}
-              log={log}
-              session={session}
-              onSignOut={handleSignOut}
-              onManageFollowers={onManageFollowers}
-              onReplayFollowerTour={onReplayFollowerTour}
-              onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
-              onLiveTrail={() => { music.sfx("page"); navigateTo("live-trail"); }}
-              onTripTicker={() => { music.sfx("page"); navigateTo("trip-ticker"); }}
-              onCloakingPins={() => { music.sfx("page"); navigateTo("cloaking-pins"); }}
-              onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
-              onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
-              onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
-              onFollowerCutoff={() => { music.sfx("page"); navigateTo("follower-cutoff"); }}
-              onQuickActivities={() => { music.sfx("page"); navigateTo("quick-activities"); }}
-              onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
-              usage={usage}
-              onConvexUsage={() => { music.sfx("page"); navigateTo("convex-usage"); }}
-              onTriggerTestToast={onTriggerTestToast}
-              onKillGpsServices={onKillGpsServices ? () => {
-                log.logUi("action:developer-kill-gps:open-confirmation");
-                setIsKillGpsConfirmOpen(true);
-              } : undefined}
-              onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
-              onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
-            />
-          ) : view === "debug-logs" ? (
-            <SheetBody className="min-h-0 overflow-hidden p-0">
-              <DebugPanel token={session?.token} role={role} />
-            </SheetBody>
-          ) : null}
+            ) : view === "live-trail" ? (
+              <SheetBody className="p-0">
+                <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                  <LiveTrailSettingsSheet
+                    token={session.token}
+                    log={log}
+                    onLiveGps={() => { music.sfx("page"); navigateTo("live-gps"); }}
+                  />
+                </OptionsContentFrame>
+              </SheetBody>
+            ) : view === "live-gps" ? (
+              <SheetBody className="p-0">
+                <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                  <LiveGpsSettings />
+                </OptionsContentFrame>
+              </SheetBody>
+            ) : view === "cloaking-pins" ? (
+              <SheetBody className="p-0">
+                <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                  <CloakingPinsSheet token={session.token} log={log} />
+                </OptionsContentFrame>
+              </SheetBody>
+            ) : view === "follower-cutoff" ? (
+              <SheetBody className="p-0">
+                <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                  <FollowerCutoffSection token={session.token} log={log} />
+                </OptionsContentFrame>
+              </SheetBody>
+            ) : view === "quick-activities" ? (
+              <SheetBody className="p-0">
+                <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                  <QuickActivitySettingsView token={session.token} />
+                </OptionsContentFrame>
+              </SheetBody>
+            ) : view === "convex-usage" ? (
+              <SheetBody className="p-0">
+                <OptionsContentFrame className="py-6 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+                  <ConvexUsageView role={role} usage={usage} onUsageLedger={onUsageLedger} log={log} />
+                </OptionsContentFrame>
+              </SheetBody>
+            ) : view === "options" ? (
+              <OptionsHome
+                role={role}
+                log={log}
+                session={session}
+                onSignOut={handleSignOut}
+                onManageFollowers={onManageFollowers}
+                onReplayFollowerTour={onReplayFollowerTour}
+                onTravelFunds={() => { music.sfx("page"); navigateTo("travel-funds"); }}
+                onLiveTrail={() => { music.sfx("page"); navigateTo("live-trail"); }}
+                onTripTicker={() => { music.sfx("page"); navigateTo("trip-ticker"); }}
+                onCloakingPins={() => { music.sfx("page"); navigateTo("cloaking-pins"); }}
+                onBulkImport={() => { music.sfx("page"); navigateTo("bulk-import"); }}
+                onBulkExport={() => { music.sfx("page"); navigateTo("bulk-export"); }}
+                onEmergencyReset={() => { music.sfx("page"); navigateTo("emergency-reset"); }}
+                onFollowerCutoff={() => { music.sfx("page"); navigateTo("follower-cutoff"); }}
+                onQuickActivities={() => { music.sfx("page"); navigateTo("quick-activities"); }}
+                onDebugLogs={() => { music.sfx("page"); navigateTo("debug-logs"); }}
+                usage={usage}
+                onConvexUsage={() => { music.sfx("page"); navigateTo("convex-usage"); }}
+                onTriggerTestToast={onTriggerTestToast}
+                onKillGpsServices={onKillGpsServices ? () => {
+                  log.logUi("action:developer-kill-gps:open-confirmation");
+                  setIsKillGpsConfirmOpen(true);
+                } : undefined}
+                onEndTrip={onEndTrip ? () => { music.sfx("page"); handleOpenChange(false); onEndTrip(); } : undefined}
+                onViewCredits={onViewCredits ? () => { music.sfx("page"); handleOpenChange(false); onViewCredits(); } : undefined}
+              />
+            ) : view === "debug-logs" ? (
+              <SheetBody className="min-h-0 overflow-hidden p-0">
+                <DebugPanel token={session?.token} role={role} />
+              </SheetBody>
+            ) : null}
+          </FeatureBoundary>
         </SheetContent>
       </Sheet>
 
@@ -2177,31 +2220,53 @@ export default function OptionsSheet({
       />
 
       {role === "traveler" && open && view === "bulk-import" ? (
-        <BulkImportSheet
-          open={true}
-          token={session.token}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) {
-              music.sfx("page");
-              navigateTo("options");
-              onOpenChange(true);
-            }
+        <FeatureBoundary
+          title={`${optionsPageTitle(view)} hit a problem.`}
+          resetKeys={[view, session.token]}
+          fallbackClassName={BULK_ERROR_CARD_CLASS}
+          onClose={() => {
+            music.sfx("page");
+            navigateTo("options");
+            onOpenChange(true);
           }}
-        />
+        >
+          <BulkImportSheet
+            open={true}
+            token={session.token}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) {
+                music.sfx("page");
+                navigateTo("options");
+                onOpenChange(true);
+              }
+            }}
+          />
+        </FeatureBoundary>
       ) : null}
 
       {role === "traveler" && open && view === "bulk-export" ? (
-        <BulkExportSheet
-          open={true}
-          token={session.token}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) {
-              music.sfx("page");
-              navigateTo("options");
-              onOpenChange(true);
-            }
+        <FeatureBoundary
+          title={`${optionsPageTitle(view)} hit a problem.`}
+          resetKeys={[view, session.token]}
+          fallbackClassName={BULK_ERROR_CARD_CLASS}
+          onClose={() => {
+            music.sfx("page");
+            navigateTo("options");
+            onOpenChange(true);
           }}
-        />
+        >
+          <BulkExportSheet
+            open={true}
+            token={session.token}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) {
+                music.sfx("page");
+                navigateTo("options");
+                onOpenChange(true);
+              }
+            }}
+          />
+        </FeatureBoundary>
       ) : null}
     </>
   );
