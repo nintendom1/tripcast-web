@@ -657,6 +657,20 @@ describe("formatUsageCounterDigest()", () => {
     );
   });
 
+  it("labels callback gaps as handled-fix gaps and sums the coalesced counts in the GPS summary", () => {
+    setEnabled(true);
+    setPreset("gps-trace");
+    log("info", "Map", "gps:browser:callback:received", "gps");
+    log("info", "Map", "gps:browser:callback:coalesced", "gps", { received: 31, rejected: 29, periodMs: 30_000 });
+    log("info", "Map", "gps:browser:callback:coalesced", "gps", { received: 30, rejected: 20, periodMs: 30_000 });
+
+    const summary = buildLlmSummary();
+
+    expect(summary).not.toContain("Callback arrivals");
+    expect(summary).toContain("Handled-fix gaps (callback:received;");
+    expect(summary).toContain("Received 61, rejected 49 over 2 report(s)");
+  });
+
   it.each(["normal", "gps-trace"] as const)("puts the digest under its own heading in the %s summary", (preset) => {
     setEnabled(true);
     setPreset(preset);

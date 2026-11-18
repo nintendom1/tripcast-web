@@ -3049,3 +3049,355 @@ describe("TripMap multi-trip live publishing", () => {
     });
   });
 });
+
+describe("TripMap browser fix gate (LIVE off)", () => {
+  const BASE = { lat: 47.62, lon: -122.34 };
+  const METERS_PER_DEG_LAT = 111_195;
+  type Fix = { lat: number; lon: number; accuracy: number };
+  let watchers: Array<(position: GeolocationPosition) => void> = [];
+
+  function fix(f: Fix): GeolocationPosition {
+    return { coords: { latitude: f.lat, longitude: f.lon, accuracy: f.accuracy } } as GeolocationPosition;
+  }
+  function deliver(f: Fix) {
+    act(() => {
+      watchers[watchers.length - 1]?.(fix(f));
+    });
+  }
+  function movedNorth(meters: number, accuracy: number): Fix {
+    return { lat: BASE.lat + meters / METERS_PER_DEG_LAT, lon: BASE.lon, accuracy };
+  }
+  const handledCount = () => getLogs().filter((e) => e.action === "gps:browser:callback:received").length;
+
+  async function mountWithWatcher() {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    setEnabled(true);
+    setPreset("gps-trace");
+    watchers = [];
+    geolocationWatchPosition.mockImplementation((onSuccess) => {
+      watchers.push(onSuccess);
+      return 40 + watchers.length;
+    });
+    setupQueries();
+    render(<TripMap token="test-token" role="traveler" />);
+    expect(watchers.length).toBeGreaterThan(0);
+  }
+
+  it("handles one of 20 identical fixes in 20 s and starts at most one ease", async () => {
+    await mountWithWatcher();
+    const still = { ...BASE, accuracy: 9 };
+    const easeBefore = mapEaseTo.mock.calls.length;
+    for (let i = 0; i < 20; i += 1) {
+      deliver(still);
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+    }
+    expect(handledCount()).toBe(1);
+    expect(mapEaseTo.mock.calls.length - easeBefore).toBeLessThanOrEqual(1);
+  });
+
+  it("accepts a 4 m move at 5 m accuracy but rejects it at 30 m accuracy", async () => {
+    await mountWithWatcher();
+    deliver({ ...BASE, accuracy: 5 });
+    expect(handledCount()).toBe(1);
+    deliver(movedNorth(4, 5));
+    expect(handledCount()).toBe(2);
+
+    // Accuracy fell from 5 to 30 m: the circle must grow, so this is accepted.
+    deliver(movedNorth(4, 30));
+    expect(handledCount()).toBe(3);
+    // The same accuracy and a 4 m move are under the threshold.
+    deliver({ ...BASE, accuracy: 30 });
+    expect(handledCount()).toBe(3);
+  });
+
+  it("accepts an accuracy improvement of 10 m or more", async () => {
+    await mountWithWatcher();
+    deliver({ ...BASE, accuracy: 40 });
+    deliver({ ...BASE, accuracy: 35 });
+    expect(handledCount()).toBe(1);
+    deliver({ ...BASE, accuracy: 25 });
+    expect(handledCount()).toBe(2);
+  });
+
+  it("accepts an unchanged fix once 30 s have passed since the last accepted one", async () => {
+    await mountWithWatcher();
+    const still = { ...BASE, accuracy: 9 };
+    deliver(still);
+    act(() => {
+      vi.advanceTimersByTime(29_000);
+    });
+    deliver(still);
+    expect(handledCount()).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    deliver(still);
+    expect(handledCount()).toBe(2);
+  });
+
+  it("handles every fix as before while LIVE is on with the browser watcher", async () => {
+    localStorage.setItem("tripcast.live-sharing.enabled", "true");
+    await mountWithWatcher();
+    const still = { ...BASE, accuracy: 9 };
+    for (let i = 0; i < 5; i += 1) deliver(still);
+    expect(handledCount()).toBe(5);
+    expect(getLogs().some((e) => e.action === "gps:browser:callback:coalesced")).toBe(false);
+  });
+
+  it("resets the gate when the watcher restarts", async () => {
+    await mountWithWatcher();
+    const still = { ...BASE, accuracy: 9 };
+    deliver(still);
+    deliver(still);
+    expect(handledCount()).toBe(1);
+
+    // LIVE on then off restarts the browser watcher.
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+    expect(watchers.length).toBeGreaterThan(1);
+    const before = handledCount();
+    deliver(still);
+    expect(handledCount()).toBe(before + 1);
+    deliver(still);
+    expect(handledCount()).toBe(before + 1);
+  });
+
+  it("logs one coalesced line per 30 s with the received and rejected counts, and none when nothing was rejected", async () => {
+    await mountWithWatcher();
+    const still = { ...BASE, accuracy: 9 };
+    for (let i = 0; i < 30; i += 1) {
+      deliver(still);
+      act(() => {
+        vi.advanceTimersByTime(1_000);
+      });
+    }
+    deliver(still);
+    const lines = getLogs().filter((e) => e.action === "gps:browser:callback:coalesced");
+    expect(lines).toHaveLength(1);
+    expect(lines[0].details).toMatchObject({ received: 31, rejected: 29 });
+
+    // A period with no rejections writes nothing.
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    deliver(movedNorth(50, 9));
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+    deliver(movedNorth(100, 9));
+    expect(getLogs().filter((e) => e.action === "gps:browser:callback:coalesced")).toHaveLength(1);
+  });
+
+  describe("cloaking zone crossings by a fix the gate would reject", () => {
+    const PIN_NORTH_METERS = 100;
+    const RADIUS = 50;
+    // Distance from the pin centre: 53 m is outside, 49 m is inside; the fixes are 4 m apart.
+    const OUTSIDE = movedNorth(PIN_NORTH_METERS - 53, 30);
+    const INSIDE = movedNorth(PIN_NORTH_METERS - 49, 30);
+
+    function withCloakingPin() {
+      const base = (vi.mocked(convexReact.useQuery) as any).getMockImplementation();
+      (vi.mocked(convexReact.useQuery) as any).mockImplementation((query: unknown, args: unknown) => {
+        if (query === tripcastApi.cloakingPins.travelerListCloakingPins) {
+          return [{
+            _id: "pin-1",
+            _creationTime: 1,
+            lat: BASE.lat + PIN_NORTH_METERS / METERS_PER_DEG_LAT,
+            lon: BASE.lon,
+            radiusMeters: RADIUS,
+            createdAt: 1,
+            updatedAt: 1,
+          }];
+        }
+        return base(query, args);
+      });
+    }
+
+    it("blocks LIVE after a 4 m walk into a zone and publishes nothing from outside", async () => {
+      await mountWithWatcher();
+      withCloakingPin();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      // Re-render so the pin query result reaches the component.
+      deliver(OUTSIDE);
+      deliver(INSIDE);
+      fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+      expect(updateTravelerLocation).not.toHaveBeenCalled();
+      expect(screen.getByText("Live remains paused because you are currently in a cloaked zone.")).toBeInTheDocument();
+    });
+
+    it("lets LIVE start at once after a 4 m walk out of a zone", async () => {
+      await mountWithWatcher();
+      withCloakingPin();
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      // The first fix renders the component, so the pin reaches the fix handler before INSIDE.
+      deliver({ ...BASE, accuracy: 9 });
+      deliver(INSIDE);
+      deliver(OUTSIDE);
+      fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+      expect(updateTravelerLocation).toHaveBeenCalledWith(
+        expect.objectContaining({ token: "test-token", lat: OUTSIDE.lat, lon: OUTSIDE.lon }),
+      );
+      expect(screen.queryByText(/currently in a cloaked zone/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("cloaking zone suppression while LIVE is on", () => {
+    const PIN_NORTH_METERS = 100;
+    const RADIUS = 50;
+    const START = movedNorth(PIN_NORTH_METERS - 53, 30); // outside the zone
+    const INSIDE = movedNorth(PIN_NORTH_METERS - 49, 30);
+    // Outside again and 60 m or more from START, so the Live Trail sampler also emits.
+    const AFTER = movedNorth(-20, 30);
+
+    function withCloakingPin() {
+      const base = (vi.mocked(convexReact.useQuery) as any).getMockImplementation();
+      (vi.mocked(convexReact.useQuery) as any).mockImplementation((query: unknown, args: unknown) => {
+        if (query === tripcastApi.cloakingPins.travelerListCloakingPins) {
+          return [{
+            _id: "pin-1",
+            _creationTime: 1,
+            lat: BASE.lat + PIN_NORTH_METERS / METERS_PER_DEG_LAT,
+            lon: BASE.lon,
+            radiusMeters: RADIUS,
+            createdAt: 1,
+            updatedAt: 1,
+          }];
+        }
+        return base(query, args);
+      });
+    }
+
+    function startLive() {
+      fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+      updateTravelerLocation.mockClear();
+      recordLiveTrailSample.mockClear();
+    }
+
+    function advance(ms: number) {
+      act(() => {
+        vi.advanceTimersByTime(ms);
+      });
+    }
+
+    async function runScenario(send: (f: Fix) => void) {
+      // The first fix renders the component so the pin query result reaches the fix handler.
+      send(START);
+      startLive();
+
+      send(INSIDE);
+      expect(updateTravelerLocation).not.toHaveBeenCalled();
+      expect(recordLiveTrailSample).not.toHaveBeenCalled();
+
+      advance(31_000);
+      send(INSIDE);
+      expect(screen.getByText("You have entered a cloaked zone.")).toBeInTheDocument();
+      expect(updateTravelerLocation).not.toHaveBeenCalled();
+      expect(recordLiveTrailSample).not.toHaveBeenCalled();
+
+      // Past the default 5 minute auto-shut-off: Live turns itself off and still publishes no location.
+      advance(5 * 60_000);
+      send(INSIDE);
+      expect(screen.getByRole("button", { name: /start sharing live location/i })).toBeInTheDocument();
+      expect(updateTravelerLocation).not.toHaveBeenCalled();
+    }
+
+    async function runResumeScenario(send: (f: Fix) => void) {
+      send(START);
+      startLive();
+
+      send(INSIDE);
+      expect(updateTravelerLocation).not.toHaveBeenCalled();
+      expect(recordLiveTrailSample).not.toHaveBeenCalled();
+
+      advance(16_000);
+      send(AFTER);
+      expect(updateTravelerLocation).toHaveBeenCalledWith(
+        expect.objectContaining({ token: "test-token", lat: AFTER.lat, lon: AFTER.lon }),
+      );
+      expect(recordLiveTrailSample).toHaveBeenCalledWith(
+        expect.objectContaining({ token: "test-token", lat: AFTER.lat, lon: AFTER.lon }),
+      );
+    }
+
+    const liveTrailOn = { liveTrailStatus: { enabled: true, visibleToFollowers: false } };
+
+    async function mountBrowserLive() {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      watchers = [];
+      geolocationWatchPosition.mockImplementation((onSuccess) => {
+        watchers.push(onSuccess);
+        return 40 + watchers.length;
+      });
+      setupQueries(liveTrailOn);
+      withCloakingPin();
+      render(<TripMap token="test-token" role="traveler" />);
+      expect(watchers.length).toBeGreaterThan(0);
+    }
+
+    async function mountNativeLive() {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+      nativeLocationMocks.isNativeLocationAvailable.mockReturnValue(true);
+      watchers = [];
+      geolocationWatchPosition.mockImplementation((onSuccess) => {
+        watchers.push(onSuccess);
+        return 40 + watchers.length;
+      });
+      setupQueries(liveTrailOn);
+      withCloakingPin();
+      render(<TripMap token="test-token" role="traveler" />);
+    }
+
+    const browserSend = (f: Fix) => deliver(f);
+    const nativeSend = (f: Fix) => {
+      const calls = nativeLocationMocks.startNativeLocationWatch.mock.calls;
+      const onFix = calls[calls.length - 1]?.[0];
+      // Before Live starts there is no native watcher; the browser watcher supplies the first fix.
+      if (!onFix) deliver(f);
+      else act(() => onFix({ lat: f.lat, lon: f.lon, accuracy: f.accuracy, at: Date.now() } as never));
+    };
+
+    it("browser fix inside a zone publishes no location or trail sample and shuts Live off", async () => {
+      await mountBrowserLive();
+      await runScenario(browserSend);
+    });
+
+    it("browser fix outside again publishes location and trail sample after a fix inside", async () => {
+      await mountBrowserLive();
+      await runResumeScenario(browserSend);
+    });
+
+    it("native fix inside a zone publishes no location or trail sample and shuts Live off", async () => {
+      await mountNativeLive();
+      await runScenario(nativeSend);
+    });
+
+    it("native fix outside again publishes location and trail sample after a fix inside", async () => {
+      await mountNativeLive();
+      await runResumeScenario(nativeSend);
+    });
+  });
+
+  it("starts LIVE from the raw latest fix, not the displayed one", async () => {
+    await mountWithWatcher();
+    deliver({ ...BASE, accuracy: 9 });
+    const rejected = movedNorth(2, 9);
+    deliver(rejected);
+    expect(handledCount()).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: /sharing live location/i }));
+
+    expect(updateTravelerLocation).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "test-token", lat: rejected.lat, lon: rejected.lon }),
+    );
+  });
+});

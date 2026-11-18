@@ -166,6 +166,7 @@ import {
 import { evaluateLegacyBreadcrumbSample } from "../../lib/legacyBreadcrumbSampler";
 import { useSamplerMode } from "../../lib/samplerMode";
 import { distanceMeters } from "../../lib/geoUtils";
+import { createBrowserFixGate } from "./browserFixGate";
 import { pushRecentFix, type RecentFix } from "../../lib/pendingFixesBuffer";
 import { useFixOverlayEnabled } from "../../lib/fixOverlayToggle";
 import { useFixOverlay } from "./useFixOverlay";
@@ -1410,7 +1411,9 @@ export default function TripMap({
   const [recentFixes, setRecentFixes] = useState<RecentFix[]>([]);
   const fixOverlayEnabled = useFixOverlayEnabled();
   const fixOverlayEnabledRef = useRef(fixOverlayEnabled);
-  const livePositionRef = useRef<{ lat: number; lon: number } | null>(null);
+  // The raw latest valid fix, written by every handled and every gate-rejected browser fix.
+  // livePosition (state) is the displayed position and can be behind it while LIVE is off.
+  const livePositionRef = useRef<{ lat: number; lon: number; accuracy?: number } | null>(null);
   const coordinatePickModeRef = useRef<CoordinatePickMode | null>(null);
   const mapServiceUnavailableRef = useRef(false);
   const mapCooldownTriggeredRef = useRef(false);
@@ -3227,23 +3230,25 @@ export default function TripMap({
         break;
       case "checkin":
         // Today's position is the shared trip's: a trip opened privately picks its location on the map instead.
-        if (livePosition && showsLiveTraveler) {
+        // The raw latest fix: with LIVE off the displayed position can be a few metres behind it.
+        const checkInPosition = livePositionRef.current ?? livePosition;
+        if (checkInPosition && showsLiveTraveler) {
           log.logInteraction("coordinate:picked", {
-            lat: livePosition.lat,
-            lon: livePosition.lon,
+            lat: checkInPosition.lat,
+            lon: checkInPosition.lon,
             source: "fan_menu",
           });
           performance.mark("tripcast:debug:placement:enter");
           setCheckInDebugSource({ source: "fan-menu:checkin", sourceLabel: "FanMenu -> Check In" });
           setSelectedCoordinate({
-            lat: livePosition.lat,
-            lon: livePosition.lon,
+            lat: checkInPosition.lat,
+            lon: checkInPosition.lon,
             source: "fan_menu",
           });
           // Immediate center so the map moves even before the sheet is measured,
           // then focusCoordinate will correct for the sheet height once it settles.
-          centerMapOnCoordinate(livePosition);
-          focusCoordinate(livePosition, {
+          centerMapOnCoordinate(checkInPosition);
+          focusCoordinate(checkInPosition, {
             trigger: "fan-menu:checkin",
             sheetSelector: "[data-role='add-checkpoint-sheet']",
           });
@@ -3785,10 +3790,6 @@ export default function TripMap({
   }, [isFollowing]);
 
   useEffect(() => {
-    livePositionRef.current = livePosition;
-  }, [livePosition]);
-
-  useEffect(() => {
     fixOverlayEnabledRef.current = fixOverlayEnabled;
   }, [fixOverlayEnabled]);
 
@@ -4159,6 +4160,65 @@ export default function TripMap({
     lastLocationFixAtRef.current = Date.now();
     setLocationStale(false);
 
+    const isInsideCloakingZone = (lat: number, lon: number) => {
+      const pins = cloakingPinsRef.current;
+      return (
+        pins.length > 0 &&
+        pins.some((pin) => distanceMeters({ lat, lon }, { lat: pin.lat, lon: pin.lon }) <= pin.radiusMeters)
+      );
+    };
+
+    // Zone membership and its timers (entry time, toast, auto shut-off) follow every valid
+    // browser fix, including ones the display gate rejects. Returns true while inside a zone.
+    const applyCloakingZone = (lat: number, lon: number): boolean => {
+      const nowInsideZone = isInsideCloakingZone(lat, lon);
+
+      if (nowInsideZone) {
+        if (!insideCloakingZoneRef.current) {
+          insideCloakingZoneRef.current = true;
+          cloakToastShownRef.current = false;
+          cloakAutoShutoffFiredRef.current = false;
+          if (!enteredCloakAtRef.current) {
+            const ts = Date.now();
+            enteredCloakAtRef.current = ts;
+            try { localStorage.setItem("tripcast.cloaking.enteredAt", String(ts)); } catch { /* storage unavailable */ }
+          }
+        }
+        const enteredAt = enteredCloakAtRef.current;
+        if (enteredAt) {
+          const elapsed = Date.now() - enteredAt;
+          if (!cloakToastShownRef.current && elapsed >= 30_000) {
+            cloakToastShownRef.current = true;
+            showToast("You have entered a cloaked zone.");
+          }
+          try {
+            const timeoutMinutes = Number(
+              localStorage.getItem("tripcast.cloaking.autoDisableGpsTimeoutMinutes") ?? "5",
+            );
+            if (
+              timeoutMinutes > 0 &&
+              !cloakAutoShutoffFiredRef.current &&
+              elapsed >= timeoutMinutes * 60_000 &&
+              isLocationSharingRef.current
+            ) {
+              cloakAutoShutoffFiredRef.current = true;
+              stopLocationSharing();
+            }
+          } catch { /* storage unavailable */ }
+        }
+        return true;
+      }
+
+      if (!nowInsideZone && insideCloakingZoneRef.current) {
+        insideCloakingZoneRef.current = false;
+        enteredCloakAtRef.current = null;
+        cloakToastShownRef.current = false;
+        cloakAutoShutoffFiredRef.current = false;
+        try { localStorage.removeItem("tripcast.cloaking.enteredAt"); } catch { /* storage unavailable */ }
+      }
+      return false;
+    };
+
     const handleFix = (
       lat: number,
       lon: number,
@@ -4201,56 +4261,8 @@ export default function TripMap({
       livePositionRef.current = nextPosition;
       setLivePosition(nextPosition);
 
-      // ── Cloaking zone suppression ─────────────────────────────────────────
-      const pins = cloakingPinsRef.current;
-      const nowInsideZone =
-        pins.length > 0 &&
-        pins.some((pin) => distanceMeters({ lat, lon }, { lat: pin.lat, lon: pin.lon }) <= pin.radiusMeters);
-
-      if (nowInsideZone) {
-        if (!insideCloakingZoneRef.current) {
-          insideCloakingZoneRef.current = true;
-          cloakToastShownRef.current = false;
-          cloakAutoShutoffFiredRef.current = false;
-          if (!enteredCloakAtRef.current) {
-            const ts = Date.now();
-            enteredCloakAtRef.current = ts;
-            try { localStorage.setItem("tripcast.cloaking.enteredAt", String(ts)); } catch { /* storage unavailable */ }
-          }
-        }
-        const enteredAt = enteredCloakAtRef.current;
-        if (enteredAt) {
-          const elapsed = Date.now() - enteredAt;
-          if (!cloakToastShownRef.current && elapsed >= 30_000) {
-            cloakToastShownRef.current = true;
-            showToast("You have entered a cloaked zone.");
-          }
-          try {
-            const timeoutMinutes = Number(
-              localStorage.getItem("tripcast.cloaking.autoDisableGpsTimeoutMinutes") ?? "5",
-            );
-            if (
-              timeoutMinutes > 0 &&
-              !cloakAutoShutoffFiredRef.current &&
-              elapsed >= timeoutMinutes * 60_000 &&
-              isLocationSharingRef.current
-            ) {
-              cloakAutoShutoffFiredRef.current = true;
-              stopLocationSharing();
-            }
-          } catch { /* storage unavailable */ }
-        }
-        return;
-      }
-
-      if (!nowInsideZone && insideCloakingZoneRef.current) {
-        insideCloakingZoneRef.current = false;
-        enteredCloakAtRef.current = null;
-        cloakToastShownRef.current = false;
-        cloakAutoShutoffFiredRef.current = false;
-        try { localStorage.removeItem("tripcast.cloaking.enteredAt"); } catch { /* storage unavailable */ }
-      }
-      // ── End cloaking ──────────────────────────────────────────────────────
+      // Cloaking zone suppression: no publishing while inside a zone.
+      if (applyCloakingZone(lat, lon)) return;
 
       if (
         isLocationSharingRef.current &&
@@ -4337,8 +4349,33 @@ export default function TripMap({
         isAppActive: true,
       });
       gpsOwnerRef.current = { kind: "browser", reason: "map-foreground", startedAt: Date.now() };
+      // Display-only GPS (LIVE off) has no distance filter, so the WebView can
+      // deliver a fix every second. The gate skips only the display work (debug log,
+      // setLivePosition and what follows from it). A rejected fix still updates the raw
+      // latest position and the cloaking-zone membership. The gate lives in this effect
+      // run, so a watcher restart resets it.
+      const fixGate = createBrowserFixGate();
       const watchId = navigator.geolocation.watchPosition(
         (pos) => {
+          if (!isLocationSharingRef.current) {
+            const rawLat = pos.coords.latitude;
+            const rawLon = pos.coords.longitude;
+            const rawAccuracy = pos.coords.accuracy ?? undefined;
+            // Every valid fix, shown or not, updates the raw latest position and the zone membership.
+            const insideBefore = insideCloakingZoneRef.current;
+            if (!gpsSuppressedRef.current) {
+              livePositionRef.current = { lat: rawLat, lon: rawLon, accuracy: rawAccuracy };
+              applyCloakingZone(rawLat, rawLon);
+            }
+            // A zone crossing changes what the map shows, so that fix is shown too.
+            const { accept, report } = fixGate.check(
+              { lat: rawLat, lon: rawLon, accuracy: rawAccuracy },
+              Date.now(),
+              insideCloakingZoneRef.current !== insideBefore,
+            );
+            if (report) log.logGps("gps:browser:callback:coalesced", report);
+            if (!accept) return;
+          }
           log.logGps("gps:browser:callback:received", {
             hasAccuracy: typeof pos.coords.accuracy === "number",
             hasSpeed: typeof pos.coords.speed === "number" && pos.coords.speed >= 0,
@@ -4956,10 +4993,12 @@ export default function TripMap({
     isLocationSharingRef.current = true;
     nativeOffReconciledRef.current = false;
     setLiveSharingEnabled(true);
-    if (livePosition) {
-      publishTravelerLocation(livePosition, livePosition.accuracy);
+    // The raw latest fix, not the displayed one: with LIVE off the display can be behind it.
+    const resumePosition = livePositionRef.current ?? livePosition;
+    if (resumePosition) {
+      publishTravelerLocation(resumePosition, resumePosition.accuracy);
       if (liveTrailEnabledRef.current && liveTrailCanRecordRef.current) {
-        publishLiveTrailSample(livePosition, livePosition.accuracy, true);
+        publishLiveTrailSample(resumePosition, resumePosition.accuracy, true);
       }
     }
     log.logGps("gps:live:resumed", { trigger });
@@ -5813,7 +5852,7 @@ export default function TripMap({
     music.sfx("tap");
     const currentLocation =
       role === "traveler"
-        ? (showsLiveTraveler ? (livePosition ?? storedTravelerLocation ?? null) : null)
+        ? (showsLiveTraveler ? (livePositionRef.current ?? livePosition ?? storedTravelerLocation ?? null) : null)
         : followerTravelerLocation;
 
     if (currentLocation) {
