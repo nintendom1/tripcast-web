@@ -847,7 +847,12 @@ final class AdaptiveLocationService: NSObject, CLLocationManagerDelegate {
         stationaryTimer?.invalidate()
         guard liveRequested, mode == .precise, !highFrequencyActive else { return }
         let meaningfulAt = lastMeaningfulAt ?? Date()
-        let remaining = max(0.1, stationaryInterval - Date().timeIntervalSince(meaningfulAt))
+        let remaining = StationaryTimerDelay.seconds(
+            now: Date(),
+            lastMeaningfulAt: meaningfulAt,
+            interval: stationaryInterval,
+            hasAnchor: stationaryAnchor != nil || lastPreciseFix != nil
+        )
         stationaryTimer = Timer.scheduledTimer(withTimeInterval: remaining, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.enterPowerSavingMode(anchor: self.lastPreciseFix, reason: "stationary-timeout")
