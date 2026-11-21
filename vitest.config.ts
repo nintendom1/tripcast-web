@@ -47,6 +47,9 @@ export default defineConfig({
       test: {
         name: 'storybook',
         sequence: { groupOrder: 2 },
+        // Slowest story 4.72 s in a full run (TrailCompressionReview Stopping), at the old 5 s
+        // default's edge; 15 s matches the node project (about 3x the slowest).
+        testTimeout: 15_000,
         browser: {
           enabled: true,
           headless: true,
