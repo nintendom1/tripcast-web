@@ -4,12 +4,10 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   evaluateBreadcrumbSample,
-  DEFAULT_SAMPLER_CONFIG,
-  PRECISE_SAMPLER_CONFIG,
+  SAMPLER_CONFIGS,
   type BreadcrumbSamplerState,
   type GeoFix,
 } from "../../lib/breadcrumbSampler";
-import { evaluateLegacyBreadcrumbSample } from "../../lib/legacyBreadcrumbSampler";
 import type { RecentFix } from "../../lib/pendingFixesBuffer";
 import type { SamplerMode } from "../../lib/samplerMode";
 import { CANNED_TRACES, summarizeTrace, formatTraceSummary } from "../../stories/breadcrumbTraces";
@@ -19,14 +17,7 @@ function runTrace(mode: SamplerMode, trace: GeoFix[]): RecentFix[] {
   let state: BreadcrumbSamplerState = {};
   return trace.map((fix) => {
     const result =
-      mode === "legacy"
-        ? evaluateLegacyBreadcrumbSample(state, fix, false)
-        : evaluateBreadcrumbSample(
-            state,
-            fix,
-            mode === "precise" ? PRECISE_SAMPLER_CONFIG : DEFAULT_SAMPLER_CONFIG,
-            false,
-          );
+      evaluateBreadcrumbSample(state, fix, SAMPLER_CONFIGS[mode], false);
     state = result.nextState;
     return {
       lat: fix.lat,
@@ -80,14 +71,13 @@ function UjiRegression() {
     <div style={{ padding: 16 }}>
       <h2 style={{ fontSize: 16, marginBottom: 4 }}>Uji Loop Regression</h2>
       <p style={{ marginBottom: 4, opacity: 0.75, fontSize: 13 }}>
-        Same ~15m loop trace, fed through all 3 samplers. Green = emitted, red = rejected. Confirms that the Precise
-        mode (plus the bearing-bootstrap fix) actually captures the loop that Relevant/Legacy missed.
+        Same ~15m loop trace, fed through both samplers. Green = emitted, red = rejected. Confirms that the Precise
+        mode (plus the bearing-bootstrap fix) actually captures the loop that Relevant missed.
       </p>
       <p style={{ marginBottom: 12, opacity: 0.75, fontSize: 13 }}>
         {formatTraceSummary(summarizeTrace(CANNED_TRACES.ujiLoop.fixes))}
       </p>
       <div style={{ display: "flex", gap: 8, border: "1px solid #e5e7eb", borderRadius: 8, overflow: "hidden" }}>
-        <ModePanel mode="legacy" />
         <ModePanel mode="relevant" />
         <ModePanel mode="precise" />
       </div>

@@ -21,7 +21,7 @@ describe("breadcrumbSampler", () => {
   it("emits based on distance threshold", () => {
     const state: BreadcrumbSamplerState = { lastEmitted: initialFix };
     // 0.0005 deg lat is ~55m
-    const moveFix: GeoFix = { lat: 47.6005, lon: -122.3, sampledAt: 2000 };
+    const moveFix: GeoFix = { lat: 47.6005, lon: -122.3, sampledAt: 5000 };
     const result = evaluateBreadcrumbSample(state, moveFix);
     expect(result.shouldEmit).toBe(true);
     expect(result.reason).toBe("distance");
@@ -37,7 +37,7 @@ describe("breadcrumbSampler", () => {
 
   it("suppresses stationary noise", () => {
     const state: BreadcrumbSamplerState = { lastEmitted: initialFix };
-    const jitterFix: GeoFix = { lat: 47.6001, lon: -122.3001, sampledAt: 2000 }; // ~14m
+    const jitterFix: GeoFix = { lat: 47.6001, lon: -122.3001, sampledAt: 5000 }; // ~14m
     const result = evaluateBreadcrumbSample(state, jitterFix);
     expect(result.shouldEmit).toBe(false);
   });
@@ -48,20 +48,20 @@ describe("breadcrumbSampler", () => {
     let state = result.nextState;
 
     // 2. Establish bearing (North: 0 deg)
-    const northFix: GeoFix = { lat: 47.601, lon: -122.3, sampledAt: 2000 }; // +111m
+    const northFix: GeoFix = { lat: 47.601, lon: -122.3, sampledAt: 5000 }; // +111m
     result = evaluateBreadcrumbSample(state, northFix);
     expect(result.reason).toBe("distance");
     state = result.nextState;
     expect(state.lastEmitted?.bearing).toBeCloseTo(0, 0);
 
     // 3. Move North a bit more (no emit)
-    const northFix2: GeoFix = { lat: 47.6011, lon: -122.3, sampledAt: 3000 }; // +11m from last emitted
+    const northFix2: GeoFix = { lat: 47.6011, lon: -122.3, sampledAt: 9000 }; // +11m from last emitted
     result = evaluateBreadcrumbSample(state, northFix2);
     expect(result.shouldEmit).toBe(false);
     state = result.nextState;
 
     // 4. Turn East (90 deg)
-    const eastFix: GeoFix = { lat: 47.6011, lon: -122.2998, sampledAt: 4000 }; // ~15m East from previous fix
+    const eastFix: GeoFix = { lat: 47.6011, lon: -122.2998, sampledAt: 13000 }; // ~15m East from previous fix
     result = evaluateBreadcrumbSample(state, eastFix);
     expect(result.shouldEmit).toBe(true);
     expect(result.reason).toBe("turn");

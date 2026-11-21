@@ -54,7 +54,7 @@ const meta = {
     docs: {
       description: {
         component:
-          "Navigate to Options → Live Trail to inspect the new Sampler segmented control (Legacy / Relevant / Precise), the live-updating info description, and the GPS Fix Overlay debug toggle.",
+          "Navigate to Options → Live Trail to inspect the new Sampler segmented control (Relevant / Precise), the live-updating info description, and the GPS Fix Overlay debug toggle.",
       },
     },
   },

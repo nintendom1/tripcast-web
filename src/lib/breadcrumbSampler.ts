@@ -1,3 +1,4 @@
+import type { SamplerMode } from "./samplerMode";
 import { calculateBearing, distanceMeters, getAngleDifference, type LatLon } from "./geoUtils";
 
 export type GeoFix = LatLon & {
@@ -30,7 +31,8 @@ export const DEFAULT_SAMPLER_CONFIG: BreadcrumbSamplerConfig = {
   turnThresholdDegrees: 22.5,
   bearingHopMeters: 5,
   turnMovementGuardMeters: 10,
-  minIntervalMs: 0,
+  // 3 s floor caps browser driving at ≈1,200/hr instead of ≈1,800/hr, matching Precise.
+  minIntervalMs: 3_000,
 };
 
 export const PRECISE_SAMPLER_CONFIG: BreadcrumbSamplerConfig = {
@@ -40,6 +42,17 @@ export const PRECISE_SAMPLER_CONFIG: BreadcrumbSamplerConfig = {
   bearingHopMeters: 3,
   turnMovementGuardMeters: 4,
   minIntervalMs: 3_000,
+};
+
+/**
+ * Mirrors the backend filter in `tripcast-backend/convex/liveTrail.ts`
+ * (MIN_SAMPLE_INTERVAL_MS / MIN_SAMPLE_DISTANCE_METERS). Both must change together.
+ */
+export const SERVER_LIVE_TRAIL_FILTER = { minIntervalMs: 3_000, minDistanceMeters: 10 };
+
+export const SAMPLER_CONFIGS: Record<SamplerMode, BreadcrumbSamplerConfig> = {
+  relevant: DEFAULT_SAMPLER_CONFIG,
+  precise: PRECISE_SAMPLER_CONFIG,
 };
 
 /**

@@ -21,7 +21,6 @@ export interface LivePillProps {
 }
 
 const OPTIONS: Array<{ value: SamplerMode; label: string }> = [
-  { value: "legacy", label: "Legacy" },
   { value: "relevant", label: "Relevant" },
   { value: "precise", label: "Precise" },
 ];

@@ -158,12 +158,10 @@ import { circlePolygon } from "./circlePolygon";
 import { useTripPath } from "./useTripPath";
 import {
   evaluateBreadcrumbSample,
-  DEFAULT_SAMPLER_CONFIG,
-  PRECISE_SAMPLER_CONFIG,
+  SAMPLER_CONFIGS,
   type BreadcrumbSamplerState,
   type GeoFix,
 } from "../../lib/breadcrumbSampler";
-import { evaluateLegacyBreadcrumbSample } from "../../lib/legacyBreadcrumbSampler";
 import { useSamplerMode } from "../../lib/samplerMode";
 import { distanceMeters } from "../../lib/geoUtils";
 import { createBrowserFixGate } from "./browserFixGate";
@@ -4861,14 +4859,7 @@ export default function TripMap({
     const fix: GeoFix = { ...position, accuracy, sampledAt };
     const mode = samplerModeRef.current;
     const { shouldEmit, reason, nextState } =
-      mode === "legacy"
-        ? evaluateLegacyBreadcrumbSample(breadcrumbSamplerStateRef.current, fix, force)
-        : evaluateBreadcrumbSample(
-            breadcrumbSamplerStateRef.current,
-            fix,
-            mode === "precise" ? PRECISE_SAMPLER_CONFIG : DEFAULT_SAMPLER_CONFIG,
-            force,
-          );
+      evaluateBreadcrumbSample(breadcrumbSamplerStateRef.current, fix, SAMPLER_CONFIGS[mode], force);
 
     breadcrumbSamplerStateRef.current = nextState;
 
