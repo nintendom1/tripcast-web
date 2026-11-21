@@ -22,8 +22,8 @@ export default defineConfig({
         name: 'node',
         // Projects run one after the other (groupOrder), not on the same cores:
         // run together, 8 cores serve ~8 jsdom workers plus Chromium and the
-        // 5 s limit fails 3-10 tests per run (measured 2026-11-18). Alone: node 105 s,
-        // 0 failures, slowest test 4.7 s; storybook 48 s. Sequential ~153 s vs 140-197 s together.
+        // 5 s limit failed 3-29 tests per run (measured 2026-11-18/21). Alone: node 105 s,
+        // 0 failures; storybook 48 s. Sequential: 153-168 s, 0 failures in 5 consecutive runs.
         sequence: { groupOrder: 1 },
         // Limit 15 s: slowest node test alone 3.4 s (AutoStateTab.trip rebase, a cold first render),
         // 4.7 s in a full node run under outside load ~20, so the old 5 s default sat at the edge.
