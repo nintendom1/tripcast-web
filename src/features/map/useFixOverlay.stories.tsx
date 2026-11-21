@@ -4,12 +4,10 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import {
   evaluateBreadcrumbSample,
-  DEFAULT_SAMPLER_CONFIG,
-  PRECISE_SAMPLER_CONFIG,
+  SAMPLER_CONFIGS,
   type BreadcrumbSamplerState,
   type GeoFix,
 } from "../../lib/breadcrumbSampler";
-import { evaluateLegacyBreadcrumbSample } from "../../lib/legacyBreadcrumbSampler";
 import type { RecentFix } from "../../lib/pendingFixesBuffer";
 import type { SamplerMode } from "../../lib/samplerMode";
 import { CANNED_TRACES, summarizeTrace, formatTraceSummary } from "../../stories/breadcrumbTraces";
@@ -19,14 +17,7 @@ function runTrace(mode: SamplerMode, trace: GeoFix[]): RecentFix[] {
   let state: BreadcrumbSamplerState = {};
   return trace.map((fix) => {
     const result =
-      mode === "legacy"
-        ? evaluateLegacyBreadcrumbSample(state, fix, false)
-        : evaluateBreadcrumbSample(
-            state,
-            fix,
-            mode === "precise" ? PRECISE_SAMPLER_CONFIG : DEFAULT_SAMPLER_CONFIG,
-            false,
-          );
+      evaluateBreadcrumbSample(state, fix, SAMPLER_CONFIGS[mode], false);
     state = result.nextState;
     return {
       lat: fix.lat,
@@ -94,7 +85,7 @@ const meta = {
   parameters: { layout: "fullscreen" },
   argTypes: {
     traceKey: { control: { type: "select" }, options: Object.keys(CANNED_TRACES) },
-    mode: { control: { type: "radio" }, options: ["legacy", "relevant", "precise"] satisfies SamplerMode[] },
+    mode: { control: { type: "radio" }, options: ["relevant", "precise"] satisfies SamplerMode[] },
   },
 } satisfies Meta;
 

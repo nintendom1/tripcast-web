@@ -1557,7 +1557,6 @@ function LiveTrailSettingsSheet({
             <OptionsSegmentedControl
               value={samplerMode}
               options={[
-                { value: "legacy", label: "Legacy" },
                 { value: "relevant", label: "Relevant" },
                 { value: "precise", label: "Precise" },
               ]}

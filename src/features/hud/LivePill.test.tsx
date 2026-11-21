@@ -103,7 +103,6 @@ describe("LivePill hold-and-reveal gesture", () => {
 
     openMenu(pill);
     expect(screen.getAllByRole("menuitem").map((option) => option.textContent)).toEqual([
-      "Legacy",
       "Relevant",
       "Precise",
     ]);
@@ -121,10 +120,10 @@ describe("LivePill hold-and-reveal gesture", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it.each<SamplerMode>(["legacy", "relevant", "precise"])(
+  it.each<SamplerMode>(["relevant", "precise"])(
     "selects %s by gliding over the rendered option and releasing",
     (mode) => {
-      setSamplerMode(mode === "relevant" ? "legacy" : "relevant");
+      setSamplerMode(mode === "relevant" ? "precise" : "relevant");
       render(<LivePill on={true} onToggle={onToggle} />);
       const pill = getPill();
 

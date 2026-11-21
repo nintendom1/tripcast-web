@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
 
-export type SamplerMode = "legacy" | "relevant" | "precise";
+export type SamplerMode = "relevant" | "precise";
 
 const STORAGE_KEY = "tripcast.liveTrail.samplerMode";
-const VALID_MODES: ReadonlySet<SamplerMode> = new Set(["legacy", "relevant", "precise"]);
+const VALID_MODES: ReadonlySet<SamplerMode> = new Set(["relevant", "precise"]);
 const listeners = new Set<() => void>();
 
 function readStored(): SamplerMode {
@@ -45,10 +45,8 @@ export function useSamplerMode(): SamplerMode {
 }
 
 export const SAMPLER_MODE_INFO: Record<SamplerMode, string> = {
-  legacy:
-    "Sparse: a breadcrumb every ~200m of movement or every 60s. Best for long drives or hikes where minimal points and maximum battery matter.",
   relevant:
-    "Balanced: emits every 50m, every 2 minutes, or on sharp turns (≥22.5°). Default. Good for normal walking and city travel.",
+    "Balanced: emits every 50m, every 2 minutes, or on sharp turns (≥22.5°), never more than once per 3s. Default. Good for normal walking and city travel.",
   precise:
     "Fine detail: emits every 10m, every 60s, or on subtle turns (≥18°). Use for museums, parks, or tight loops (~15m). Produces ~5× more breadcrumbs; expect higher battery use.",
 };

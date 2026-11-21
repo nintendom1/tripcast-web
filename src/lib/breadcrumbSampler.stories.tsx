@@ -1,13 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import {
   evaluateBreadcrumbSample,
-  DEFAULT_SAMPLER_CONFIG,
-  PRECISE_SAMPLER_CONFIG,
+  SAMPLER_CONFIGS,
   type BreadcrumbSamplerState,
   type BreadcrumbSampleReason,
   type GeoFix,
 } from "./breadcrumbSampler";
-import { evaluateLegacyBreadcrumbSample } from "./legacyBreadcrumbSampler";
 import { distanceMeters } from "./geoUtils";
 import { CANNED_TRACES, summarizeTrace, formatTraceSummary } from "../stories/breadcrumbTraces";
 import type { SamplerMode } from "./samplerMode";
@@ -18,25 +16,17 @@ function runMode(mode: SamplerMode, trace: GeoFix[]): Decision[] {
   let state: BreadcrumbSamplerState = {};
   return trace.map((fix) => {
     const result =
-      mode === "legacy"
-        ? evaluateLegacyBreadcrumbSample(state, fix, false)
-        : evaluateBreadcrumbSample(
-            state,
-            fix,
-            mode === "precise" ? PRECISE_SAMPLER_CONFIG : DEFAULT_SAMPLER_CONFIG,
-            false,
-          );
+      evaluateBreadcrumbSample(state, fix, SAMPLER_CONFIGS[mode], false);
     state = result.nextState;
     return { emit: result.shouldEmit, reason: result.reason };
   });
 }
 
-const MODES: SamplerMode[] = ["legacy", "relevant", "precise"];
+const MODES: SamplerMode[] = ["relevant", "precise"];
 
 function TraceTable({ traceKey }: { traceKey: keyof typeof CANNED_TRACES }) {
   const trace = CANNED_TRACES[traceKey];
   const decisionsByMode: Record<SamplerMode, Decision[]> = {
-    legacy: runMode("legacy", trace.fixes),
     relevant: runMode("relevant", trace.fixes),
     precise: runMode("precise", trace.fixes),
   };

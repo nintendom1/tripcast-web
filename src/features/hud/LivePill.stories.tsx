@@ -274,7 +274,7 @@ export const DownwardPrecisionMenuInMapHud: Story = {
         .getAllByRole("menuitem")
         .map((option) => option.textContent);
 
-      await expect(optionLabels).toEqual(["Legacy", "Relevant", "Precise"]);
+      await expect(optionLabels).toEqual(["Relevant", "Precise"]);
       await waitFor(
         () => expect(menu.getBoundingClientRect().top).toBeGreaterThanOrEqual(pillRect.bottom),
         { timeout: 1000 },
