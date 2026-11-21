@@ -5,7 +5,8 @@ import { configure } from "@testing-library/react";
 // suite runs many files in parallel. Give findBy*/waitFor headroom so async
 // mounts don't flake under CPU contention (the timeout is a ceiling, not a
 // fixed delay — it resolves as soon as the condition is met).
-configure({ asyncUtilTimeout: 5000 });
+// 10 s (was 5 s) stays under the node project's 15 s testTimeout (vitest.config.ts).
+configure({ asyncUtilTimeout: 10_000 });
 
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>();
