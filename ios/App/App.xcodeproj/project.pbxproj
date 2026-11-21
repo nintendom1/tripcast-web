@@ -24,6 +24,9 @@
 		E30000022F31000100E11CE1 /* MysteryProximityEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000032F31000100E11CE1 /* MysteryProximityEngineTests.swift */; };
 		F50000022F31000100F51CE1 /* RouteRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000012F31000100F51CE1 /* RouteRecord.swift */; };
 		F50000032F31000100F51CE1 /* RouteRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000012F31000100F51CE1 /* RouteRecord.swift */; };
+		A70000012F31000100A71CE1 /* StationaryTimerDelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000022F31000100A71CE1 /* StationaryTimerDelay.swift */; };
+		A70000032F31000100A71CE1 /* StationaryTimerDelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000022F31000100A71CE1 /* StationaryTimerDelay.swift */; };
+		A70000052F31000100A71CE1 /* StationaryTimerDelayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000042F31000100A71CE1 /* StationaryTimerDelayTests.swift */; };
 		F50000052F31000100F51CE1 /* RouteRecordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000042F31000100F51CE1 /* RouteRecordTests.swift */; };
 		E30000042F31000100E11CE1 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E30000052F31000100E11CE1 /* XCTest.framework */; };
 		B10000012F31000100B11CE1 /* TripCastLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000102F31000100B11CE1 /* TripCastLiveActivityWidget.swift */; };
@@ -54,6 +57,8 @@
 		D20000042F31000100D11CE1 /* MysteryProximityEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MysteryProximityEngine.swift; sourceTree = "<group>"; };
 		E30000032F31000100E11CE1 /* MysteryProximityEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MysteryProximityEngineTests.swift; sourceTree = "<group>"; };
 		F50000012F31000100F51CE1 /* RouteRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRecord.swift; sourceTree = "<group>"; };
+		A70000022F31000100A71CE1 /* StationaryTimerDelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationaryTimerDelay.swift; sourceTree = "<group>"; };
+		A70000042F31000100A71CE1 /* StationaryTimerDelayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StationaryTimerDelayTests.swift; sourceTree = "<group>"; };
 		F50000042F31000100F51CE1 /* RouteRecordTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteRecordTests.swift; sourceTree = "<group>"; };
 		E30000052F31000100E11CE1 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
 		E30000062F31000100E11CE1 /* MysteryProximityTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MysteryProximityTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -168,6 +173,7 @@
 				D20000022F31000100D11CE1 /* MysteryProximityService.swift */,
 				D20000042F31000100D11CE1 /* MysteryProximityEngine.swift */,
 				F50000012F31000100F51CE1 /* RouteRecord.swift */,
+				A70000022F31000100A71CE1 /* StationaryTimerDelay.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -193,6 +199,7 @@
 			children = (
 				E30000032F31000100E11CE1 /* MysteryProximityEngineTests.swift */,
 				F50000042F31000100F51CE1 /* RouteRecordTests.swift */,
+				A70000042F31000100A71CE1 /* StationaryTimerDelayTests.swift */,
 			);
 			path = MysteryProximityTests;
 			sourceTree = "<group>";
@@ -394,6 +401,7 @@
 				D20000012F31000100D11CE1 /* MysteryProximityService.swift in Sources */,
 				D20000032F31000100D11CE1 /* MysteryProximityEngine.swift in Sources */,
 				F50000022F31000100F51CE1 /* RouteRecord.swift in Sources */,
+				A70000012F31000100A71CE1 /* StationaryTimerDelay.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -413,7 +421,9 @@
 				E30000012F31000100E11CE1 /* MysteryProximityEngine.swift in Sources */,
 				E30000022F31000100E11CE1 /* MysteryProximityEngineTests.swift in Sources */,
 				F50000032F31000100F51CE1 /* RouteRecord.swift in Sources */,
+				A70000032F31000100A71CE1 /* StationaryTimerDelay.swift in Sources */,
 				F50000052F31000100F51CE1 /* RouteRecordTests.swift in Sources */,
+				A70000052F31000100A71CE1 /* StationaryTimerDelayTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

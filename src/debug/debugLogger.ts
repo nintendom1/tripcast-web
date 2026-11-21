@@ -590,7 +590,15 @@ function buildGpsLlmSummary(entries: DebugEntry[], usageCounterDigest?: string):
     counts.set(entry.action, (counts.get(entry.action) ?? 0) + 1);
   }
 
+  // "callback:received" is logged only for handled fixes: the browser gate (LIVE off) logs
+  // rejected ones only as a count in "callback:coalesced". Gaps here are handled-fix gaps.
   const callbacks = relevant.filter((entry) => entry.action.endsWith("callback:received"));
+  const coalesced = relevant.filter((entry) => entry.action === "gps:browser:callback:coalesced");
+  const sumDetail = (key: string) =>
+    coalesced.reduce((sum, entry) => {
+      const value = entry.details?.[key];
+      return sum + (typeof value === "number" && Number.isFinite(value) ? value : 0);
+    }, 0);
   const publishes = relevant.filter(
     (entry) => entry.action.includes("publish") && entry.action.endsWith(":ack"),
   );
@@ -620,8 +628,13 @@ function buildGpsLlmSummary(entries: DebugEntry[], usageCounterDigest?: string):
     `- Callback: ${stageBounds(relevant, (entry) => entry.action.includes("callback"))}`,
     `- Publish: ${stageBounds(relevant, (entry) => entry.action.includes("publish"))}`,
     "",
+    "## Browser Callbacks Coalesced (LIVE off)",
+    coalesced.length
+      ? `- Received ${sumDetail("received")}, rejected ${sumDetail("rejected")} over ${coalesced.length} report(s)`
+      : "- No coalesced reports",
+    "",
     "## Largest Observed Gaps",
-    `- Callback arrivals: ${largestGapMs(callbacks) ?? "none"} ms`,
+    `- Handled-fix gaps (callback:received; rejected browser fixes are not logged): ${largestGapMs(callbacks) ?? "none"} ms`,
     `- Publish acknowledgements: ${largestGapMs(publishes) ?? "none"} ms`,
     "",
     "## Warnings & Errors",
