@@ -3,6 +3,12 @@ import type { Preview, Decorator } from "@storybook/react-vite";
 import { ThemeProvider, useTheme } from "../src/providers/ThemeProvider";
 import { StorybookConvexProvider, useConvexMock } from "../src/stories/convex-mock";
 import "../src/styles.css";
+import { configure } from "storybook/test";
+
+// Story play functions wait up to 10 s (Testing Library default 1 s). Under a full validate run a
+// 150 ms fade-in menu (LivePill Paused Options) missed the 1 s wait (TF2 run 5, 2026-11-21).
+// Matches src/test/setup.ts; stays under the storybook project's 15 s testTimeout.
+configure({ asyncUtilTimeout: 10_000 });
 const ConvexMockWrapper = ({ children, convexMocks }: { children: React.ReactNode, convexMocks: any }) => {
   const { setQueryMock, setMutationMock } = useConvexMock();
   useEffect(() => {
